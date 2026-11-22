@@ -1,0 +1,67 @@
+{
+ "run": {
+  "run_id": "run_e873c834-8573-4337-8b99-d1d342e742f2",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_dde77c99-b1dc-4e0b-a72f-55369bde46dd",
+  "scenario": "s6.redaction",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 3,
+  "idempotency_key": "mat_dde77c99-b1dc-4e0b-a72f-55369bde46dd-s6.redaction-1794280774632",
+  "input_snapshot": {
+   "matter_id": "mat_dde77c99-b1dc-4e0b-a72f-55369bde46dd",
+   "scenario": "s6.redaction",
+   "document_version_ids": [
+    "docv_4e7ee915-71c9-46d4-bad8-532a8137eb75"
+   ],
+   "goal": "客户要把去年的维保合同发给新一轮招标的咨询机构参考，账户、身份证号、手机号、邮箱都要去掉，修订痕迹也不能带出去。",
+   "estimate_id": "est_124c0048-611c-4063-b58b-aa9fc4c8d5c2",
+   "title": "客户版与对外脱敏"
+  },
+  "budget_points": 0,
+  "points_reserved": 0,
+  "points_charged": 0,
+  "estimate_id": "est_124c0048-611c-4063-b58b-aa9fc4c8d5c2",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:34.635Z",
+  "updated_at": "2026-11-10T03:20:37.460Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_6371109f-ce6e-4f75-812c-3f17752a5658",
+   "kind": "s6_redacted",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "脱敏件-门店收银系统维保服务合同（签署版·含账户与联系人信息）.docx",
+   "sha256": "d9d524234dc7ab7c2444d3666680915fbfe40479435e97e556345cc8997c7b54",
+   "created_at": "2026-11-10T03:20:37.454Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_eeadb68c-1925-41fa-a36f-a31d85c12d95",
+   "kind": "s6_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "脱敏报告-2026-11-10.docx",
+   "sha256": "29474139a55e6067939fc7565bf0015b844eab648a059be7165b6db486af723e",
+   "created_at": "2026-11-10T03:20:37.460Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,149 @@
+{
+ "run": {
+  "run_id": "run_a9bea5f2-3f5c-4cb1-b330-ec46f7121c7e",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_83f026f3-4501-49e1-bb8b-bcdd3966d40c",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_83f026f3-4501-49e1-bb8b-bcdd3966d40c-a1.agent_task-1794300226197",
+  "input_snapshot": {
+   "matter_id": "mat_83f026f3-4501-49e1-bb8b-bcdd3966d40c",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_70d2e9c8-7b6e-48b5-a941-7a68124e6ad0",
+    "docv_bb8cc819-46ae-4efd-9c03-0fecf54726c8",
+    "docv_cdaed10e-22b0-4f0f-97b4-0fd2f2a9f775"
+   ],
+   "goal": "请起草商事仲裁申请书，先核对仲裁协议。仲裁机构：宁波仲裁委员会；仲裁请求：支付第三期设备款183,600元及逾期付款违约金（日万分之三，计至实际清偿之日）。我确认过的事实与金额照写，材料载明但未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），仲裁规则与收费以我提供的机构文件为准。\n客户是锐川。最后那6万元是甬岚包装代付的，订单也是甬岚包装出的，请核对被申请人该列谁。宁波仲裁委的规则和收费表我还没下载。",
+   "estimate_id": "est_91b848f4-ccc4-4a1e-aafb-5f8b2574f5a4",
+   "title": "起草仲裁申请书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "arbitration-application",
+   "skill_title": "仲裁申请书（受限文书）· 试用",
+   "skill_version": "1.3.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "仲裁申请书（草稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "institution": "宁波仲裁委员会",
+    "claims": "支付第三期设备款183,600元及逾期付款违约金（日万分之三，计至实际清偿之日）"
+   }
+  },
+  "budget_points": 35,
+  "points_reserved": 35,
+  "points_charged": 35,
+  "estimate_id": "est_91b848f4-ccc4-4a1e-aafb-5f8b2574f5a4",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:46.198Z",
+  "updated_at": "2026-11-10T14:23:49.759Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_38bf2a2c-6359-4f12-973e-28ff9021760e",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仲裁申请书.docx",
+   "sha256": "31d4576851909ca320279e58e36d3f81667187c0242492442635ebef2ca7191b",
+   "created_at": "2026-11-10T14:17:06.426Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_0730cf6c-6796-40b9-9f76-e3cee1bbaf7b",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-锐川设备款仲裁.xlsx",
+   "sha256": "0d9a56e11fb8ae63685e1792a69ff57e5a4fb18f6351cde933a667a40d726d71",
+   "created_at": "2026-11-10T14:19:33.797Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_158593e6-c059-4576-8f50-431778a00c6c",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-锐川设备款仲裁.xlsx",
+   "sha256": "ae2df39b7cb67ce1db9442649e746e6b1a53bb12e1ad08fcadce5f0851df6246",
+   "created_at": "2026-11-10T14:19:33.811Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c8515031-c15e-4643-966a-d63bb48b145f",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仲裁申请书.docx",
+   "sha256": "7c11e47b6ce39ab44f59576743ffc4ee5d80eb365d3fb3bc394c282750a7b567",
+   "created_at": "2026-11-10T14:20:10.676Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b32738c3-c57c-4d3d-9e9b-f482332803c4",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "981f4f9cabe2c33b2eab5254ff9ef3354dc9eecdd27b265a05fc0a252181f6d0",
+   "created_at": "2026-11-10T14:21:22.080Z",
+   "title": "三份材料均已完整读取，无无法识别或排除的材料。已生成并通过交付前检查：",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_07672f83-6b77-443d-83f2-88ac33323eea",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-仲裁申请书.md",
+   "sha256": "029c010d27b759c94c0a549f397dcdcc452f67a9e5db0a1aed09540d50c2c0a3",
+   "created_at": "2026-11-10T14:22:47.289Z",
+   "title": "独立复核意见：仲裁申请书",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_92f61a23-1cec-412f-8dc4-60fbcc496d6d",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "68e7373d1d02422ab1f890719bf9c217f14aa3ea5c7f562d21b18916cdb3969f",
+   "created_at": "2026-11-10T14:23:49.758Z",
+   "title": "三份材料均已完整读取，无无法识别或排除的材料。以下文件仍为最新有效草稿，本轮未作",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

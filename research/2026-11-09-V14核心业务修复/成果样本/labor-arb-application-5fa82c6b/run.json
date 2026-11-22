@@ -1,0 +1,165 @@
+{
+ "run": {
+  "run_id": "run_5fa82c6b-4348-4144-8e40-e16d6431a79a",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_14e55a13-ec9c-44a4-804e-0193f7dc6f9f",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "partial",
+  "status_version": 13,
+  "idempotency_key": "mat_14e55a13-ec9c-44a4-804e-0193f7dc6f9f-a1.agent_task-1794204645931",
+  "input_snapshot": {
+   "matter_id": "mat_14e55a13-ec9c-44a4-804e-0193f7dc6f9f",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_e33fecb6-6a99-4934-b2b6-044e47176c3c",
+    "docv_6bf14129-9e2a-4ea1-a35d-a59878c753c7",
+    "docv_87e7d3a6-257a-4734-a11e-4212412b4870",
+    "docv_d74acf26-4f6f-4298-8a9b-ff5a9a1db00d",
+    "docv_dd2f3da7-bd86-4f49-87d1-932856fba58f",
+    "docv_a1a8e532-ef0f-43e0-996b-84fe141f5176"
+   ],
+   "goal": "请起草劳动仲裁申请书：我方为劳动者；拟主张的请求：违法解除赔偿金；加班费差额；未休年休假工资；8月被扣工资；竞业限制补偿；出具解除证明。\n请求请一次提全，每项写清金额和计算口径。当事人承认上传代码前没有走外发审批。",
+   "estimate_id": "est_ab2a8914-7ce3-484c-89a2-8e6e88b6ddf9",
+   "title": "劳动仲裁申请书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "labor-arbitration-draft",
+   "skill_title": "劳动仲裁申请书与答辩书（受限文书）· 试用",
+   "skill_version": "1.2.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "劳动仲裁申请书（草稿）.docx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "doc_kind": "申请书",
+    "side": "劳动者",
+    "claims": "违法解除赔偿金；加班费差额；未休年休假工资；8月被扣工资；竞业限制补偿；出具解除证明"
+   }
+  },
+  "budget_points": 50,
+  "points_reserved": 50,
+  "points_charged": 50,
+  "estimate_id": "est_ab2a8914-7ce3-484c-89a2-8e6e88b6ddf9",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:10:45.932Z",
+  "updated_at": "2026-11-09T07:20:54.089Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_2223e3e8-34a6-4791-b954-4f2f7a67462c",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动仲裁申请书.docx",
+   "sha256": "732c54135738e17f4da06c4f7a4ffa7f490e783d08841d91993f609c89270bbc",
+   "created_at": "2026-11-09T06:31:25.693Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_c0af6d4c-045f-4408-aeb9-99d5cd66da9f",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "金额计算明细-劳动者六项请求.xlsx",
+   "sha256": "88259aad31b78c2c7b18490a81a8abc9e34681bfe076806abdda79c4cc97a18f",
+   "created_at": "2026-11-09T06:36:52.402Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_6e29f322-fd4f-4f41-a9fa-a0ef82cb7565",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-劳动者六项请求.xlsx",
+   "sha256": "4ce8865927fbdd49ce2f6e2f9493c4572ef149855e88ffb443600e9ae8719673",
+   "created_at": "2026-11-09T06:36:52.414Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_741e9b16-4d00-482e-8afa-fb5ad1356057",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-劳动者六项请求.xlsx",
+   "sha256": "960b0ad0d6d9a10788d23ee287a7b953b11da98ef7e8f6a7b868c61287c83dc6",
+   "created_at": "2026-11-09T06:36:52.420Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b8d6e9e1-e2c5-4e9a-853e-803fc2e9da7d",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "e54134b7b61c1b15c68cfb8f917d5daf32e7bfa905db33098058d99aefbfea75",
+   "created_at": "2026-11-09T06:39:25.195Z",
+   "title": "已完成。共收到6份材料，全部读取且识别正常，无排除或未读材料。已按律师确认的六项",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_95d445e5-441c-461a-a249-a71e479cf7b0",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-劳动仲裁申请书.md",
+   "sha256": "32ecf16ea64b27cfb347cf3230fa3ffb456ce1b5b3e50afb421230d62f0810d0",
+   "created_at": "2026-11-09T06:44:06.374Z",
+   "title": "独立复核意见：劳动仲裁申请书",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f20616e8-eb8f-4dbd-8195-eb99d98c71ce",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动仲裁申请书.docx",
+   "sha256": "d9b80ab0bb5896333f7ef6d2e9ab907ce56138c31fbbf0d3f65f43b28e3ec799",
+   "created_at": "2026-11-09T07:15:07.538Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_fc3eeaf0-a544-4dbf-ad78-c7835d66d93c",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动仲裁申请书.docx",
+   "sha256": "5e881829330708ba2c7ba93b86f73ca002cc654cdfea1b701ca0056ba139a683",
+   "created_at": "2026-11-09T07:18:32.853Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

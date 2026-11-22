@@ -1,0 +1,169 @@
+{
+ "run": {
+  "run_id": "run_1b2b8e44-31fe-4660-bb34-79ce672ec3e0",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_55d0ebd6-1289-4650-b1cc-150d17db29ab",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_55d0ebd6-1289-4650-b1cc-150d17db29ab-a1.agent_task-1794202718496",
+  "input_snapshot": {
+   "matter_id": "mat_55d0ebd6-1289-4650-b1cc-150d17db29ab",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "研究问题：有限责任公司增资协议中约定由目标公司与创始人连带回购投资方股权（未完成合格上市时，按投资款加年化 8% 单利回购）。在 2023 年修订的公司法施行后，目标公司回购约定的效力与可执行性如何？目标公司履行回购须满足哪些程序（减资、债权人保护）？创始人回购与目标公司回购在实务上如何区别对待？请区分有法律、司法解释依据的结论和只有会议纪要或裁判观点支持的结论。\n对方在回稿里删了目标公司的连带回购，我们要判断坚持还是放掉。备忘录给合伙人看，结论先行，依据要能核。",
+   "estimate_id": "est_32af46a7-e71b-4675-ad59-0cdea067783d",
+   "title": "交易法规研究",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "legal-research-memo",
+   "skill_title": "法律研究备忘录",
+   "skill_version": "1.5.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "研究备忘录.docx",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "question": "有限责任公司增资协议中约定由目标公司与创始人连带回购投资方股权（未完成合格上市时，按投资款加年化 8% 单利回购）。在 2023 年修订的公司法施行后，目标公司回购约定的效力与可执行性如何？目标公司履行回购须满足哪些程序（减资、债权人保护）？创始人回购与目标公司回购在实务上如何区别对待？请区分有法律、司法解释依据的结论和只有会议纪要或裁判观点支持的结论。"
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 20,
+  "estimate_id": "est_32af46a7-e71b-4675-ad59-0cdea067783d",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:38:38.498Z",
+  "updated_at": "2026-11-09T06:31:07.828Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_d1daf243-1e9b-49c0-b0de-9e6c491a8492",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-目标公司与创始人连带回购.docx",
+   "sha256": "836352d3f98b6cf7f3fcbf1d220625de0563396973b47178ff6d533f344037ee",
+   "created_at": "2026-11-09T06:17:40.923Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_b0abad8a-2674-4ffa-a712-47938c8f1b2e",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "来源目录-目标公司与创始人连带回购.xlsx",
+   "sha256": "a161551adcb2056aed5f05a22acf380641b0b092d4f790a237f40e814c0f05b2",
+   "created_at": "2026-11-09T06:18:28.863Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_ea9823c5-fb09-4679-bc35-a4b37984fe49",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "6acfa70bc90823ce850bdce75f0ddb3d4d7945831c5feef7582f84a8167126ca",
+   "created_at": "2026-11-09T06:19:40.669Z",
+   "title": "本任务未附材料，已读取材料为 0 份，无排除材料。增资协议、对方回稿、公司章程及",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_c680fef5-bd57-4d57-8010-39786b5f1233",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-研究备忘录-目标公司与创始人连带回购.md",
+   "sha256": "2126f045ccaac0da600416467da31e630b1e601b27d30c0646692205a8345828",
+   "created_at": "2026-11-09T06:22:46.728Z",
+   "title": "独立复核意见：研究备忘录-目标公司与创始人连带回购",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_901b5106-2906-44c7-a998-eac5f5ddb210",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-目标公司与创始人连带回购.docx",
+   "sha256": "3fb5bfa56f78e7b6ecab31b6c032c65f9623f26a359eee389636ccc760323686",
+   "created_at": "2026-11-09T06:27:52.708Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_5c4c3df2-9fde-4abe-92bb-a354de252e7c",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-目标公司与创始人连带回购.docx",
+   "sha256": "bd611884955028680eac55c03b8d35afb9ef9cfe1771271660166577804665d3",
+   "created_at": "2026-11-09T06:28:45.154Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_313d05ff-54d6-4d28-90a3-b84f055e6ef6",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "来源目录-目标公司与创始人连带回购.xlsx",
+   "sha256": "ad4a7df64063f25fff754d797bfbb8a4ab3a990f83c592930845065ffcaf5751",
+   "created_at": "2026-11-09T06:29:32.879Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_83ee6c42-9cca-4692-98fb-572d282407b6",
+   "kind": "agent_report",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-目标公司与创始人连带回购.docx",
+   "sha256": "dea1f1967fb64f44bcf48a2b7e98127c65c58abd209187a868b6e8609cae0295",
+   "created_at": "2026-11-09T06:30:31.073Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_4f5e8c59-d4e3-4690-aa79-ab40d01c074d",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "27747fa3f69a076f32189bc22d39de9582cdbc5bb3d1853d7f8b851004f75f3d",
+   "created_at": "2026-11-09T06:31:07.827Z",
+   "title": "本任务未附材料，已读取材料为 0 份，无排除材料。增资协议、对方回稿、公司章程、",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

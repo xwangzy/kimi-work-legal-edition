@@ -1,0 +1,16 @@
+{
+ "stack": "w5",
+ "tag": "m33-redraft-local",
+ "run": "run_712fe8e5-6e39-4350-a3aa-e1cf7f4f0206",
+ "status": "succeeded",
+ "open": {
+  "v1-回稿差异表-2026-11-10.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-回稿比对报告-2026-11-10.docx": {
+   "opened": true,
+   "pages": 2
+  }
+ }
+}

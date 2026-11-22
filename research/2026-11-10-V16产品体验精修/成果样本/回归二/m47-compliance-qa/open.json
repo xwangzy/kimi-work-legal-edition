@@ -1,0 +1,20 @@
+{
+ "stack": "w2",
+ "tag": "m47-compliance-qa",
+ "run": "run_8add54b1-6522-4325-a43a-3aac68c8996f",
+ "status": "succeeded",
+ "open": {
+  "v1-顾问答复-OneHR员工人事数据出境.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-顾问答复-OneHR员工人事数据出境.docx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v3-顾问答复-OneHR员工人事数据出境.docx": {
+   "opened": true,
+   "pages": 6
+  }
+ }
+}

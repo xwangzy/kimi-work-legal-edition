@@ -1,0 +1,24 @@
+{
+ "stack": "w3",
+ "tag": "m07-defense",
+ "run": "run_c1a19495-c70e-4aef-ab6f-66774411360e",
+ "status": "succeeded",
+ "open": {
+  "v1-提交前核对清单-禾丰诉锐川设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-民事答辩状.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-答辩要点与证据对照表-禾丰诉锐川设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-民事答辩状.docx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

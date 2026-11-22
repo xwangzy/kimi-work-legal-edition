@@ -1,0 +1,103 @@
+{
+ "run": {
+  "run_id": "run_cb42b74b-762d-4f46-b8a9-190be175ef38",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_55b9c8d3-e9a2-4136-a19d-1870f7f6b475",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_55b9c8d3-e9a2-4136-a19d-1870f7f6b475-a1.agent_task-1794209580623",
+  "input_snapshot": {
+   "matter_id": "mat_55b9c8d3-e9a2-4136-a19d-1870f7f6b475",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "请根据审查工作台里已接受或修改后接受的意见，写致客户与致对方两版的修订说明，并整理内部谈判要点。\n修订稿下周发数衡云智。致对方的说明只讲我们改了什么、为什么，别把客户的底线和内部判断写进去。谈判要点给我自己用。",
+   "estimate_id": "est_52e80629-665f-4a3a-8e3c-590f7981ab85",
+   "title": "修订说明与谈判要点",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-redline",
+   "skill_title": "修订说明与谈判要点",
+   "skill_version": "1.3.0",
+   "skill_primary_output": "修订说明（致客户）.docx",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "audience": "致客户与致对方两版"
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 20,
+  "estimate_id": "est_52e80629-665f-4a3a-8e3c-590f7981ab85",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T07:33:00.626Z",
+  "updated_at": "2026-11-09T07:48:58.789Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_6b75fbba-c30d-4476-b726-43f06b84a843",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "修订说明（致客户）-会员数据平台技术服务合同.docx",
+   "sha256": "bc3473f78c11b57684a403169e92d01ae5296903f41985a786f9900cc9b86f10",
+   "created_at": "2026-11-09T07:44:15.547Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_063cb287-3c6c-4ee2-aec7-f3c5884a916b",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "修订说明（致对方）-会员数据平台技术服务合同.docx",
+   "sha256": "d81264a37111222be7affe24f68f7fea9c6c74359c9f811f6391f059d3586271",
+   "created_at": "2026-11-09T07:47:44.031Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e6bd5676-29bf-4489-bf1b-f857747b2c2d",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "谈判要点（内部）-会员数据平台技术服务合同.docx",
+   "sha256": "1c6783142f5777663615b5c559fe25a46784d54c04a71336e127844c954da957",
+   "created_at": "2026-11-09T07:47:44.044Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e8de1274-2ab4-4e55-847a-9b427d0f0d8a",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "0a910f3e9bc48668bc75ee1aa204806702133a17ff02d6d1a67e1d7347f072c5",
+   "created_at": "2026-11-09T07:48:58.789Z",
+   "title": "已完整读取事项内 1 份合同，并按工作台中 9 条已接受、1 条修改后接受的意见",
+   "kind_version": 3,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

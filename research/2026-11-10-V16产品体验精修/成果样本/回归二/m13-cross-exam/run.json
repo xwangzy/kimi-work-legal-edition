@@ -1,0 +1,178 @@
+{
+ "run": {
+  "run_id": "run_6dce5fc5-640e-4e28-981f-e06a55e99fff",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_fc3e914f-1efc-44e5-8c8c-723bc3192b3a",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_fc3e914f-1efc-44e5-8c8c-723bc3192b3a-a1.agent_task-1794300122126",
+  "input_snapshot": {
+   "matter_id": "mat_fc3e914f-1efc-44e5-8c8c-723bc3192b3a",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_7511717b-463f-4501-b6c2-f19ac251b02f",
+    "docv_121c8a0e-8f92-499d-be1b-c3652df82a41",
+    "docv_f82a75b2-5d00-4f77-8e41-8e1bbc1f5636",
+    "docv_4e3b15e5-f1e9-4e87-8277-769bec17610b",
+    "docv_7203b2f7-e49e-4ee0-9e5f-1fc2d5536fdb"
+   ],
+   "goal": "请对对方证据逐项起草质证意见。我方诉讼地位：被告 / 被申请人；举证期限届满日：2026-11-18；开庭或证据交换日期：2026-12-09。证据4检测报告系原告单方委托、我方未到场；证据5的受托方疑似原告关联企业\n对方只给了证据清单和要点摘录，原件开庭时核对。要申请鉴定或调取证据的，请按举证期限提醒我。",
+   "estimate_id": "est_0857620b-cdf0-4294-ad7a-f8dcbf415bc3",
+   "title": "质证意见",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "cross-exam-opinion",
+   "skill_title": "质证意见（受限文书）",
+   "skill_version": "1.3.0",
+   "skill_primary_output": "质证意见（草稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "side": "被告 / 被申请人",
+    "proof_deadline": "2026-11-18",
+    "hearing_on": "2026-12-09",
+    "extra": "证据4检测报告系原告单方委托、我方未到场；证据5的受托方疑似原告关联企业"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_0857620b-cdf0-4294-ad7a-f8dcbf415bc3",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:02.128Z",
+  "updated_at": "2026-11-10T09:00:29.599Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_81d1cbfc-bc81-48b7-822d-40cf105016ff",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见.docx",
+   "sha256": "ef38a0975f8422e61257d331d0807f5313a47132ca9b6634fef24c60302318e2",
+   "created_at": "2026-11-10T08:53:51.266Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_5b0bb0eb-8abc-4e99-b5e6-6ab06d00f46b",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见表-禾丰诉锐川设备质量纠纷.xlsx",
+   "sha256": "5a9997ca7ca55faa70ccf5ac16ae6df37c98805a2697902bbba34f1d98195916",
+   "created_at": "2026-11-10T08:53:51.276Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_1cb55f18-9b27-4d0e-8650-bb3f06a197ac",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见表-禾丰诉锐川设备质量纠纷.xlsx",
+   "sha256": "b5e998a41938f916c1e77c6fc4b57a679ba6bd7b3519b97b11c7e9b7f9894066",
+   "created_at": "2026-11-10T08:54:16.095Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_e5d1b390-a079-4ed7-aaca-db7cc20fe771",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "ea913ddddf4f49b7392a62a128f12d290369853da40ab2d20069e52393ce69c5",
+   "created_at": "2026-11-10T08:55:20.918Z",
+   "title": "五份材料均已完整读取，无排除或识别缺口，已生成 Word 主文书及 Excel ",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_741b2aac-9179-48d3-89a0-d7fe793e5c21",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-质证意见.md",
+   "sha256": "729a87dd9e17150c1c692febe4acee6e6c25272336d41f8d9aa9e513454be08c",
+   "created_at": "2026-11-10T08:57:18.835Z",
+   "title": "独立复核意见：质证意见",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c5d899a8-1248-44a1-ba09-c666cd3e7528",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见.docx",
+   "sha256": "88226bbbf0ff9672bdf6f37818a68d0729f9e25cb38fa42305cb5c5b9de28a84",
+   "created_at": "2026-11-10T08:59:44.991Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_91e31054-fc83-4408-b65c-960e1ff26b15",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见表-禾丰诉锐川设备质量纠纷.xlsx",
+   "sha256": "f95c27387bc6e16c8ce39a8c16ae3b3203ebea7558444241f1b622333e21d3b3",
+   "created_at": "2026-11-10T08:59:45.000Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8bdc173d-971a-4b20-bffd-bf4fc2cc7cfb",
+   "kind": "agent_table",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见表-禾丰诉锐川设备质量纠纷.xlsx",
+   "sha256": "343bf5058555c8676acd0e58221e374c3c938ce67359899dc4d32a97e86f6984",
+   "created_at": "2026-11-10T08:59:54.814Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f071d6f8-dff7-40ee-844b-d3e88e0fc224",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "1be57ff5553446149f2120430151bb290661539ead2c9ebd8c9a50fd154fca61",
+   "created_at": "2026-11-10T09:00:29.599Z",
+   "title": "五份材料均已完整读取，无排除或识别缺口，已在同名文件上完成复核修改；申请法院调查",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

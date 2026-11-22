@@ -1,0 +1,119 @@
+{
+ "run": {
+  "run_id": "run_f7732768-8782-498d-9834-721e66222f34",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_973a2d6d-f87f-4763-bb0c-ce72c27268a6",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_973a2d6d-f87f-4763-bb0c-ce72c27268a6-a1.agent_task-1794300200529",
+  "input_snapshot": {
+   "matter_id": "mat_973a2d6d-f87f-4763-bb0c-ce72c27268a6",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_877d224e-f101-4239-9237-cfd62dd1add4"
+   ],
+   "goal": "请根据访谈记录整理访谈纪要与材料收集清单；访谈对象：目标公司财务负责人。\n把 10 月 16 日对苏晚亭的访谈整理成纪要，列出她答应补的材料和还要找谁核实。纪要要能给项目组内部传阅。",
+   "estimate_id": "est_36f0b3b9-fbb7-4e70-baf0-e2714c04a89b",
+   "title": "访谈纪要与材料清单",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "intake-notes",
+   "skill_title": "访谈纪要、材料收集清单与新案待核事项",
+   "skill_version": "1.4.0",
+   "skill_primary_output": "访谈纪要.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "who": "目标公司财务负责人"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_36f0b3b9-fbb7-4e70-baf0-e2714c04a89b",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:20.531Z",
+  "updated_at": "2026-11-10T09:44:47.202Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_ff82b16c-adbc-4c91-b50b-a763ff4e2e0d",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈纪要-2026-10-16.docx",
+   "sha256": "5713389fe214242e67664acf16036c2413d6e61c5754fe5210564948b4ecd511",
+   "created_at": "2026-11-10T09:35:03.552Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_384003d0-8f5c-4954-9d0d-cdc532f3d7e1",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "材料收集清单-栖桐科技增资尽调.xlsx",
+   "sha256": "abd1d5a31a3607144557a02767ffcef852f30b73af7fa86a9ac67a6bcc0b1aa1",
+   "created_at": "2026-11-10T09:37:44.090Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_69a1b6d1-e68e-4887-a9f6-0c22210e16b4",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "紧急期限与冲突待核清单-栖桐科技增资尽调.xlsx",
+   "sha256": "cfd87067369d52ed970b6e1f97f852ceed8fbe3cd8ca8b172f3cd1335086acba",
+   "created_at": "2026-11-10T09:40:38.655Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_6ade3d08-d25f-46e2-8f12-1af0f65873f4",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "紧急期限与冲突待核清单-栖桐科技增资尽调.xlsx",
+   "sha256": "39cf5599a3d86e366361c96da7c722aa4436017e4041ed3da4bd68e9cb18fc7a",
+   "created_at": "2026-11-10T09:42:39.109Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_7f7d269d-7fcb-4417-85f5-65e06d26933a",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "312a4d04606ce17f6a4e38859c4c5f44aa8f8c433491a6af05aaaf66c0f258ce",
+   "created_at": "2026-11-10T09:44:47.201Z",
+   "title": "已完整读取事项内 12 份材料，无未读、识别不全或排除材料；三份草稿均已完成并通",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

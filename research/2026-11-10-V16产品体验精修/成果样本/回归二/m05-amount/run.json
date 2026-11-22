@@ -1,0 +1,112 @@
+{
+ "run": {
+  "run_id": "run_afe9b1bb-4b99-418e-842f-0b8779cd5c94",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_006eaf3c-357e-4c47-aa2d-81342d7374b6",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_006eaf3c-357e-4c47-aa2d-81342d7374b6-a1.agent_task-1794300173325",
+  "input_snapshot": {
+   "matter_id": "mat_006eaf3c-357e-4c47-aa2d-81342d7374b6",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_3e503806-2796-4a57-a64a-b70c7c0ba2aa",
+    "docv_74f8105c-f3db-4adf-8e36-637bc782f2d3",
+    "docv_22d8c9f1-abd7-48ae-becf-72c85ade3c3c",
+    "docv_4466bbcc-3690-47f9-9755-eba898633905"
+   ],
+   "goal": "请测算以下金额：逾期违约金、诉讼费用预估；模式：我方测算；计算截止日：2026-11-30；利率口径：按合同约定。\n违约金按合同日万分之五，分段算到11月30日，诉讼费按起诉标的预估。质保金要不要算进去，请按合同判断后告诉我。",
+   "estimate_id": "est_87df64cd-b2f5-4982-bbec-9c982b6ec03a",
+   "title": "金额测算",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "amount-calc",
+   "skill_title": "金额与期间测算",
+   "skill_version": "1.7.0",
+   "skill_primary_output": "计算明细.xlsx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "mode": "我方测算",
+    "items": "逾期违约金、诉讼费用预估",
+    "as_of": "2026-11-30",
+    "rate": "按合同约定"
+   }
+  },
+  "budget_points": 40,
+  "points_reserved": 40,
+  "points_charged": 40,
+  "estimate_id": "est_87df64cd-b2f5-4982-bbec-9c982b6ec03a",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:53.326Z",
+  "updated_at": "2026-11-10T09:15:10.085Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_621a9aa8-b98b-4d40-af36-8810f4f4874e",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-设备买卖合同逾期付款-截至2026-11-30.xlsx",
+   "sha256": "456b9b222c963eadf296cf5446ead9a744acf0e7642d30a75dbe6344bea6f8b4",
+   "created_at": "2026-11-10T09:13:11.205Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_c4e1ba85-59dd-4f0e-b8bc-105beadf4f77",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-设备买卖合同逾期付款-截至2026-11-30.xlsx",
+   "sha256": "1f5788791978fa1d9850ad1983e3e1f724b963442948226d93055e5fe023c9fb",
+   "created_at": "2026-11-10T09:13:31.566Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_33bf6b9c-3b13-4203-8009-84565a3db343",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-设备买卖合同逾期付款-截至2026-11-30.xlsx",
+   "sha256": "c4db464e850c1deee68f8198f97cc77e9c8563cc0ad176235590a360ae63ff94",
+   "created_at": "2026-11-10T09:14:29.716Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_4fa94738-0327-4805-b1a7-65e7faf98358",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "7c07c80911ce7817e92ee5ab765a76111713bfa69a6440d85546af806fed4fcf",
+   "created_at": "2026-11-10T09:15:10.085Z",
+   "title": "已完整读取全部四份材料，没有无法读取或仅部分读取的材料。本次测算包含尚未经律师确",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,159 @@
+{
+ "run": {
+  "run_id": "run_9ad311f1-0512-4724-b38d-7f8be80af7e9",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_83588ecd-bcfb-436d-869e-74b6226a46a1",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 8,
+  "idempotency_key": "mat_83588ecd-bcfb-436d-869e-74b6226a46a1-a1.agent_task-1794280675863",
+  "input_snapshot": {
+   "matter_id": "mat_83588ecd-bcfb-436d-869e-74b6226a46a1",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_596d2a39-a6b7-4211-b92f-5507446c3f22",
+    "docv_ba9a0045-eaef-42b0-a053-289446df06e9"
+   ],
+   "goal": "请根据访谈记录整理访谈纪要与材料收集清单，并列出紧急期限与需要做利益冲突检索的主体；案件类型：买卖合同。\n昨天见了客户，笔记比较乱。请整理纪要、要客户补的材料，以及要做冲突检索的主体。",
+   "estimate_id": "est_ce7cb75b-b052-4103-a0c2-5d9454066127",
+   "title": "新案受理与访谈",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "intake-notes",
+   "skill_title": "访谈纪要、材料收集清单与新案待核事项",
+   "skill_version": "1.3.0",
+   "skill_primary_output": "访谈纪要.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "case_type": "买卖合同"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_ce7cb75b-b052-4103-a0c2-5d9454066127",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:17:55.866Z",
+  "updated_at": "2026-11-10T06:58:14.165Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_cd873f48-85d9-4d6f-9902-117ba552cd5d",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈纪要-2026-10-28.docx",
+   "sha256": "0b957aee3d2db4434dfecdf342b709a49e8257e7be8e5831ad812566f69322d8",
+   "created_at": "2026-11-10T06:50:37.965Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d012bdda-bd38-4e2a-a39b-9ed6ebf2a521",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "材料收集清单-锐川与禾丰设备买卖合同纠纷.xlsx",
+   "sha256": "4bc864a0c894398e1d2fb6e83e0b2034d25f7fa491f78578a6c9adefa6d20d93",
+   "created_at": "2026-11-10T06:54:29.081Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_5dd656a2-08ef-45ce-90a1-695bbee7cd1c",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "紧急期限与冲突待核清单-锐川与禾丰设备买卖合同纠纷.xlsx",
+   "sha256": "1c7e419c22c2e771c6d51387dbaf0049c51f520c3b38918d3def036329599df7",
+   "created_at": "2026-11-10T06:54:29.093Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_b500d949-3ae5-4483-9ce4-4ef3e5cc5b25",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈纪要-2026-10-28.docx",
+   "sha256": "a031d57391c2dbbfb99192267e3bb2b6812887f66d1b8c3ea4185c3dd01133c3",
+   "created_at": "2026-11-10T06:55:45.275Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_1ed25801-5c3e-4703-864b-8e9108899e8a",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "紧急期限与冲突待核清单-锐川与禾丰设备买卖合同纠纷.xlsx",
+   "sha256": "e34222945ccb9a94ec535d6ac28afa0acb8ee7e68df09abb9cfe561fea9b2fca",
+   "created_at": "2026-11-10T06:55:45.290Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_bc44b004-431b-4af7-81cf-66e069a8ad43",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈纪要-2026-10-28.docx",
+   "sha256": "aa323f204ce47dc7be6cbf5708c65a739a7837b8a9ece556bf2051129357bc28",
+   "created_at": "2026-11-10T06:57:16.998Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_6bfd523f-62ee-4f57-acd2-5a156addca8e",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "材料收集清单-锐川与禾丰设备买卖合同纠纷.xlsx",
+   "sha256": "61aba4170635cb83c7adb2082a8e34d0fadd58729b153544e33e8d77844cf203",
+   "created_at": "2026-11-10T06:57:17.016Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_52626123-cb87-432f-b96a-737c9d637ba6",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "aa6291b96e7d0839cf466527984876ed5fad12a5a915f8c3e513ef3567703d96",
+   "created_at": "2026-11-10T06:58:14.164Z",
+   "title": "有期限可能临近，请优先核算。已收到并完整读取2份材料，无未读或排除材料；因验收、",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

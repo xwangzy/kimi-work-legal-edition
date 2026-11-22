@@ -1,0 +1,138 @@
+{
+ "run": {
+  "run_id": "run_fe55c8ee-0e0d-4fbc-93b0-64ad9d4fe6c5",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_2b423e0a-b031-45ce-bf9a-03b053fbfaf8",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_2b423e0a-b031-45ce-bf9a-03b053fbfaf8-a1.agent_task-1794202179851",
+  "input_snapshot": {
+   "matter_id": "mat_2b423e0a-b031-45ce-bf9a-03b053fbfaf8",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_896020cf-c714-425f-ab11-2b29cb2b5ff5",
+    "docv_6eea49d2-9e22-4117-85e8-de6cf28aba0f",
+    "docv_d2c0445f-6c41-41e5-b19a-3a002a928256",
+    "docv_4c71c213-23f8-44ab-9eca-8cde716ee07b",
+    "docv_e9073a4f-c09b-4dad-801d-0c4f0b4e8eb7"
+   ],
+   "goal": "请对对方证据逐项起草质证意见。我方诉讼地位：被告 / 被申请人；举证期限届满日：2026-11-18；开庭或证据交换日期：2026-12-09。证据4检测报告系原告单方委托、我方未到场；证据5的受托方疑似原告关联企业\n对方只给了证据清单和要点摘录，原件开庭时核对。要申请鉴定或调取证据的，请按举证期限提醒我。",
+   "estimate_id": "est_1957d048-bc6a-4c69-8d50-8c57c8bb9acd",
+   "title": "质证意见",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "cross-exam-opinion",
+   "skill_title": "质证意见（受限文书）",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "质证意见（草稿）.docx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "side": "被告 / 被申请人",
+    "proof_deadline": "2026-11-18",
+    "hearing_on": "2026-12-09",
+    "extra": "证据4检测报告系原告单方委托、我方未到场；证据5的受托方疑似原告关联企业"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_1957d048-bc6a-4c69-8d50-8c57c8bb9acd",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:29:39.855Z",
+  "updated_at": "2026-11-09T06:53:54.919Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_68bf00fd-7231-448f-a03d-8394efe0cd00",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见.docx",
+   "sha256": "39580d1ed4704e1aaf8e484e953701885739815459f1f0d9adc424cf55ec56a1",
+   "created_at": "2026-11-09T06:49:12.748Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_3110893f-9d69-4940-a39e-c2a7247804d7",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见表-禾丰诉锐川设备质量纠纷.xlsx",
+   "sha256": "31b4213ba63c30a9ddc8adf87428b0728f743ef56c659beecd7a813a62401ac9",
+   "created_at": "2026-11-09T06:50:36.777Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_e2747976-6e62-4e79-b71f-2fa7b9fc04f5",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见表-禾丰诉锐川设备质量纠纷.xlsx",
+   "sha256": "022e2261e9ba24589f1c59d8cffd73f7165fb9f619b64589055e11206b443b13",
+   "created_at": "2026-11-09T06:51:19.827Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_0ac8cfed-e67b-4820-833b-9e23d8eae8a3",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见.docx",
+   "sha256": "7c4124a8c4a736d6cbf718d4a59676e878e847739a5fc2b35f26f3cd286eddf1",
+   "created_at": "2026-11-09T06:52:29.254Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_bc1e53aa-9733-44c9-be37-6506c73743ca",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "质证意见表-禾丰诉锐川设备质量纠纷.xlsx",
+   "sha256": "fcd70908bf0e2e6f66fed0545fde7c87bee1e8ee9e3eb53d0eba767e2bee4170",
+   "created_at": "2026-11-09T06:53:13.595Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_ce932ccf-499c-4380-9f6a-81f32c55e488",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "f949af33487684d0790b160c953a5da0feef8b2f7550fbca27174f4fe7df8434",
+   "created_at": "2026-11-09T06:53:54.918Z",
+   "title": "已收到并完整读取5份材料，均无法识别缺页。对方仅提供7组证据的清单及要点摘录，未",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

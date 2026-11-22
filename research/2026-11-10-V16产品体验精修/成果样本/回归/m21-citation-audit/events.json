@@ -1,0 +1,117 @@
+[
+ {
+  "event_id": 171,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81813",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:19:59.472Z"
+ },
+ {
+  "event_id": 172,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:19:59.472Z"
+ },
+ {
+  "event_id": 173,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 1,
+   "loaded": 1,
+   "failed": 0,
+   "files": [
+    {
+     "name": "10-内部备忘录（初步分析，律师助理草稿）.docx",
+     "chars": 1216,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_61ba9b49-74de-4435-a154-65fbfaf35456",
+     "parse_version_id": "psv_1bf33162-f008-4ac3-b252-c47b333a87ef"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:19:59.473Z"
+ },
+ {
+  "event_id": 175,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_6f6b010f-b397-41c3-a752-ac23ba6ec840_att_c9d4dc0c-e0f2-4256-8459-d6f5d4feb06f",
+   "attempt_id": "att_c9d4dc0c-e0f2-4256-8459-d6f5d4feb06f"
+  },
+  "created_at": "2026-11-10T03:19:59.971Z"
+ },
+ {
+  "event_id": 183,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_81bb7b68-5b8e-4f82-bf26-393c35699d04",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:20:00.772Z"
+ },
+ {
+  "event_id": 184,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100320000432794328268d9d65RrAAcXk)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:00.773Z"
+ },
+ {
+  "event_id": 185,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100320000432794328268d9d65RrAAcXk)"
+  },
+  "created_at": "2026-11-10T03:20:00.773Z"
+ },
+ {
+  "event_id": 186,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100320000432794328268d9d65RrAAcXk)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:00.773Z"
+ }
+]

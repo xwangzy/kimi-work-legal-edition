@@ -1,0 +1,168 @@
+[
+ {
+  "event_id": 180,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81813",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:20:00.391Z"
+ },
+ {
+  "event_id": 181,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:20:00.391Z"
+ },
+ {
+  "event_id": 182,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 5,
+   "loaded": 5,
+   "failed": 0,
+   "files": [
+    {
+     "name": "08-售后服务记录（3号机）.xlsx",
+     "chars": 469,
+     "quality": [
+      "xlsx_values_only"
+     ]
+    },
+    {
+     "name": "07-微信聊天摘录（韩启明与禾丰周宏亮）.txt",
+     "chars": 862,
+     "quality": [
+      "plain_text"
+     ]
+    },
+    {
+     "name": "05-质量异议函（禾丰，2026-07-15）.docx",
+     "chars": 512,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "04-对账确认函（截至2026-06-30，禾丰7月3日盖章）.docx",
+     "chars": 451,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "01-设备买卖合同（RC-XS-2025-118）.docx",
+     "chars": 1894,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_bb9bf714-9034-4788-b43c-41b75352a0ce",
+     "parse_version_id": "psv_ca2f27f5-a62d-4d0c-a3f3-7a5f4f2bd234"
+    },
+    {
+     "document_version_id": "docv_0166881c-aeb7-49bb-a7bd-a4b4f2a0689f",
+     "parse_version_id": "psv_176d42ac-9f5b-40f2-b8d0-d0e2d4b2922a"
+    },
+    {
+     "document_version_id": "docv_9f8cc23e-d99e-463c-89c1-94248b4cf197",
+     "parse_version_id": "psv_7c9beeec-ceb1-4615-973b-9c3f60659d94"
+    },
+    {
+     "document_version_id": "docv_f676ddb6-bb04-4ce6-b502-1abb5c54d751",
+     "parse_version_id": "psv_64367320-cfc3-4252-afcb-be5c719da709"
+    },
+    {
+     "document_version_id": "docv_4cad48b6-8ed8-4ee0-b5f6-89a3ff7c9118",
+     "parse_version_id": "psv_4e75ed2e-5b79-4ec1-bca7-835c11e6d5a9"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:20:00.391Z"
+ },
+ {
+  "event_id": 190,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_0b4b833f-9e5d-4115-9173-3be6f1ad085d_att_bc0304e4-e064-4be0-8aee-3c585f5cc445",
+   "attempt_id": "att_bc0304e4-e064-4be0-8aee-3c585f5cc445"
+  },
+  "created_at": "2026-11-10T03:20:00.861Z"
+ },
+ {
+  "event_id": 192,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_725544bd-fa2a-4ba4-ba33-f288c09fa52d",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:20:01.663Z"
+ },
+ {
+  "event_id": 193,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100320009358618848268d9d6tSjbVaE0)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:01.663Z"
+ },
+ {
+  "event_id": 194,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100320009358618848268d9d6tSjbVaE0)"
+  },
+  "created_at": "2026-11-10T03:20:01.663Z"
+ },
+ {
+  "event_id": 195,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100320009358618848268d9d6tSjbVaE0)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:01.664Z"
+ }
+]

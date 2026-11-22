@@ -1,0 +1,68 @@
+{
+ "run": {
+  "run_id": "run_7d1763b2-dd9c-4d92-a0d1-33d8ef58b032",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_647ba2ee-f4ec-4845-be2f-87d5cef7a2ce",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_647ba2ee-f4ec-4845-be2f-87d5cef7a2ce-a1.agent_task-1794300194224",
+  "input_snapshot": {
+   "matter_id": "mat_647ba2ee-f4ec-4845-be2f-87d5cef7a2ce",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_bbc9e0e4-d436-44c4-9660-75927e9508f6",
+    "docv_481715f4-4bab-442e-9001-a44dc1070884"
+   ],
+   "goal": "请从公司的范本与标准里整理本事项的审查要点草稿：每条写条款、我方标准、可退让、不可谈，并写明出处。范本是：公司设备采购合同范本（2026 版）与法务部采购合同审核标准（2026-03 第 2 版）。\n把公司范本和审核标准整理成审查要点，以后审设备采购合同用。两份文件说法不一样的地方列出来，审批权限那部分怎么处理也说一下。",
+   "estimate_id": "est_a42918b7-2fd4-47f5-bc4b-5f18994b44f3",
+   "title": "从公司范本整理审核标准",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "review-rules-draft",
+   "skill_title": "从范本整理审查要点",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "审查要点草稿（待你审定）",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "basis": "公司设备采购合同范本（2026 版）与法务部采购合同审核标准（2026-03 第 2 版）"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_a42918b7-2fd4-47f5-bc4b-5f18994b44f3",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:14.225Z",
+  "updated_at": "2026-11-10T09:18:11.204Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_15764b76-f007-4c20-adc2-10ad3f974bd8",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "822f62da39ae0a76d574b6b5b7e6689589f794b9815bdb278a99de35a3b0c9ac",
+   "created_at": "2026-11-10T09:18:11.204Z",
+   "title": "已完整读取并整理两份文件，无未读范围：",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

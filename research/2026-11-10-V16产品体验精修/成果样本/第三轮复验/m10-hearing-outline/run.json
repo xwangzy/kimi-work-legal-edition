@@ -1,0 +1,115 @@
+{
+ "run": {
+  "run_id": "run_5db8290f-9243-4596-becf-17ea44f5ad65",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_c1d0b97f-4e24-4c05-9b90-698a81f4c638",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_c1d0b97f-4e24-4c05-9b90-698a81f4c638-a1.agent_task-1794327647352",
+  "input_snapshot": {
+   "matter_id": "mat_c1d0b97f-4e24-4c05-9b90-698a81f4c638",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_01fcf588-3275-45fc-aa38-75de8317f45e",
+    "docv_fc7dc91b-3f45-4083-b154-3204a3b071c1",
+    "docv_01cca70b-18c6-45fa-9f2b-ac6f701d689c",
+    "docv_b877af37-e1d7-4390-bfc8-4d1bb438fd74",
+    "docv_37de3cff-e84e-467b-bc58-fa1403199edb",
+    "docv_d26c6851-7c09-4225-92be-accd00075861",
+    "docv_ca731489-0a03-4b15-aadb-cfc1ab3c551e",
+    "docv_982e3a57-0e68-4b91-98f3-756635525f15"
+   ],
+   "goal": "请准备开庭用的庭审提纲（陈述要点、举证质证顺序、发问提纲、辩论要点），事实分清“律师确认”与“材料记载”，不预测庭审结果。开庭日期：2026-12-09；我方地位：被告 / 被申请人；争议焦点：本案管辖；3号机是否存在质量问题及原告的异议是否逾期；原告主张的外协加工损失与检测费是否成立。\n管辖异议我们会在答辩期内提，但提纲先按法院不移送、照常开庭准备。发问提纲请重点问检测报告和外协合同。",
+   "estimate_id": "est_f4854e20-9c07-4117-bbb4-43b94003dc48",
+   "title": "庭审提纲",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "hearing-outline",
+   "skill_title": "庭审提纲（内部工作稿）· 试用",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "庭审提纲.docx",
+   "skills_sha256": "ChCIBjQqd7-zeKDsIHCN1ssFodyKZ0MPYd9tyulKIz8",
+   "skill_args": {
+    "hearing_on": "2026-12-09",
+    "side": "被告 / 被申请人",
+    "focus_points": "本案管辖；3号机是否存在质量问题及原告的异议是否逾期；原告主张的外协加工损失与检测费是否成立"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_f4854e20-9c07-4117-bbb4-43b94003dc48",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T16:20:47.354Z",
+  "updated_at": "2026-11-10T17:15:00.806Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_df0bc333-1ff9-404f-b1ee-9ede1c373d4b",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "庭审提纲-禾丰诉锐川买卖合同纠纷.docx",
+   "sha256": "b8c3fd9d4963664b1d642a06c38a9dd70eb40c10deb81a4bbc5d4ca85986e7bd",
+   "created_at": "2026-11-10T17:12:24.534Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8628aea9-0e49-43bb-9c46-8408483c8e95",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "庭审提纲-禾丰诉锐川买卖合同纠纷.docx",
+   "sha256": "9480c1e3f47a974d8296e5f5e8542045cd304e3be09f5cb3fd5c494370480891",
+   "created_at": "2026-11-10T17:13:24.659Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c2760007-75bc-45ac-9a4e-0d3a9e604e59",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-11.md",
+   "sha256": "1eec19688d2e08859ac2f4817d303a1f52a815465880d955f8579ddf88177777",
+   "created_at": "2026-11-10T17:14:29.647Z",
+   "title": "本案定于2026年12月9日9:30开庭；答辩、管辖异议及举证期限按2026年1",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_997ae6b5-ae68-42e3-8568-97094153c538",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-庭审提纲-禾丰诉锐川买卖合同纠纷.md",
+   "sha256": "33ca2cca57bf2adf557f7ddad86833a414065ccbf25d0f987de3b99f39ddbfca",
+   "created_at": "2026-11-10T17:15:00.805Z",
+   "title": "独立复核意见：庭审提纲-禾丰诉锐川买卖合同纠纷",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

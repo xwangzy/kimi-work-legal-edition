@@ -1,0 +1,99 @@
+{
+ "run": {
+  "run_id": "run_0d3beeba-5f57-46a4-8cee-22abd389cd39",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_e1ff0805-ee8e-4b50-9745-e6e4cc7f0d13",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 8,
+  "idempotency_key": "mat_e1ff0805-ee8e-4b50-9745-e6e4cc7f0d13-a1.agent_task-1794280702237",
+  "input_snapshot": {
+   "matter_id": "mat_e1ff0805-ee8e-4b50-9745-e6e4cc7f0d13",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_739ea0cc-f191-4028-988f-da357a4f9e93",
+    "docv_2d4471e4-ce4b-4961-baf2-d9e8aba78a76",
+    "docv_bb1fcbfa-7d1e-4a61-b8a9-f530c0529936",
+    "docv_90edbafe-548d-4e4e-8c3a-32469b602e3d"
+   ],
+   "goal": "请测算以下金额：逾期违约金、诉讼费用预估；模式：我方测算；计算截止日：2026-11-30；利率口径：按合同约定。\n违约金按合同日万分之五，分段算到11月30日，诉讼费按起诉标的预估。质保金要不要算进去，请按合同判断后告诉我。",
+   "estimate_id": "est_855bcc74-151e-4eee-826f-9dccd02cadab",
+   "title": "金额测算",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "amount-calc",
+   "skill_title": "金额与期间测算",
+   "skill_version": "1.6.5",
+   "skill_primary_output": "计算明细.xlsx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "mode": "我方测算",
+    "items": "逾期违约金、诉讼费用预估",
+    "as_of": "2026-11-30",
+    "rate": "按合同约定"
+   }
+  },
+  "budget_points": 40,
+  "points_reserved": 40,
+  "points_charged": 40,
+  "estimate_id": "est_855bcc74-151e-4eee-826f-9dccd02cadab",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:18:22.240Z",
+  "updated_at": "2026-11-10T07:22:09.530Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_c64e4461-969a-4a8b-a8c5-716964220c4a",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-设备买卖合同-截至2026-11-30.xlsx",
+   "sha256": "5602342cada5967a78f0d56d63fd97ccdfbc24932dadd6daade84f427a7aa63b",
+   "created_at": "2026-11-10T07:19:55.090Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_caa5a85f-e82f-4726-8568-e1d98d99a05e",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-设备买卖合同-截至2026-11-30.xlsx",
+   "sha256": "0bb05f61c0f103d36a6a6267db101a93e4ee524a1a6cb7c646dbf07e82ce7512",
+   "created_at": "2026-11-10T07:20:50.980Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_6b2abab5-9352-4c41-a504-21fe88cca3c2",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "38a81acb6bec2b708060d1d5e215dabc4e0fc5dcc98ec51bb46b203ed841dd99",
+   "created_at": "2026-11-10T07:22:09.529Z",
+   "title": "已收到并完整读取4份材料，无未读取或排除材料。已生成Excel草稿成果 《计算明",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,52 @@
+{
+ "run": {
+  "run_id": "run_ae3034e8-4e0f-4c25-bf5b-97ca2d6c46c8",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_c24a9106-b721-4ba5-afcb-d1c1c4cf8aeb",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_c24a9106-b721-4ba5-afcb-d1c1c4cf8aeb-a1.agent_task-1794280780038",
+  "input_snapshot": {
+   "matter_id": "mat_c24a9106-b721-4ba5-afcb-d1c1c4cf8aeb",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "请起草一份其他（通用辅助）合同，我方立场以事项为准；交易要点：起草《专利权转让协议》，作为增资交割先决条件。转让方：祁暮川（栖桐科技董事长）；受让方：杭州栖桐智能科技有限公司。标的：发明专利“一种基于多光谱成像的焊缝缺陷检测方法”，专利号 ZL202110347256.X，申请日 2021-03-15，授权日 2023-06-20，专利权人祁暮川。无偿转让。转让方 2023 年 7 月 1 日曾许可栖桐科技无偿使用（普通许可），另许可杭州澄岳电子有限公司使用，许可合同未提供。转让方配合办理国家知识产权局著录项目变更登记，登记费用由受让方承担。投资方澜屹创投要求：转让方保证专利有效、无质押、无权属争议；澄岳电子的许可须在交割前终止；转让方承诺不再就该技术申请新专利。签署日期待定。\n这份协议是增资的交割文件，我们站在受让方（目标公司）和投资方一边写。没给的信息列待定事项，别编。",
+   "estimate_id": "est_2eede178-7259-4195-87c9-4b63ed99c27d",
+   "title": "起草合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-draft",
+   "skill_title": "起草合同 · 试用",
+   "skill_version": "1.8.0",
+   "skill_primary_output": "合同草稿.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "type": "其他（通用辅助）",
+    "points": "起草《专利权转让协议》，作为增资交割先决条件。转让方：祁暮川（栖桐科技董事长）；受让方：杭州栖桐智能科技有限公司。标的：发明专利“一种基于多光谱成像的焊缝缺陷检测方法”，专利号 ZL202110347256.X，申请日 2021-03-15，授权日 2023-06-20，专利权人祁暮川。无偿转让。转让方 2023 年 7 月 1 日曾许可栖桐科技无偿使用（普通许可），另许可杭州澄岳电子有限公司使用，许可合同未提供。转让方配合办理国家知识产权局著录项目变更登记，登记费用由受让方承担。投资方澜屹创投要求：转让方保证专利有效、无质押、无权属争议；澄岳电子的许可须在交割前终止；转让方承诺不再就该技术申"
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 0,
+  "estimate_id": "est_2eede178-7259-4195-87c9-4b63ed99c27d",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:40.039Z",
+  "updated_at": "2026-11-10T07:43:00.197Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,165 @@
+{
+ "run": {
+  "run_id": "run_e183ad31-40c4-4783-b089-70378cbe61b0",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_295e739d-c191-4b1d-b66f-86580b9a2cb3",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 8,
+  "idempotency_key": "mat_295e739d-c191-4b1d-b66f-86580b9a2cb3-a1.agent_task-1794280661843",
+  "input_snapshot": {
+   "matter_id": "mat_295e739d-c191-4b1d-b66f-86580b9a2cb3",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_8ad0f46e-4d42-4a7d-be77-0cbe2d2ad862",
+    "docv_4dfd95a9-3a5a-4efe-a7f9-b8df92438f3e",
+    "docv_dcd1ecfb-78b6-45eb-bd22-3a4cf37d35a7",
+    "docv_c45864ea-906e-49de-93aa-a5a8390693be",
+    "docv_5d596f0b-dd20-489c-8128-90b45da469dc",
+    "docv_dbf2384f-bae9-498a-8bb8-cf4c7f07d7cb",
+    "docv_10c579d6-225f-4628-859d-12c2cdd1deb6",
+    "docv_04c12b63-1168-449d-8af2-827cd3b3f80e"
+   ],
+   "goal": "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。时间线按“按付款线索；另列3号机质量与维修线索”排列。\n我方代理卖方锐川。请特别留意各份材料之间金额、日期对不上的地方，逐条附原文给我确认。",
+   "estimate_id": "est_21caf333-5df2-4c6e-af8b-c73353262d39",
+   "title": "整理案卷（精读版）",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "casefile-organize",
+   "skill_title": "案卷整理（目录与时间线）",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "案卷总目录.xlsx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "perspective": "按付款线索；另列3号机质量与维修线索"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_21caf333-5df2-4c6e-af8b-c73353262d39",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:17:41.846Z",
+  "updated_at": "2026-11-10T07:11:39.244Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_45d04f2e-4068-4693-9eb2-98537e05e8a3",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-设备买卖合同纠纷.xlsx",
+   "sha256": "a07ec64c8ba9800b731c0bf0c0b18facfec0d6d9bd055714ccb221acfd55c85c",
+   "created_at": "2026-11-10T06:56:14.899Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_3133d48e-6cc9-4698-9d39-33bd65eff6fb",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "时间线（按付款线索；另列3号机质量与维修线索）-设备买卖合同纠纷.xlsx",
+   "sha256": "4900b46972fa6eae33a47cc1b017af88cf61bc9795573f6e525a535ad7ee2f84",
+   "created_at": "2026-11-10T07:00:43.041Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_de0e7752-7a67-44ef-9dfd-6d45d7538d9e",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "时间线（按付款线索；另列3号机质量与维修线索）-设备买卖合同纠纷.xlsx",
+   "sha256": "ededf3a0be55665cb65635d9f97422e0f69c51157e578b5d3e9262236d06853c",
+   "created_at": "2026-11-10T07:04:07.246Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_7a06feb9-5f56-4772-908a-6d37ac90983d",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "缺口清单-设备买卖合同纠纷.xlsx",
+   "sha256": "af7b5d4094d052be69175c98729947e3f7315636215008675b469ff2a57b57f1",
+   "created_at": "2026-11-10T07:08:19.171Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_dc0008df-3b19-4ec8-b40f-06fdf5fd2ec2",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-设备买卖合同纠纷.xlsx",
+   "sha256": "45c2a073c61d538b27724410fd6f19477531443e6a4b39937733fe0772e2edc6",
+   "created_at": "2026-11-10T07:09:07.639Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_efb3b1a7-fa66-4be9-9326-c9e22f6fbad2",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-设备买卖合同纠纷.xlsx",
+   "sha256": "742ec6f9d22bc5ef1d1c2c9dcc98d1880e4e5b62a9f588b5eb45468e8e7c8248",
+   "created_at": "2026-11-10T07:09:46.964Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_1fa1f8c9-7ce7-4043-87a0-2e7c7c2194ce",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "事实时间线-锐川诉禾丰设备买卖合同纠纷（卖方·精读）.xlsx",
+   "sha256": "2b3b6d50e43a87548df64a8409bc38009fc82bb94b32d1139fb8811ea994c08c",
+   "created_at": "2026-11-10T07:11:39.243Z",
+   "title": null,
+   "kind_version": 7,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_ef19b20a-e542-4608-8e09-9f0399ab0e34",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "7edc711c9377813d16560f42d7dd7f509ee02695d2faad0c9698d021441ddf39",
+   "created_at": "2026-11-10T07:11:39.243Z",
+   "title": "已完成案卷整理。收到8份材料，8份均完整精读，无无法读取、部分读取或排除材料；材",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,275 @@
+[
+ {
+  "event_id": 17,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "s2.case_file",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:10718",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T08:42:12.645Z"
+ },
+ {
+  "event_id": 18,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "事实抽取（确定性，锚点入库）",
+    "生成目录/时间轴/矩阵/补证/质量报告",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T08:42:12.645Z"
+ },
+ {
+  "event_id": 19,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 11,
+   "loaded": 11,
+   "failed": 0,
+   "files": [
+    {
+     "name": "11-双方主体信息（工商登记摘录）.txt",
+     "chars": 329,
+     "quality": [
+      "plain_text"
+     ]
+    },
+    {
+     "name": "10-项目经理任命书（对方出具，复印件文字）.txt",
+     "chars": 293,
+     "quality": [
+      "plain_text"
+     ]
+    },
+    {
+     "name": "09-项目负责人情况说明（我方）.docx",
+     "chars": 383,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "08-结算对账会议纪要（2023-09-20）.docx",
+     "chars": 421,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "07-对方回复函（落款2023-12-07）.docx",
+     "chars": 433,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "06-EMS邮件妥投查询记录.txt",
+     "chars": 439,
+     "quality": [
+      "plain_text"
+     ]
+    },
+    {
+     "name": "05-催款函（我方，2023-11-28）.docx",
+     "chars": 407,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "04-微信聊天记录（倪晓彤与葛建军）.txt",
+     "chars": 926,
+     "quality": [
+      "plain_text"
+     ]
+    },
+    {
+     "name": "03-收款台账（我方财务）.xlsx",
+     "chars": 929,
+     "quality": [
+      "xlsx_values_only"
+     ]
+    },
+    {
+     "name": "02-结算书（结算审定单）.docx",
+     "chars": 741,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "01-幕墙专业分包合同.docx",
+     "chars": 2206,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_956775bd-6b84-46f7-bd84-44584c51f3a6",
+     "parse_version_id": "psv_bab9c7f4-a0fa-4e5a-b9a1-ac3c04fb49fa"
+    },
+    {
+     "document_version_id": "docv_36a87ae0-a0d2-4e1d-90e0-07e9c5484a64",
+     "parse_version_id": "psv_8d6018cf-66f1-4554-935a-1050a62f3b50"
+    },
+    {
+     "document_version_id": "docv_41dc7544-41be-42c4-9fa1-04256d52de76",
+     "parse_version_id": "psv_0ae9d07c-be32-443c-9445-2ad2dbefbeb9"
+    },
+    {
+     "document_version_id": "docv_066b8666-bc47-4522-958a-a4ce1a7d0904",
+     "parse_version_id": "psv_1e713273-1fb1-4d82-96ac-9b809663c166"
+    },
+    {
+     "document_version_id": "docv_f9c8b16c-64b0-479e-92e2-3cc3c7a9094e",
+     "parse_version_id": "psv_22fdf387-d846-4921-85e3-46bec8093cc9"
+    },
+    {
+     "document_version_id": "docv_f7245f7c-4174-4d15-bf85-41cceb9b56a4",
+     "parse_version_id": "psv_91727a74-fe58-4590-b97d-6c33420f7db9"
+    },
+    {
+     "document_version_id": "docv_b7d529e1-f045-45d3-91e7-f87713bd22cf",
+     "parse_version_id": "psv_92dd3820-a031-427a-a369-71abdf0478f1"
+    },
+    {
+     "document_version_id": "docv_7d4ac6fd-95eb-4e04-b790-f2ecc39d3ae5",
+     "parse_version_id": "psv_fe6dd2d1-6e1b-4fa9-acfe-8facd98469ee"
+    },
+    {
+     "document_version_id": "docv_772a1548-2383-4563-b121-b257a524885c",
+     "parse_version_id": "psv_9237a027-582a-4d44-8587-3c1595ffc407"
+    },
+    {
+     "document_version_id": "docv_a8b1de24-b1e3-436c-9e1a-d58820ea54fd",
+     "parse_version_id": "psv_e71b5b4a-4dca-4cde-bb4f-64b968c475b0"
+    },
+    {
+     "document_version_id": "docv_f3ec173d-2e10-44f9-bc8a-063577f6dabe",
+     "parse_version_id": "psv_6c2e7c0e-9a7c-49ac-81b3-d37c1d57ec6b"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T08:42:12.646Z"
+ },
+ {
+  "event_id": 20,
+  "seq": 30,
+  "type": "facts.extracted",
+  "payload": {
+   "dates": 79,
+   "amounts": 23,
+   "parties": 2,
+   "anchors_persisted": 104,
+   "facts_submitted": 70,
+   "note": "类型标签均为材料记载，已放进事实表待你确认；推断与证明力由律师完成",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T08:42:12.660Z"
+ },
+ {
+  "event_id": 21,
+  "seq": 40,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_91ce8abd-7abe-4087-9c3f-e4a0015299da",
+   "kind": "s2_catalog",
+   "filename": "案卷总目录-2026-11-10.xlsx",
+   "sha256": "146860b843e861550c3d7eec2e69c64f7b2cd0f446fb82a5c33e66e698500c40"
+  },
+  "created_at": "2026-11-10T08:42:12.671Z"
+ },
+ {
+  "event_id": 22,
+  "seq": 41,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_4a4fe7a0-9ecf-4292-9138-7e3f9642992c",
+   "kind": "s2_timeline",
+   "filename": "事实时间轴-2026-11-10.xlsx",
+   "sha256": "9cab8653b1ba9e4513c1fb6e60489af4c5e61a99abb1a95509e267bdf22ef898"
+  },
+  "created_at": "2026-11-10T08:42:12.672Z"
+ },
+ {
+  "event_id": 23,
+  "seq": 42,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_538117f2-8943-4f71-9eea-7ac8155c9feb",
+   "kind": "s2_evidence_catalog",
+   "filename": "证据目录-2026-11-10.xlsx",
+   "sha256": "b255284364e9be5e71d695471a02fa0afb97c729006b7482512809ef9c22cddc"
+  },
+  "created_at": "2026-11-10T08:42:12.673Z"
+ },
+ {
+  "event_id": 24,
+  "seq": 43,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_2dd26e97-7afc-4920-9cf0-84a2125f8130",
+   "kind": "s2_matrix",
+   "filename": "争点证据矩阵-2026-11-10.xlsx",
+   "sha256": "5ca60e5377b7659035593e2106b1c452ecfca1ea1a887c21685703b8c214b54a"
+  },
+  "created_at": "2026-11-10T08:42:12.673Z"
+ },
+ {
+  "event_id": 25,
+  "seq": 44,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_f79111bc-f613-4c15-beb2-1c281e1adf6c",
+   "kind": "s2_supplement",
+   "filename": "补证清单-2026-11-10.docx",
+   "sha256": "e9ecc3d96af556c13e8f2b2932d5894e4db00b4df1ac798347bf9f4352a33946"
+  },
+  "created_at": "2026-11-10T08:42:12.674Z"
+ },
+ {
+  "event_id": 26,
+  "seq": 45,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_26222ae8-cc0e-4383-b386-bf023cabd3a5",
+   "kind": "s2_quality_report",
+   "filename": "材料质量报告-2026-11-10.docx",
+   "sha256": "5c1b13525fbf90227c5027bd3fce2c4b3b52214811c6a82014af919172f5ecca"
+  },
+  "created_at": "2026-11-10T08:42:12.674Z"
+ },
+ {
+  "event_id": 27,
+  "seq": 60,
+  "type": "run.succeeded",
+  "payload": {
+   "points_charged": 0
+  },
+  "created_at": "2026-11-10T08:42:12.674Z"
+ }
+]

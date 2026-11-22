@@ -1,0 +1,222 @@
+{
+ "run": {
+  "run_id": "run_7e184689-9509-45e2-a41e-402ad1a831b5",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_8362c5a8-985b-498a-8c58-2284c5118346",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_8362c5a8-985b-498a-8c58-2284c5118346-a1.agent_task-1794208246071",
+  "input_snapshot": {
+   "matter_id": "mat_8362c5a8-985b-498a-8c58-2284c5118346",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_116602ec-66d2-4f91-bbbc-d9af125b75b6"
+   ],
+   "goal": "请按以下意见直接在原文上修改这份文书，给我修订稿和清洁稿：请在《会员数据平台技术服务合同》第一轮修改后的清洁稿上，按以下意见再改一轮，其余条款不要动。以下条款编号均指第一轮清洁稿中的编号：\n1. 服务费明细表第2项“会员数据分析服务”单价由42,000元改为39,500元，小计改为474,000元；明细表合计和第4.1款服务费总额（含大写）相应调整。\n2. 删除第10.2款（乙方将甲方数据用于算法模型训练与优化）。\n3. 第10.6款（合同终止后乙方保留甲方数据180日）改为：“本合同解除或者终止之日起15日内，乙方应按甲方的选择返还或者删除全部甲方数据（含备份数据），并向甲方出具书面确认；法律、行政法规另有规定的，从其规定。”\n4. 第14.1款（甲方提前解除）末尾增加一句：“乙方已收取的服务费超过结算金额的部分，应于解除生效之日起15日内退还甲方。”\n5. 第13.1款只调整措辞、不改变含义，改为：“任何一方违反本合同约定的，应依法承担违约责任；第十二条另有约定的，从其约定。”\n6. 页眉改为：“上海禾屿零售连锁有限公司第二轮修改稿（2026-11-12）｜合同编号：SH-YZ-2026-1108”。\n在第一轮清洁稿上改，出第二轮修订稿和清洁稿。",
+   "estimate_id": "est_0df259d2-8b21-4497-a154-23bd05fabfd1",
+   "title": "按你的意见修改文书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "doc-revise",
+   "skill_title": "按你的意见修改文书 · 试用",
+   "skill_version": "1.5.0",
+   "skill_primary_output": "修订稿.docx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "opinion": "请在《会员数据平台技术服务合同》第一轮修改后的清洁稿上，按以下意见再改一轮，其余条款不要动。以下条款编号均指第一轮清洁稿中的编号：\n1. 服务费明细表第2项“会员数据分析服务”单价由42,000元改为39,500元，小计改为474,000元；明细表合计和第4.1款服务费总额（含大写）相应调整。\n2. 删除第10.2款（乙方将甲方数据用于算法模型训练与优化）。\n3. 第10.6款（合同终止后乙方保留甲方数据180日）改为：“本合同解除或者终止之日起15日内，乙方应按甲方的选择返还或者删除全部甲方数据（含备份数据），并向甲方出具书面确认；法律、行政法规另有规定的，从其规定。”\n4. 第14.1款（"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_0df259d2-8b21-4497-a154-23bd05fabfd1",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T07:10:46.075Z",
+  "updated_at": "2026-11-09T07:25:27.629Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_409dd0d6-629c-416d-86c2-cd5e4a5e62c4",
+   "kind": "revision_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（修订稿）.docx",
+   "sha256": "1bf211aae5785ebc50b4b1b935e95255110c379f7dcbb1fe3ba3a7601dba60ec",
+   "created_at": "2026-11-09T07:16:46.957Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_652da1ce-7bd6-47ab-bee8-c1bde72bff08",
+   "kind": "revision_clean",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（清洁稿）.docx",
+   "sha256": "5a846d2fdb8fa43b912e030f085abde3fc792bf195ee6a3c5c0aa2002d867b07",
+   "created_at": "2026-11-09T07:16:46.965Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_f6a02b67-6ecc-484a-a72d-2a56b4fe2c26",
+   "kind": "revision_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（修订稿·对外版）.docx",
+   "sha256": "10262d60c6e7e973246a6d10668c7f4f2ab210f0868bade413202819f0e2ccda",
+   "created_at": "2026-11-09T07:16:46.967Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_97c87f08-6c65-4f49-90e8-1f110a73fe5c",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（修改对照表）.docx",
+   "sha256": "4aef8787199d57c4ae0ea8dacee24c7751421ee5df76ea51d8428078d724033f",
+   "created_at": "2026-11-09T07:16:46.969Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_bccca25f-2367-4d6b-b5e6-e9c9ef91f203",
+   "kind": "revision_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（修订稿）.docx",
+   "sha256": "ba90c95b9d9012e500239ed583c43515880e08f725b55928d1362cfb41472779",
+   "created_at": "2026-11-09T07:17:34.269Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_2f1cff9b-4d7f-4db0-9af4-45e576dab9d1",
+   "kind": "revision_clean",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（清洁稿）.docx",
+   "sha256": "5029415adbf4744939961dc5c159ad482db49bce3bbf9e87f4031cd8cefaca87",
+   "created_at": "2026-11-09T07:17:34.278Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_7128c8de-e2ba-4e6e-a07f-04a4391bf48d",
+   "kind": "revision_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（修订稿·对外版）.docx",
+   "sha256": "b64db1d8be059fe2c9ccef74190ef4aae4e6b165de3bc2ff747a24bc8cf09c0f",
+   "created_at": "2026-11-09T07:17:34.279Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_b89a6ddd-72d5-403d-830f-2548774ff524",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（修改对照表）.docx",
+   "sha256": "96e630e46ed91dc8e9a1aff4253542c0062bfbe2f2b6a7e1af9eb0c3e42fa40f",
+   "created_at": "2026-11-09T07:17:34.281Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c4ddfa8a-06e2-49a2-9d76-00711c04344e",
+   "kind": "revision_draft",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（修订稿）.docx",
+   "sha256": "45df314ffea0cfc372123925a40056779238655e4db864a6fdc9222daaae742b",
+   "created_at": "2026-11-09T07:19:40.522Z",
+   "title": null,
+   "kind_version": 7,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_bdea6eb0-5a99-4bb7-8bbc-009d491d3781",
+   "kind": "revision_draft",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（修订稿·对外版）.docx",
+   "sha256": "f79a807afe8f83f706f58774173c51286e649024e5973572b0b284fd29a1d31d",
+   "created_at": "2026-11-09T07:19:40.531Z",
+   "title": null,
+   "kind_version": 8,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_5213a0db-07c2-4d95-b626-5316ac3bd376",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "37607c735c2646ca5d6c2e66bc43388329d760201f6e58bcc2646989f20f7824",
+   "created_at": "2026-11-09T07:21:03.550Z",
+   "title": "已在第一轮清洁稿副本上完成第二轮修改。共读取2份材料，均可完整读取；律师6条意见",
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_9bcc10ac-5ebd-4c2c-ab98-9d9b11e78a42",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（清洁稿）.md",
+   "sha256": "f4ca81cd1c2e865d7dbde197de98b5ffac390bc860611cf5bee5cac5c4dc5159",
+   "created_at": "2026-11-09T07:21:41.540Z",
+   "title": "独立复核意见：会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）（清洁稿）",
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b83e3a32-5701-49f2-a18e-b775fb8b1227",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "b95bff7e2415f4b1df3f53806976122a6270f995e9b6b698d0941c17777f229d",
+   "created_at": "2026-11-09T07:25:27.629Z",
+   "title": "已完成独立复核并在原第一轮清洁稿上重新提交既有修改。事项内2份材料均已完整读取；",
+   "kind_version": 4,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

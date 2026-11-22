@@ -1,0 +1,175 @@
+{
+ "run": {
+  "run_id": "run_7391210c-e792-439a-9c55-b89267ae6d59",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_af29939b-39a5-45e8-8927-5c2dfc0a2619",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_af29939b-39a5-45e8-8927-5c2dfc0a2619-a1.agent_task-1794321275154",
+  "input_snapshot": {
+   "matter_id": "mat_af29939b-39a5-45e8-8927-5c2dfc0a2619",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_0f30da26-5bd3-426b-bbf7-b64b81ac1299",
+    "docv_a061758d-202f-4b47-9a5e-48fe1f1330a9",
+    "docv_31b821a4-d557-4446-ac00-9c22fe580549",
+    "docv_ace8b473-aadc-4867-89ae-c12054cce693"
+   ],
+   "goal": "请起草一份其他（通用辅助）合同，我方立场以事项为准；交易要点：起草《软件著作权许可与联合开发协议》（许可方版本，三方）：许可方北京翊辰软件有限公司（我方客户）、被许可方成都蔚澄数据科技有限公司、付款保证人四川蔚澄控股集团有限公司。交易条件以所附交易要点备忘、谈判纪要、客户邮件和著作权登记信息为准，要 Word 稿。",
+   "estimate_id": "est_88dfad26-a9a8-47aa-a848-f01c03b8e111",
+   "title": "起草合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-draft",
+   "skill_title": "起草合同 · 试用",
+   "skill_version": "1.9.0",
+   "skill_primary_output": "合同草稿.docx",
+   "skills_sha256": "QmBX3PdkTItua-yiJtiYlStSKw3yYuz6QRZpyKcub4o",
+   "skill_args": {
+    "type": "其他（通用辅助）",
+    "points": "起草《软件著作权许可与联合开发协议》（许可方版本，三方）：许可方北京翊辰软件有限公司（我方客户）、被许可方成都蔚澄数据科技有限公司、付款保证人四川蔚澄控股集团有限公司。交易条件以所附交易要点备忘、谈判纪要、客户邮件和著作权登记信息为准，要 Word 稿。"
+   }
+  },
+  "budget_points": 40,
+  "points_reserved": 40,
+  "points_charged": 40,
+  "estimate_id": "est_88dfad26-a9a8-47aa-a848-f01c03b8e111",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T14:34:35.155Z",
+  "updated_at": "2026-11-10T15:11:21.064Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_663de274-b532-434e-8ac4-0656306e7b5c",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "软件著作权许可与联合开发协议.docx",
+   "sha256": "915a47ea2a32f6883f64946730b590d67282a9608499f486edba20bb43c266e3",
+   "created_at": "2026-11-10T14:55:13.302Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_4236598e-8fbe-49d1-b759-4966baf466d1",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-软件著作权许可与联合开发协议.docx",
+   "sha256": "3609f135705081294edd621611039c241002bfef9eb2cd202d5b0f102b645163",
+   "created_at": "2026-11-10T14:59:00.474Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d628bfbc-9b3f-4f17-9401-342cd4189682",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "软件著作权许可与联合开发协议.docx",
+   "sha256": "adcfaa570d12958beb35a0c2eeea435f2eef25833834b85b29afb99a383f0bcc",
+   "created_at": "2026-11-10T15:01:06.645Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_a6599f63-49dd-40a7-b648-158e364e083e",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-软件著作权许可与联合开发协议.docx",
+   "sha256": "1885e468b90e8d225f05d5f4351821cea2e8b3ca0f7b3e3baa011d3e665cd942",
+   "created_at": "2026-11-10T15:01:06.668Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_284acb2a-3462-4f64-afa0-aa82fec9213d",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "767a5c167321a10a96fd48373255c454555c5cd6ba37c4e922a4a8f33d798f9d",
+   "created_at": "2026-11-10T15:02:41.413Z",
+   "title": "收到并完整读取 4 份材料，无读不出、部分读取或排除的材料；未发现合同范本，已按",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_257a20d0-e159-4bd6-8c35-745da778cafc",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-软件著作权许可与联合开发协议.md",
+   "sha256": "aca6355ebaf74010500d9ea6f0fde8196a6496c7aafa766f88df7296619492a4",
+   "created_at": "2026-11-10T15:06:12.364Z",
+   "title": "独立复核意见：软件著作权许可与联合开发协议",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_6f8a02b3-05e3-4d55-aafe-a78ced562756",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "软件著作权许可与联合开发协议.docx",
+   "sha256": "163a162cc1893eb75984f3c5e4d8b30d9a41c5989558fb3e89117b68a36a606d",
+   "created_at": "2026-11-10T15:09:51.070Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2d5ae9e2-ffed-4490-a01b-ce960a0edf2e",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-软件著作权许可与联合开发协议.docx",
+   "sha256": "260b0d7dcd4643d18dbc39d4a14a0b88d2caccc4f7cdfe49724c612f572f83b7",
+   "created_at": "2026-11-10T15:10:20.942Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_aa299ffb-a153-41c8-bc38-0fdd93eb074f",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "94563128db9683e661c0ed69acc9e9ee1f9f14ed71c5c0c0d96486592f5b54ef",
+   "created_at": "2026-11-10T15:11:21.063Z",
+   "title": "收到并完整读取 4 份材料，无读不出、部分读取或排除的材料；未发现合同范本，已按",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

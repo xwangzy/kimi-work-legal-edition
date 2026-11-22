@@ -1,0 +1,32 @@
+{
+  "tag": "m29-dd-list",
+  "card": "dd-list",
+  "veto": [],
+  "score": 17,
+  "tier": "需中度修改",
+  "status": "未通过",
+  "open_ok": true,
+  "minutes": 20,
+  "questions": 0,
+  "top_issues": [
+    "开始面板只勾Term Sheet，助手仍读取事项内其余材料，且财务摘要读取失败，事实来源不可控",
+    "条款清单排他期已于2026-11-07届满，三份成果仍未提示（连续三轮）",
+    "要外发的资料清单不在独立复核范围；红旗负责人、查询人、查询日空白，资料清单无抬头"
+  ],
+  "prev_score": 17,
+  "v14_score": 17,
+  "known_defects_recurring": [13, 15],
+  "new_defects": [
+    "materials_read_excerpt 读取勾选范围外的材料时部分报错（财务摘要xlsx读取失败），越权读取且结果不稳定",
+    "开始面板材料勾选不约束 materials_list / materials_read_excerpt（第一轮已报，仍未修）",
+    "独立复核只复核主交付docx，外发的资料清单xlsx不在范围（第一轮已报，仍未修）",
+    "外发给目标公司的资料清单 audience 仍记 internal，未走对外检查（第一轮已报，仍未修）"
+  ],
+  "product_defect": [
+    "开始面板勾选不约束材料读取工具：run只载入1份，助手读其余11份",
+    "范围外读取部分报错（财务摘要读取失败），导致成果事实不完整",
+    "独立复核只看访谈提纲docx，外发资料清单不复核",
+    "资料清单 audience=internal，无对外文件检查",
+    "docx 文书标题直接用文件名；首行固定“通用辅助 · 未经本所质量验收”（已知 #13）"
+  ]
+}

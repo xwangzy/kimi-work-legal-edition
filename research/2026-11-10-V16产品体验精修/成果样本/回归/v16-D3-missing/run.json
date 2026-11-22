@@ -1,0 +1,147 @@
+{
+ "run": {
+  "run_id": "run_798aa196-d08b-44ac-a800-df3e502841bd",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_dedd8759-15be-4335-8a09-ca0decc2d3ab",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 12,
+  "idempotency_key": "mat_dedd8759-15be-4335-8a09-ca0decc2d3ab-a1.agent_task-1794280711433",
+  "input_snapshot": {
+   "matter_id": "mat_dedd8759-15be-4335-8a09-ca0decc2d3ab",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "请按客户微信里的要求起草《股权代持协议》，要 Word 稿。",
+   "estimate_id": "est_350fdd9b-7cb0-4b52-b395-f43d6f08daf0",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 20,
+  "estimate_id": "est_350fdd9b-7cb0-4b52-b395-f43d6f08daf0",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:18:31.434Z",
+  "updated_at": "2026-11-10T08:04:00.973Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_3af1417c-d098-4bda-9b65-158fc58ce4ca",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "股权代持协议.docx",
+   "sha256": "a7ed89c73956d1208170467cccbb758db634c9e968f98bd14ae501b53e9a3d95",
+   "created_at": "2026-11-10T07:38:29.846Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_881c196e-4abe-40bb-94ba-5cd555e64b9c",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-股权代持协议.docx",
+   "sha256": "c90c1db78f7da0f1ac1ad56dbc54b57c2e6cfef90c972e0aa869b08a28d59cd4",
+   "created_at": "2026-11-10T07:40:59.148Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_36f4551b-b1c0-40cb-ba6b-aa1a6f954c37",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "股权代持协议.docx",
+   "sha256": "be733911cf42b5166f501b07c7cf615e154339178b6fa15a3aa38ce45a7d49cd",
+   "created_at": "2026-11-10T07:41:58.823Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_03b00de4-d874-41b7-82bd-fe6781d6e6fa",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "626c5d2ab9f2f7d1f82905943ea102a20dccbbcfe9ccd6afe1d8866ff0741753",
+   "created_at": "2026-11-10T07:42:41.463Z",
+   "title": "已收到并完整读取 1 份客户微信材料，无读不出或仅部分读取的材料；未发现本所范本",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_c171a946-f336-4c1d-9d9d-e97c45de278e",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-股权代持协议.md",
+   "sha256": "de40bdf068a4438afc7060185dc345daa44847065d8ce578b050265f3bba341e",
+   "created_at": "2026-11-10T07:45:18.101Z",
+   "title": "独立复核意见：股权代持协议",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a2b2ec26-28a7-4405-9b5b-82a4f1cd0582",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "股权代持协议.docx",
+   "sha256": "5fc353418224937057708bc63df25675d105dc88e7aa3d1fb9a298f6cd7fde9d",
+   "created_at": "2026-11-10T08:00:39.279Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a94c17e6-1084-4653-ba8c-4a77a0a11388",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-股权代持协议.docx",
+   "sha256": "af7badd71ae12c8b057164f95b9b7d2e1b6d1f898376659b7a1480749212512a",
+   "created_at": "2026-11-10T08:02:42.435Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_211a8120-0ead-4e35-8b5a-2e1344e37660",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "d2edae8c26156beae9067328b004569d215903c4729bde3bdb1856d06a0881ad",
+   "created_at": "2026-11-10T08:04:00.973Z",
+   "title": "已收到并完整读取《客户微信委托（股权代持）》1份材料，无识别缺失。因原稿无法定位",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

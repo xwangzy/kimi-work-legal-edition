@@ -1,0 +1,138 @@
+{
+ "run": {
+  "run_id": "run_bbd7e1f0-5258-4cb9-8102-24b1eb6dcb2f",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_a5451e8c-b744-40bc-a49d-ceb4b8a6f196",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_a5451e8c-b744-40bc-a49d-ceb4b8a6f196-a1.agent_task-1794201275132",
+  "input_snapshot": {
+   "matter_id": "mat_a5451e8c-b744-40bc-a49d-ceb4b8a6f196",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_c1acea0e-80c0-4728-bc1f-3ccbb1143f59",
+    "docv_36dd2cba-d9e6-4713-9ce3-4df0a32d059b",
+    "docv_d961cb88-1d72-4fbc-b829-083c93dee4e5",
+    "docv_64d3508e-7e16-42fd-a608-28f1ea6951fd",
+    "docv_3f18655e-eef4-4c3a-8bbb-e1ec3fb28c46",
+    "docv_ecf09197-d59e-4f26-a0a5-7e7de89d408e",
+    "docv_49173447-bfeb-4344-99ed-18ccaaa581d5",
+    "docv_e5041da7-82a6-4ff2-9e71-01b1179cdf09"
+   ],
+   "goal": "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。时间线按“按付款线索；另列3号机质量与维修线索”排列。\n我方代理卖方锐川。请特别留意各份材料之间金额、日期对不上的地方，逐条附原文给我确认。",
+   "estimate_id": "est_bc6386f7-2d3a-4791-b66e-d75dc93e09db",
+   "title": "整理案卷（精读版）",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "casefile-organize",
+   "skill_title": "案卷整理（目录与时间线）",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "案卷总目录.xlsx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "perspective": "按付款线索；另列3号机质量与维修线索"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_bc6386f7-2d3a-4791-b66e-d75dc93e09db",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:14:35.137Z",
+  "updated_at": "2026-11-09T05:36:56.192Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_01cf0cde-df8c-408b-9c8e-caf31c21e7d1",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-锐川诉禾丰设备款.xlsx",
+   "sha256": "97eceb91377db6ada1e8d8bda4edd6bb017a4c71026516d1dfac7b69d36fbec2",
+   "created_at": "2026-11-09T05:27:54.452Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_4b4cb9a2-abf8-4c6d-bd44-24319550d283",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-锐川诉禾丰设备款.xlsx",
+   "sha256": "1d2d0628b45cd828602ead46f65f714406ea03328253c129d1d56e7493cd5096",
+   "created_at": "2026-11-09T05:29:00.838Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_03e73b7a-63f8-4168-9dd5-8e1693bb874b",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "缺口清单-锐川诉禾丰设备款.xlsx",
+   "sha256": "bdd52ffaaafa26edf47b6a67d4c2d375984c8e3888b9b603f6558f4392e7ca6f",
+   "created_at": "2026-11-09T05:31:40.849Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a3639d24-61f8-463d-8d37-23f52846f958",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "时间线（按付款线索；另列3号机质量与维修线索）.xlsx",
+   "sha256": "b1df6e8eef56d0b5776a7451b224ca2e5559d9a347e9ea4801527afa53ef4219",
+   "created_at": "2026-11-09T05:35:37.291Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b40fe721-8644-401b-8098-beba984cf17e",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "事实时间线-锐川诉禾丰设备买卖合同纠纷（卖方·精读）.xlsx",
+   "sha256": "133d88f19286b504f0f3b49ed6b98c661707a18c26419bb3b724d10e46020374",
+   "created_at": "2026-11-09T05:36:56.190Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f43a5121-1e48-48b9-8942-702224b3ea04",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "4eca9e707abc56a422c1f2299c98ef1fda69be0cc703fb9dc0c41faf279f1271",
+   "created_at": "2026-11-09T05:36:56.191Z",
+   "title": "已完成。8 份材料均已逐份完整精读，无未识别、读取失败或排除材料。",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,125 @@
+{
+ "run": {
+  "run_id": "run_49f9e94e-69a7-4b2b-ad1f-4735f5ddeb50",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_0029ccb7-4fdc-45b3-a8e1-6215dd030c40",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_0029ccb7-4fdc-45b3-a8e1-6215dd030c40-a1.agent_task-1794204636556",
+  "input_snapshot": {
+   "matter_id": "mat_0029ccb7-4fdc-45b3-a8e1-6215dd030c40",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_2c5d108d-874a-4c0e-9cb3-37af5e137d6a",
+    "docv_0b886059-964c-455c-86a2-451bc6b53ab9",
+    "docv_bc08de3d-f5fb-40f8-af45-2b82dc81f769",
+    "docv_d62a40e4-9535-4f6a-a04f-03638d5a41c5",
+    "docv_5b6a8c05-ce02-436c-8500-7a233ebb2d5f",
+    "docv_a886ea36-1ca8-4279-8513-71ccb58d80eb"
+   ],
+   "goal": "请为劳动者梳理应主张的全部仲裁请求、时效与证据：当事人2021年3月1日入职上海澜栖，高级算法工程师，月工资基本18,000元加岗位津贴6,000元加绩效。2026年9月4日公司以8月17日至19日旷工三天、8月21日把代码传到个人网盘为由按严重违纪解除，不付补偿。年休假部门领导在OA批过，上传代码是领导让在家做演示。加班费一直按18,000元算。签过竞业协议，月补偿2,500元，离职后没付过。\n当事人不想回公司，想要赔偿。他手上有杭州深瞳（协议点名的竞争对手）的offer，要求11月16日入职，问能不能去。",
+   "estimate_id": "est_d5da8174-66d5-4e8e-8f6a-074610f1bd46",
+   "title": "劳动仲裁申请（劳动者一方）",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "labor-dispute",
+   "skill_title": "劳动争议：仲裁应对、仲裁申请与解除前评估 · 试用",
+   "skill_version": "1.3.1",
+   "skill_primary_output": "劳动争议应对方案.docx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "mode": "仲裁申请",
+    "side": "劳动者",
+    "situation": "当事人2021年3月1日入职上海澜栖，高级算法工程师，月工资基本18,000元加岗位津贴6,000元加绩效。2026年9月4日公司以8月17日至19日旷工三天、8月21日把代码传到个人网盘为由按严重违纪解除，不付补偿。年休假部门领导在OA批过，上传代码是领导让在家做演示。加班费一直按18,000元算。签过竞业协议，月补偿2,500元，离职后没付过。"
+   }
+  },
+  "budget_points": 50,
+  "points_reserved": 50,
+  "points_charged": 50,
+  "estimate_id": "est_d5da8174-66d5-4e8e-8f6a-074610f1bd46",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:10:36.559Z",
+  "updated_at": "2026-11-09T06:44:22.938Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_9685a27d-e879-43f2-bd4b-bdfd2975b6cc",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-澜栖解除与竞业限制.docx",
+   "sha256": "9f6efa38d848103a24a0a31862af8ac17ebba5555c5bf32468977587f7ce38a5",
+   "created_at": "2026-11-09T06:35:08.879Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_5ba5fcec-3a45-4a53-81a4-b0e2d4cecb2b",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "举证责任与证据清单-澜栖解除与竞业限制.xlsx",
+   "sha256": "3df69274b9058286acba48f303c3c01908b09fd96c5c5cfcbe22a9a6229882a4",
+   "created_at": "2026-11-09T06:38:35.548Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_71543673-e3bb-4a6d-a631-808cb02b64e3",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-澜栖解除与竞业限制.xlsx",
+   "sha256": "68252a5e72c2dd09cf2cfc863f79432a8981b9d4d0a1ca2f9844a6b86a11ab69",
+   "created_at": "2026-11-09T06:40:11.552Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e7492fb8-1bef-43e1-9100-d18642a5f3d2",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-澜栖解除与竞业限制.docx",
+   "sha256": "84b856e5bb81e01cface517725d6167e8ba607639f49aab0fbf3343c7f852c24",
+   "created_at": "2026-11-09T06:42:02.327Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_37d8bb00-9423-450a-a282-73f430c40d67",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "e7b81fc7831570512a56454c47e1f77c536b2d617ecb866cf7159c0617b3a0be",
+   "created_at": "2026-11-09T06:44:22.937Z",
+   "title": "最近的实际节点是2026年11月15日竞业补偿支付日及11月16日拟入职日；20",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

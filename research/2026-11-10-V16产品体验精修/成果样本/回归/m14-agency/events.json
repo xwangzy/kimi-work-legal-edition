@@ -1,0 +1,1500 @@
+[
+ {
+  "event_id": 17,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81813",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:17:43.090Z"
+ },
+ {
+  "event_id": 18,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:17:43.090Z"
+ },
+ {
+  "event_id": 19,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 3,
+   "loaded": 3,
+   "failed": 0,
+   "files": [
+    {
+     "name": "03-庭审笔录（2026-09-15）.docx",
+     "chars": 1577,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "02-民事答辩状（恒岳，2026-05-25）.docx",
+     "chars": 541,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "01-民事起诉状（锐川诉恒岳，2026-04-20）.docx",
+     "chars": 771,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_46eab390-adb3-4028-a7f0-1c7dd2f97eb6",
+     "parse_version_id": "psv_8fbd46e7-c37b-4a86-9803-13a169404b4b"
+    },
+    {
+     "document_version_id": "docv_90e923e7-3a4c-492e-81a0-f0d4c679e7d7",
+     "parse_version_id": "psv_475d8b4a-fc7d-45ba-883e-2632f7752ee7"
+    },
+    {
+     "document_version_id": "docv_f0660233-3eda-40bc-bbc1-bd46c2e167fd",
+     "parse_version_id": "psv_44a40df4-a794-4818-a095-22f37432ae67"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:17:43.091Z"
+ },
+ {
+  "event_id": 20,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_6e3cf87a-401f-473e-9ee5-aa6642206783_att_7fb66633-d0d7-48d6-9e74-4db9df62ddb8",
+   "attempt_id": "att_7fb66633-d0d7-48d6-9e74-4db9df62ddb8"
+  },
+  "created_at": "2026-11-10T03:17:43.757Z"
+ },
+ {
+  "event_id": 21,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_ab6b62df-3580-4e2f-8f65-48bc20037c32",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:17:44.560Z"
+ },
+ {
+  "event_id": 32,
+  "seq": 10003,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Skill_0_ca16f4b8",
+   "tool": "Skill",
+   "description": "Invoke skill agency-statement",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:17:58.185Z"
+ },
+ {
+  "event_id": 33,
+  "seq": 10004,
+  "type": "agent.skill",
+  "payload": {
+   "skill": "agency-statement"
+  },
+  "created_at": "2026-11-10T03:17:58.185Z"
+ },
+ {
+  "event_id": 34,
+  "seq": 10005,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Skill_0_ca16f4b8",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:17:58.185Z"
+ },
+ {
+  "event_id": 47,
+  "seq": 10006,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__materials_list_1_c23c3a94",
+   "tool": "mcp__legal__materials_list",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:09.407Z"
+ },
+ {
+  "event_id": 48,
+  "seq": 10007,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_list_2_dbf3ef0d",
+   "tool": "mcp__legal__facts_list",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:09.407Z"
+ },
+ {
+  "event_id": 49,
+  "seq": 10008,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Read_3_6b50ce48",
+   "tool": "Read",
+   "description": "Reading /private/tmp/claude-501/-Users-wangzeyu--claude-spares-spare-QiOPjR/f64eb589-f629-4583-ad8a-7f473927a9c4/scratchpad/kwl/stack16d/web-data/demo-firm/kap/mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5/materials/001.txt",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:09.408Z"
+ },
+ {
+  "event_id": 50,
+  "seq": 10009,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Read_4_cc68b311",
+   "tool": "Read",
+   "description": "Reading /private/tmp/claude-501/-Users-wangzeyu--claude-spares-spare-QiOPjR/f64eb589-f629-4583-ad8a-7f473927a9c4/scratchpad/kwl/stack16d/web-data/demo-firm/kap/mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5/materials/002.txt",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:09.408Z"
+ },
+ {
+  "event_id": 51,
+  "seq": 10010,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Read_5_170121e7",
+   "tool": "Read",
+   "description": "Reading /private/tmp/claude-501/-Users-wangzeyu--claude-spares-spare-QiOPjR/f64eb589-f629-4583-ad8a-7f473927a9c4/scratchpad/kwl/stack16d/web-data/demo-firm/kap/mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5/materials/003.txt",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:09.408Z"
+ },
+ {
+  "event_id": 52,
+  "seq": 10011,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__materials_list_1_c23c3a94",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:09.408Z"
+ },
+ {
+  "event_id": 53,
+  "seq": 10012,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_list_2_dbf3ef0d",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:09.408Z"
+ },
+ {
+  "event_id": 54,
+  "seq": 10013,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Read_4_cc68b311",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:09.408Z"
+ },
+ {
+  "event_id": 55,
+  "seq": 10014,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Read_3_6b50ce48",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:09.408Z"
+ },
+ {
+  "event_id": 56,
+  "seq": 10015,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Read_5_170121e7",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:09.408Z"
+ },
+ {
+  "event_id": 80,
+  "seq": 10016,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_6_91a80955",
+   "tool": "mcp__legal__law_search",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.500Z"
+ },
+ {
+  "event_id": 81,
+  "seq": 10017,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_7_b37f20f4",
+   "tool": "mcp__legal__law_search",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.500Z"
+ },
+ {
+  "event_id": 82,
+  "seq": 10018,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_8_383e6c9b",
+   "tool": "mcp__legal__law_search",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.500Z"
+ },
+ {
+  "event_id": 83,
+  "seq": 10019,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_9_e184ccc6",
+   "tool": "mcp__legal__law_search",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.500Z"
+ },
+ {
+  "event_id": 84,
+  "seq": 10020,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__calc_deadline_10_4a29dd76",
+   "tool": "mcp__legal__calc_deadline",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.500Z"
+ },
+ {
+  "event_id": 85,
+  "seq": 10021,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__outline_get_11_42106dee",
+   "tool": "mcp__legal__outline_get",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.500Z"
+ },
+ {
+  "event_id": 86,
+  "seq": 10022,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_6_91a80955",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.500Z"
+ },
+ {
+  "event_id": 87,
+  "seq": 10023,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_7_b37f20f4",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.500Z"
+ },
+ {
+  "event_id": 88,
+  "seq": 10024,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_8_383e6c9b",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.501Z"
+ },
+ {
+  "event_id": 89,
+  "seq": 10025,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_9_e184ccc6",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.501Z"
+ },
+ {
+  "event_id": 90,
+  "seq": 10026,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__calc_deadline_10_4a29dd76",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.501Z"
+ },
+ {
+  "event_id": 91,
+  "seq": 10027,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__outline_get_11_42106dee",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:18:53.501Z"
+ },
+ {
+  "event_id": 92,
+  "seq": 10028,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_version_12_357ff3b1",
+   "tool": "mcp__legal__law_get_version",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.149Z"
+ },
+ {
+  "event_id": 93,
+  "seq": 10029,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_version_13_73b9e24c",
+   "tool": "mcp__legal__law_get_version",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.150Z"
+ },
+ {
+  "event_id": 94,
+  "seq": 10030,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_14_bb52374e",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.150Z"
+ },
+ {
+  "event_id": 95,
+  "seq": 10031,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_15_6ee78a69",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.150Z"
+ },
+ {
+  "event_id": 96,
+  "seq": 10032,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_16_c6278daf",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.150Z"
+ },
+ {
+  "event_id": 97,
+  "seq": 10033,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_17_0c55469c",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.150Z"
+ },
+ {
+  "event_id": 98,
+  "seq": 10034,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_18_4e21c547",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.150Z"
+ },
+ {
+  "event_id": 99,
+  "seq": 10035,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_19_fb23403a",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.150Z"
+ },
+ {
+  "event_id": 100,
+  "seq": 10036,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_20_466e9753",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.151Z"
+ },
+ {
+  "event_id": 101,
+  "seq": 10037,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_21_5bd65cc7",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.151Z"
+ },
+ {
+  "event_id": 102,
+  "seq": 10038,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_version_12_357ff3b1",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.151Z"
+ },
+ {
+  "event_id": 103,
+  "seq": 10039,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_version_13_73b9e24c",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.151Z"
+ },
+ {
+  "event_id": 104,
+  "seq": 10040,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_14_bb52374e",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.151Z"
+ },
+ {
+  "event_id": 105,
+  "seq": 10041,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_15_6ee78a69",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.151Z"
+ },
+ {
+  "event_id": 106,
+  "seq": 10042,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_16_c6278daf",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.151Z"
+ },
+ {
+  "event_id": 107,
+  "seq": 10043,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_17_0c55469c",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.151Z"
+ },
+ {
+  "event_id": 108,
+  "seq": 10044,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_18_4e21c547",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.151Z"
+ },
+ {
+  "event_id": 109,
+  "seq": 10045,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_19_fb23403a",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.151Z"
+ },
+ {
+  "event_id": 110,
+  "seq": 10046,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_20_466e9753",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.153Z"
+ },
+ {
+  "event_id": 111,
+  "seq": 10047,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_21_5bd65cc7",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:19:15.153Z"
+ },
+ {
+  "event_id": 208,
+  "seq": 10048,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_22_dce0649c",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.481Z"
+ },
+ {
+  "event_id": 209,
+  "seq": 10049,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_23_05b9d595",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.482Z"
+ },
+ {
+  "event_id": 210,
+  "seq": 10050,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_24_fd224c19",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.482Z"
+ },
+ {
+  "event_id": 211,
+  "seq": 10051,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_25_0c69e9e5",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.482Z"
+ },
+ {
+  "event_id": 212,
+  "seq": 10052,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_26_93e4bdb4",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.482Z"
+ },
+ {
+  "event_id": 213,
+  "seq": 10053,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_27_ae271c6d",
+   "tool": "mcp__legal__law_search",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.482Z"
+ },
+ {
+  "event_id": 214,
+  "seq": 10054,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_28_2211848e",
+   "tool": "mcp__legal__law_search",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.482Z"
+ },
+ {
+  "event_id": 215,
+  "seq": 10055,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_29_108f897a",
+   "tool": "mcp__legal__law_get_article",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.482Z"
+ },
+ {
+  "event_id": 216,
+  "seq": 10056,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__calc_interest_30_bfea5514",
+   "tool": "mcp__legal__calc_interest",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.482Z"
+ },
+ {
+  "event_id": 217,
+  "seq": 10057,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_22_dce0649c",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.483Z"
+ },
+ {
+  "event_id": 218,
+  "seq": 10058,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_23_05b9d595",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.483Z"
+ },
+ {
+  "event_id": 219,
+  "seq": 10059,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_24_fd224c19",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.483Z"
+ },
+ {
+  "event_id": 220,
+  "seq": 10060,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_25_0c69e9e5",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.483Z"
+ },
+ {
+  "event_id": 221,
+  "seq": 10061,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_26_93e4bdb4",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.483Z"
+ },
+ {
+  "event_id": 222,
+  "seq": 10062,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_27_ae271c6d",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.483Z"
+ },
+ {
+  "event_id": 223,
+  "seq": 10063,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_search_28_2211848e",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.483Z"
+ },
+ {
+  "event_id": 224,
+  "seq": 10064,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__law_get_article_29_108f897a",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.483Z"
+ },
+ {
+  "event_id": 225,
+  "seq": 10065,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__calc_interest_30_bfea5514",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:14.484Z"
+ },
+ {
+  "event_id": 226,
+  "seq": 10067,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 预扣费额度失败, 用户剩余额度: ¥0.726940, 需要预扣费额度: ¥1.474074 (request id: 202611100320138568062788268d9d6RzR3b0zj)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:14.484Z"
+ },
+ {
+  "event_id": 227,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 预扣费额度失败, 用户剩余额度: ¥0.726940, 需要预扣费额度: ¥1.474074 (request id: 202611100320138568062788268d9d6RzR3b0zj)"
+  },
+  "created_at": "2026-11-10T03:20:14.484Z"
+ },
+ {
+  "event_id": 228,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 预扣费额度失败, 用户剩余额度: ¥0.726940, 需要预扣费额度: ¥1.474074 (request id: 202611100320138568062788268d9d6RzR3b0zj)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:14.484Z"
+ },
+ {
+  "event_id": 414,
+  "seq": 10066,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Read_30_01fe763f",
+   "tool": "Read",
+   "description": "Reading /private/tmp/claude-501/-Users-wangzeyu--claude-spares-spare-QiOPjR/f64eb589-f629-4583-ad8a-7f473927a9c4/scratchpad/kwl/stack16d/web-data/demo-firm/kap/mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5/home/sessions/wd_work_808e867325d0/session_87d29b11-b48c-47bd-bef6-50371b88e5d2/agents/main/plans/k",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:52:11.134Z"
+ },
+ {
+  "event_id": 418,
+  "seq": 10068,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Edit_31_9e32658c",
+   "tool": "Edit",
+   "description": "Editing /private/tmp/claude-501/-Users-wangzeyu--claude-spares-spare-QiOPjR/f64eb589-f629-4583-ad8a-7f473927a9c4/scratchpad/kwl/stack16d/web-data/demo-firm/kap/mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5/home/sessions/wd_work_808e867325d0/session_87d29b11-b48c-47bd-bef6-50371b88e5d2/agents/main/plans/k",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:52:23.138Z"
+ },
+ {
+  "event_id": 419,
+  "seq": 10069,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Edit_31_9e32658c",
+   "is_error": true,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:52:23.138Z"
+ },
+ {
+  "event_id": 420,
+  "seq": 10070,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Read_32_01984df1",
+   "tool": "Read",
+   "description": "Reading /private/tmp/claude-501/-Users-wangzeyu--claude-spares-spare-QiOPjR/f64eb589-f629-4583-ad8a-7f473927a9c4/scratchpad/kwl/stack16d/web-data/demo-firm/kap/mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5/home/sessions/wd_work_808e867325d0/session_87d29b11-b48c-47bd-bef6-50371b88e5d2/agents/main/plans/k",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:52:35.146Z"
+ },
+ {
+  "event_id": 421,
+  "seq": 10071,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Read_32_01984df1",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:52:35.147Z"
+ },
+ {
+  "event_id": 422,
+  "seq": 10072,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Edit_33_ce8e6305",
+   "tool": "Edit",
+   "description": "Editing /private/tmp/claude-501/-Users-wangzeyu--claude-spares-spare-QiOPjR/f64eb589-f629-4583-ad8a-7f473927a9c4/scratchpad/kwl/stack16d/web-data/demo-firm/kap/mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5/home/sessions/wd_work_808e867325d0/session_87d29b11-b48c-47bd-bef6-50371b88e5d2/agents/main/plans/k",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:52:46.355Z"
+ },
+ {
+  "event_id": 423,
+  "seq": 10073,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Edit_33_ce8e6305",
+   "is_error": true,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:52:46.355Z"
+ },
+ {
+  "event_id": 424,
+  "seq": 10074,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Bash_34_c64483ce",
+   "tool": "Bash",
+   "description": "Running: python3 -c 'from pathlib import Path; p=Path(\"/pri…",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:53:00.764Z"
+ },
+ {
+  "event_id": 425,
+  "seq": 10075,
+  "type": "agent.exec.finished",
+  "payload": {
+   "execId": 1,
+   "durationMs": 268,
+   "reason": "completed",
+   "exitCode": 1
+  },
+  "created_at": "2026-11-10T06:53:01.566Z"
+ },
+ {
+  "event_id": 426,
+  "seq": 10076,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Bash_34_c64483ce",
+   "is_error": true,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:53:01.566Z"
+ },
+ {
+  "event_id": 427,
+  "seq": 10077,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Write_35_c2651138",
+   "tool": "Write",
+   "description": "Writing /private/tmp/claude-501/-Users-wangzeyu--claude-spares-spare-QiOPjR/f64eb589-f629-4583-ad8a-7f473927a9c4/scratchpad/kwl/stack16d/web-data/demo-firm/kap/mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5/home/sessions/wd_work_808e867325d0/session_87d29b11-b48c-47bd-bef6-50371b88e5d2/agents/main/plans/k",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:53:32.802Z"
+ },
+ {
+  "event_id": 428,
+  "seq": 10078,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Write_35_c2651138",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:53:32.802Z"
+ },
+ {
+  "event_id": 429,
+  "seq": 10079,
+  "type": "agent.approval_requested",
+  "payload": {
+   "approval_id": "approval_6a530c6a-b9b2-43b7-ad1c-21877c05192d",
+   "tool": "ExitPlanMode",
+   "reason": "tool_confirmation:plan_review_by_card",
+   "cross_boundary": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:53:38.406Z"
+ },
+ {
+  "event_id": 430,
+  "seq": 10080,
+  "type": "agent.approval_decided",
+  "payload": {
+   "approval_id": "approval_6a530c6a-b9b2-43b7-ad1c-21877c05192d",
+   "decision": "approve",
+   "scope": "once",
+   "approver_channel": "desktop"
+  },
+  "created_at": "2026-11-10T06:53:45.611Z"
+ },
+ {
+  "event_id": 431,
+  "seq": 10082,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "ExitPlanMode_36_3c585be3",
+   "tool": "ExitPlanMode",
+   "description": "Presenting plan and exiting plan mode",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:53:45.611Z"
+ },
+ {
+  "event_id": 432,
+  "seq": 10083,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "ExitPlanMode_36_3c585be3",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:53:45.611Z"
+ },
+ {
+  "event_id": 445,
+  "seq": 10084,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "NotifyUser_37_5facbbae",
+   "tool": "NotifyUser",
+   "description": "Notifying the user",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:55:07.274Z"
+ },
+ {
+  "event_id": 446,
+  "seq": 10085,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "TodoList_38_30622104",
+   "tool": "TodoList",
+   "description": "Updating todo list",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:55:07.274Z"
+ },
+ {
+  "event_id": 447,
+  "seq": 10086,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_submit_39_f35623e8",
+   "tool": "mcp__legal__facts_submit",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:55:07.274Z"
+ },
+ {
+  "event_id": 448,
+  "seq": 10087,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "NotifyUser_37_5facbbae",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:55:07.275Z"
+ },
+ {
+  "event_id": 449,
+  "seq": 10088,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "TodoList_38_30622104",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:55:07.275Z"
+ },
+ {
+  "event_id": 450,
+  "seq": 10089,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_submit_39_f35623e8",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:55:07.275Z"
+ },
+ {
+  "event_id": 457,
+  "seq": 10090,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "TodoList_40_cc68b185",
+   "tool": "TodoList",
+   "description": "Updating todo list",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:56:26.562Z"
+ },
+ {
+  "event_id": 458,
+  "seq": 10091,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__outline_submit_41_e9fab5eb",
+   "tool": "mcp__legal__outline_submit",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:56:26.562Z"
+ },
+ {
+  "event_id": 459,
+  "seq": 10092,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "TodoList_40_cc68b185",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:56:26.562Z"
+ },
+ {
+  "event_id": 460,
+  "seq": 10093,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__outline_submit_41_e9fab5eb",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:56:26.563Z"
+ },
+ {
+  "event_id": 461,
+  "seq": 10094,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "AskUserQuestion_42_ba3f4928",
+   "tool": "AskUserQuestion",
+   "description": "Asking user questions",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:56:36.168Z"
+ },
+ {
+  "event_id": 462,
+  "seq": 10095,
+  "type": "agent.question",
+  "payload": {
+   "question_id": "question_f8b909f9-2375-412e-b88f-4b6da48f5911",
+   "n": 1
+  },
+  "created_at": "2026-11-10T06:56:36.169Z"
+ },
+ {
+  "event_id": 465,
+  "seq": 10096,
+  "type": "agent.question_answered",
+  "payload": {
+   "question_id": "question_f8b909f9-2375-412e-b88f-4b6da48f5911"
+  },
+  "created_at": "2026-11-10T06:56:40.178Z"
+ },
+ {
+  "event_id": 466,
+  "seq": 10097,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "AskUserQuestion_42_ba3f4928",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:56:40.178Z"
+ },
+ {
+  "event_id": 469,
+  "seq": 10098,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__outline_get_43_13d3f939",
+   "tool": "mcp__legal__outline_get",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:56:46.585Z"
+ },
+ {
+  "event_id": 470,
+  "seq": 10099,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_list_44_9af8060a",
+   "tool": "mcp__legal__facts_list",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:56:46.586Z"
+ },
+ {
+  "event_id": 471,
+  "seq": 10100,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__outline_get_43_13d3f939",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:56:46.586Z"
+ },
+ {
+  "event_id": 472,
+  "seq": 10101,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_list_44_9af8060a",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:56:46.586Z"
+ },
+ {
+  "event_id": 473,
+  "seq": 10102,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "TodoList_45_7dc35b8e",
+   "tool": "TodoList",
+   "description": "Updating todo list",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:57:06.600Z"
+ },
+ {
+  "event_id": 474,
+  "seq": 10103,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__citations_verify_46_baf13715",
+   "tool": "mcp__legal__citations_verify",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:57:06.600Z"
+ },
+ {
+  "event_id": 475,
+  "seq": 10104,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__citations_verify_47_93ceafbb",
+   "tool": "mcp__legal__citations_verify",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:57:06.600Z"
+ },
+ {
+  "event_id": 476,
+  "seq": 10105,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "TodoList_45_7dc35b8e",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:57:06.600Z"
+ },
+ {
+  "event_id": 477,
+  "seq": 10106,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__citations_verify_46_baf13715",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:57:06.600Z"
+ },
+ {
+  "event_id": 478,
+  "seq": 10107,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__citations_verify_47_93ceafbb",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:57:06.600Z"
+ },
+ {
+  "event_id": 513,
+  "seq": 10108,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "TodoList_48_9d5ccd58",
+   "tool": "TodoList",
+   "description": "Updating todo list",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:59:02.710Z"
+ },
+ {
+  "event_id": 514,
+  "seq": 10109,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "NotifyUser_49_b104c413",
+   "tool": "NotifyUser",
+   "description": "Notifying the user",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:59:02.710Z"
+ },
+ {
+  "event_id": 515,
+  "seq": 10110,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "NotifyUser_49_b104c413",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:59:02.710Z"
+ },
+ {
+  "event_id": 516,
+  "seq": 10111,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "TodoList_48_9d5ccd58",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T06:59:02.711Z"
+ },
+ {
+  "event_id": 521,
+  "seq": 10112,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__docx_render_report_50_296a68e3",
+   "tool": "mcp__legal__docx_render_report",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T07:00:03.572Z"
+ },
+ {
+  "event_id": 522,
+  "seq": 10113,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__docx_render_report_50_296a68e3",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T07:00:03.572Z"
+ },
+ {
+  "event_id": 523,
+  "seq": 10114,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__xlsx_render_table_51_66900c5e",
+   "tool": "mcp__legal__xlsx_render_table",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T07:00:29.993Z"
+ },
+ {
+  "event_id": 524,
+  "seq": 10115,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__xlsx_render_table_51_66900c5e",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T07:00:29.993Z"
+ },
+ {
+  "event_id": 533,
+  "seq": 10116,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "TodoList_52_43968a40",
+   "tool": "TodoList",
+   "description": "Updating todo list",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T07:01:13.268Z"
+ },
+ {
+  "event_id": 534,
+  "seq": 10117,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "TodoList_52_43968a40",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T07:01:13.268Z"
+ },
+ {
+  "event_id": 558,
+  "seq": 69,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_402a5906-ca84-49bc-bd35-66a6a08e08d7",
+   "kind": "a1_agent_draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "aa046a46bc28023bba83503a999ce03431f545e825a71e4fc44c25a6f3d200b8"
+  },
+  "created_at": "2026-11-10T07:01:45.303Z"
+ },
+ {
+  "event_id": 559,
+  "seq": 9100,
+  "type": "review.started",
+  "payload": {
+   "kind": "pleading",
+   "skill": "agency-statement",
+   "docs": [
+    "代理词.docx"
+   ],
+   "diff_lines": 0
+  },
+  "created_at": "2026-11-10T07:01:45.312Z"
+ },
+ {
+  "event_id": 562,
+  "seq": 9101,
+  "type": "review.completed",
+  "payload": {
+   "kind": "pleading",
+   "findings": 0,
+   "must": 0,
+   "seconds": 55,
+   "request_id": "kwlg_53289e3e-cd72-4212-bd34-adf6dddbc26c"
+  },
+  "created_at": "2026-11-10T07:02:40.486Z"
+ },
+ {
+  "event_id": 563,
+  "seq": 9102,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_a4dcd556-c9c5-499b-9540-7c1f46e16453",
+   "kind": "a1_review_note",
+   "filename": "独立复核意见-代理词.md",
+   "sha256": "4d0f51332dc7079f28e535465adab5940af240453ab909b7d70b0ac8e5958eb0"
+  },
+  "created_at": "2026-11-10T07:02:40.488Z"
+ },
+ {
+  "event_id": 564,
+  "seq": 60,
+  "type": "run.succeeded",
+  "payload": {
+   "points_charged": 35
+  },
+  "created_at": "2026-11-10T07:02:40.489Z"
+ }
+]

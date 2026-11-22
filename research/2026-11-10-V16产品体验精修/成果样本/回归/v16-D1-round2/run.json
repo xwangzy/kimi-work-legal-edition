@@ -1,0 +1,53 @@
+{
+ "run": {
+  "run_id": "run_485eade3-a93b-48ae-8d76-768c534c4fee",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_90b945cd-7def-4fe6-b5b1-6d3641dfb782",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 2,
+  "idempotency_key": "mat_90b945cd-7def-4fe6-b5b1-6d3641dfb782-a1.agent_task-1794295095506",
+  "input_snapshot": {
+   "matter_id": "mat_90b945cd-7def-4fe6-b5b1-6d3641dfb782",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_065e566a-bfde-4006-9308-ac7f9e5621a2"
+   ],
+   "goal": "请按以下意见直接在原文上修改这份文书，给我修订稿和清洁稿：第二轮修改意见\n\n项目：岚栖—砚川运维与升级服务合同（LQYC-2026-YW018）\n底稿：你上一轮输出的修订版（第一轮修改后）\n日期：2026年11月11日　　经办律师：许棠\n\n说明：本轮在第一轮修订版基础上继续修改，第一轮的其他改动保留；本轮改动同样请以修订模式标出，并附修改说明。条款编号指第一轮修改后的编号。\n\n1. 撤回第一轮第6点对第5.3款付款期限起算方式的修改，第5.3款恢复为底稿原文。\n\n2. 第一轮新增的第6.2款中，“48小时内”改为“2个工作日内”，并在该款句末增加一句：“整改方案经甲方书面确认后方可实施。”\n\n3. 第6.1款表格中一级故障的“恢复时间”由“4小时”改为“2小时”，其他单元格不动。\n\n4. 附件一新增第5项，内容为：“安全加固：乙方应每半年对本系统进行一次漏洞扫描与安全加固，并在完成后5个工作日内向甲方提交书面报告。”",
+   "estimate_id": "est_708a266e-aad8-45b1-9324-64da0662f770",
+   "title": "按你的意见修改文书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "doc-revise",
+   "skill_title": "按你的意见修改文书",
+   "skill_version": "1.6.0",
+   "skill_primary_output": "修订稿.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "opinion": "第二轮修改意见\n\n项目：岚栖—砚川运维与升级服务合同（LQYC-2026-YW018）\n底稿：你上一轮输出的修订版（第一轮修改后）\n日期：2026年11月11日　　经办律师：许棠\n\n说明：本轮在第一轮修订版基础上继续修改，第一轮的其他改动保留；本轮改动同样请以修订模式标出，并附修改说明。条款编号指第一轮修改后的编号。\n\n1. 撤回第一轮第6点对第5.3款付款期限起算方式的修改，第5.3款恢复为底稿原文。\n\n2. 第一轮新增的第6.2款中，“48小时内”改为“2个工作日内”，并在该款句末增加一句：“整改方案经甲方书面确认后方可实施。”\n\n3. 第6.1款表格中一级故障的“恢复时间”由“4小时”改"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 0,
+  "estimate_id": "est_708a266e-aad8-45b1-9324-64da0662f770",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T07:18:15.508Z",
+  "updated_at": "2026-11-10T07:43:00.154Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

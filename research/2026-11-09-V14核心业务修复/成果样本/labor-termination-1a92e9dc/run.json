@@ -1,0 +1,124 @@
+{
+ "run": {
+  "run_id": "run_1a92e9dc-458c-4b21-8fff-ba435d9b978c",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_fadc4938-933d-4754-ad37-a3e9723d0e7a",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_fadc4938-933d-4754-ad37-a3e9723d0e7a-a1.agent_task-1794204953486",
+  "input_snapshot": {
+   "matter_id": "mat_fadc4938-933d-4754-ad37-a3e9723d0e7a",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_70dfe310-7856-4e11-9aec-bf812f8625de",
+    "docv_9209160a-654f-4463-8ebe-80f8df4e7de3",
+    "docv_36e090a9-c67c-48e1-bf5c-fa48a50dee6c",
+    "docv_4218fb8a-1483-4d5f-85f1-9e84e088c2de",
+    "docv_7bed2b75-997f-4fc0-9aea-90048f540f84"
+   ],
+   "goal": "请评估拟解除这名员工的风险与程序：解除理由为严重违反规章制度。\n总经理已批示9月4日前办完。请评估这样解除的风险，程序上还缺什么，必要时给替代方案。",
+   "estimate_id": "est_d7a1b086-f2bc-433f-9cce-453b5e10f2ca",
+   "title": "解除员工前的风险评估",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "labor-dispute",
+   "skill_title": "劳动争议：仲裁应对、仲裁申请与解除前评估 · 试用",
+   "skill_version": "1.3.1",
+   "skill_primary_output": "解除风险评估.docx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "mode": "解除前评估",
+    "side": "用人单位",
+    "reason": "严重违反规章制度"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_d7a1b086-f2bc-433f-9cce-453b5e10f2ca",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:15:53.487Z",
+  "updated_at": "2026-11-09T07:46:32.667Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_7271781e-ee9e-4ff9-909a-f08a7bde2fe7",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除风险评估-上海澜栖智能科技有限公司.docx",
+   "sha256": "02d1dc1c85ad246768f8c00a1d17b5ee4767ad1f9d1bc50588248b5594660bd4",
+   "created_at": "2026-11-09T07:38:59.962Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_31baf70c-b1f7-4051-9134-159e3ee3aceb",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除程序核对清单-上海澜栖智能科技有限公司.xlsx",
+   "sha256": "a8c8cf3ac1bac5de186ed10dec6fcb22a60492c3d0430527e3f304ff90848adf",
+   "created_at": "2026-11-09T07:42:43.383Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e9b7863c-63bc-46ca-9708-737bd1ec9110",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-上海澜栖智能科技有限公司.xlsx",
+   "sha256": "e358fd8e2efd181918e4286044313a4156556962c4052623957d4cefe0834f86",
+   "created_at": "2026-11-09T07:42:43.392Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_03a0f03c-3e4a-42ed-a910-9fd93b00ab56",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-上海澜栖智能科技有限公司.xlsx",
+   "sha256": "a61b4110da7427f48516454b1ff3fad7cd2c67fb66a729394394c1ef7551a87d",
+   "created_at": "2026-11-09T07:45:22.289Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2d8b3fe1-36c0-4f74-a0f7-e7239126dace",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "b7842432313a295f10f5b799e7264c54afe3d3351c1feb562088ff46e3963c02",
+   "created_at": "2026-11-09T07:46:32.666Z",
+   "title": "已收到并完整读取全部5份材料，无未读或排除项；按拟于2026年9月4日解除的口径",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

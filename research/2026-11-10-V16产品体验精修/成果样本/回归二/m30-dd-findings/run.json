@@ -1,0 +1,180 @@
+{
+ "run": {
+  "run_id": "run_c8a73eac-dcf5-4586-97a8-a73e96f96a2b",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_79288dca-58ae-4fed-b3e9-20da446b940d",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_79288dca-58ae-4fed-b3e9-20da446b940d-a1.agent_task-1794300186694",
+  "input_snapshot": {
+   "matter_id": "mat_79288dca-58ae-4fed-b3e9-20da446b940d",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_d5a9e0b8-1562-40c5-ba17-126ff7577bc4",
+    "docv_49b6e4be-bac4-48f8-b090-6dfc74ee3cbb",
+    "docv_601cff19-d363-40af-b8e1-ba8d61b7f536",
+    "docv_18c54f9c-06ce-4fca-a39e-33773b508f6c",
+    "docv_52973b73-6671-43e3-a7f3-d209640d525f",
+    "docv_5560fb1a-184f-43d0-b589-2b674629d8f4",
+    "docv_827e2b53-a7d1-47a5-b4fd-aca072f7189c",
+    "docv_b1e183fc-3bae-4682-9639-79ff7c93356d",
+    "docv_6534fa5a-0bff-4273-90c8-90eda7936673"
+   ],
+   "goal": "请根据数据室材料、访谈纪要和导入的外部查询结果整理尽调发现与内部报告；交易类型：增资。\n数据室第一轮材料和苏晚亭的访谈都齐了，诉讼查询是我们自己在外部系统查的。请出内部尽调报告，红旗问题放前面，每个问题要落到增资协议怎么写（先决条件、陈述保证、特别赔偿还是交割后承诺）。目标公司说的话没核实的别写成事实。",
+   "estimate_id": "est_3a598945-77e9-4ea6-a152-bfcd25e51a24",
+   "title": "尽调发现与报告（内部稿）",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "due-diligence",
+   "skill_title": "法律尽职调查（清单 / 发现）· 试用",
+   "skill_version": "1.3.2",
+   "skill_primary_output": "尽调报告（内部稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "stage": "发现",
+    "deal_type": "增资"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_3a598945-77e9-4ea6-a152-bfcd25e51a24",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:06.695Z",
+  "updated_at": "2026-11-10T09:56:18.691Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_e6e4bc36-997f-4704-b5a0-7c241f682bba",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "尽调报告（内部稿）-栖桐科技增资.docx",
+   "sha256": "2eab2952d3bb51aa8bbfd8f543bf575683fb6693fb613d7f2baaa5e478870b56",
+   "created_at": "2026-11-10T09:41:37.927Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_50cc5aca-d1e8-4d88-b3d8-0018a42e127d",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "尽调发现表-栖桐科技增资.xlsx",
+   "sha256": "cb9b6d6c56bd5b970d4d387bb5736b2aad1d31ff1c5412f2a6f571b0ed8bd346",
+   "created_at": "2026-11-10T09:44:06.634Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_f9bb508e-44a6-4f61-885a-5b4cba28acbb",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "尽调发现表-栖桐科技增资.xlsx",
+   "sha256": "3aefc563662ee70cc375af7868c878b00f4fc10359a16a1f87f5c28b918ecbcd",
+   "created_at": "2026-11-10T09:44:16.840Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_e39424c7-fc02-45a3-b963-6c922e8ebda4",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "尽调报告（内部稿）-栖桐科技增资.docx",
+   "sha256": "58902805ce0c0742eb1da84c6f4e33e052104ba41a9f4e4ff2c6d18d3ac302a9",
+   "created_at": "2026-11-10T09:44:57.026Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_ef7b634d-c6b1-4f46-8ac6-856b6adff480",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "2f95a3d0b71c527a997d5835bff9117e62dcca303b4607ead88770a8fd0603b0",
+   "created_at": "2026-11-10T09:46:09.321Z",
+   "title": "已完成尽调发现阶段工作。九份数据室、访谈及外部查询材料均已完整读取，另读取投资条",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_f8089a56-472e-4d68-af00-931728a48c6f",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-尽调报告（内部稿）-栖桐科技增资.md",
+   "sha256": "9b5784c7bc2025b92198f5d3cedbf9e3eca4182144c4efcd11248a6a81852166",
+   "created_at": "2026-11-10T09:49:02.636Z",
+   "title": "独立复核意见：尽调报告（内部稿）-栖桐科技增资",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8833017e-f723-436c-8300-4f0f1f214f61",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "尽调报告（内部稿）-栖桐科技增资.docx",
+   "sha256": "27a814b395e0101c305fb25b97ccd984b900b721b6f17091854997ae8cbe1f4c",
+   "created_at": "2026-11-10T09:54:10.568Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_710255ac-52d6-4ed0-9467-0d9565ae33e2",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "尽调发现表-栖桐科技增资.xlsx",
+   "sha256": "c027acbab08956ef9f0ae22e559982b38f74bc0cffb4ce1a0ef9373428026a30",
+   "created_at": "2026-11-10T09:55:05.517Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_6fb4b80c-f1d7-466b-a276-7f9d90cd72aa",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "736924b546cbf169e866af0d211e9dde756eefde9f3d13f5516785a5fbb03670",
+   "created_at": "2026-11-10T09:56:18.691Z",
+   "title": "已完成独立复核及同步修订。九份数据室、访谈及外部查询材料均已完整读取，另读取投资",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

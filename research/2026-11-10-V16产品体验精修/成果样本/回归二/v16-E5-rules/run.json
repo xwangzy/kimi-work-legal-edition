@@ -1,0 +1,68 @@
+{
+ "run": {
+  "run_id": "run_b6cde3d4-9844-4e39-b55d-45a21d6d69e7",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_15d28236-8f40-44f4-b46a-cd71fa414aeb",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_15d28236-8f40-44f4-b46a-cd71fa414aeb-a1.agent_task-1794300169597",
+  "input_snapshot": {
+   "matter_id": "mat_15d28236-8f40-44f4-b46a-cd71fa414aeb",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_27a6e3db-274f-419a-a20f-3cb96628a1e9",
+    "docv_3a3bb8df-baa8-463b-9299-fbe0ba0be696"
+   ],
+   "goal": "请从公司的范本与标准里整理本事项的审查要点草稿：每条写条款、我方标准、可退让、不可谈，并写明出处。范本是：公司销售合同范本（KM-FB-SALES-2026V2）与销售合同审核标准（2026年9月）。",
+   "estimate_id": "est_f01a6c69-a0e3-483d-8255-53b866de52ee",
+   "title": "从公司范本整理审核标准",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "review-rules-draft",
+   "skill_title": "从范本整理审查要点",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "审查要点草稿（待你审定）",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "basis": "公司销售合同范本（KM-FB-SALES-2026V2）与销售合同审核标准（2026年9月）"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_f01a6c69-a0e3-483d-8255-53b866de52ee",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:49.598Z",
+  "updated_at": "2026-11-10T09:11:15.710Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_f2a6548d-c5d1-41a3-b697-883123c288f2",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "2f0a67132d7089d49f8f17c3daa2f56af1e09f065d99d2da310adff316871bc9",
+   "created_at": "2026-11-10T09:11:15.709Z",
+   "title": "已收到并完整读取 2 份材料，无未读内容或排除项：",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

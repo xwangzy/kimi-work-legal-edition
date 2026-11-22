@@ -1,0 +1,202 @@
+{
+ "run": {
+  "run_id": "run_df709b1f-4d84-4b91-8c8a-f9b089ad3b3e",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_4d76d353-fb34-424c-8740-b954fb3e9500",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 9,
+  "idempotency_key": "mat_4d76d353-fb34-424c-8740-b954fb3e9500-a1.agent_task-1794300213846",
+  "input_snapshot": {
+   "matter_id": "mat_4d76d353-fb34-424c-8740-b954fb3e9500",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_b2af3055-a4c6-492e-8a33-53a096b2b8de",
+    "docv_c5a9555c-3aff-4c24-910a-654d7704481f"
+   ],
+   "goal": "请起草民事上诉状（不服一审判决）。判决书或裁定书的送达日期：2026-11-04；上诉范围：部分判项（先问我）；上诉人在境内有无住所：有。我确认过的事实照写，材料载明但未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），不预测二审结果。\n我方是一审原告锐川。上诉范围：判项一中减价76,000元的部分、判项二的违约金标准、判项三中驳回律师费的部分，判项一支持的152,000元不上诉。",
+   "estimate_id": "est_261c75aa-6247-4fb2-a83c-657f97654061",
+   "title": "起草上诉状",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "appeal-draft",
+   "skill_title": "民事上诉状（受限文书）· 试用",
+   "skill_version": "1.2.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "民事上诉状（草稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "ruling": "判决",
+    "served_on": "2026-11-04",
+    "domicile": "有",
+    "scope": "部分判项（先问我）"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_261c75aa-6247-4fb2-a83c-657f97654061",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:33.847Z",
+  "updated_at": "2026-11-10T09:45:50.964Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_2e57518c-b66e-463e-8168-0878921fd3a2",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "上诉理由与一审认定对照表-锐川公司买卖合同纠纷.xlsx",
+   "sha256": "d41e627230bd92ca90f8dc2f914e202f0cdf4d2cac0ad60e09a8dbc5b6f9017d",
+   "created_at": "2026-11-10T09:30:34.872Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_823a683e-e5a5-4298-acc7-ca7772e1fce3",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "上诉理由与一审认定对照表-锐川公司买卖合同纠纷.xlsx",
+   "sha256": "c6352b1a4fe4ffd801fb49817f08145e9c5586ae35ba411f6a47001bf5bf92a4",
+   "created_at": "2026-11-10T09:31:07.948Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_89d554de-228f-4e6d-8934-dd137f8f9f40",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "民事上诉状.docx",
+   "sha256": "07bca7259fb3edb33a84f351628af1b8ac524cf158301c511389800802cdada8",
+   "created_at": "2026-11-10T09:35:51.702Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_3b69616b-71b8-4b23-a27c-23a28114717e",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "上诉理由与一审认定对照表-锐川公司买卖合同纠纷.xlsx",
+   "sha256": "ec5221332b59b78d81ff2ba4938435aca3b31649bed26a48c9bacdb994ed4641",
+   "created_at": "2026-11-10T09:37:16.161Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_2ea262df-1ea1-484d-8ee9-51a7f088e552",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-锐川公司买卖合同纠纷.xlsx",
+   "sha256": "6bb4de5fc39eff16325c9d2ba8025aeb75b61ee557eb026c9b21ca57bb00267b",
+   "created_at": "2026-11-10T09:39:08.212Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_443f5979-838c-491d-b2fe-93098348e09d",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "ca810b23bc63fd77da27e2376ac909512d4f06d6978ee458aa1e5427efd1a7a8",
+   "created_at": "2026-11-10T09:40:38.923Z",
+   "title": "上诉期届满日为 2026年11月19日（周四）。已完整读取2份材料，均可读清，无",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d176cb52-8b14-4524-82ca-9e86abb6012b",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-民事上诉状.md",
+   "sha256": "99bec6a1e5b848f20f5f31637ee74e3a003e4c0d4a0a80a8466fdc6cd6a16c33",
+   "created_at": "2026-11-10T09:42:08.905Z",
+   "title": "独立复核意见：民事上诉状",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_1187e709-ccc0-4074-b1b8-87cc0ecb784b",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "民事上诉状.docx",
+   "sha256": "f76bc90dcfbd773122bad4bc86914bd4150f4c18108ccb6fef725cf260835b91",
+   "created_at": "2026-11-10T09:44:14.977Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2a60af2f-45d9-4c3e-8f30-fd2597189795",
+   "kind": "agent_table",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "上诉理由与一审认定对照表-锐川公司买卖合同纠纷.xlsx",
+   "sha256": "245fce0efc23427f241df910f3af4f2653c4c01f9e1e3ef0a2f62cf53b316471",
+   "created_at": "2026-11-10T09:44:42.667Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_9f7e024e-3eb2-4106-a164-dbd624fedf8b",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-锐川公司买卖合同纠纷.xlsx",
+   "sha256": "9e51c90786d83406b6cc166eef95bbf32766a902b649a9bb7c98e7521079da1e",
+   "created_at": "2026-11-10T09:44:42.679Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_61490f9d-c50a-4490-ad21-650541fa33c1",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "36f5b8aa9c73492bc05edc8558b678eb41aa7c53600cf26e626f3a0376c976cc",
+   "created_at": "2026-11-10T09:45:50.963Z",
+   "title": "上诉期届满日为 2026年11月19日（周四）。已完整读取2份材料，均可读清，无",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

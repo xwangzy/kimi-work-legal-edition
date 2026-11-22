@@ -1,0 +1,32 @@
+{
+ "stack": "w4",
+ "tag": "m18-labor-arb-application",
+ "run": "run_fcdb5424-8c36-4ef0-9a8c-c900219eaad5",
+ "status": "succeeded",
+ "open": {
+  "v1-劳动仲裁申请书.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-提交前核对清单-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-证据目录-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-请求金额计算明细-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-劳动仲裁申请书.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-请求金额计算明细-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 5
+  }
+ }
+}

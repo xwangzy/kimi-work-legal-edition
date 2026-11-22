@@ -1,0 +1,135 @@
+{
+ "run": {
+  "run_id": "run_a8d2c5b6-ab41-43ce-b6b5-ce2785e5e525",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_9b946f01-96ae-41be-8849-83f491b1c08d",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_9b946f01-96ae-41be-8849-83f491b1c08d-a1.agent_task-1794300134287",
+  "input_snapshot": {
+   "matter_id": "mat_9b946f01-96ae-41be-8849-83f491b1c08d",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_6ef0db5a-374e-4624-ab4b-fcd0e4e82432",
+    "docv_dc01a275-c388-42d4-887f-a5b21d581573",
+    "docv_6fb2d5a7-5714-4676-98b3-eb55b5c2be85"
+   ],
+   "goal": "请起草代理词。法庭归纳的争议焦点：涉案设备是否存在质量问题，被告主张减少价款能否成立；被告应否支付逾期付款违约金，约定标准是否过高；原告主张的律师费应否支持。事实以我确认过的与已质证的证据为准，未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），不评估胜诉率。\n我方是原告锐川，法庭让庭后七日内交书面代理意见。证据只用庭上已经质证过的。",
+   "estimate_id": "est_4c08707e-83e7-4d29-aee5-e3116cc2f68a",
+   "title": "代理词",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "agency-statement",
+   "skill_title": "代理词（受限文书）",
+   "skill_version": "1.3.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "代理词（草稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "focus_points": "涉案设备是否存在质量问题，被告主张减少价款能否成立；被告应否支付逾期付款违约金，约定标准是否过高；原告主张的律师费应否支持"
+   }
+  },
+  "budget_points": 35,
+  "points_reserved": 35,
+  "points_charged": 35,
+  "estimate_id": "est_4c08707e-83e7-4d29-aee5-e3116cc2f68a",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:14.289Z",
+  "updated_at": "2026-11-10T09:02:17.655Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_9b6956e7-c403-4d0a-9e1f-e44c90e930f3",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "代理词.docx",
+   "sha256": "5be78aa3b3c037876cd516bd6d3431b2a0d06a9e755458287359fab4928c1fc2",
+   "created_at": "2026-11-10T08:56:31.571Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_3f9a245d-57b6-44f2-8825-f4b411b1777d",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点与依据对照表-锐川诉恒岳.xlsx",
+   "sha256": "1d0b4ba6c6c92a2c9db474ef177807fcf15c1ce658c76ef084d37f2b625c35d3",
+   "created_at": "2026-11-10T08:58:28.025Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_51162a0d-7d39-4f7c-8c51-834526f6fb07",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "90e4ec387a84ec8072cc83673e5a35354b47e0a8efcc118b07b44811045b872e",
+   "created_at": "2026-11-10T08:59:44.111Z",
+   "title": "庭后七日提交期限按庭审笔录算至 2026年9月22日，现已届满，请先核实法院是否",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_35b060d4-4d69-4c13-86c8-289239281140",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-代理词.md",
+   "sha256": "9ea4c9fb8067971f9936968c3812b98b89690d5cbb12935fd2c71e6fdf8abb09",
+   "created_at": "2026-11-10T09:00:54.251Z",
+   "title": "独立复核意见：代理词",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_1adc4c29-1c76-420e-bd0d-1838dc3716a4",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点与依据对照表-锐川诉恒岳.xlsx",
+   "sha256": "161d6217ebd0089e532d8fece802657922024a494f186ace695f5b86cc47f400",
+   "created_at": "2026-11-10T09:01:49.413Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8ad8600d-cb8d-4b82-9ed4-ff8310805802",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "76b588ee743f9adf5a4db3d2acba713a5539685cd289a926de2820deeacf46ca",
+   "created_at": "2026-11-10T09:02:17.654Z",
+   "title": "截至本事项分析截止日 2026年9月16日，庭后七日提交期限尚未届满，应于 20",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

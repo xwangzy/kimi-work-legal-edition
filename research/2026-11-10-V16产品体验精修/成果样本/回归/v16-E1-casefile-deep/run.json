@@ -1,0 +1,139 @@
+{
+ "run": {
+  "run_id": "run_045401d4-e6c1-4c1d-8920-607b3a3e3899",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_2c534c7c-b9e2-486d-b381-537b1e6fdda2",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 10,
+  "idempotency_key": "mat_2c534c7c-b9e2-486d-b381-537b1e6fdda2-a1.agent_task-1794280649448",
+  "input_snapshot": {
+   "matter_id": "mat_2c534c7c-b9e2-486d-b381-537b1e6fdda2",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_eab1f634-ee93-43fd-9916-3f898eb318b0",
+    "docv_960d2334-c6ce-4fb2-acb6-32c1f45488ec",
+    "docv_0049910c-e943-4c63-a110-96bc7837b644",
+    "docv_0a6b1175-fab1-4f4f-81fb-58c1315c8472",
+    "docv_0a3ea6ef-5e71-437f-a5f9-e99c7d9d78d7",
+    "docv_c3ab9ae7-4384-43d5-a34a-ec0697fa8c95",
+    "docv_657cef34-19eb-47cf-b971-c93768ec6c68",
+    "docv_be0330fe-53d0-43d1-9833-e76b5251010c",
+    "docv_867ea6f3-4951-4ed2-97e3-d62a911e5e7a",
+    "docv_aea78ccb-b0c4-4126-a47d-375c3c60b28e",
+    "docv_ec35092d-75cf-4cba-b765-f00b58853e9a"
+   ],
+   "goal": "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。",
+   "estimate_id": "est_59c07db5-3090-4217-8990-9117e55637e8",
+   "title": "整理案卷（精读版）",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "casefile-organize",
+   "skill_title": "案卷整理（目录与时间线）",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "案卷总目录.xlsx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k"
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_59c07db5-3090-4217-8990-9117e55637e8",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:17:29.449Z",
+  "updated_at": "2026-11-10T07:03:51.204Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_8f544a1c-67e5-42f2-9870-4ed9a18e22fe",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-澄岸广场幕墙分包.xlsx",
+   "sha256": "1f9354786547bc844b0ee5a9c223ebe5fb74cb70a088bc1fb0df22655451b672",
+   "created_at": "2026-11-10T06:56:57.817Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_ac1248df-80fb-4d46-a392-ca467dfb6417",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-澄岸广场幕墙分包.xlsx",
+   "sha256": "b3b0e7e02b079f3e4c68997c5f454ba7c5c0e5a45020950c1e83f560d7b6ad12",
+   "created_at": "2026-11-10T06:57:53.201Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_6a6ca12f-81d9-4f2b-8e01-a222560ea914",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "缺口清单-澄岸广场幕墙分包.xlsx",
+   "sha256": "afdfc8257e003f7aaef963054227b7ffe7a48ede2fa898fbc768eee668acec4e",
+   "created_at": "2026-11-10T07:00:51.327Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_76ce400d-1a13-46ff-ab55-5283b6a84696",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "缺口清单-澄岸广场幕墙分包.xlsx",
+   "sha256": "b3996896354702840df221affea5485ef8b0ab99e52fcf6d87a6739b58ff3000",
+   "created_at": "2026-11-10T07:01:33.376Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_671252b1-5ff9-4b41-86cd-92e254e6fe21",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "事实时间线-枢岩幕墙诉禾郢建设幕墙分包欠款.xlsx",
+   "sha256": "084d477b81a91b315c9670574f44233031748c27be648d6a28291a9b992b1d4f",
+   "created_at": "2026-11-10T07:03:51.202Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_78db3611-430f-40f6-9eb0-e8b9c84ce54d",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "fd05c4a82dfb75f1da3f00b0ce3d92b563a85769702395bbc77f622516cce8b6",
+   "created_at": "2026-11-10T07:03:51.203Z",
+   "title": "收到材料 11 份，完整读取 11 份；无无法识别、部分读取或按要求排除的材料。",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

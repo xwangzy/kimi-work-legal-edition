@@ -1,0 +1,197 @@
+[
+ {
+  "event_id": 128,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81811",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:20:10.447Z"
+ },
+ {
+  "event_id": 129,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:20:10.447Z"
+ },
+ {
+  "event_id": 130,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 1,
+   "loaded": 1,
+   "failed": 0,
+   "files": [
+    {
+     "name": "会员数据平台技术服务合同（数衡云智提供稿）.docx",
+     "chars": 2731,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_ea0aec28-e2eb-4466-8dd5-f7b5018b2bc5",
+     "parse_version_id": "psv_2ef0d3fb-f550-4350-9d96-6602d3878932"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:20:10.447Z"
+ },
+ {
+  "event_id": 138,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_b0f4ce6a-2334-47f0-b0f4-596b126c1eba_att_31cc4844-7643-4c1e-ba29-84b81dbf2f48",
+   "attempt_id": "att_31cc4844-7643-4c1e-ba29-84b81dbf2f48"
+  },
+  "created_at": "2026-11-10T03:20:10.970Z"
+ },
+ {
+  "event_id": 140,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_f2d7ddf5-788e-4d5e-988b-30724327aa4f",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:20:11.773Z"
+ },
+ {
+  "event_id": 142,
+  "seq": 10003,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Skill_0_808a8c42",
+   "tool": "Skill",
+   "description": "Invoke skill doc-revise",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:27.805Z"
+ },
+ {
+  "event_id": 143,
+  "seq": 10004,
+  "type": "agent.skill",
+  "payload": {
+   "skill": "doc-revise"
+  },
+  "created_at": "2026-11-10T03:20:27.805Z"
+ },
+ {
+  "event_id": 144,
+  "seq": 10005,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Skill_0_808a8c42",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:27.805Z"
+ },
+ {
+  "event_id": 148,
+  "seq": 10006,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__materials_list_1_9e31d5f3",
+   "tool": "mcp__legal__materials_list",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:37.424Z"
+ },
+ {
+  "event_id": 149,
+  "seq": 10007,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Read_2_9440e888",
+   "tool": "Read",
+   "description": "Reading /private/tmp/claude-501/-Users-wangzeyu--claude-spares-spare-QiOPjR/f64eb589-f629-4583-ad8a-7f473927a9c4/scratchpad/kwl/stack16v/web-data/demo-firm/kap/mat_7f72b942-dc36-4ea1-80eb-ddce785b668c/materials/001.txt",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:37.424Z"
+ },
+ {
+  "event_id": 150,
+  "seq": 10008,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__materials_list_1_9e31d5f3",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:37.424Z"
+ },
+ {
+  "event_id": 151,
+  "seq": 10009,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Read_2_9440e888",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-10T03:20:37.424Z"
+ },
+ {
+  "event_id": 152,
+  "seq": 10011,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 预扣费额度失败, 用户剩余额度: ¥0.686858, 需要预扣费额度: ¥1.279724 (request id: 202611100320370651572128268d9d6k9Ofy2FV)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:37.425Z"
+ },
+ {
+  "event_id": 153,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 预扣费额度失败, 用户剩余额度: ¥0.686858, 需要预扣费额度: ¥1.279724 (request id: 202611100320370651572128268d9d6k9Ofy2FV)"
+  },
+  "created_at": "2026-11-10T03:20:37.425Z"
+ },
+ {
+  "event_id": 154,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 预扣费额度失败, 用户剩余额度: ¥0.686858, 需要预扣费额度: ¥1.279724 (request id: 202611100320370651572128268d9d6k9Ofy2FV)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:37.425Z"
+ }
+]

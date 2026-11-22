@@ -1,0 +1,184 @@
+{
+ "run": {
+  "run_id": "run_c974371e-5e33-4aa5-95cc-ebd71c773765",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_cef84d2f-3ab7-4890-b4a0-044fb640dd73",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_cef84d2f-3ab7-4890-b4a0-044fb640dd73-a1.agent_task-1794203391178",
+  "input_snapshot": {
+   "matter_id": "mat_cef84d2f-3ab7-4890-b4a0-044fb640dd73",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_a84cc9b6-f8d3-44ea-8f83-0436273ba0b1",
+    "docv_0e72e3d5-0c73-4498-adb3-76dc5ea7e3db"
+   ],
+   "goal": "请就以下履约问题梳理履约事实与依据，并起草函件：裕丰包装订单 QL-PO-2026-0917：第一批（应于 2026-10-10 交货）10 月 20 日才到，A 型纸箱抽检不合格率 5.8%，我们 10 月 27 日发了质量异议及退货通知，对方至今未补货；第二批应于 10 月 31 日交货，至今未交，对方说 11 月 18 日交，还要求我们先付第一批货款。我们已临时向别家采购 A 型纸箱，多花了 46,800 元。\n采购部想马上换供应商，问能不能现在就发解除通知。请先判断现在能不能解除，再起草该发的函；违约金算到今天。",
+   "estimate_id": "est_3f4a75be-b351-406b-a523-bbbfad69d624",
+   "title": "履约问题与催告函",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "demand-letter",
+   "skill_title": "律师函 / 催告函",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "律师函或催告函（草稿）.docx",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "issue": "裕丰包装订单 QL-PO-2026-0917：第一批（应于 2026-10-10 交货）10 月 20 日才到，A 型纸箱抽检不合格率 5.8%，我们 10 月 27 日发了质量异议及退货通知，对方至今未补货；第二批应于 10 月 31 日交货，至今未交，对方说 11 月 18 日交，还要求我们先付第一批货款。我们已临时向别家采购 A 型纸箱，多花了 46,800 元。"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_3f4a75be-b351-406b-a523-bbbfad69d624",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:49:51.181Z",
+  "updated_at": "2026-11-09T07:32:12.584Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_fef31501-e015-4217-8fb1-b262d94692eb",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除前催告函.docx",
+   "sha256": "ef0caa03062d1dcedf4bbd87ffdbb0530bf10c5df664ee43aa9101b6f1c4cb5d",
+   "created_at": "2026-11-09T07:20:20.898Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_64528d77-d470-4b33-b5f0-182dba408760",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "依据与发送前核对-裕丰包装订单履约催告.xlsx",
+   "sha256": "a7d44c25e2513cca64e4ec8ff1b5755b548a1d28da3ec451153fbff14bd7623f",
+   "created_at": "2026-11-09T07:20:20.905Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_19b97cd5-ccb6-4ea5-b5e1-ef6f0f162e33",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-裕丰包装逾期交货违约金-截至2026-11-09.xlsx",
+   "sha256": "34e40e93d828b898e90396e4c77034022eac84c9ae1186c07b6b86d8eaaca097",
+   "created_at": "2026-11-09T07:20:20.912Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8d1f557c-ee46-4b3e-956c-8c1f1b761d8b",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "82ffa5c8f52602f4fd0e3306d156e8a316bebc575b8d0129bf83c9832810f8fc",
+   "created_at": "2026-11-09T07:21:31.639Z",
+   "title": "已收到并完整读取 2 份材料，无无法读取或仅部分读取的材料。技术标准附件、质检及",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d1e3cb1f-11e7-4489-a405-57913c70fd67",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-解除前催告函.md",
+   "sha256": "7197db437e8a76af726ed34f02f3950b4deea92cb0ea48cb902bc9e1131a6502",
+   "created_at": "2026-11-09T07:24:44.436Z",
+   "title": "独立复核意见：解除前催告函",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2e6139ca-f1c0-40df-a0e2-69629ac2d112",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除前催告函.docx",
+   "sha256": "4cb844d8b4574e1389c784246015c5dc80a8fbd868abdc27e20c33e71885b426",
+   "created_at": "2026-11-09T07:27:51.385Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_7aef524f-5321-4576-b55d-27b8e8cf6b6a",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除前催告函.docx",
+   "sha256": "353c96978d52839a5d0d43760c2a4139a161974ea98082178df51f37221ab120",
+   "created_at": "2026-11-09T07:28:38.318Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f95213ba-42d1-40d6-b0dd-413e02022484",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "依据与发送前核对-裕丰包装订单履约催告.xlsx",
+   "sha256": "e90d73de8dd8438f7944c886cd844f43b5d15e3c593abba81b6b6d0c8ea90373",
+   "created_at": "2026-11-09T07:30:50.112Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_fe9b9452-3f9e-4590-aaa1-370a3b3776d6",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-裕丰包装逾期交货违约金-截至2026-11-09.xlsx",
+   "sha256": "30366ad2f12e2f42119600a3c96a30fe4908595a5564fdaa9b43cfc66a787e0d",
+   "created_at": "2026-11-09T07:30:50.127Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_4f446321-7c47-447b-88a6-aa2456ef415a",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "a1a9cfc3d0529c0d74c65176c8311daf41e2f4e570e1d5338b680478515f8ad1",
+   "created_at": "2026-11-09T07:32:12.583Z",
+   "title": "已收到并完整读取 2 份材料，无无法读取或仅部分读取的材料。技术标准附件、质检及",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

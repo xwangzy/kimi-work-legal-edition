@@ -1,0 +1,147 @@
+{
+ "run": {
+  "run_id": "run_e08fed4a-e9f9-461a-8962-3596eeeb3b78",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_5f84d78a-bb27-4944-9a6f-ba1372dfa2f2",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_5f84d78a-bb27-4944-9a6f-ba1372dfa2f2-a1.agent_task-1794300246177",
+  "input_snapshot": {
+   "matter_id": "mat_5f84d78a-bb27-4944-9a6f-ba1372dfa2f2",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_ccc72fd0-ba71-48fb-8ff5-2a30db09aeed",
+    "docv_1d183955-dcbc-48dc-842c-2d147f39b8e5"
+   ],
+   "goal": "请给客户写案件进展汇报，汇报对象：客户管理层；截至：2026-11-09。\n给锐川顾总和财务陶敏看，一审判决刚收到。要他们拍板是否上诉，请把需要决定的事和最晚时间写在最前面。",
+   "estimate_id": "est_6d13f2ff-652d-4e92-9237-8ed6ac2a1bd1",
+   "title": "案件进展汇报（给客户）",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "case-report",
+   "skill_title": "案件进展汇报",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "案件进展汇报.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "audience": "客户管理层",
+    "as_of": "2026-11-09"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_6d13f2ff-652d-4e92-9237-8ed6ac2a1bd1",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:44:06.178Z",
+  "updated_at": "2026-11-10T10:16:29.707Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_1c945bc5-780e-48b5-a46f-ee8b7915c15e",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案件进展汇报-锐川诉恒岳买卖合同纠纷-2026-11-09.docx",
+   "sha256": "82b0161b6bea1177bbfd3924d7fb2de5706f5919d8099fcfbaae7f57572764fe",
+   "created_at": "2026-11-10T10:06:09.131Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_2d815c9a-0ac4-4e70-92a8-ab6ef4b14794",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "进展与风险附表-锐川诉恒岳买卖合同纠纷-2026-11-09.xlsx",
+   "sha256": "3e0da4a2f770a8cfdeb8c680244da03dea12f8b9e04341beab71eb87e73db578",
+   "created_at": "2026-11-10T10:08:01.937Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_1d18cf6d-0a31-4d7b-9b73-0830e2a8cbbf",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "9e87d03550cf0fab3c62bd6780958882a6fa77598d93c7224012bbd459bae737",
+   "created_at": "2026-11-10T10:10:30.336Z",
+   "title": "已完成。收到并完整读取 2 份材料，无读不出或排除的文件；目前事实时间线中没有律",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_e3e5eb24-720a-4622-a0f5-72387ff916d7",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-案件进展汇报-锐川诉恒岳买卖合同纠纷-2026-11-09.md",
+   "sha256": "cf08b215891c53e43eeeeff9815e162648fef0f8bec25aa953eb2f41663aaa8f",
+   "created_at": "2026-11-10T10:12:08.371Z",
+   "title": "独立复核意见：案件进展汇报-锐川诉恒岳买卖合同纠纷-2026-11-09",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f742defc-83ad-4381-b9ed-fa60a2fa6556",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案件进展汇报-锐川诉恒岳买卖合同纠纷-2026-11-09.docx",
+   "sha256": "4f2a3ee9e98d30ad1bfa2262dffcea128df936075c0ce4394b653a517e3175ac",
+   "created_at": "2026-11-10T10:15:25.220Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8b9c2ee5-f9ec-4c2d-8cec-b026fb804c2b",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "进展与风险附表-锐川诉恒岳买卖合同纠纷-2026-11-09.xlsx",
+   "sha256": "79e4e62a286775671c6db650159f949952cdfe44ef1a480ceaf792f31830071e",
+   "created_at": "2026-11-10T10:15:25.238Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_bd345214-52f1-4e3a-b5ef-4b4e753c5564",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "920ae3f02012004c7d0191af94996e0b4673c3a3df590155e01f286d78bcd685",
+   "created_at": "2026-11-10T10:16:29.706Z",
+   "title": "已完成独立复核并更新两份同名文件。收到并完整读取 2 份材料，无读不出或排除的文",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

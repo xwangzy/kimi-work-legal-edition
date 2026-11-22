@@ -1,0 +1,145 @@
+{
+ "run": {
+  "run_id": "run_71f9cdf0-f149-464d-98db-0f44521706d4",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_2ef5cc18-41ec-49cd-bedc-7913485c9ab3",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 9,
+  "idempotency_key": "mat_2ef5cc18-41ec-49cd-bedc-7913485c9ab3-a1.agent_task-1794300120454",
+  "input_snapshot": {
+   "matter_id": "mat_2ef5cc18-41ec-49cd-bedc-7913485c9ab3",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_c14b97b0-1985-4d58-96a6-2db7bd871a09"
+   ],
+   "goal": "请按以下意见直接在原文上修改这份文书，给我修订稿和清洁稿：律师修改意见（第一轮）\n\n项目：岚栖—砚川《岚栖仓储管理系统运维与升级服务合同》（合同编号 LQYC-2026-YW018）\n委托方：嘉兴岚栖供应链管理有限公司（我方，甲方）\n底稿：《岚栖仓储系统运维与升级服务合同（签署前定稿）》，2026年11月6日对方回传版\n日期：2026年11月10日　　经办律师：许棠\n\n说明：以下条款编号一律指上述底稿的原编号。请在底稿上以修订模式修改（保留修订痕迹），输出修订版 Word，并另附修改说明，逐条写明处理结果；无法执行或者需要我确认的，请单独列出。\n\n1. 第5.1款：升级服务费由人民币660,000元调整为人民币720,000元，服务费总额相应调整为人民币1,920,000元，大写同步修改；运维服务费不变。第5.2款付款节点表中第一至第三期金额按原比例重算，合计行同步修改。\n\n2. 在第6.1款（含其后表格）之后插入新的一款，内容为：“发生一级故障的，乙方应在故障恢复后48小时内组织甲方召开复盘会议，并在会议后3个工作日内提交书面整改方案。”插入后第六条其后各款编号顺延，全文（含附件）对第六条各款的引用同步更新。\n\n3. 删除第7.3款（违约金累计上限）。删除后第七条其后各款编号顺延，全文（含附件）引用同步更新。\n\n4. 仅在第六条范围内，将“乙方工程师”改为“乙方运维工程师”；第1.4款、第3.4款、第11.2款等其他条款中的“乙方工程师”保持不变。\n\n5. 附件三表格：在“甲方运维对接人”一行之后新增一行——角色“甲方数据安全联系人”，姓名“柏庭舟”，电话“0573-82916627”，电子邮箱“baitingzhou@lanqi-scm.example”。\n\n6. 第5.3款付款期限的起算方式修改为：“甲方应在对应付款节点条件成就且收到乙方开具的合法有效增值税专用发票之日（以两者较晚者为准）起15个工作日内付款。”\n\n7. 第3.3款关键人员更换的提前通知期限，适当延长一些。\n\n8. 附件二与第6.1款表格内容重复，请将附件二整体删除，第18.2款相应修改。\n\n9. 原第7.5款（甲方逾期付款违约金）中的“万分之三”改为“万分之二”。\n\n10. 除以上各点外，其他条款一律不动，包括对方已留的修订痕迹（第13.1款、第14.2款）与批注（第15.2款），以及页眉页脚、样式和编号格式。",
+   "estimate_id": "est_519537d9-6f60-45b5-9492-16d0e95949a4",
+   "title": "按你的意见修改文书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "doc-revise",
+   "skill_title": "按你的意见修改文书",
+   "skill_version": "1.7.0",
+   "skill_primary_output": "修订稿.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "opinion": "律师修改意见（第一轮）\n\n项目：岚栖—砚川《岚栖仓储管理系统运维与升级服务合同》（合同编号 LQYC-2026-YW018）\n委托方：嘉兴岚栖供应链管理有限公司（我方，甲方）\n底稿：《岚栖仓储系统运维与升级服务合同（签署前定稿）》，2026年11月6日对方回传版\n日期：2026年11月10日　　经办律师：许棠\n\n说明：以下条款编号一律指上述底稿的原编号。请在底稿上以修订模式修改（保留修订痕迹），输出修订版 Word，并另附修改说明，逐条写明处理结果；无法执行或者需要我确认的，请单独列出。\n\n1. 第5.1款：升级服务费由人民币660,000元调整为人民币720,000元，服务费总额相应调整为人"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_519537d9-6f60-45b5-9492-16d0e95949a4",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:00.455Z",
+  "updated_at": "2026-11-10T09:00:40.332Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_0a7d20d8-7402-49a3-a46f-1beff5d5b67a",
+   "kind": "revision_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "岚栖仓储系统运维与升级服务合同（签署前定稿）（修订稿）.docx",
+   "sha256": "8c868714ceec8471c5ff744a8bb5eca9ead3267165e897f7483f6a5c1ab37484",
+   "created_at": "2026-11-10T08:52:36.437Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_92d8e808-fa1c-4b57-a040-7b7c8c1ad4d6",
+   "kind": "revision_clean",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "岚栖仓储系统运维与升级服务合同（签署前定稿）（清洁稿）.docx",
+   "sha256": "2c360d593686a0a9bc47a9edddf9efeeec73d45c582616079f4ed610635cb280",
+   "created_at": "2026-11-10T08:52:36.448Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_bdd47150-078b-4576-870c-b36b97e333fc",
+   "kind": "revision_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "岚栖仓储系统运维与升级服务合同（签署前定稿）（修订稿·对外版）.docx",
+   "sha256": "c94df69f320748dbf9f9d6f97e63f40c501d16d0fb7f0ecd6fc5380ca7493af0",
+   "created_at": "2026-11-10T08:52:36.450Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_6f54f788-7001-4de4-b484-c467b22ca068",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "岚栖仓储系统运维与升级服务合同（签署前定稿）（修改对照表）.docx",
+   "sha256": "ec2b431df19955270d3c16c5616b25300701a434ab8cd94b6b36903cd2be9670",
+   "created_at": "2026-11-10T08:52:36.453Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2631c969-92d7-46d5-afb0-fa4d73922d0a",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "dd560c2229ce20d1c691977a891bda1b9149a6bb17cd0d0f59ba6eb4e6b015ad",
+   "created_at": "2026-11-10T08:54:07.260Z",
+   "title": "已在2026年11月6日对方回传底稿上完成第一轮修订。收到并完整读取1份材料；其",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d0999199-5b81-4cdb-a1db-724adacccd18",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-岚栖仓储系统运维与升级服务合同（签署前定稿）（清洁稿）.md",
+   "sha256": "012c8496ba378b0302cab1745d65164a2194ca7634f4924fc9490e7d1d4afb11",
+   "created_at": "2026-11-10T08:54:56.464Z",
+   "title": "独立复核意见：岚栖仓储系统运维与升级服务合同（签署前定稿）（清洁稿）",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_d90ff5b8-da41-4cb7-a89b-38cabc309a35",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "ad8c996d63c9663934e03861d6e53280986b9ec84457e9b9621a775804611c20",
+   "created_at": "2026-11-10T09:00:40.331Z",
+   "title": "已回到原件、上一轮文书及复核意见逐项核对。本轮根据您的最新决定，附件二先保留、不",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

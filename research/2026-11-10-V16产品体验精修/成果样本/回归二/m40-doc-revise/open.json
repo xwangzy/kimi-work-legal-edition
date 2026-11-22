@@ -1,0 +1,40 @@
+{
+ "stack": "w1",
+ "tag": "m40-doc-revise",
+ "run": "run_bff880c4-5a33-4378-ad26-59fc9699b610",
+ "status": "succeeded",
+ "open": {
+  "v1-会员数据平台技术服务合同（数衡云智提供稿）（修改对照表）.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-会员数据平台技术服务合同（数衡云智提供稿）（修订稿·对外版）.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-会员数据平台技术服务合同（数衡云智提供稿）（修订稿）.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-会员数据平台技术服务合同（数衡云智提供稿）（修改对照表）.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-会员数据平台技术服务合同（数衡云智提供稿）（修订稿·对外版）.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-会员数据平台技术服务合同（数衡云智提供稿）（修订稿）.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-会员数据平台技术服务合同（数衡云智提供稿）（清洁稿）.docx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

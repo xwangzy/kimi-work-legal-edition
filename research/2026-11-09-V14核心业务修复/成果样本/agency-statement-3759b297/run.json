@@ -1,0 +1,95 @@
+{
+ "run": {
+  "run_id": "run_3759b297-6a27-4bdd-8299-815ba905a34a",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_16b43024-b806-4731-a00e-669bacb175fa",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_16b43024-b806-4731-a00e-669bacb175fa-a1.agent_task-1794202189161",
+  "input_snapshot": {
+   "matter_id": "mat_16b43024-b806-4731-a00e-669bacb175fa",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_98ee2621-f990-425e-8f33-f71e575a3d6a",
+    "docv_ad01b3a7-1ccc-490b-b91d-d19954dd91e6",
+    "docv_999b0a5e-dad7-4174-a3f9-7c748c1288c6"
+   ],
+   "goal": "请起草代理词。法庭归纳的争议焦点：涉案设备是否存在质量问题，被告主张减少价款能否成立；被告应否支付逾期付款违约金，约定标准是否过高；原告主张的律师费应否支持。事实以我确认过的与已质证的证据为准，未确认的标【待确认】，不评估胜诉率。\n我方是原告锐川，法庭让庭后七日内交书面代理意见。证据只用庭上已经质证过的。",
+   "estimate_id": "est_ee4ec664-684f-4cd6-b8a3-8f88f0f8e97e",
+   "title": "代理词",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "agency-statement",
+   "skill_title": "代理词（受限文书）",
+   "skill_version": "1.2.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "代理词（草稿）.docx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "focus_points": "涉案设备是否存在质量问题，被告主张减少价款能否成立；被告应否支付逾期付款违约金，约定标准是否过高；原告主张的律师费应否支持"
+   }
+  },
+  "budget_points": 35,
+  "points_reserved": 35,
+  "points_charged": 35,
+  "estimate_id": "est_ee4ec664-684f-4cd6-b8a3-8f88f0f8e97e",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:29:49.165Z",
+  "updated_at": "2026-11-09T06:58:16.329Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_4f2f653f-18ae-44f8-8a17-90ba5574e565",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "代理词.docx",
+   "sha256": "cb6fa7e2b5055ac7ea2b1d286aa52811a7560098812d12580186530943e544e5",
+   "created_at": "2026-11-09T06:56:36.555Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_76102bca-59f0-422d-b419-5ddb8248e14c",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点与依据对照表-锐川诉恒岳.xlsx",
+   "sha256": "e9149cf59c3cc120ac7d74032ed984f079dc0da0135460a54c8901404444435c",
+   "created_at": "2026-11-09T06:57:33.756Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b186c7bc-e458-41ec-a492-13a07553b130",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "4cf4fd657323023238c06381e1fc170915e3c5e631d874871562feaf7c91faaf",
+   "created_at": "2026-11-09T06:58:16.329Z",
+   "title": "收到三份材料，已完整读取三份，无无法读取或排除的材料。已按你确认的论点完成起草；",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

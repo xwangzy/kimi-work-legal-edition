@@ -1,0 +1,160 @@
+{
+ "run": {
+  "run_id": "run_a6864cea-9662-4088-9244-71b1ceac3a6b",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_e7e8a0d3-b51b-46d2-9266-b3cbba49e850",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 14,
+  "idempotency_key": "mat_e7e8a0d3-b51b-46d2-9266-b3cbba49e850-a1.agent_task-1794280674521",
+  "input_snapshot": {
+   "matter_id": "mat_e7e8a0d3-b51b-46d2-9266-b3cbba49e850",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_cd053855-a7c2-4597-b545-53de11dcb9d6",
+    "docv_efee119f-090a-4b3c-925d-0a6ed4909154"
+   ],
+   "goal": "请就以下问题出具正式的法律意见书（Word），签署栏留空：请就《公司基本情况与股权变动说明》第五部分的四个问题出具法律意见，结论要明确，把握不大的地方如实说明；引用的法律依据逐条核对，核对不了的标出来。致送对象：泓屿精密部件（宁波）有限公司董事会。",
+   "estimate_id": "est_774215a5-4332-49b3-b787-8c45ea8c4f0f",
+   "title": "出具法律意见书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "client-advice",
+   "skill_title": "顾问答复",
+   "skill_version": "1.8.0",
+   "skill_primary_output": "法律意见书（草稿）.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "question": "请就《公司基本情况与股权变动说明》第五部分的四个问题出具法律意见，结论要明确，把握不大的地方如实说明；引用的法律依据逐条核对，核对不了的标出来。",
+    "addressee": "泓屿精密部件（宁波）有限公司董事会"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_774215a5-4332-49b3-b787-8c45ea8c4f0f",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:17:54.522Z",
+  "updated_at": "2026-11-10T07:26:48.875Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_66c907e2-e538-4c25-aa94-41c4a23927a6",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "关于未届期股权转让出资责任、出资期限调整及股东失权程序的法律意见书（草稿）.docx",
+   "sha256": "6e965cdf8922556b568030e7eefdcc0495952d8d6fe8746711cbdaa6402296e4",
+   "created_at": "2026-11-10T07:01:19.464Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_28535e86-b8bc-4fae-9e15-c471a508f07a",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "关于未届期股权转让出资责任、出资期限调整及股东失权程序的法律意见书（草稿）.docx",
+   "sha256": "61cd402242cf843fb62627cd06a9d2a1b2d4e9ebbad76ce1bf93cd713d8b8ae3",
+   "created_at": "2026-11-10T07:01:36.618Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_ba3495cc-1d95-4b84-ab5c-22a71db0a7ad",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "引用核验与待补材料清单.xlsx",
+   "sha256": "0edf54ce897a289a38bb2ad2c5b176d8847a4653497b3608d36f7072295e632f",
+   "created_at": "2026-11-10T07:02:46.418Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_3a1cea84-c3fa-4ea7-bf9c-fd5bf280c845",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "069e32f4e469e4581a291f368cfed0004f33a33f376f6f9ee90ac7c6dd755a1e",
+   "created_at": "2026-11-10T07:03:50.208Z",
+   "title": "已收到并完整读取2份材料，无无法识别或排除材料。正式法律意见书草稿及核验附件均已",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_bbd0f4a7-15d4-4d33-bf2b-457a2fcc992e",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-关于未届期股权转让出资责任、出资期限调整及股东失权程序的法律意见书（草稿）.md",
+   "sha256": "9cd34b4f2bb7eaac9edc47d160b6cf9c867a734b3bcfe3b442c9731c38cf4376",
+   "created_at": "2026-11-10T07:05:17.990Z",
+   "title": "独立复核意见：关于未届期股权转让出资责任、出资期限调整及股东失权程序的法律意见书",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_5bc0798b-0f76-4f94-a939-4bc567cd7318",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "关于公司股权变动、出资责任及股东失权相关事项的法律意见书（草稿）.docx",
+   "sha256": "6d56d346754d0a4ec57cc7852e4e8ed8758c1cb775ce8ed47d31ad87252dc783",
+   "created_at": "2026-11-10T07:23:59.503Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_69b6ff7d-d0f3-48b6-8d34-4ef8778b92c5",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与核验清单.xlsx",
+   "sha256": "0d905a5b2f521cc5759716d58b20fc48a943253382101229510523e0b906a8e0",
+   "created_at": "2026-11-10T07:25:18.454Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_78f64282-cfbb-4d04-b48f-bd4e9b2e06bf",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "dc8dc09adbb7f2de0b78f5001c387c4dd2d927f04f76bc986eefecd11efe2f89",
+   "created_at": "2026-11-10T07:26:48.874Z",
+   "title": "已完成重新起草。收到材料2份，完整读取2份，没有无法读取或仅部分读取的材料。因旧",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

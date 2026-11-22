@@ -1,0 +1,166 @@
+[
+ {
+  "event_id": 234,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81810",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:20:50.916Z"
+ },
+ {
+  "event_id": 235,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:20:50.916Z"
+ },
+ {
+  "event_id": 236,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 5,
+   "loaded": 5,
+   "failed": 0,
+   "files": [
+    {
+     "name": "09-客户访谈记录（2026-10-28）.txt",
+     "chars": 1116,
+     "quality": [
+      "plain_text"
+     ]
+    },
+    {
+     "name": "07-微信聊天摘录（韩启明与禾丰周宏亮）.txt",
+     "chars": 862,
+     "quality": [
+      "plain_text"
+     ]
+    },
+    {
+     "name": "04-对账确认函（截至2026-06-30，禾丰7月3日盖章）.docx",
+     "chars": 451,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "03-收款记录与开票明细.xlsx",
+     "chars": 664,
+     "quality": [
+      "xlsx_values_only"
+     ]
+    },
+    {
+     "name": "01-设备买卖合同（RC-XS-2025-118）.docx",
+     "chars": 1894,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_66c8c301-dac2-4326-bb5a-49a377e5b173",
+     "parse_version_id": "psv_0f04dc6e-a1e6-430d-8da5-02c54b690bb0"
+    },
+    {
+     "document_version_id": "docv_faa8c48b-5cd7-4954-b470-f881eaad5e20",
+     "parse_version_id": "psv_78517cab-57c7-428f-bd4e-d6ca0c5086b8"
+    },
+    {
+     "document_version_id": "docv_d839537d-3d4d-44de-a3fd-51de18b41a91",
+     "parse_version_id": "psv_23eaa146-d39c-4f47-8270-784b2fdbe46a"
+    },
+    {
+     "document_version_id": "docv_548a21f8-4540-478f-bb7e-8d1073d1e48c",
+     "parse_version_id": "psv_f3fabe3a-61dd-489d-92d8-bc9ad211e566"
+    },
+    {
+     "document_version_id": "docv_f0b9baba-7263-4ba3-9ff5-8444aa60f093",
+     "parse_version_id": "psv_8c2d5bb9-e61b-4603-9c30-91a1d1e051af"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:20:50.916Z"
+ },
+ {
+  "event_id": 237,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_ad0b943d-fc53-4f6b-97f6-3dadfbb4e353_att_541c8998-53f1-459a-b650-3240421530ab",
+   "attempt_id": "att_541c8998-53f1-459a-b650-3240421530ab"
+  },
+  "created_at": "2026-11-10T03:20:51.382Z"
+ },
+ {
+  "event_id": 238,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_6a0616bc-544e-468b-be03-94b566b358a3",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:20:52.185Z"
+ },
+ {
+  "event_id": 239,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 预扣费额度失败, 用户剩余额度: ¥0.058280, 需要预扣费额度: ¥1.127910 (request id: 202611100320514590623058268d9d6Y8qZjHFi)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:52.185Z"
+ },
+ {
+  "event_id": 240,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 预扣费额度失败, 用户剩余额度: ¥0.058280, 需要预扣费额度: ¥1.127910 (request id: 202611100320514590623058268d9d6Y8qZjHFi)"
+  },
+  "created_at": "2026-11-10T03:20:52.185Z"
+ },
+ {
+  "event_id": 241,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 预扣费额度失败, 用户剩余额度: ¥0.058280, 需要预扣费额度: ¥1.127910 (request id: 202611100320514590623058268d9d6Y8qZjHFi)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:52.185Z"
+ }
+]

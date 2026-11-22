@@ -1,0 +1,20 @@
+{
+ "stack": "w2",
+ "tag": "m45-demand-inhouse",
+ "run": "run_cea4963d-1da3-4ad6-8bef-fc869021c6c8",
+ "status": "succeeded",
+ "open": {
+  "v1-依据与发送前核对-裕丰包装订单解除.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v1-解除通知.docx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-解除通知.docx": {
+   "opened": true,
+   "pages": 2
+  }
+ }
+}

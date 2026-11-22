@@ -1,0 +1,59 @@
+{
+ "run": {
+  "run_id": "run_ad0b943d-fc53-4f6b-97f6-3dadfbb4e353",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_89cc3471-7d9d-47cd-8743-2aee43c85fee",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_89cc3471-7d9d-47cd-8743-2aee43c85fee-a1.agent_task-1794280781460",
+  "input_snapshot": {
+   "matter_id": "mat_89cc3471-7d9d-47cd-8743-2aee43c85fee",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_66c8c301-dac2-4326-bb5a-49a377e5b173",
+    "docv_faa8c48b-5cd7-4954-b470-f881eaad5e20",
+    "docv_d839537d-3d4d-44de-a3fd-51de18b41a91",
+    "docv_548a21f8-4540-478f-bb7e-8d1073d1e48c",
+    "docv_f0b9baba-7263-4ba3-9ff5-8444aa60f093"
+   ],
+   "goal": "请起草财产保全申请书：保全阶段为诉前（尚未起诉或申请仲裁）；请求保全数额：41万元。财产线索与担保只用我提供的，不联网查询对方财产。\n禾丰朋友圈说明年1月整体搬到安徽，客户想先冻结。担保准备用人保的诉讼保全责任保险保函，财产线索只用访谈记录里客户给的。",
+   "estimate_id": "est_1c41276c-3da4-497c-9e94-10a0fc7fe6e6",
+   "title": "财产保全申请",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "preservation-application",
+   "skill_title": "财产保全申请书（受限文书）· 试用",
+   "skill_version": "1.3.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "财产保全申请书（草稿）.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "stage": "诉前（尚未起诉或申请仲裁）",
+    "amount": "41万元"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 0,
+  "estimate_id": "est_1c41276c-3da4-497c-9e94-10a0fc7fe6e6",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:41.461Z",
+  "updated_at": "2026-11-10T07:43:00.168Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

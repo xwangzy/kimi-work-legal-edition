@@ -1,0 +1,32 @@
+{
+ "stack": "w1",
+ "tag": "v16-E7-draft",
+ "run": "run_7b51eff7-0ed5-4cc4-bc7d-4491554d14b5",
+ "status": "succeeded",
+ "open": {
+  "v1-起草说明与待定事项-软件著作权许可与联合开发协议.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-软件著作权许可与联合开发协议.docx": {
+   "opened": true,
+   "pages": 14
+  },
+  "v2-起草说明与待定事项-软件著作权许可与联合开发协议.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-软件著作权许可与联合开发协议.docx": {
+   "opened": true,
+   "pages": 14
+  },
+  "v3-软件著作权许可与联合开发协议.docx": {
+   "opened": true,
+   "pages": 14
+  },
+  "v4-软件著作权许可与联合开发协议.docx": {
+   "opened": true,
+   "pages": 10
+  }
+ }
+}

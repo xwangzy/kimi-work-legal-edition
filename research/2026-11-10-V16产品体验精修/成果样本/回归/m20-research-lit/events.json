@@ -1,0 +1,132 @@
+[
+ {
+  "event_id": 164,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81813",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:19:59.089Z"
+ },
+ {
+  "event_id": 165,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:19:59.089Z"
+ },
+ {
+  "event_id": 166,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 2,
+   "loaded": 2,
+   "failed": 0,
+   "files": [
+    {
+     "name": "05-质量异议函（禾丰，2026-07-15）.docx",
+     "chars": 512,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "01-设备买卖合同（RC-XS-2025-118）.docx",
+     "chars": 1894,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_78bedd1d-9d5f-4f0c-a0ac-6e94a2c38460",
+     "parse_version_id": "psv_cda9bb81-d571-4e10-9258-6a0fb23db898"
+    },
+    {
+     "document_version_id": "docv_bf90c0ca-86e6-46ac-a5bd-8d5ce9ba18e0",
+     "parse_version_id": "psv_1cf19a2e-db87-4038-a3b8-b1e9d85be9cc"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:19:59.089Z"
+ },
+ {
+  "event_id": 174,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_f3fc4595-925e-4fd8-852e-19844a19b556_att_9e7571ef-05d4-43ed-bb64-3e6c5187c4bd",
+   "attempt_id": "att_9e7571ef-05d4-43ed-bb64-3e6c5187c4bd"
+  },
+  "created_at": "2026-11-10T03:19:59.587Z"
+ },
+ {
+  "event_id": 176,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_eb5ab5c2-144d-4c29-bc55-68099269fa22",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:20:00.389Z"
+ },
+ {
+  "event_id": 177,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100319596633114168268d9d6N4WRrrmL)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:00.389Z"
+ },
+ {
+  "event_id": 178,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100319596633114168268d9d6N4WRrrmL)"
+  },
+  "created_at": "2026-11-10T03:20:00.389Z"
+ },
+ {
+  "event_id": 179,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100319596633114168268d9d6N4WRrrmL)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:00.389Z"
+ }
+]

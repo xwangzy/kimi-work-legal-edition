@@ -1,0 +1,32 @@
+{
+ "stack": "w5",
+ "tag": "m30-dd-findings",
+ "run": "run_3a5630ce-4120-4c17-ac96-9806fcacd1e3",
+ "status": "succeeded",
+ "open": {
+  "v1-尽调发现表-栖桐科技增资.xlsx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v1-尽调报告（内部稿）-栖桐科技增资.docx": {
+   "opened": true,
+   "pages": 12
+  },
+  "v2-尽调发现表-栖桐科技增资.xlsx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-尽调报告（内部稿）-栖桐科技增资.docx": {
+   "opened": true,
+   "pages": 12
+  },
+  "v3-尽调发现表-栖桐科技增资.xlsx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v3-尽调报告（内部稿）-栖桐科技增资.docx": {
+   "opened": true,
+   "pages": 13
+  }
+ }
+}

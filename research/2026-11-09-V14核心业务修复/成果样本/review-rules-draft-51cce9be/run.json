@@ -1,0 +1,67 @@
+{
+ "run": {
+  "run_id": "run_51cce9be-f2d1-4275-b6a7-f7647cc32fe6",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_639e12ab-a972-4675-9937-b1e5d99c4a48",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_639e12ab-a972-4675-9937-b1e5d99c4a48-a1.agent_task-1794203381335",
+  "input_snapshot": {
+   "matter_id": "mat_639e12ab-a972-4675-9937-b1e5d99c4a48",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_ee45d6aa-ce2b-4bbf-bc20-9bca73903a54",
+    "docv_ba01ab4d-615f-41c5-95cb-3ecc20559bf1"
+   ],
+   "goal": "请从公司的范本与标准里整理本事项的审查要点草稿：每条写条款、我方标准、可退让、不可谈，并写明出处。范本是：公司设备采购合同范本（2026 版）与法务部采购合同审核标准（2026-03 第 2 版）。\n把公司范本和审核标准整理成审查要点，以后审设备采购合同用。两份文件说法不一样的地方列出来，审批权限那部分怎么处理也说一下。",
+   "estimate_id": "est_0a924773-a961-48f0-ba55-ed34c123fd6a",
+   "title": "从公司范本整理审核标准",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "review-rules-draft",
+   "skill_title": "从范本整理审查要点 · 试用",
+   "skill_version": "1.0.0",
+   "skill_primary_output": "审查要点草稿（待你审定）",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "basis": "公司设备采购合同范本（2026 版）与法务部采购合同审核标准（2026-03 第 2 版）"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_0a924773-a961-48f0-ba55-ed34c123fd6a",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:49:41.338Z",
+  "updated_at": "2026-11-09T07:05:06.692Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_fe1f4136-7f5d-4479-8bc7-733a958de0cb",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "93aafcf7f13385607e4b82cfe411cce3498ca38bfe84d1fc496456b1f5e456a4",
+   "created_at": "2026-11-09T07:05:06.692Z",
+   "title": "已收到并完整读取两份材料，均无未读或识别不全的内容。已整理并保存 12 条设备采",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

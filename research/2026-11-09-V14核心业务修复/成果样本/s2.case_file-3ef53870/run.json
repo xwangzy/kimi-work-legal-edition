@@ -1,0 +1,131 @@
+{
+ "run": {
+  "run_id": "run_3ef53870-9fc1-4c43-bc8b-98d9f9efd70f",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_9da430a3-45dd-450b-919f-cd53c36e8966",
+  "scenario": "s2.case_file",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 3,
+  "idempotency_key": "mat_9da430a3-45dd-450b-919f-cd53c36e8966-s2.case_file-1794203743587",
+  "input_snapshot": {
+   "matter_id": "mat_9da430a3-45dd-450b-919f-cd53c36e8966",
+   "scenario": "s2.case_file",
+   "document_version_ids": [
+    "docv_0d94e0fc-6aad-4f99-b5c5-d479dcf4aebd",
+    "docv_38ec9752-4b19-421e-bd93-d21940a5184c",
+    "docv_e9a9404a-678b-4262-9ee5-c86ba14eeb5e",
+    "docv_3ed32234-8d81-4a00-966c-948d300a896f",
+    "docv_2121c801-5fa6-45cd-ac31-7c0dfb7ae782",
+    "docv_57df1f11-af69-4bb6-8ddd-5b08cb4d1fe7",
+    "docv_fd8857fc-6d2a-4c24-a9fb-f9be075f5724",
+    "docv_23d18581-beda-4914-844b-c666e90e6568"
+   ],
+   "goal": "客户是卖方锐川，准备起诉禾丰追尾款。先把证据目录和时间轴整理出来，我再做分析。",
+   "issues": [
+    "验收款余额31万元是否到期应付",
+    "3号机质量异议能否对抗付款",
+    "质保金是否已到期",
+    "违约金日万分之五是否过高"
+   ],
+   "estimate_id": "est_976ce838-31e6-4bda-8eac-e36978722b69",
+   "title": "整理案卷"
+  },
+  "budget_points": 0,
+  "points_reserved": 0,
+  "points_charged": 0,
+  "estimate_id": "est_976ce838-31e6-4bda-8eac-e36978722b69",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:55:43.589Z",
+  "updated_at": "2026-11-09T07:36:35.220Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_ad047bfd-bf1a-4d18-a6fe-8116555d8b39",
+   "kind": "s2_catalog",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-2026-11-09.xlsx",
+   "sha256": "d264a9fee7fbc7613c2d054250ffdeb3c4718e49d0445cf81127b6923a3f0bb6",
+   "created_at": "2026-11-09T07:36:35.217Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_3dff9e67-4471-474c-b5e3-42e26b9b9281",
+   "kind": "s2_timeline",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "事实时间轴-2026-11-09.xlsx",
+   "sha256": "55b6120a4c6ae9f23398af31e14beec78319d38e67bbeab72fd48b99711f2450",
+   "created_at": "2026-11-09T07:36:35.218Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_4a8dbcc6-f45c-4cba-9bdc-8823fdb55c9d",
+   "kind": "s2_evidence_catalog",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-2026-11-09.xlsx",
+   "sha256": "d4951239a675ae2c247c372d644670a94ea427c0a6805080a0c35b424c91a2a7",
+   "created_at": "2026-11-09T07:36:35.218Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c93dbe68-5ac9-493e-a7b4-fc6aa0149673",
+   "kind": "s2_matrix",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点证据矩阵-2026-11-09.xlsx",
+   "sha256": "29271fe580e0751c92edb8e484cdbc344db60611f82d525ff46cde6883f41b15",
+   "created_at": "2026-11-09T07:36:35.219Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_185c8ba9-40ea-4004-a162-72d0dda04be0",
+   "kind": "s2_supplement",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "补证清单-2026-11-09.docx",
+   "sha256": "865d5e65c6d9aaeba8370b5c5c91c6792ee4fc2cadd87fe761f0a5e6a4081d32",
+   "created_at": "2026-11-09T07:36:35.219Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_18001908-f21f-4806-8ece-edc11b194efa",
+   "kind": "s2_quality_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "材料质量报告-2026-11-09.docx",
+   "sha256": "f076ca0edc98a1ad78b51b7b987e11123b8f8c55def19ab280e00d3f26901c7a",
+   "created_at": "2026-11-09T07:36:35.219Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

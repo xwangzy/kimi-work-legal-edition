@@ -1,0 +1,197 @@
+[
+ {
+  "event_id": 196,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81813",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:20:01.665Z"
+ },
+ {
+  "event_id": 197,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:20:01.666Z"
+ },
+ {
+  "event_id": 198,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 7,
+   "loaded": 7,
+   "failed": 0,
+   "files": [
+    {
+     "name": "07-人事部情况说明（2026-11-02）.docx",
+     "chars": 1030,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "06-劳动仲裁申请书（程思远）及应诉通知书.docx",
+     "chars": 1355,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "05-竞业限制协议（2021-03-01）.docx",
+     "chars": 543,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "04-解除劳动合同通知书（2026-09-04）.docx",
+     "chars": 446,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "03-考勤与工资明细（2024-09至2026-09）.xlsx",
+     "chars": 2287,
+     "quality": [
+      "xlsx_values_only"
+     ]
+    },
+    {
+     "name": "02-员工手册（2023版）摘录.docx",
+     "chars": 784,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "01-劳动合同（程思远，2024续订）.docx",
+     "chars": 1170,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_73f4d13b-a28a-43c1-9b06-b085971cad8b",
+     "parse_version_id": "psv_ba2a88cf-9525-4117-b632-f61d7c78c2c0"
+    },
+    {
+     "document_version_id": "docv_ef750feb-3d41-4df5-90a6-2798bf8bf569",
+     "parse_version_id": "psv_54888886-c49b-49aa-9a68-d8d03521993a"
+    },
+    {
+     "document_version_id": "docv_079a3db9-d058-4f05-bd31-113c4dab445b",
+     "parse_version_id": "psv_bcc94a31-0469-4c9d-8d59-2efab9e0ba87"
+    },
+    {
+     "document_version_id": "docv_a33efad4-de63-4d4c-9fd3-ba8489f20211",
+     "parse_version_id": "psv_e93b66ee-206f-4a5f-b82c-b0927ff34c87"
+    },
+    {
+     "document_version_id": "docv_e8076f63-11b1-4526-8b56-cd03dda783ef",
+     "parse_version_id": "psv_685f2b7f-1f15-4021-9f77-4ea924629288"
+    },
+    {
+     "document_version_id": "docv_3d9ea28c-d4d7-49b7-9247-8c0154b0eea0",
+     "parse_version_id": "psv_602b48e9-4215-4508-8702-36b3cb475167"
+    },
+    {
+     "document_version_id": "docv_01329942-56da-4eab-b8b8-bb44543f2f65",
+     "parse_version_id": "psv_cfdce610-7220-4ba9-b8d1-a679b4775a6b"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:20:01.666Z"
+ },
+ {
+  "event_id": 203,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_10132ab3-79f4-405f-a81f-0d16b6b327cc_att_6129963c-ae04-4a68-99e0-160a661ebcf6",
+   "attempt_id": "att_6129963c-ae04-4a68-99e0-160a661ebcf6"
+  },
+  "created_at": "2026-11-10T03:20:02.156Z"
+ },
+ {
+  "event_id": 204,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_c84d741f-ca6b-48c3-be0d-55cba3a207c9",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:20:02.959Z"
+ },
+ {
+  "event_id": 205,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100320022330339428268d9d6kXL3yrdD)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:02.959Z"
+ },
+ {
+  "event_id": 206,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100320022330339428268d9d6kXL3yrdD)"
+  },
+  "created_at": "2026-11-10T03:20:02.959Z"
+ },
+ {
+  "event_id": 207,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 用户额度不足, 剩余额度: ¥-0.152098 (request id: 202611100320022330339428268d9d6kXL3yrdD)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:02.959Z"
+ }
+]

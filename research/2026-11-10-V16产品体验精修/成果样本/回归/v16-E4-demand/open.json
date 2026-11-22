@@ -1,0 +1,16 @@
+{
+ "stack": "w1",
+ "tag": "v16-E4-demand",
+ "run": "run_e14d61d4-eba3-4531-b68e-874297263e23",
+ "status": "succeeded",
+ "open": {
+  "v1-依据与发送前核对-PO-2026-0917逾期交货.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-解除前催告函.docx": {
+   "opened": true,
+   "pages": 2
+  }
+ }
+}

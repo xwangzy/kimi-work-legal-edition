@@ -1,0 +1,121 @@
+{
+ "run": {
+  "run_id": "run_da9b8ba1-8e42-4e19-bd82-2b40b445a4d6",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_fa0f385d-86dc-4cb1-863c-1f9483d30211",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_fa0f385d-86dc-4cb1-863c-1f9483d30211-a1.agent_task-1794300144917",
+  "input_snapshot": {
+   "matter_id": "mat_fa0f385d-86dc-4cb1-863c-1f9483d30211",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_3b52f322-92a9-4632-ae1d-2e6ce8e8d867",
+    "docv_bc2da372-9e7a-4734-b477-3b41cd51303c"
+   ],
+   "goal": "请审查这份员工手册：逐条看内容是否合法、是否与劳动合同冲突，并核对民主程序与公示材料；所在地：上海市。\n手册摘录里附了2021版对照和制定、公示情况。请逐条看，并告诉我们怎么依法补正程序。",
+   "estimate_id": "est_7e868c6f-d891-471f-b64e-04f5e1bc32c2",
+   "title": "规章制度审查",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "policy-review",
+   "skill_title": "规章制度审查 · 试用",
+   "skill_version": "1.0.0",
+   "skill_primary_output": "规章制度审查意见.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "policy_type": "员工手册",
+    "place": "上海市"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_7e868c6f-d891-471f-b64e-04f5e1bc32c2",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:24.918Z",
+  "updated_at": "2026-11-10T09:04:48.607Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_4cb57dcb-6a1f-4222-ad0a-8e80c0b32da1",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "逐条审查表-员工手册（2023版）.xlsx",
+   "sha256": "9d79149e32688829aaa76750511733f354acfa2de3be9a503efc6a95176ccf04",
+   "created_at": "2026-11-10T08:56:44.005Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_1381e5e2-d495-4113-a417-40331dbce32e",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "规章制度审查意见-员工手册（2023版）.docx",
+   "sha256": "5ecafac11eeea569c5c582fa389fc551ecc9a6d70b99a410063303216d68cfd6",
+   "created_at": "2026-11-10T09:01:33.222Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_53c61e5c-e58f-4686-aa2f-8cbc08d16f63",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "规章制度审查意见-员工手册（2023版）.docx",
+   "sha256": "b9307279605f15efe7260e652b8aaf054e0a3f887ed245b155075b57903a390b",
+   "created_at": "2026-11-10T09:02:12.888Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8becd685-255b-4db6-b30f-2d707bc189ea",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "b47c1970ac4952a70c177793c9503303a854779a954b8e3c002b7c153ac07007",
+   "created_at": "2026-11-10T09:03:42.248Z",
+   "title": "已完成本次手册摘录审查。收到材料2份、完整读取2份，无无法识别或排除材料；未提供",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_04d07723-948b-4eb6-a334-f2f4f9e242cd",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-规章制度审查意见-员工手册（2023版）.md",
+   "sha256": "210a67ff8877442ca01535061a77ae041f5742e5d68987e4343f2613c3fbcc8a",
+   "created_at": "2026-11-10T09:04:48.607Z",
+   "title": "独立复核意见：规章制度审查意见-员工手册（2023版）",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

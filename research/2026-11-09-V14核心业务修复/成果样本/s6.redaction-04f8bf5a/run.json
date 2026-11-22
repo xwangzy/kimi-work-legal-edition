@@ -1,0 +1,79 @@
+{
+ "run": {
+  "run_id": "run_04f8bf5a-eee8-4ed8-9e90-801d06959222",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_d68a9aa6-5103-43d4-bb61-39c2ec8f3134",
+  "scenario": "s6.redaction",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 3,
+  "idempotency_key": "mat_d68a9aa6-5103-43d4-bb61-39c2ec8f3134-s6.redaction-1794203351246",
+  "input_snapshot": {
+   "matter_id": "mat_d68a9aa6-5103-43d4-bb61-39c2ec8f3134",
+   "scenario": "s6.redaction",
+   "document_version_ids": [
+    "docv_e285f895-879a-4ee2-a661-caa9da55ac35"
+   ],
+   "goal": "客户要把去年的维保合同发给新一轮招标的咨询机构参考，账户、身份证号、手机号、邮箱都要去掉，修订痕迹也不能带出去。",
+   "estimate_id": "est_08ae92f2-cd51-4947-a6c9-af8933e02fb1",
+   "title": "客户版与对外脱敏"
+  },
+  "budget_points": 0,
+  "points_reserved": 0,
+  "points_charged": 0,
+  "estimate_id": "est_08ae92f2-cd51-4947-a6c9-af8933e02fb1",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:49:11.247Z",
+  "updated_at": "2026-11-09T06:55:54.310Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_4ecb5a72-4b85-4658-8a16-5563fc5f3381",
+   "kind": "s6_redacted",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "脱敏件-门店收银系统维保服务合同（签署版·含账户与联系人信息）.docx",
+   "sha256": "efbfba17f2da63f8d049554c3f64baed53904721eef797b0b0e55200538fdf59",
+   "created_at": "2026-11-09T06:55:54.306Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_da2392ec-3760-458f-9290-c005ac05eaf4",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "脱敏报告.docx",
+   "sha256": "76aa7e9fcf0d5fd3e6a3fe6e8ba1b42a2b25148feda9263eec7c4a14bcc82979",
+   "created_at": "2026-11-09T06:55:54.310Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_acef9e4c-e2bf-42fc-856c-013db911f12f",
+   "kind": "s6_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "脱敏报告-2026-11-09.docx",
+   "sha256": "76aa7e9fcf0d5fd3e6a3fe6e8ba1b42a2b25148feda9263eec7c4a14bcc82979",
+   "created_at": "2026-11-09T06:55:54.310Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

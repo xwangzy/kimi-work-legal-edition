@@ -1,0 +1,28 @@
+{
+ "stack": "w3",
+ "tag": "m08-appeal",
+ "run": "run_8c107a82-18d4-4276-8ed3-d74d2ca4f313",
+ "status": "succeeded",
+ "open": {
+  "v1-上诉理由与一审认定对照表-锐川公司买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-提交前核对清单-锐川公司买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-民事上诉状.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-计算明细-锐川公司买卖合同纠纷-截至2026-03-31.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-上诉理由与一审认定对照表-锐川公司买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

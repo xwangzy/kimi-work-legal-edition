@@ -1,0 +1,148 @@
+{
+ "run": {
+  "run_id": "run_330deea0-9360-4450-9874-cad36e132de5",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_1a571ee0-7753-49a2-921f-33ce766fdbc9",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 9,
+  "idempotency_key": "mat_1a571ee0-7753-49a2-921f-33ce766fdbc9-a1.agent_task-1794201778089",
+  "input_snapshot": {
+   "matter_id": "mat_1a571ee0-7753-49a2-921f-33ce766fdbc9",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_6f16a131-1bc1-49f9-afb8-f4ac499043d0",
+    "docv_86c7385c-55d5-4b85-af9f-5dbeeee8284f",
+    "docv_e289c999-c9ea-43d4-8b0b-8dc27c360832"
+   ],
+   "goal": "请起草商事仲裁申请书，先核对仲裁协议。仲裁机构：宁波仲裁委员会；仲裁请求：支付第三期设备款183,600元及逾期付款违约金（日万分之三，计至实际清偿之日）。我确认过的事实与金额照写，材料载明但未确认的标【待确认】，仲裁规则与收费以我提供的机构文件为准。\n客户是锐川。最后那6万元是甬岚包装代付的，订单也是甬岚包装出的，请核对被申请人该列谁。宁波仲裁委的规则和收费表我还没下载。",
+   "estimate_id": "est_a645e01f-8e1c-4122-9dc4-a4837acd4f07",
+   "title": "起草仲裁申请书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "arbitration-application",
+   "skill_title": "仲裁申请书（受限文书）· 试用",
+   "skill_version": "1.2.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "仲裁申请书（草稿）.docx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "institution": "宁波仲裁委员会",
+    "claims": "支付第三期设备款183,600元及逾期付款违约金（日万分之三，计至实际清偿之日）"
+   }
+  },
+  "budget_points": 35,
+  "points_reserved": 35,
+  "points_charged": 35,
+  "estimate_id": "est_a645e01f-8e1c-4122-9dc4-a4837acd4f07",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:22:58.092Z",
+  "updated_at": "2026-11-09T06:45:36.622Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_5124eec4-c71b-4046-b3f2-5a5dc4c24fd3",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仲裁申请书.docx",
+   "sha256": "b95223df7ab974878ba9032538454b8ca765ae08a3d29ac27fa46fa2698e311c",
+   "created_at": "2026-11-09T06:28:24.441Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_cc888d4b-cb41-4b9d-875f-59aebf3a0c56",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-锐川与甬岚纸业设备款争议-截至2026-11-09.xlsx",
+   "sha256": "5109666f4c8c00dcbf0b6577861e0f5ca625a26558d7e3bb04afacfa7a92cd24",
+   "created_at": "2026-11-09T06:32:07.810Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_dd7a7b77-b774-456d-841a-b268a54e7db5",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-锐川与甬岚纸业设备款争议.xlsx",
+   "sha256": "dd2ef7fddf9579db0f2a31651d7070dd91c4a9413528598614f5fbb532219ed8",
+   "created_at": "2026-11-09T06:32:07.820Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_44952b8e-30ec-445d-8b02-4f0ad9af30e4",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-锐川与甬岚纸业设备款争议.xlsx",
+   "sha256": "a47ae99605753f155050f50ff88d7ba68b9da9f8d8d4cc18d03dbfdd3457d952",
+   "created_at": "2026-11-09T06:32:07.826Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_28ee4012-291f-46de-a765-688e3b76f391",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "eab115c9e0768749e9db220829262776438ca2a5ec8d53356e37521e74fee1d3",
+   "created_at": "2026-11-09T06:34:29.094Z",
+   "title": "收到3份材料，已完整读取3份；无法读取、部分读取或排除的材料均为0份。宁波仲裁委",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_2af8209f-3be9-4cf4-bbe9-3e2ec1e4082e",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-仲裁申请书.md",
+   "sha256": "20a9a1abc016edd383506403c9724a29c92d561b5436139e5ba05e2964134706",
+   "created_at": "2026-11-09T06:35:55.403Z",
+   "title": "独立复核意见：仲裁申请书",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_70324128-9df9-4791-ab64-2c052cc1ae50",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "ddaaf6056314946666cf2651f0d0177db91f602c29d5edbe0ac0e7fbb448b0e2",
+   "created_at": "2026-11-09T06:45:36.619Z",
+   "title": "收到3份材料，已完整读取3份；无法读取、部分读取或排除的材料均为0份。宁波仲裁委",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

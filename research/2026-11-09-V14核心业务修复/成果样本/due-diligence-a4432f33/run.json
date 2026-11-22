@@ -1,0 +1,107 @@
+{
+ "run": {
+  "run_id": "run_a4432f33-df07-49a3-9022-e4c4678db81e",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_2f9787c1-457d-4fea-a13d-7495bd08b64b",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_2f9787c1-457d-4fea-a13d-7495bd08b64b-a1.agent_task-1794202608663",
+  "input_snapshot": {
+   "matter_id": "mat_2f9787c1-457d-4fea-a13d-7495bd08b64b",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_e375e7ad-5841-4b01-ac47-e33dd4057a84"
+   ],
+   "goal": "请为这笔增资交易列出尽调清单、可直接发给对方的资料清单与访谈提纲；关注重点：出资是否实缴、核心专利和软件著作权归属、关联担保与资金占用、大客户合同控制权变更条款、技术秘密诉讼。\n澜屹准备投栖桐 5,000 万，拿 20%。先出一版尽调清单和给目标公司的资料清单，资料清单明天要发给对方董秘，别把我们的关注点写进去。访谈提纲先按财务负责人和创始人两个对象准备。",
+   "estimate_id": "est_0ece458e-51de-46db-be00-76c1018d208a",
+   "title": "尽调清单与访谈提纲",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "due-diligence",
+   "skill_title": "法律尽职调查（清单 / 发现）· 试用",
+   "skill_version": "1.3.1",
+   "skill_primary_output": "尽调清单.xlsx",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "stage": "清单",
+    "deal_type": "增资",
+    "focus": "出资是否实缴、核心专利和软件著作权归属、关联担保与资金占用、大客户合同控制权变更条款、技术秘密诉讼"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_0ece458e-51de-46db-be00-76c1018d208a",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:36:48.666Z",
+  "updated_at": "2026-11-09T05:54:05.571Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_53450071-7d76-4ac3-a3ec-17876ce300c6",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "尽调清单-澜屹创投增资栖桐科技.xlsx",
+   "sha256": "c6652fd77eb5596fa9558b10ba83ce06738bc4ff521350cd50bb1f5db223f252",
+   "created_at": "2026-11-09T05:48:47.588Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_657be27f-299b-478c-b5a6-c94dbe6e194a",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "资料清单（致目标公司）-澜屹创投增资栖桐科技.xlsx",
+   "sha256": "e81b5cb102ecc24b6d3996759612a22d2c88837552bf590f9ac9f117b8127b99",
+   "created_at": "2026-11-09T05:50:26.055Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b06c7bcc-97af-4e9c-902f-379253567980",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈提纲-澜屹创投增资栖桐科技.docx",
+   "sha256": "bf34733f1a2064b368a8b6ab8bbc244012c07a7813ca656de2c16d3451082f70",
+   "created_at": "2026-11-09T05:53:04.978Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b5bf7c91-ed95-42e1-b157-dfcadfe50d29",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "f3b4b1484aad9bbd02715e0feadae61895ba9e19da04ae073f1a130cfd2b3c78",
+   "created_at": "2026-11-09T05:54:05.570Z",
+   "title": "材料目录共列出 12 份文件，本任务实际提供并完整读取《投资条款清单》1 份，其",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,32 @@
+{
+ "stack": "w2",
+ "tag": "v16-E1-casefile",
+ "run": "run_f2383192-b765-4b8b-827c-cf279749b5c7",
+ "status": "succeeded",
+ "open": {
+  "v1-争点证据矩阵-2026-11-10.xlsx": {
+   "opened": true,
+   "pages": 1
+  },
+  "v1-事实时间轴-2026-11-10.xlsx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v1-材料质量报告-2026-11-10.docx": {
+   "opened": true,
+   "pages": 1
+  },
+  "v1-案卷总目录-2026-11-10.xlsx": {
+   "opened": true,
+   "pages": 1
+  },
+  "v1-补证清单-2026-11-10.docx": {
+   "opened": true,
+   "pages": 1
+  },
+  "v1-证据目录-2026-11-10.xlsx": {
+   "opened": true,
+   "pages": 1
+  }
+ }
+}

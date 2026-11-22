@@ -1,0 +1,35 @@
+{
+  "tag": "m25-labor-arb-defense",
+  "card": "labor-arb-defense",
+  "veto": [],
+  "score": 20,
+  "tier": "可交付",
+  "status": "已通过",
+  "open_ok": true,
+  "minutes": 34,
+  "questions": 5,
+  "top_issues": [
+    "答辩书称“工资明细所列应发合计421,948.27元”（实为418,637.93，加回了8月旷工扣款，与公司坚持旷工立场冲突），2N与年休假备位额偏高",
+    "独立复核所附法条原文缺办案规则第33、80条，复核据此“必须改”要求删掉11-13工作日口径（助手驳回）",
+    "旷工依据仍只有民主程序缺失的2023版手册，未援用2021版“连续旷工3日以上”；13个月误算仍未指出"
+  ],
+  "prev_score": 19,
+  "v14_score": 14,
+  "product_defect": [
+    "独立复核请求所附法条原文缺条（办案规则第33、80条），复核据此提出方向错误的“必须改”",
+    "核对清单仍有“核对双方代号”令牌化用语、“2027年放假安排未收录”工具提示（#9 轻度残留）",
+    "提问未覆盖答案要点要求的“坚持旷工→2026年未休年休假变4天”取舍；认可口径推荐项未提示9月仅26日"
+  ],
+  "known_defects_recurring": [9],
+  "new_defects": [
+    "复核请求所附法条原文缺条导致复核误报“必须改”"
+  ],
+  "fix_check": {
+    "1_ask_before_drafting": "已生效",
+    "2_two_deadline_bases": "已生效",
+    "3_review_statutes_xlsx_namecode": "部分生效：附原文缺33/80条致误报；覆盖xlsx；无代号误报",
+    "4_disclaimer_not_in_files": "已生效",
+    "5_fact_n_crosswalk": "已生效（xlsx自动带事实对照；答辩书无事实N）",
+    "6_lawyer_answers_followed": "已生效"
+  }
+}

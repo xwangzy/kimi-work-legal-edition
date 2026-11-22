@@ -1,0 +1,102 @@
+[
+ {
+  "event_id": 226,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:82048",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:20:18.541Z"
+ },
+ {
+  "event_id": 227,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:20:18.542Z"
+ },
+ {
+  "event_id": 228,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 0,
+   "loaded": 0,
+   "failed": 0,
+   "files": [],
+   "parse_versions": []
+  },
+  "created_at": "2026-11-10T03:20:18.542Z"
+ },
+ {
+  "event_id": 233,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_ae3034e8-4e0f-4c25-bf5b-97ca2d6c46c8_att_ef98d8f3-e0ce-484f-9045-6b7b47ccfc60",
+   "attempt_id": "att_ef98d8f3-e0ce-484f-9045-6b7b47ccfc60"
+  },
+  "created_at": "2026-11-10T03:20:19.027Z"
+ },
+ {
+  "event_id": 234,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_13c6aae0-ae39-4117-9c48-c1a1747880fd",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:20:19.830Z"
+ },
+ {
+  "event_id": 235,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 预扣费额度失败, 用户剩余额度: ¥0.726940, 需要预扣费额度: ¥1.128652 (request id: 202611100320191094385168268d9d6bKcF5JGP)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:19.830Z"
+ },
+ {
+  "event_id": 236,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 预扣费额度失败, 用户剩余额度: ¥0.726940, 需要预扣费额度: ¥1.128652 (request id: 202611100320191094385168268d9d6bKcF5JGP)"
+  },
+  "created_at": "2026-11-10T03:20:19.830Z"
+ },
+ {
+  "event_id": 237,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 预扣费额度失败, 用户剩余额度: ¥0.726940, 需要预扣费额度: ¥1.128652 (request id: 202611100320191094385168268d9d6bKcF5JGP)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:19.830Z"
+ }
+]

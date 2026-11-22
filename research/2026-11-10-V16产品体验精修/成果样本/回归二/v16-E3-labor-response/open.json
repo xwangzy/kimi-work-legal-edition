@@ -1,0 +1,32 @@
+{
+ "stack": "w2",
+ "tag": "v16-E3-labor-response",
+ "run": "run_67af31b3-3718-4d50-ad95-8a982ff00b24",
+ "status": "succeeded",
+ "open": {
+  "v1-举证责任与证据清单-棠奕精密.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-劳动争议应对方案-棠奕精密.docx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v1-请求项与敞口表-棠奕精密.xlsx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-劳动争议应对方案-棠奕精密.docx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v2-请求项与敞口表-棠奕精密.xlsx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v3-劳动争议应对方案-棠奕精密.docx": {
+   "opened": true,
+   "pages": 9
+  }
+ }
+}

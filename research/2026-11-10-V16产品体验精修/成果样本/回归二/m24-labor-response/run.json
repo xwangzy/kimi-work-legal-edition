@@ -1,0 +1,168 @@
+{
+ "run": {
+  "run_id": "run_cf42dd6a-bc49-4a13-8187-6ba087b85023",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_db3c6dc1-12ba-4b2c-a3f8-f406cb209155",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_db3c6dc1-12ba-4b2c-a3f8-f406cb209155-a1.agent_task-1794300258761",
+  "input_snapshot": {
+   "matter_id": "mat_db3c6dc1-12ba-4b2c-a3f8-f406cb209155",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_0671393c-3cab-487f-ae3e-a3dbeed0ab96",
+    "docv_dd9ae4e6-1920-481f-b17c-343fe70ceb11",
+    "docv_e5f53ff4-c741-4a2c-af7b-8f12e3c8c586",
+    "docv_ce9bf108-ee3d-4a95-a1bc-c5b67f012509",
+    "docv_7fbb6d80-1b9a-4223-8db3-45e2c66d62f0",
+    "docv_681c06ad-3a95-4bda-a0b2-97e9489a4634",
+    "docv_1502a574-a0a1-4ab9-8ca0-de73e455a954"
+   ],
+   "goal": "请为劳动仲裁应诉做应对方案：员工请求为违法解除赔偿金、加班费差额、未休年休假工资、8月扣款、竞业限制补偿，合计518,213.47元；收到仲裁申请书副本的日期：2026-10-30（答辩期十个工作日）；开庭日：2026-12-03。\n管理层要一份应对方案和敞口表，下周一开会定调解底线。工会那边解除时没通知，现在还能不能补？",
+   "estimate_id": "est_5a83353b-35b1-4053-aa24-51bdeaff71b4",
+   "title": "劳动仲裁应对",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "labor-dispute",
+   "skill_title": "劳动争议：仲裁应对、仲裁申请与解除前评估 · 试用",
+   "skill_version": "1.4.0",
+   "skill_primary_output": "劳动争议应对方案.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "mode": "仲裁应对",
+    "side": "用人单位",
+    "claim": "违法解除赔偿金、加班费差额、未休年休假工资、8月扣款、竞业限制补偿，合计518,213.47元",
+    "received_on": "2026-10-30",
+    "hearing": "2026-12-03"
+   }
+  },
+  "budget_points": 55,
+  "points_reserved": 55,
+  "points_charged": 55,
+  "estimate_id": "est_5a83353b-35b1-4053-aa24-51bdeaff71b4",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:44:18.762Z",
+  "updated_at": "2026-11-10T10:38:34.818Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_1a59fa96-1d9f-4990-92e9-286b5ffd6936",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-上海澜栖智能科技有限公司.docx",
+   "sha256": "5c9fd9d7ce5ddf5934f9803a9385877551eebac0b6cc90cf4cec0da27b5d86f9",
+   "created_at": "2026-11-10T10:29:09.273Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_17c8d099-b5ad-43df-a9ad-906e4959eec7",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-上海澜栖智能科技有限公司.xlsx",
+   "sha256": "86cf66b89903dba2a925a34d9528f656b404a30902de0e00f4fda5c2807568a0",
+   "created_at": "2026-11-10T10:32:08.753Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_9b173a35-bb43-4fd5-9340-8c9aec8e03d3",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "举证责任与证据清单-上海澜栖智能科技有限公司.xlsx",
+   "sha256": "c0d3c59bed7b7da142ecb844fc2ab37991edb10f9b24ed2fdce8924be5a14f6f",
+   "created_at": "2026-11-10T10:32:08.761Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8ad0b0f6-9082-45dc-b37c-f987702e5cb9",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "45c5ed0ac0a7a45afbb5128f0f6a5bb4f48284c6f1502efb4fe9952eb2c4d34c",
+   "created_at": "2026-11-10T10:34:06.281Z",
+   "title": "七份材料均已完整读取，无未读页；五项请求、10类敞口情景、24项举证事项及7项地",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_ad119aca-43fa-4389-b652-207e81121ace",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-劳动争议应对方案-上海澜栖智能科技有限公司.md",
+   "sha256": "343cf29181df2091fefdd8099ed97b6eb4b17707c5c9fb610985ca00fd272b14",
+   "created_at": "2026-11-10T10:36:36.261Z",
+   "title": "独立复核意见：劳动争议应对方案-上海澜栖智能科技有限公司",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c1c5280d-9801-4317-97d8-5218eba4651d",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-上海澜栖智能科技有限公司.docx",
+   "sha256": "c100c2ccc989724a5eb1f03ee60b96ad1db838c0f0e1b98209db65aa1fbbccdf",
+   "created_at": "2026-11-10T10:37:58.918Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_da8e595c-6541-45c4-b849-ede9fbb0bf12",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-上海澜栖智能科技有限公司.xlsx",
+   "sha256": "7f2b12d1d7c0b5bdd8d6ff3cae1ed879c85bcf77a26f6d924452209f52af2440",
+   "created_at": "2026-11-10T10:37:58.933Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_dbf69067-c640-4146-9a90-c734717fc112",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "bfdfc3d5be2ba1528a60affe9ebdfb8b46429ea92888e5542c63ebb0f9289dca",
+   "created_at": "2026-11-10T10:38:34.817Z",
+   "title": "七份材料均已完整读取，无未读页；五项请求、10类敞口情景、24项举证事项及7项地",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

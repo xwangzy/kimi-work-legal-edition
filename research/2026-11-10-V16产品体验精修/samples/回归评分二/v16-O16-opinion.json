@@ -1,0 +1,25 @@
+{
+  "tag": "v16-O16-opinion",
+  "card": "legal-opinion",
+  "veto": [],
+  "score": 21,
+  "tier": "可交付",
+  "status": "已通过",
+  "open_ok": true,
+  "minutes": 23,
+  "questions": 1,
+  "top_issues": [
+    "恶意转让路径只用民法典第146/154条，未提九民纪要第6条、执行变更追加规定第19条一路的裁判思路",
+    "资不抵债下的破产原因与个别清偿风险未提示，沣禾案“入库”之争未用作答辩策略",
+    "正文错字“公司拟否及能否要求原股东”，并残留“按全文引用，不列条号”“【待签发】”等起草用语"
+  ],
+  "prev_score": 19,
+  "v14_score": null,
+  "known_defects_recurring": [],
+  "product_defect": [
+    "docx元数据写入产品名与内部样式标识（creator“Kimi Work 法律行业发行版（AI 辅助生成，须经律师复核）”、category“kwl-house-style/1”），对外文书发出前需清理"
+  ],
+  "new_defects": [
+    "成果docx的core.xml带产品名creator与“kwl-house-style/1”内部分类标识"
+  ]
+}

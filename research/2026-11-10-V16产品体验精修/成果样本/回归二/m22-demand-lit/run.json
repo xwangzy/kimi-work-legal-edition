@@ -1,0 +1,124 @@
+{
+ "run": {
+  "run_id": "run_b35f680a-13ad-4968-97ba-f95f6c4157a7",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_fb758189-bba8-4145-8d6f-33505d4416b2",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_fb758189-bba8-4145-8d6f-33505d4416b2-a1.agent_task-1794300233216",
+  "input_snapshot": {
+   "matter_id": "mat_fb758189-bba8-4145-8d6f-33505d4416b2",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_35ddec1b-4e77-4054-ade8-ac4b93a3818a",
+    "docv_ccb8b141-659d-481f-9fcd-cb7417250b05",
+    "docv_ce9fd2d5-eea2-4a5a-a943-7269fb17c4f3",
+    "docv_f3f8f707-5709-4bee-9bcf-660744717fb5",
+    "docv_69e326bd-d9fe-437f-84b6-9ab02e4b984d"
+   ],
+   "goal": "请起草：催款律师函；期限要求：收函后7日内。\n以苏州衡正律师事务所名义受锐川委托发给禾丰。请回应对方7月15日的质量异议函，语气坚定但别过头。",
+   "estimate_id": "est_c0f67183-a879-4ca7-8aa5-cab9061b5f80",
+   "title": "律师函 / 催告函",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "demand-letter",
+   "skill_title": "律师函 / 催告函",
+   "skill_version": "1.3.0",
+   "skill_primary_output": "律师函或催告函（草稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "letter_type": "催款律师函",
+    "deadline": "收函后7日内"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_c0f67183-a879-4ca7-8aa5-cab9061b5f80",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:53.217Z",
+  "updated_at": "2026-11-10T10:09:58.395Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_25e45c51-ccda-4370-87a0-030359ecdb96",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "律师函.docx",
+   "sha256": "4cbe437f2da87829ea0470eb4ef961bc7647b6d0bc9a3b971175ef4ff3c46714",
+   "created_at": "2026-11-10T10:05:15.976Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e64123bc-c912-46fb-bf6a-289df123d463",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "依据与发送前核对-设备款催收.xlsx",
+   "sha256": "a98118a71627f746c426789547f99528a8b5ea1c35e88503017d3574a673ed2c",
+   "created_at": "2026-11-10T10:07:53.465Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2b435a59-3442-4091-873c-ea60cb4c19de",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-设备款催收-截至2026-11-09.xlsx",
+   "sha256": "7e6dc90845b6892641c3d8211313cdce2e67aef0bad84aee7b9492324815fcf5",
+   "created_at": "2026-11-10T10:07:53.470Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_19e7a79a-57da-47d0-a119-c5e80a8af6f9",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "f3ea80a53ef09a1ede372380a5200f819152f3695cd4c54f20aaecb3507b3966",
+   "created_at": "2026-11-10T10:09:26.607Z",
+   "title": "已完整读取全部5份材料，无无法识别或排除的材料。累计违约金、质保金准确到期日及诉",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a61c39a7-ca71-4b52-b72c-78c1121f67bf",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-律师函.md",
+   "sha256": "98586893c62d20b99907f276d68fd9044492c3568aa5451bfa6ad2ec4322b588",
+   "created_at": "2026-11-10T10:09:58.395Z",
+   "title": "独立复核意见：律师函",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

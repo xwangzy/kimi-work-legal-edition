@@ -1,0 +1,170 @@
+{
+ "run": {
+  "run_id": "run_00999781-c5ca-4b46-9d69-71b5bd7f6158",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_51f263a8-e448-4032-b9e5-79ca6e396550",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_51f263a8-e448-4032-b9e5-79ca6e396550-a1.agent_task-1794200540138",
+  "input_snapshot": {
+   "matter_id": "mat_51f263a8-e448-4032-b9e5-79ca6e396550",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_06da7865-d20f-481b-87d1-5bf86a74bcce"
+   ],
+   "goal": "请按以下意见直接在原文上修改这份文书，给我修订稿和清洁稿：我们是甲方澹川物流。就在枢禾发来的这版原件上改，出修订稿和清洁稿。意见如下：\n1. 页眉里的“（乙方提供稿）”改成“（甲方修改稿）”。\n2. 5.1 付款计划表：第1期从30%降到20%，第4期质保金从5%提到15%，第2、3期不动。金额按开发费186万元重算，合计要对得上。\n3. 第九条 9.1 后面加一款：运维期内乙方要提供7×24小时故障受理，指定一名专职运维负责人；乙方换人要提前15天书面通知我们，并经我们书面同意。原来后面的款号顺延，合同里引用到这几款的地方都要改对。\n4. 13.2 逾期上线的违约金太低：每日万分之三改成每日千分之一，累计上限从开发费的3%提到20%。\n5. 14.3 乙方“因经营策略调整”提前30天通知就能解约、还不用担责，这一款整款删掉。\n6. 第十六条争议解决不要仲裁了，改成向甲方住所地有管辖权的人民法院起诉。\n7. 11.1 那段写得太口语（“等等”“告诉别人”这种），帮我收成正式的合同用语；保密的范围和义务实质上不要扩大也不要缩小，不要加新内容。\n8. 除上述之外，其他条款一字不改。别的地方你觉得对我们不利的，在说明里列出来，不要直接动。\n对方是开发方枢禾，修订稿要能直接发回给他们。",
+   "estimate_id": "est_2d7b02fa-e40e-40f7-bd2f-d2cb257ae740",
+   "title": "按你的意见修改文书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "doc-revise",
+   "skill_title": "按你的意见修改文书 · 试用",
+   "skill_version": "1.3.4",
+   "skill_primary_output": "修订稿.docx",
+   "skills_sha256": "sUSOoUiH8MRK2usGoBAWN7Qdst_qplAZMMaWwcW8p8M",
+   "skill_args": {
+    "opinion": "我们是甲方澹川物流。就在枢禾发来的这版原件上改，出修订稿和清洁稿。意见如下：\n1. 页眉里的“（乙方提供稿）”改成“（甲方修改稿）”。\n2. 5.1 付款计划表：第1期从30%降到20%，第4期质保金从5%提到15%，第2、3期不动。金额按开发费186万元重算，合计要对得上。\n3. 第九条 9.1 后面加一款：运维期内乙方要提供7×24小时故障受理，指定一名专职运维负责人；乙方换人要提前15天书面通知我们，并经我们书面同意。原来后面的款号顺延，合同里引用到这几款的地方都要改对。\n4. 13.2 逾期上线的违约金太低：每日万分之三改成每日千分之一，累计上限从开发费的3%提到20%。\n5. 14."
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_2d7b02fa-e40e-40f7-bd2f-d2cb257ae740",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:02:20.145Z",
+  "updated_at": "2026-11-09T05:17:11.959Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_b8911a35-f80a-4731-af8f-9bac13073625",
+   "kind": "revision_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "软件开发与运维服务合同（枢禾信息提供稿）（修订稿）.docx",
+   "sha256": "61dbbf02b59b30c98874d37f54cbc0062280a070637e35612fe37fd68275ca9f",
+   "created_at": "2026-11-09T05:09:58.968Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_7bd6908a-66e0-4543-b63c-873b99ea8660",
+   "kind": "revision_clean",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "软件开发与运维服务合同（枢禾信息提供稿）（清洁稿）.docx",
+   "sha256": "8a31d762e1d7df6109dd3dea792a39c2387654f11aedf0d05e6b59a1bc024a0c",
+   "created_at": "2026-11-09T05:09:58.975Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_9c2dbc29-634f-40f7-bd2b-25614997ab5c",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "软件开发与运维服务合同（枢禾信息提供稿）（修改对照表）.docx",
+   "sha256": "2210d4e52013808a26339e9a290d076621524c5f7574808a8abba333563e773e",
+   "created_at": "2026-11-09T05:09:58.977Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_939964e3-7f6c-4a4c-bbe7-5ddc31b15fd6",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "f58d3e67e09757cf1e24fb9f1df4948366281bb073b8e3f253c74f94a19021d9",
+   "created_at": "2026-11-09T05:13:35.928Z",
+   "title": "已完整读取并处理1份合同原件，无未读取范围。您的8项意见拆分为17处修改，已全部",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d50bfe97-f948-417b-8cf0-73b3fd545a39",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-软件开发与运维服务合同（枢禾信息提供稿）（清洁稿）.md",
+   "sha256": "23f4f8a5e565ac5322e33160de70fe7f79560985d64b13e63848bcecfa134e9f",
+   "created_at": "2026-11-09T05:14:25.934Z",
+   "title": "独立复核意见：软件开发与运维服务合同（枢禾信息提供稿）（清洁稿）",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_5c387f50-3a48-445e-bb07-b63db93797ef",
+   "kind": "revision_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "软件开发与运维服务合同（枢禾信息提供稿）（修订稿）.docx",
+   "sha256": "2d146e28eba874114b2a762e6479b90cf8f22044b828737b852edc6c6c46ad4a",
+   "created_at": "2026-11-09T05:15:57.902Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c9d4a060-70ae-4a6c-8ec0-abf0d0948a18",
+   "kind": "revision_clean",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "软件开发与运维服务合同（枢禾信息提供稿）（清洁稿）.docx",
+   "sha256": "16df78f614cda2f6ab25f7e769332f84bbccd798bdef73d633494ebb2c26e1c4",
+   "created_at": "2026-11-09T05:15:57.908Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_86812e84-dd35-4109-a487-c38afc6c5018",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "软件开发与运维服务合同（枢禾信息提供稿）（修改对照表）.docx",
+   "sha256": "c1adc069163b27f0e5b22564114d99b98b8a178ae364c36187766af0aaf39ae6",
+   "created_at": "2026-11-09T05:15:57.910Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_394bbe80-fc64-4823-a59f-8b24c2d4e7b3",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "74300e18acf9a853b29570ee1c4e798ae1e2c1e61314cf8e09e42348306762e4",
+   "created_at": "2026-11-09T05:17:11.957Z",
+   "title": "已完整核对1份合同原件及原交付文书。原8项委托意见拆分为17处修改，本次已重新全",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

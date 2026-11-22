@@ -1,0 +1,57 @@
+{
+ "run": {
+  "run_id": "run_036d69d7-4d40-4bf3-b754-2a59455da659",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_12bc03d6-e380-4a59-b112-ad20828c0bef",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_12bc03d6-e380-4a59-b112-ad20828c0bef-a1.agent_task-1794280794050",
+  "input_snapshot": {
+   "matter_id": "mat_12bc03d6-e380-4a59-b112-ad20828c0bef",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_5c0f497e-9818-4752-ab77-b37eeb29e34e",
+    "docv_0d4a72ca-3f43-47f3-8adb-bc32b32213de"
+   ],
+   "goal": "请起草强制执行申请书，并计算执行标的（金额由计算工具算出，算不了的标待算）。法律文书生效日期：2026-01-05；文书规定的履行期限最后一日：2026-01-15；对方已履行情况：2026年3月20日付8万元，7月8日付5万元（银行摘要均为“货款”），受理费未付。\n请把执行标的算到2026年11月30日，已付的13万怎么抵扣请写明口径。客户要求尽快立案执行。",
+   "estimate_id": "est_8b1ad4de-dd86-4ff0-aae0-ce347c3f8f8b",
+   "title": "强制执行申请",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "enforcement-application",
+   "skill_title": "强制执行申请书（受限文书）· 试用",
+   "skill_version": "1.3.1",
+   "skill_requires_outline": true,
+   "skill_primary_output": "强制执行申请书（草稿）.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "effective_on": "2026-01-05",
+    "due_on": "2026-01-15",
+    "paid": "2026年3月20日付8万元，7月8日付5万元（银行摘要均为“货款”），受理费未付"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 0,
+  "estimate_id": "est_8b1ad4de-dd86-4ff0-aae0-ce347c3f8f8b",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:54.051Z",
+  "updated_at": "2026-11-10T07:43:00.171Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

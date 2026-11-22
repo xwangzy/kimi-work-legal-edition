@@ -1,0 +1,32 @@
+{
+ "stack": "w2",
+ "tag": "v16-E3-labor-defense",
+ "run": "run_7a9f0dc2-ff09-41b9-ac91-56af51a0ede1",
+ "status": "succeeded",
+ "open": {
+  "v1-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-提交前核对清单-苏州棠奕劳动争议.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v1-证据目录-苏州棠奕劳动争议.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-提交前核对清单-苏州棠奕劳动争议.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v3-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

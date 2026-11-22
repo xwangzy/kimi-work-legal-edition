@@ -1,0 +1,223 @@
+{
+ "run": {
+  "run_id": "run_84ea3a48-4387-45f0-95d7-9e897a831899",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_e0683948-e711-4ac5-bb1f-ddde633d762e",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "partial",
+  "status_version": 5,
+  "idempotency_key": "mat_e0683948-e711-4ac5-bb1f-ddde633d762e-a1.agent_task-1794203362220",
+  "input_snapshot": {
+   "matter_id": "mat_e0683948-e711-4ac5-bb1f-ddde633d762e",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_659f120b-81f8-459f-a9c8-3e45d253ecd3"
+   ],
+   "goal": "请从公司角度审核这份买卖合同；重点关注：付款、验收、违约责任、数据合规。\n采购部下周要签拓衡的立体仓库，648 万，合同是对方模板。我是法务，请从公司角度审，出审核意见书给采购和分管领导看，能改的给出替换条款。",
+   "estimate_id": "est_dfe96781-be17-4d9b-abb6-7a5f93e9910c",
+   "title": "合同审核",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-review",
+   "skill_title": "合同审查（风险卡）· 试用（通用辅助）",
+   "skill_version": "1.10.1",
+   "skill_primary_output": "审查意见书（内部稿）.docx",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "type": "买卖",
+    "focus": "付款、验收、违约责任、数据合规"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_dfe96781-be17-4d9b-abb6-7a5f93e9910c",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:49:22.221Z",
+  "updated_at": "2026-11-09T07:48:40.723Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_0d0deeed-5030-4834-85fb-80df8e1556e4",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-智能立体仓储系统采购及安装合同.docx",
+   "sha256": "acdbe3833ccd2523ae49e3e7121c87eb1878d7490a6bba89679ce2f4b7a3a8c7",
+   "created_at": "2026-11-09T07:18:35.078Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_e5742aa5-33f3-462a-89d5-4474b6928478",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "问题清单-智能立体仓储系统采购及安装合同.xlsx",
+   "sha256": "c75a152aa6a8eb321391d95628b7d2fd92d66362488dd016f663a6bc72609cf8",
+   "created_at": "2026-11-09T07:21:07.949Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_2873cfd5-728d-42e1-9837-2ae4f59c511c",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-智能立体仓储系统采购及安装合同.docx",
+   "sha256": "bb866a128216bfde79a626e9ab3e701a29d4f4ea795207d7fc834b43779e5b29",
+   "created_at": "2026-11-09T07:22:02.001Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_f113c00e-7810-4160-a54e-faab4a725706",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "问题清单-智能立体仓储系统采购及安装合同.xlsx",
+   "sha256": "28bcfcd5b2b4b1b52f6b4bd7015d3ee68cb348f9ab69f2b85b3473971b025ca1",
+   "created_at": "2026-11-09T07:25:44.707Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_0623cdaf-f0b9-4fec-a73a-94fd8b576f03",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "问题清单-智能立体仓储系统采购及安装合同.xlsx",
+   "sha256": "e796f58fbbe0cbaabd318066a3961a264078dc128ea58acf94dd54a21ce9e64a",
+   "created_at": "2026-11-09T07:29:13.322Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_bba49f48-9f6c-4d3b-ae55-6ad826ecbfe1",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "c4829a02efff41742991ca6a49d55dc0c98d8b2157e939f217da6a5354ecac5e",
+   "created_at": "2026-11-09T07:30:07.679Z",
+   "title": "已完成审查。收到合同材料 1 份，已完整读取，无识别不全或排除材料；正文引用的附",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_678e31cb-3705-4c9e-be9f-e6429c704bbc",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-审查意见书（内部稿）-智能立体仓储系统采购及安装合同.md",
+   "sha256": "f5df456c49712ecdec8cdfc4421cd968d25c892e7b94e5c847a83b37eb919679",
+   "created_at": "2026-11-09T07:33:39.174Z",
+   "title": "独立复核意见：审查意见书（内部稿）-智能立体仓储系统采购及安装合同",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_ce511dc7-70ec-4d8d-8379-50c590aa756c",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-智能立体仓储系统采购及安装合同.docx",
+   "sha256": "baef88535cbc1e1df16a5498b8c379d913108b561d024009fc1d43a525d54822",
+   "created_at": "2026-11-09T07:38:37.810Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d68fbbb8-b06c-4be7-9677-30e1756ac5b5",
+   "kind": "agent_report",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-智能立体仓储系统采购及安装合同.docx",
+   "sha256": "d5b5cf3098fb39764816d5016e000b8b82e1a3fc04f18d81164e2cd1101bc6d4",
+   "created_at": "2026-11-09T07:38:50.408Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_53185f9b-50a0-4d59-889d-45f593a91cd7",
+   "kind": "agent_report",
+   "version": 5,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-智能立体仓储系统采购及安装合同.docx",
+   "sha256": "737eda2ac63a0b77c6399a74a0d07c5c980f5a3089a0ea9cf8b359fced8f1970",
+   "created_at": "2026-11-09T07:42:26.738Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_428a1c2d-fd43-4ffa-b37e-bd5de07661d8",
+   "kind": "agent_report",
+   "version": 6,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-智能立体仓储系统采购及安装合同.docx",
+   "sha256": "a3ae231945b994b4e7b164f0d5264d3f1d85c442d27f820ced18b3bdf002045e",
+   "created_at": "2026-11-09T07:45:04.690Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d4e57a1d-139d-4c84-824c-0b01c8a27583",
+   "kind": "agent_report",
+   "version": 7,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-智能立体仓储系统采购及安装合同.docx",
+   "sha256": "9b32edc546ab5a48ebc65386a7340743592655e5e3ba38b1ef7ca170e24c76a7",
+   "created_at": "2026-11-09T07:46:05.465Z",
+   "title": null,
+   "kind_version": 7,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_491f602e-754d-4b8d-9ca2-d0753209ffd7",
+   "kind": "agent_report",
+   "version": 8,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-智能立体仓储系统采购及安装合同.docx",
+   "sha256": "54c8119bcf2dd2d8865e1d7d1a25e45a9f2699cd7e03ddf37bb6422cdad89130",
+   "created_at": "2026-11-09T07:46:34.431Z",
+   "title": null,
+   "kind_version": 8,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

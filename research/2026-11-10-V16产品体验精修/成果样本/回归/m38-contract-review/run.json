@@ -1,0 +1,54 @@
+{
+ "run": {
+  "run_id": "run_e5cc4bc4-3b33-48ef-b13a-23ab587a03f5",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_a2fd192f-b9f5-4bd7-8065-06febe97120c",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_a2fd192f-b9f5-4bd7-8065-06febe97120c-a1.agent_task-1794280738037",
+  "input_snapshot": {
+   "matter_id": "mat_a2fd192f-b9f5-4bd7-8065-06febe97120c",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_76649a9a-50e9-4eb0-b102-670489daf770"
+   ],
+   "goal": "请审查这份服务 / 技术服务合同，我方立场以事项为准；重点关注：付款、违约责任、知识产权、争议解决。\n客户禾屿零售有约 380 万会员，这份是数衡云智给的标准文本，客户想 12 月签、明年 1 月上线。我们代表客户（甲方）。会员数据怎么处理是客户最关心的，审查意见书先给客户法务看。",
+   "estimate_id": "est_f9463b3a-fad7-4873-af42-13dca45e5fb5",
+   "title": "审合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-review",
+   "skill_title": "合同审查（风险卡）· 试用（通用辅助）",
+   "skill_version": "1.11.0",
+   "skill_primary_output": "审查意见书（内部稿）.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "type": "服务 / 技术服务",
+    "focus": "付款、违约责任、知识产权、争议解决"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 0,
+  "estimate_id": "est_f9463b3a-fad7-4873-af42-13dca45e5fb5",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:18:58.038Z",
+  "updated_at": "2026-11-10T07:43:00.138Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

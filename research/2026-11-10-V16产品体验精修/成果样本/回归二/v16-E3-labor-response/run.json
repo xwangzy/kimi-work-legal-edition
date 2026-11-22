@@ -1,0 +1,168 @@
+{
+ "run": {
+  "run_id": "run_67af31b3-3718-4d50-ad95-8a982ff00b24",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_c863bae5-fd3d-4d92-8757-cbbee761879f",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_c863bae5-fd3d-4d92-8757-cbbee761879f-a1.agent_task-1794300169671",
+  "input_snapshot": {
+   "matter_id": "mat_c863bae5-fd3d-4d92-8757-cbbee761879f",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_26d15323-b9d9-4706-b769-0a451fc8175c",
+    "docv_416b32f4-b7ea-4380-8833-fd79e772e7ad",
+    "docv_19a85e3e-e5f0-4ca6-ade2-689cd47167b5",
+    "docv_119228af-336d-448f-9826-7b159b8accb0",
+    "docv_5c04fb20-649b-4500-ae06-fe5393aae69c",
+    "docv_c0a1293b-f73e-42ab-b164-5ef27a277d74",
+    "docv_09fe6c73-f721-44ff-b6e1-17bd9dfaa4fa"
+   ],
+   "goal": "请为劳动仲裁应诉做应对方案：员工请求为违法解除赔偿金168,000元、未休年休假工资25,747.13元、加班费差额（未写金额）、2026年9月1日至15日工资4,804.60元；收到仲裁申请书副本的日期：2026-11-06（答辩期十个工作日）；开庭日：2026-11-27。",
+   "estimate_id": "est_567ee67a-cf6b-4205-97d0-c11e7d62dd44",
+   "title": "劳动仲裁应对",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "labor-dispute",
+   "skill_title": "劳动争议：仲裁应对、仲裁申请与解除前评估 · 试用",
+   "skill_version": "1.4.0",
+   "skill_primary_output": "劳动争议应对方案.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "mode": "仲裁应对",
+    "side": "用人单位",
+    "claim": "违法解除赔偿金168,000元、未休年休假工资25,747.13元、加班费差额（未写金额）、2026年9月1日至15日工资4,804.60元",
+    "received_on": "2026-11-06",
+    "hearing": "2026-11-27"
+   }
+  },
+  "budget_points": 55,
+  "points_reserved": 55,
+  "points_charged": 55,
+  "estimate_id": "est_567ee67a-cf6b-4205-97d0-c11e7d62dd44",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:49.673Z",
+  "updated_at": "2026-11-10T09:27:22.651Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_1216d6af-1b84-4015-b61e-474feae3da01",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-棠奕精密.docx",
+   "sha256": "53d22549b528939cfa6acbef28dbb6db873c9d3ba59e152cbc1cad4717968dfb",
+   "created_at": "2026-11-10T09:18:47.389Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_39f046ee-f554-4eee-9e15-9df569e6e3e4",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-棠奕精密.xlsx",
+   "sha256": "2888a5c04deecc5aafaff99a6aed9fb4148b676cfdcd73be7798383bb78daa26",
+   "created_at": "2026-11-10T09:20:19.281Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_18ef3323-19e4-4207-b3b5-6632ea9d7389",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "举证责任与证据清单-棠奕精密.xlsx",
+   "sha256": "dcc277060aa5d1bbcd406ef4ea9c6677af33353895eef62bbb22fe906baa9206",
+   "created_at": "2026-11-10T09:21:24.607Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8b5a5a8b-f7f4-447e-b833-1312b37e8244",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-棠奕精密.docx",
+   "sha256": "dd0632370c288ca1632d6c90eefa647e4b7475802a5ef25a339ebeeab3b7f7a1",
+   "created_at": "2026-11-10T09:23:51.578Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_47b1dd81-b42a-4424-a1f3-58eacb2fe724",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-棠奕精密.xlsx",
+   "sha256": "5c6fb49cbc8759610e88cb90dda194c80eb847d4a82deaeeb7cb5e39ec57ccea",
+   "created_at": "2026-11-10T09:23:51.585Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_3091b180-e545-4614-a102-57d341592a87",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-棠奕精密.docx",
+   "sha256": "ba878eef2a0efa762dded1703a97ae8ab166c6675235ac9162efc2b3b7aa40e6",
+   "created_at": "2026-11-10T09:24:00.491Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c7bc7aa3-99fe-488a-9bd7-8b23eda2830e",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "e520c04f9f4d5875072879ad2223d56e6ac4e19c33b622c58828486398bb8720",
+   "created_at": "2026-11-10T09:24:52.333Z",
+   "title": "最近期限：2026年11月20日答辩并提交证据；2026年11月27日9:30开",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a567c292-00b5-435a-ba73-4e84dc591c8e",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-劳动争议应对方案-棠奕精密.md",
+   "sha256": "cdc315906e5f14ae10acc46cdbed18ec4a6ef5deedaa9a722dd05c881db0bf48",
+   "created_at": "2026-11-10T09:27:22.651Z",
+   "title": "独立复核意见：劳动争议应对方案-棠奕精密",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

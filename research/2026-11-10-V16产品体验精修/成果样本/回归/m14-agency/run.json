@@ -1,0 +1,109 @@
+{
+ "run": {
+  "run_id": "run_6e3cf87a-401f-473e-9ee5-aa6642206783",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 12,
+  "idempotency_key": "mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5-a1.agent_task-1794280663087",
+  "input_snapshot": {
+   "matter_id": "mat_da6a0a78-bc39-40f9-b991-29b1a959ecb5",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_46eab390-adb3-4028-a7f0-1c7dd2f97eb6",
+    "docv_90e923e7-3a4c-492e-81a0-f0d4c679e7d7",
+    "docv_f0660233-3eda-40bc-bbc1-bd46c2e167fd"
+   ],
+   "goal": "请起草代理词。法庭归纳的争议焦点：涉案设备是否存在质量问题，被告主张减少价款能否成立；被告应否支付逾期付款违约金，约定标准是否过高；原告主张的律师费应否支持。事实以我确认过的与已质证的证据为准，未确认的标【待确认】，不评估胜诉率。\n我方是原告锐川，法庭让庭后七日内交书面代理意见。证据只用庭上已经质证过的。",
+   "estimate_id": "est_399c9cac-9067-4e17-ba90-fc294c8be221",
+   "title": "代理词",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "agency-statement",
+   "skill_title": "代理词（受限文书）",
+   "skill_version": "1.2.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "代理词（草稿）.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "focus_points": "涉案设备是否存在质量问题，被告主张减少价款能否成立；被告应否支付逾期付款违约金，约定标准是否过高；原告主张的律师费应否支持"
+   }
+  },
+  "budget_points": 35,
+  "points_reserved": 35,
+  "points_charged": 35,
+  "estimate_id": "est_399c9cac-9067-4e17-ba90-fc294c8be221",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:17:43.088Z",
+  "updated_at": "2026-11-10T07:02:40.489Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_80f18c5c-3ea8-45a2-97d4-6d404b43b362",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "代理词.docx",
+   "sha256": "924c18617f96636b8912bbc84b4de676e4f550c4b163dd11bfdcea5e10d58dac",
+   "created_at": "2026-11-10T07:00:02.916Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e71f48b2-5a22-4d6f-b09b-12813497840e",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点与依据对照表-锐川诉恒岳买卖合同纠纷.xlsx",
+   "sha256": "2dcc5cd15c2c15f48a74b4e1e59e055fa31cb27f18d5a004af5f5a4f002e0836",
+   "created_at": "2026-11-10T07:00:29.519Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_402a5906-ca84-49bc-bd35-66a6a08e08d7",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "aa046a46bc28023bba83503a999ce03431f545e825a71e4fc44c25a6f3d200b8",
+   "created_at": "2026-11-10T07:01:45.303Z",
+   "title": "已完成。收到并完整读取起诉状、答辩状、庭审笔录三份材料，无读取缺失或排除材料。合",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a4dcd556-c9c5-499b-9540-7c1f46e16453",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-代理词.md",
+   "sha256": "4d0f51332dc7079f28e535465adab5940af240453ab909b7d70b0ac8e5958eb0",
+   "created_at": "2026-11-10T07:02:40.488Z",
+   "title": "独立复核意见：代理词",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

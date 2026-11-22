@@ -1,0 +1,6 @@
+{"tag": "m17-labor-apply", "card": "labor-apply", "veto": [], "score": 19, "tier": "需中度修改", "status": "未通过", "open_ok": true, "minutes": 32, "questions": 0,
+ "top_issues": ["2N“含加班费、含年终奖421,948.27”实为未扣8月扣款的数，未说明（应发合计418,637.93）", "竞业9月按27天折算2,250元，应自9-05起26天2,166.67元", "独立复核只提1条分角取整，漏掉以上两处实质偏差"],
+ "prev_score": 18, "v14_score": 18,
+ "known_defects_recurring": [9, 13],
+ "new_defects": ["方案正文出现产品流程用语“另行按劳动仲裁申请书方法起草正式文书”"],
+ "product_defect": ["已知 #13：方案首段“通用辅助 · 未经本所质量验收”", "已知 #9：“2027年放假安排尚未收录”工具提示原样进入方案", "review.fix_outcome 记 files:1，revised_files 实为 2 个文件（统计字段与实际不符，第一轮已见）"]}

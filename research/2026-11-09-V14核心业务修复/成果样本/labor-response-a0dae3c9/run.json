@@ -1,0 +1,141 @@
+{
+ "run": {
+  "run_id": "run_a0dae3c9-2092-4ece-ae43-c9db08a3e1af",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_ee1aea8b-9d55-47fe-b6ec-f4d2fb8b1cf7",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 9,
+  "idempotency_key": "mat_ee1aea8b-9d55-47fe-b6ec-f4d2fb8b1cf7-a1.agent_task-1794204927505",
+  "input_snapshot": {
+   "matter_id": "mat_ee1aea8b-9d55-47fe-b6ec-f4d2fb8b1cf7",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_c7a4a6fe-e74f-4bc8-a003-a441cd121472",
+    "docv_70c4b683-f03f-436a-b1c7-d42b2456bdee",
+    "docv_10673f41-9c5a-4a65-bf14-a404122d58b9",
+    "docv_fa456b0c-ee41-4e8d-83cb-79ddc3d1d5ff",
+    "docv_aac0726a-4c38-4921-a329-7c0a12b39d74",
+    "docv_5db5c38f-feb8-4dea-a0e0-a14063510432",
+    "docv_9484450b-b91b-4e0d-8a2d-e787df16eade"
+   ],
+   "goal": "请为劳动仲裁应诉做应对方案：员工请求为违法解除赔偿金、加班费差额、未休年休假工资、8月扣款、竞业限制补偿，合计518,213.47元；收到仲裁申请书副本的日期：2026-10-30（答辩期十个工作日）；开庭日：2026-12-03。\n管理层要一份应对方案和敞口表，下周一开会定调解底线。工会那边解除时没通知，现在还能不能补？",
+   "estimate_id": "est_b40819f7-d8ba-435f-b743-219b72b61a26",
+   "title": "劳动仲裁应对",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "labor-dispute",
+   "skill_title": "劳动争议：仲裁应对、仲裁申请与解除前评估 · 试用",
+   "skill_version": "1.3.1",
+   "skill_primary_output": "劳动争议应对方案.docx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "mode": "仲裁应对",
+    "side": "用人单位",
+    "claim": "违法解除赔偿金、加班费差额、未休年休假工资、8月扣款、竞业限制补偿，合计518,213.47元",
+    "received_on": "2026-10-30",
+    "hearing": "2026-12-03"
+   }
+  },
+  "budget_points": 55,
+  "points_reserved": 55,
+  "points_charged": 55,
+  "estimate_id": "est_b40819f7-d8ba-435f-b743-219b72b61a26",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:15:27.507Z",
+  "updated_at": "2026-11-09T07:37:02.586Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_40852448-20f7-436e-84f1-a18ea354f165",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-澜栖智能.xlsx",
+   "sha256": "491528fc97d7e255983c314af4d23895d1f53fe89a84e929ae01ea90b7f166f4",
+   "created_at": "2026-11-09T07:28:45.954Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b193b6e1-ad29-416c-8fe4-35afee1f5402",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "举证责任与证据清单-澜栖智能.xlsx",
+   "sha256": "c6379a64c7cb8e8103f8a98132d2d0dd2d3c150266317d5900ffc26a2098974a",
+   "created_at": "2026-11-09T07:28:45.963Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_bcfbb03e-9093-4482-a604-768f0ef5aff4",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "举证责任与证据清单-澜栖智能.xlsx",
+   "sha256": "604a74ae10332dbcad4aeae99291d65bd54bcc0ef70aa76bbbbddeb5f0ab20d2",
+   "created_at": "2026-11-09T07:29:38.345Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b8842dd7-38ce-494e-a2e9-0b646cf9567d",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-澜栖智能.docx",
+   "sha256": "faa0a4de3171f646af3be0c05c847e2df28e2e6ea45cb99a4ab377c56f732f4e",
+   "created_at": "2026-11-09T07:35:08.944Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_c8ea5b6d-abb0-471b-9ee7-b74c4d8f3927",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-澜栖智能.docx",
+   "sha256": "f83be764fad6c0891eea67a1f656edbb0f96d29b35eb50d1027b3097111a7327",
+   "created_at": "2026-11-09T07:35:53.559Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8f3c942e-21c9-4f50-b176-a7fd5ca7e8a9",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "56f967a1a49a1b7db8f97d05470f0a6d89d9bb0ff6723a78fb0b326bee9e43b8",
+   "created_at": "2026-11-09T07:37:02.585Z",
+   "title": "答辩期至2026年11月13日，开庭为2026年12月3日14时；竞业限制反申请",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

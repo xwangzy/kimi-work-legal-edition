@@ -1,0 +1,82 @@
+{
+ "run": {
+  "run_id": "run_e9bb5ac9-26b7-45cd-9a82-2374b649bcda",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_66dfc4ec-2f1e-4686-96e6-0de39cf719e1",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "partial",
+  "status_version": 5,
+  "idempotency_key": "mat_66dfc4ec-2f1e-4686-96e6-0de39cf719e1-a1.agent_task-1794300134054",
+  "input_snapshot": {
+   "matter_id": "mat_66dfc4ec-2f1e-4686-96e6-0de39cf719e1",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_8372572a-791a-4d4d-b6c0-8cf5690ffb71",
+    "docv_f92e1a52-4170-4c30-823e-aec0c51928bc"
+   ],
+   "goal": "请审查这份买卖合同，我方立场以事项为准；审查意见出完后，按必须修改与建议修改的意见在原件上写一份建议修订稿（修订痕迹）。\n我方是买方（委托方）。《我方交易背景与底线》是客户的内部要求，其中如有与法律强制性规定冲突的请指出。",
+   "estimate_id": "est_5445922f-7cc2-4a89-9ca5-6a87d2c73746",
+   "title": "审合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-review",
+   "skill_title": "合同审查（风险卡）· 试用（通用辅助）",
+   "skill_version": "1.11.0",
+   "skill_primary_output": "审查意见书（内部稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "type": "买卖",
+    "redline": "要：按审查意见直接在原件上写修订"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_5445922f-7cc2-4a89-9ca5-6a87d2c73746",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:14.055Z",
+  "updated_at": "2026-11-10T09:22:20.824Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_efdc33dd-5a7e-4fbc-a821-1861455fa592",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-冷链智能分拣系统采购与实施合同.docx",
+   "sha256": "394c90a70b5b3b3587031779e4201b608e648b580bf1c448e160bd212cb2db21",
+   "created_at": "2026-11-10T09:11:38.853Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_734d0a36-19a0-43a1-95c9-4d416aae092e",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "问题清单-冷链智能分拣系统采购与实施合同.xlsx",
+   "sha256": "094cfad551466b257528235826af41558ec2ede9148a03bffb67d7a6428c6b37",
+   "created_at": "2026-11-10T09:14:32.316Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

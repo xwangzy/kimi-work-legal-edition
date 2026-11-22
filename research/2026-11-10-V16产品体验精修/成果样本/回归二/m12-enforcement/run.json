@@ -1,0 +1,175 @@
+{
+ "run": {
+  "run_id": "run_31f3b6a1-8f79-4617-b49d-f90f578e3b06",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_3528310c-4355-4b2a-be1e-526c171f2ad1",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_3528310c-4355-4b2a-be1e-526c171f2ad1-a1.agent_task-1794300264896",
+  "input_snapshot": {
+   "matter_id": "mat_3528310c-4355-4b2a-be1e-526c171f2ad1",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_4de5ffdf-9332-4a23-bc44-505cb8995d8d",
+    "docv_1b7f2a6f-a657-495d-b8fe-c56933bf0a5d"
+   ],
+   "goal": "请起草强制执行申请书，并计算执行标的（金额由计算工具算出，算不了的标待算）。法律文书生效日期：2026-01-05；文书规定的履行期限最后一日：2026-01-15；对方已履行情况：2026年3月20日付8万元，7月8日付5万元（银行摘要均为“货款”），受理费未付。\n请把执行标的算到2026年11月30日，已付的13万怎么抵扣请写明口径。客户要求尽快立案执行。",
+   "estimate_id": "est_a0cb9535-a206-4252-a7b3-404f92eaafbe",
+   "title": "强制执行申请",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "enforcement-application",
+   "skill_title": "强制执行申请书（受限文书）· 试用",
+   "skill_version": "1.4.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "强制执行申请书（草稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "effective_on": "2026-01-05",
+    "due_on": "2026-01-15",
+    "paid": "2026年3月20日付8万元，7月8日付5万元（银行摘要均为“货款”），受理费未付"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_a0cb9535-a206-4252-a7b3-404f92eaafbe",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:44:24.898Z",
+  "updated_at": "2026-11-10T10:25:11.427Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_7a29cc12-8656-4814-807b-5e86e30b276b",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "强制执行申请书.docx",
+   "sha256": "a341c5cbf5a1b19da48f0d62f20a56406002fefce344d9f983a3f62a0c60274d",
+   "created_at": "2026-11-10T10:13:24.276Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_5cf0feed-1838-43b6-8a03-75e38862edd1",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "执行标的计算表-澄泰案.xlsx",
+   "sha256": "25e7b4bf07e14bd2b0372b16a4766befb1cfe1c713b3bedcd78abb8f5d7a55b3",
+   "created_at": "2026-11-10T10:15:26.063Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_476a9d82-79f7-4c09-88ad-43ae416e7174",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "申请执行核对清单-澄泰案.xlsx",
+   "sha256": "8c09affde431318c359dfb6cd25528fc749d9c1b8a9c960c6432049526cd577d",
+   "created_at": "2026-11-10T10:15:26.078Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_32272a18-29ad-4518-9bd6-697ad163e7ea",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "80cda7f732c7e05a8f7b81c4e7e87bd1e93a25b6b0af44e83dd7179d606f889a",
+   "created_at": "2026-11-10T10:17:28.219Z",
+   "title": "已完成起草与计算。两份材料均已完整读取，无缺失或无法识别内容；已生成以下交付件，",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_00728d76-6872-4e99-b49a-1186193de2e4",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-强制执行申请书.md",
+   "sha256": "890441e7f5b079bd9cb20d27b9f81fd7be350731d27289669a1c0d99b2991654",
+   "created_at": "2026-11-10T10:21:33.345Z",
+   "title": "独立复核意见：强制执行申请书",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_841de0bb-7c8f-4edf-8121-3b106c60c22f",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "强制执行申请书.docx",
+   "sha256": "59414be5acb3bcbc43a40c89767d35adf5f25c38b99253719416051a71867af6",
+   "created_at": "2026-11-10T10:24:10.325Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_208e39fc-9138-4e9a-98ac-a779cb97222d",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "执行标的计算表-澄泰案.xlsx",
+   "sha256": "83d2d33217a5761e485813260b61e32c4ed7b243d3f6d9aa8eca397f7b5194ba",
+   "created_at": "2026-11-10T10:24:10.342Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b2ebeabd-26b7-428a-bd46-e72e2b7db74f",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "申请执行核对清单-澄泰案.xlsx",
+   "sha256": "285d7f7736d2565066ab1f44f3dfdaaa188508e3e84c02613f941a4e41dee4ad",
+   "created_at": "2026-11-10T10:24:10.348Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f887d81c-cb3f-446c-a29c-f3b4a0b00e24",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "d99a308fe7548d6a94f5d253d0fe34652c3b7099b9221bf4d71c1862bad93133",
+   "created_at": "2026-11-10T10:25:11.426Z",
+   "title": "已完成本轮独立复核及同步修改。两份事项材料均已完整读取，三份交付件均在原文件上更",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

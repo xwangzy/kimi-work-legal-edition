@@ -1,0 +1,67 @@
+{
+ "run": {
+  "run_id": "run_677333ee-9503-4379-b2c8-4583c4f2f314",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_cb2116d5-fee0-46cc-b125-af942d9db290",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_cb2116d5-fee0-46cc-b125-af942d9db290-a1.agent_task-1794203331485",
+  "input_snapshot": {
+   "matter_id": "mat_cb2116d5-fee0-46cc-b125-af942d9db290",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_009b5a7a-cb82-49c8-88c3-7a908d095c25",
+    "docv_1ffe4bda-a988-4393-94d2-f693f609d9af"
+   ],
+   "goal": "请从本事项的范本里整理审查要点草稿：每条写条款、我方标准、可退让、不可谈，并写明出处。范本是：本所技术服务合同（采购方）范本 2025 版；禾屿零售法务部信息系统采购合同审核标准（2026-03 第 3 版）。\n以后审禾屿的系统和 SaaS 合同按这套要点判偏离。本所范本和客户标准不一致的地方并列给我，我去跟客户确认，别替我选。",
+   "estimate_id": "est_b4efb028-e067-4678-a59e-1bca88aaf409",
+   "title": "从范本整理审查要点",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "review-rules-draft",
+   "skill_title": "从范本整理审查要点 · 试用",
+   "skill_version": "1.0.0",
+   "skill_primary_output": "审查要点草稿（待你审定）",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "basis": "本所技术服务合同（采购方）范本 2025 版；禾屿零售法务部信息系统采购合同审核标准（2026-03 第 3 版）"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_b4efb028-e067-4678-a59e-1bca88aaf409",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:48:51.487Z",
+  "updated_at": "2026-11-09T07:00:12.034Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_ca021d5b-7693-45ff-a0e6-950c627c3615",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "d895a8ccba2ca3b5609b1d832691aa48f06765b909fe704090d98a2ae97b5ae8",
+   "created_at": "2026-11-09T07:00:12.034Z",
+   "title": "已收到并完整读取 2 份指定材料，无识别不全或未读内容：",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

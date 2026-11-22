@@ -1,0 +1,173 @@
+{
+ "run": {
+  "run_id": "run_64ca2d09-ed45-4330-94de-9a02ca96e17b",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_8cceaf62-950f-4c17-b4e9-3c91448c1edc",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_8cceaf62-950f-4c17-b4e9-3c91448c1edc-a1.agent_task-1794300182568",
+  "input_snapshot": {
+   "matter_id": "mat_8cceaf62-950f-4c17-b4e9-3c91448c1edc",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "请按客户微信里的要求起草《股权代持协议》，要 Word 稿。",
+   "estimate_id": "est_2d7563c0-10a4-4385-8b70-c1e3f3896942",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 20,
+  "estimate_id": "est_2d7563c0-10a4-4385-8b70-c1e3f3896942",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:02.569Z",
+  "updated_at": "2026-11-10T09:36:28.500Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_f15409a7-3bb3-4d61-8304-9096f652a626",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "股权代持协议.docx",
+   "sha256": "76d4c5f7896e676c514a3790c7d929d3b8e3cd97c2a739cc2471453a680788e6",
+   "created_at": "2026-11-10T09:22:15.657Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_5dedfb4e-e47d-4781-8cf0-861e42b93a5f",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-股权代持协议.docx",
+   "sha256": "0d08cef92007e93732460ee166b03ecd2465fbef8364825fca38617b0661bb7b",
+   "created_at": "2026-11-10T09:24:39.331Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_92b90c8b-5c1f-417a-9e1a-57aab4f8d48e",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "股权代持协议.docx",
+   "sha256": "bca59e9c965c0701063a758df946ba6b4ab7dd3edc9c62d27b12ae113064e823",
+   "created_at": "2026-11-10T09:25:32.945Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_151fc19b-4357-46b4-aad1-353266bfc656",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "73812520d9080f042faa05a5839f4bbce625fe349af71cafd32b222a668a0c66",
+   "created_at": "2026-11-10T09:26:40.996Z",
+   "title": "已完成。收到并完整读取材料 1 份，无无法读取或按要求排除的材料。已按名义股东立",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_a9a9051b-e590-4e93-bc35-03b76f53a1df",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-股权代持协议.md",
+   "sha256": "00ec467b207dfc0b07aa999588d842dc61eb3973adad94a1b0b13b44b91876ac",
+   "created_at": "2026-11-10T09:30:17.440Z",
+   "title": "独立复核意见：股权代持协议",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_847afa64-7f93-416d-8af8-2948ff7005af",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "股权代持协议.docx",
+   "sha256": "f676e58559e6080f7cbb65b81897f1ed5c934d01425c864ef399698148205aca",
+   "created_at": "2026-11-10T09:33:30.443Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_22fd29b7-16e3-45a9-b815-0e6e8ca50638",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-股权代持协议.docx",
+   "sha256": "1ef235ca5faca2c7c7fc6b62dec0887f664275122d4b0051ef15991484e5c1f5",
+   "created_at": "2026-11-10T09:34:51.803Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_79e7ba77-7ee7-412f-83d0-c6f9995446ef",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-股权代持协议.docx",
+   "sha256": "cc7d528eb27453c65af20c791c4f51c6a17c999299d0e6109ab2c0a46844c14d",
+   "created_at": "2026-11-10T09:35:02.066Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_18752dbf-b807-4d05-b262-568d7f873ca0",
+   "kind": "agent_report",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "股权代持协议.docx",
+   "sha256": "fee3e887750e4edc169208678392470097e7e8f9b91a368e6c709cb863bf9df4",
+   "created_at": "2026-11-10T09:35:38.487Z",
+   "title": null,
+   "kind_version": 7,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f46ba137-645f-47a3-bb99-1d09a9421860",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "fe105a5aee44e986855b9eab08dfc00de2007c10c3322e8643351fcaf763e0ad",
+   "created_at": "2026-11-10T09:36:28.499Z",
+   "title": "已完成独立复核及修改。收到并完整读取材料 1 份，无无法读取或排除的材料。两份同",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

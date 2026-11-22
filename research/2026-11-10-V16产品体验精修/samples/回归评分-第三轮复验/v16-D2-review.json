@@ -1,0 +1,38 @@
+{
+ "tag": "v16-D2-review",
+ "card": "contract-review",
+ "veto": [],
+ "score": 20,
+ "tier": "可交付",
+ "status": "已通过",
+ "run_status": "partial",
+ "open_ok": true,
+ "minutes": 40,
+ "questions": 0,
+ "top_issues": [
+  "运行 partial：修订稿 38.6 分才写成，40 分钟时限截断，独立复核与修改轮完全没跑、没有最终答复",
+  "对外版仍原样保留 11.3“已支付价款的5%”上限及冷链断链损失排除、11.1 日千分之五（意见书列客户决定，修订稿无待定提示）",
+  "第九条标题仍为“所有权保留”，9.1 已改交付即转移，9.2 仍写所有权保留取回规则，前后不协调"
+ ],
+ "prev_score": 18,
+ "v14_score": 22,
+ "known_defects_recurring": [9, 11],
+ "new_defects": [
+  "时限截断（partial）时独立复核与修改轮整段跳过，已交出的修订稿没有任何复核",
+  "风险卡单次生成 676 秒（1.97 万 token）且首轮 7 张跨段定位失败需重交，挤占时限；重交痕迹（“风险卡38（替代首轮卡4）”“以38～44号替代”）写进意见书与清单"
+ ],
+ "fix_checks": {
+  "amend_echo_dropped_retargeted": "已生效（返回含 dropped:[]、retargeted:[]，无需补救）",
+  "must_change_all_applied": "已生效（22 项必须修改全部写入）",
+  "native_revisions_clean_external": "已生效（ins 63/del 61；清洁稿＝接受全部；对外版无批注；对方既有修订批注不适用）",
+  "review_law_text_and_coverage": "无法判断（复核未运行）",
+  "no_disclaimer_line_in_files": "已生效",
+  "fact_n_reference": "不适用"
+ },
+ "product_defect": [
+  "40 分钟时限仍不够“审查＋原件修订”：风险卡一次生成 11 分钟，修订稿第 38.6 分才写成，partial 时独立复核与修改轮被整段跳过、无最终答复",
+  "对外版修订作者与 lastModifiedBy 仍为“律师审定（Kimi Work 辅助起草）”（已知 #11）",
+  "意见书仍带“风险卡/工作台/首轮卡”编号、“手工计算，请复核”“2027年放假调休安排未收录”等内部或工具用语（已知 #9）",
+  "events.json 仍不含 docx_revise 参数与返回，amend 回显只能查会话日志"
+ ]
+}

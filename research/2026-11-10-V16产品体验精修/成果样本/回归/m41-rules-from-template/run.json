@@ -1,0 +1,54 @@
+{
+ "run": {
+  "run_id": "run_763b1b63-b4c0-4ee2-ab25-33c796c56005",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_51c9ef3e-ef5e-4c7d-846c-388276170cc6",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 7,
+  "idempotency_key": "mat_51c9ef3e-ef5e-4c7d-846c-388276170cc6-a1.agent_task-1794280762671",
+  "input_snapshot": {
+   "matter_id": "mat_51c9ef3e-ef5e-4c7d-846c-388276170cc6",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_3fd7c95d-a541-4a29-9b86-9e65648a428b",
+    "docv_b1916c16-0a8b-4fa1-a8bf-d84b6cf1f1ab"
+   ],
+   "goal": "请从本事项的范本里整理审查要点草稿：每条写条款、我方标准、可退让、不可谈，并写明出处。范本是：本所技术服务合同（采购方）范本 2025 版；禾屿零售法务部信息系统采购合同审核标准（2026-03 第 3 版）。\n以后审禾屿的系统和 SaaS 合同按这套要点判偏离。本所范本和客户标准不一致的地方并列给我，我去跟客户确认，别替我选。",
+   "estimate_id": "est_e1a5ebf0-e81c-4714-b608-1d98f8726248",
+   "title": "从范本整理审查要点",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "review-rules-draft",
+   "skill_title": "从范本整理审查要点",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "审查要点草稿（待你审定）",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "basis": "本所技术服务合同（采购方）范本 2025 版；禾屿零售法务部信息系统采购合同审核标准（2026-03 第 3 版）"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 0,
+  "estimate_id": "est_e1a5ebf0-e81c-4714-b608-1d98f8726248",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:22.672Z",
+  "updated_at": "2026-11-10T07:43:00.145Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

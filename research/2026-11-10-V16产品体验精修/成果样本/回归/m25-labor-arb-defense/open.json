@@ -1,0 +1,52 @@
+{
+ "stack": "w5",
+ "tag": "m25-labor-arb-defense",
+ "run": "run_e5a08867-4e11-402f-aec3-52dfb33579f2",
+ "status": "succeeded",
+ "open": {
+  "v1-加班费逐月复核表-澜栖公司劳动仲裁.xlsx": {
+   "opened": true,
+   "pages": 1
+  },
+  "v1-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-提交前核对清单-澜栖公司劳动仲裁.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-提交前核对清单-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-计算明细-澜栖公司劳动仲裁-截至2026-11-10.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v1-计算明细-澜栖劳动争议-截至2026-11-10.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v1-证据目录-澜栖公司劳动仲裁.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-证据目录-澜栖劳动争议.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-加班费逐月复核表-澜栖公司劳动仲裁.xlsx": {
+   "opened": true,
+   "pages": 1
+  },
+  "v2-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-计算明细-澜栖劳动争议-截至2026-11-10.xlsx": {
+   "opened": true,
+   "pages": 6
+  }
+ }
+}

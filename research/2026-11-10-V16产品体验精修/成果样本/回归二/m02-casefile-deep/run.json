@@ -1,0 +1,152 @@
+{
+ "run": {
+  "run_id": "run_5ef419e3-b484-48a4-bd72-b20ffd7f4505",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_f65991e8-1532-4614-9608-feac6703bb89",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_f65991e8-1532-4614-9608-feac6703bb89-a1.agent_task-1794300133064",
+  "input_snapshot": {
+   "matter_id": "mat_f65991e8-1532-4614-9608-feac6703bb89",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_83bb1522-f4f0-4d2f-862d-da3f968722ea",
+    "docv_c6878b17-e623-400f-9c16-1f10a7059c1a",
+    "docv_41a38f11-63fa-49c6-a01d-2a434f5babee",
+    "docv_40c60ebe-d25b-468d-adcc-1d6c7b617044",
+    "docv_cbf6bb75-237c-4e9e-bb80-4162d7ab9d6b",
+    "docv_d99aa883-f9f7-48fb-add6-e4f84c50d9b5",
+    "docv_bb62eae0-f1aa-4f4a-a43d-4ff1e299055d",
+    "docv_23c35796-2582-46ae-9762-9e08ef559e7d"
+   ],
+   "goal": "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。时间线按“按付款线索；另列3号机质量与维修线索”排列。\n我方代理卖方锐川。请特别留意各份材料之间金额、日期对不上的地方，逐条附原文给我确认。",
+   "estimate_id": "est_e74719ec-78b4-4c6a-91c8-dbdfcc260fc5",
+   "title": "整理案卷（精读版）",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "casefile-organize",
+   "skill_title": "案卷整理（目录与时间线）",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "案卷总目录.xlsx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "perspective": "按付款线索；另列3号机质量与维修线索"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_e74719ec-78b4-4c6a-91c8-dbdfcc260fc5",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:13.066Z",
+  "updated_at": "2026-11-10T09:08:29.486Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_70aeca45-ef19-4b55-a280-7327c55db4d8",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-锐川诉禾丰设备款.xlsx",
+   "sha256": "3504144b4118d62beb3011a91f5d5f2c0c36c7622f030fd9617b052aa1e68a50",
+   "created_at": "2026-11-10T08:58:17.045Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_57ce1557-e06e-4cb6-b914-9b00f0d07df8",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "缺口清单-锐川诉禾丰设备款.xlsx",
+   "sha256": "0c910916f053b7886ed4ae8db169b4bf560fcdbdaf4970b6114b9ddf4ce34e5d",
+   "created_at": "2026-11-10T09:01:13.154Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_5c064d5f-7803-4809-8fac-5ed6c3e58c3c",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "时间线（按付款线索；另列3号机质量与维修线索）.xlsx",
+   "sha256": "9b703c397e921b221f8f0d259d265217e41aa31d2f5457dba8796e8d1f381fe2",
+   "created_at": "2026-11-10T09:05:44.277Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_99fccc92-bb28-4531-bba3-5b7fcee7fb66",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "时间线（按付款线索；另列3号机质量与维修线索）.xlsx",
+   "sha256": "1edc5e41f7ea7b8e378377f4bfc0f9ae46a22d5837e7870bb0e630a00dc4cb0f",
+   "created_at": "2026-11-10T09:06:02.032Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c9111e3d-2df3-4b75-a548-085da30bd201",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "缺口清单-锐川诉禾丰设备款.xlsx",
+   "sha256": "c72e6de447ea0fb0db21e1e87e5eb28c0c29ae2a9938c77af866146c86316489",
+   "created_at": "2026-11-10T09:07:15.104Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_377e65d0-7210-4731-b03f-389daab7c048",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "事实时间线-锐川诉禾丰设备买卖合同纠纷（卖方·精读）.xlsx",
+   "sha256": "a6206bfa3582135e84d8278b54a47ac9d1801a2c76cc07f460a5d0bf7834d8d8",
+   "created_at": "2026-11-10T09:08:29.485Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_9bae118d-170a-4928-bc4d-98f6fefa84fa",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "39936880597ca69523bbe2c06a1805c8453daac07beb8f08baebc0f2eeba6ddd",
+   "created_at": "2026-11-10T09:08:29.486Z",
+   "title": "8份材料已全部精读并整理，无未读、部分读取或排除材料。最紧迫的是质保金最早付款期",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,16 @@
+{
+ "stack": "w2",
+ "tag": "m36-closing-checklist",
+ "run": "run_c38c4a4b-faa0-4484-8a4e-c646d075d8cc",
+ "status": "succeeded",
+ "open": {
+  "v1-交割清单-栖桐智能增资.xlsx": {
+   "opened": true,
+   "pages": 15
+  },
+  "v2-交割清单-栖桐智能增资.xlsx": {
+   "opened": true,
+   "pages": 15
+  }
+ }
+}

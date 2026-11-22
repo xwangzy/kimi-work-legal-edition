@@ -1,0 +1,133 @@
+{
+ "run": {
+  "run_id": "run_8add54b1-6522-4325-a43a-3aac68c8996f",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_b9e470c7-bfbe-461d-9540-133aa256e678",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_b9e470c7-bfbe-461d-9540-133aa256e678-a1.agent_task-1794300231742",
+  "input_snapshot": {
+   "matter_id": "mat_b9e470c7-bfbe-461d-9540-133aa256e678",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_5414b341-7b44-416c-bd1b-a6b20f1faa61"
+   ],
+   "goal": "请答复以下问题：新加坡母公司要求我们从 2026 年 12 月 1 日起把全体员工的人事数据迁到集团 OneHR 平台（服务器在新加坡），2027 年 1 月 1 日上线。这需要申报数据出境安全评估、签标准合同，还是可以直接传？除此之外还要做哪些合规动作？能不能按原计划时间上线？业务背景：公司不是关键信息基础设施运营者；在职 2,340 人（含劳务派遣 235 人）；人力资源部已发了内部规定并在员工手册签收单里加了同意条款。\n这是人力资源部提给法务的问题，答复要给 HR 总监和信息安全部，结论先说，需要谁去做什么写清楚。",
+   "estimate_id": "est_114ceee3-452f-45c9-ad59-7d1efd2f5170",
+   "title": "合规问答 / 顾问答复",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "client-advice",
+   "skill_title": "顾问答复",
+   "skill_version": "1.9.0",
+   "skill_primary_output": "顾问答复.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "question": "新加坡母公司要求我们从 2026 年 12 月 1 日起把全体员工的人事数据迁到集团 OneHR 平台（服务器在新加坡），2027 年 1 月 1 日上线。这需要申报数据出境安全评估、签标准合同，还是可以直接传？除此之外还要做哪些合规动作？能不能按原计划时间上线？",
+    "background": "公司不是关键信息基础设施运营者；在职 2,340 人（含劳务派遣 235 人）；人力资源部已发了内部规定并在员工手册签收单里加了同意条款。"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_114ceee3-452f-45c9-ad59-7d1efd2f5170",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:51.744Z",
+  "updated_at": "2026-11-10T10:06:22.616Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_05a79d5f-2c5b-43b2-ae0f-7425fea30f2b",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "顾问答复-OneHR员工人事数据出境.docx",
+   "sha256": "2edfb152e79450d5ac2539556f311fcde1f0f1c312598f1e60ddf39974690981",
+   "created_at": "2026-11-10T09:54:54.742Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_6b0080f7-e682-40ef-b164-0c7c0326dc26",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "1a00e648371ec31605704df10d212469d821ba268d749b556ccd4ff9dc10ccfd",
+   "created_at": "2026-11-10T09:56:49.348Z",
+   "title": "已收到并完整读取 1 份材料，无无法读取或排除的材料。境外接收方协议、系统架构、",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_4bc57dbb-d2d2-4db2-957a-ec6799cc54e1",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-顾问答复-OneHR员工人事数据出境.md",
+   "sha256": "35d28e24369112fcbe3e37178cd83f7e3c04b748a2071786d33c045eae98f8ab",
+   "created_at": "2026-11-10T09:59:27.313Z",
+   "title": "独立复核意见：顾问答复-OneHR员工人事数据出境",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f2d2e68c-0e32-4951-959a-919ce782a969",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "顾问答复-OneHR员工人事数据出境.docx",
+   "sha256": "2a35e22e64087b3c1d7a9beda90324fb191285b7f1629a684d1103eb9a555880",
+   "created_at": "2026-11-10T10:04:11.076Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_762fb7a9-8d74-43b8-98ee-9a28aed1d4d8",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "顾问答复-OneHR员工人事数据出境.docx",
+   "sha256": "55901dae2d598284fd8a91078a7c8987f8b200e415286304e83ce497fcd91a22",
+   "created_at": "2026-11-10T10:05:17.535Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_0ec2c8a4-3d09-42bf-8fab-fda3f51f8295",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "2713e6b96ef672f659f69c310016ac00ca5737c7401f29ed4142b22c4d91d766",
+   "created_at": "2026-11-10T10:06:22.616Z",
+   "title": "已完整复核本事项 1 份材料及原《顾问答复》，无无法读取或排除的材料。两项复核意",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

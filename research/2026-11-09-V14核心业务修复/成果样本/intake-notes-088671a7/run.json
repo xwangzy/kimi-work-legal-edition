@@ -1,0 +1,144 @@
+{
+ "run": {
+  "run_id": "run_088671a7-0d00-4876-8431-cb1238041f59",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_0fd088e1-1e35-4a96-b693-039bf7996459",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_0fd088e1-1e35-4a96-b693-039bf7996459-a1.agent_task-1794202679915",
+  "input_snapshot": {
+   "matter_id": "mat_0fd088e1-1e35-4a96-b693-039bf7996459",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_92304648-0d7f-4b8c-a531-eb1cea176afd"
+   ],
+   "goal": "请根据访谈记录整理访谈纪要与材料收集清单；访谈对象：目标公司财务负责人。\n把 10 月 16 日对苏晚亭的访谈整理成纪要，列出她答应补的材料和还要找谁核实。纪要要能给项目组内部传阅。",
+   "estimate_id": "est_1ec278ab-f6c4-41f0-9773-bf1f0c74adee",
+   "title": "访谈纪要与材料清单",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "intake-notes",
+   "skill_title": "访谈纪要、材料收集清单与新案待核事项",
+   "skill_version": "1.3.0",
+   "skill_primary_output": "访谈纪要.docx",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "who": "目标公司财务负责人"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_1ec278ab-f6c4-41f0-9773-bf1f0c74adee",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:37:59.918Z",
+  "updated_at": "2026-11-09T05:59:47.940Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_ec8ea116-81d9-46a9-b44e-8b3d8b27a900",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈纪要-2026-10-16.docx",
+   "sha256": "768ff35b7300a2091e33dda4337e2654150afebe0e61d26caf7f1146efedf552",
+   "created_at": "2026-11-09T05:50:45.135Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_fbfb8063-6f38-414a-8b4e-ff445e2a1f6b",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈纪要-2026-10-16.docx",
+   "sha256": "869ca0d2f976c8674631724b30eab63cb063a79eb26ecc5aabb14829a24cf9a3",
+   "created_at": "2026-11-09T05:51:30.560Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_b3f5ebd8-6cfa-418e-9f8f-5d9be427464b",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "材料收集清单-栖桐科技尽调.xlsx",
+   "sha256": "d3fd7393dd8412de945f1500d4dbe6f320333044a7ec5b4d240c292b8da8100d",
+   "created_at": "2026-11-09T05:56:05.881Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_38ddd24d-39d6-46fd-9f06-3214d6da09cc",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "紧急期限与冲突待核清单-栖桐科技尽调.xlsx",
+   "sha256": "834bba48193f2b580d54f66120847dfab55e0f197087c8106e590cc3184b1320",
+   "created_at": "2026-11-09T05:56:05.894Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b8e8278c-6c56-468a-83c8-5bdb15ffcc02",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈纪要-2026-10-16.docx",
+   "sha256": "240a702c616c12d8646e472abcf20a4d398210b4ad6235d9f68e41ec1ed8d3a1",
+   "created_at": "2026-11-09T05:58:08.546Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d6a5b59b-5962-4a41-8e6e-e81e00d85880",
+   "kind": "agent_report",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈纪要-2026-10-16.docx",
+   "sha256": "e81c7084898bc2234eee46dd3c839f59fe914a2138d58d32af4b9c698883068b",
+   "created_at": "2026-11-09T05:58:44.486Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_9f8bf30a-c6c4-4d57-afbd-128fb32ded06",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "26a28f59879b2196cfe8441570fe0d002de925d04cac4bd61a3e42d5c955e9bd",
+   "created_at": "2026-11-09T05:59:47.940Z",
+   "title": "收到 1 份访谈记录，已完整读取，无排除、无法识别或仅部分读取的材料。访谈记录未",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

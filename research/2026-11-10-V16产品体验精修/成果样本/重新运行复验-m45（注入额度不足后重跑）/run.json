@@ -1,0 +1,146 @@
+{
+ "run": {
+  "run_id": "run_5d72d8df-eb10-48d6-a456-015212ed1e3e",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_81b3d6d5-1c59-423e-8622-2ae89f7eb79c",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 10,
+  "idempotency_key": "mat_81b3d6d5-1c59-423e-8622-2ae89f7eb79c-a1.agent_task-1794300169672",
+  "input_snapshot": {
+   "matter_id": "mat_81b3d6d5-1c59-423e-8622-2ae89f7eb79c",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_9a23d830-2c72-4dcb-9da9-294ad1edc9dd",
+    "docv_65c29bfa-3119-4e5c-bb48-c65b0a1289b1"
+   ],
+   "goal": "请就以下履约问题梳理履约事实与依据，并起草函件：裕丰包装订单 QL-PO-2026-0917：第一批（应于 2026-10-10 交货）10 月 20 日才到，A 型纸箱抽检不合格率 5.8%，我们 10 月 27 日发了质量异议及退货通知，对方至今未补货；第二批应于 10 月 31 日交货，至今未交，对方说 11 月 18 日交，还要求我们先付第一批货款。我们已临时向别家采购 A 型纸箱，多花了 46,800 元。\n采购部想马上换供应商，问能不能现在就发解除通知。请先判断现在能不能解除，再起草该发的函；违约金算到今天。",
+   "estimate_id": "est_8adaa292-c5db-4a58-8fef-c1764a554e2c",
+   "title": "履约问题与催告函",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "demand-letter",
+   "skill_title": "律师函 / 催告函",
+   "skill_version": "1.3.0",
+   "skill_primary_output": "律师函或催告函（草稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "issue": "裕丰包装订单 QL-PO-2026-0917：第一批（应于 2026-10-10 交货）10 月 20 日才到，A 型纸箱抽检不合格率 5.8%，我们 10 月 27 日发了质量异议及退货通知，对方至今未补货；第二批应于 10 月 31 日交货，至今未交，对方说 11 月 18 日交，还要求我们先付第一批货款。我们已临时向别家采购 A 型纸箱，多花了 46,800 元。"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_8adaa292-c5db-4a58-8fef-c1764a554e2c",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:49.673Z",
+  "updated_at": "2026-11-10T08:59:49.944Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_253309e4-7cb0-46b0-85eb-857a378e4c0d",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除通知.docx",
+   "sha256": "6de0a75bef3f8ec9199a37961262287aad61c1833cfb1bb8114184c17f22a217",
+   "created_at": "2026-11-10T08:53:02.057Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_a7b6645d-b778-45ca-966e-4b46fe09888e",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "依据与发送前核对-裕丰包装订单解除.xlsx",
+   "sha256": "2b9fb4345de5e8a37405797bd6a857b174978258ee794ecadaea3f10ae0a2bd7",
+   "created_at": "2026-11-10T08:54:40.263Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_dd043e41-6a72-4609-aa78-ef4cf9929a2c",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "4035469285bc3c82692a7b6c35d8747c714959eb428f5ab59985068d76c7acd3",
+   "created_at": "2026-11-10T08:56:21.641Z",
+   "title": "已收到并完整读取 2 份材料，没有无法读取或排除的材料；已登记 15 项履约及合",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_7dcf9182-435f-4142-b766-1c89bcf127b7",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-解除通知.md",
+   "sha256": "c50e01f82efec0f2d92317fc82832396649ca2c09b6daa0bcda2329e9f6fe6ac",
+   "created_at": "2026-11-10T08:57:37.639Z",
+   "title": "独立复核意见：解除通知",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_4577b2b5-8c8b-4cca-ba95-e030a4a54c6e",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除通知.docx",
+   "sha256": "ce3c06fbb0417203db486094b06a4bc0f1b9cc69dde5d6a9cc8206ff17acd2f8",
+   "created_at": "2026-11-10T08:59:09.725Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_d480fa7c-f71b-4104-b9df-703b39aacd1f",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "依据与发送前核对-裕丰包装订单解除.xlsx",
+   "sha256": "e0c13b64d164ba5619a234b4a78650a6057183770e0aadae894c12c2f236c856",
+   "created_at": "2026-11-10T08:59:09.735Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_92570b17-0f28-4356-b301-b1f35a122349",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "7ac0693de27b0415ea87a22c060eb017fb80a40c5a360337a7b02ecd37bd013e",
+   "created_at": "2026-11-10T08:59:49.943Z",
+   "title": "已完整读取并核对 2 份材料，没有无法读取或排除的材料；已登记 15 项履约及合",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

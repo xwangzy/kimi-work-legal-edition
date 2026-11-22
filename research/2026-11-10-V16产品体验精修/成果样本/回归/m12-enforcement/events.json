@@ -1,0 +1,131 @@
+[
+ {
+  "event_id": 242,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81810",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:20:52.187Z"
+ },
+ {
+  "event_id": 243,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:20:52.187Z"
+ },
+ {
+  "event_id": 244,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 2,
+   "loaded": 2,
+   "failed": 0,
+   "files": [
+    {
+     "name": "02-履行情况与财产线索说明（锐川财务，2026-11-06）.docx",
+     "chars": 643,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "01-民事判决书及生效证明（澄泰案）.docx",
+     "chars": 1073,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_5c0f497e-9818-4752-ab77-b37eeb29e34e",
+     "parse_version_id": "psv_a1fada05-b879-49e8-bf4f-8da7d0afa303"
+    },
+    {
+     "document_version_id": "docv_0d4a72ca-3f43-47f3-8adb-bc32b32213de",
+     "parse_version_id": "psv_e6fcd73d-4720-49ea-9444-cbb5c09747db"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:20:52.187Z"
+ },
+ {
+  "event_id": 245,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_036d69d7-4d40-4bf3-b754-2a59455da659_att_2290286f-68d8-47cf-943e-39a8f3b3470d",
+   "attempt_id": "att_2290286f-68d8-47cf-943e-39a8f3b3470d"
+  },
+  "created_at": "2026-11-10T03:20:52.659Z"
+ },
+ {
+  "event_id": 246,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_481dc522-2c05-4d28-a6ca-685431c9f01c",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:20:53.462Z"
+ },
+ {
+  "event_id": 247,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 预扣费额度失败, 用户剩余额度: ¥0.058280, 需要预扣费额度: ¥1.125648 (request id: 202611100320527373411658268d9d6jfRLWQPj)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:53.462Z"
+ },
+ {
+  "event_id": 248,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 预扣费额度失败, 用户剩余额度: ¥0.058280, 需要预扣费额度: ¥1.125648 (request id: 202611100320527373411658268d9d6jfRLWQPj)"
+  },
+  "created_at": "2026-11-10T03:20:53.462Z"
+ },
+ {
+  "event_id": 249,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 预扣费额度失败, 用户剩余额度: ¥0.058280, 需要预扣费额度: ¥1.125648 (request id: 202611100320527373411658268d9d6jfRLWQPj)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:53.462Z"
+ }
+]

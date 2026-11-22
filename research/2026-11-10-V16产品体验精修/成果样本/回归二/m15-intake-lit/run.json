@@ -1,0 +1,133 @@
+{
+ "run": {
+  "run_id": "run_990f7cb7-0e98-4346-b0cf-b231e9e1c13b",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_b9e7ea1c-6b0f-4add-9178-86f4a04b4b74",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_b9e7ea1c-6b0f-4add-9178-86f4a04b4b74-a1.agent_task-1794300147031",
+  "input_snapshot": {
+   "matter_id": "mat_b9e7ea1c-6b0f-4add-9178-86f4a04b4b74",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_902c97f8-dd30-44eb-b7a1-91bf67b73e17",
+    "docv_4f353c89-36e9-4339-8202-44e58f1e4af8"
+   ],
+   "goal": "请根据访谈记录整理访谈纪要与材料收集清单，并列出紧急期限与需要做利益冲突检索的主体；案件类型：买卖合同。\n昨天见了客户，笔记比较乱。请整理纪要、要客户补的材料，以及要做冲突检索的主体。",
+   "estimate_id": "est_53f231ee-70cc-47b6-8a70-4bf1383e4bb3",
+   "title": "新案受理与访谈",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "intake-notes",
+   "skill_title": "访谈纪要、材料收集清单与新案待核事项",
+   "skill_version": "1.4.0",
+   "skill_primary_output": "访谈纪要.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "case_type": "买卖合同"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_53f231ee-70cc-47b6-8a70-4bf1383e4bb3",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:27.034Z",
+  "updated_at": "2026-11-10T09:00:05.490Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_91f25c37-ee24-45b9-b8a7-f34fb24b418a",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈纪要-2026-10-28.docx",
+   "sha256": "ed6c05e99abd9a95b099509667637317a02877fe87a03eba99fdf8e3cb6c63af",
+   "created_at": "2026-11-10T08:51:39.154Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c587ef98-7c2d-4310-a191-a8b92f63fe8e",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "材料收集清单-锐川与禾丰买卖合同.xlsx",
+   "sha256": "9e288a829579337c5259d35cba0b0238c2703a8e9f8b611cf6eac05b65c93438",
+   "created_at": "2026-11-10T08:53:25.750Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_19cc7ae9-ffbb-465a-91e4-d8c263381389",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "紧急期限与冲突待核清单-锐川与禾丰买卖合同.xlsx",
+   "sha256": "275fb6e8687e05f3de8a5ac47031a85d0c05c0fc9c0fb933eff01497e2e8721c",
+   "created_at": "2026-11-10T08:55:58.600Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_4565ffd1-f6fc-4749-9512-7980cb323002",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "紧急期限与冲突待核清单-锐川与禾丰买卖合同.xlsx",
+   "sha256": "d0a29641ed39ccd57935941c4770da5672950e6607c170e932de51a63c27cc85",
+   "created_at": "2026-11-10T08:57:16.006Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_c9ba852f-a164-449e-957c-82d2ab11e878",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "紧急期限与冲突待核清单-锐川与禾丰买卖合同.xlsx",
+   "sha256": "f42900102c0d5480a99854377be0535502745f253caed631ccf5a6d10b2d3595",
+   "created_at": "2026-11-10T08:58:39.880Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e2d472f8-3b54-4bd7-8988-5da8fad1218e",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "caf7909c0276b02e549a8f5a9d45a35d23a639766db20a544d5c1cfd58e6b1ff",
+   "created_at": "2026-11-10T09:00:05.489Z",
+   "title": "优先提示：暂不考虑维修顺延时，质保金付款期最早于 2026年11月13日届满，距",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

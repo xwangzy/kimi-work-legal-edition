@@ -1,0 +1,98 @@
+{
+ "run": {
+  "run_id": "run_7a5d7a88-9538-4cca-900f-eb0491e139e7",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_400e0668-b57e-4fcc-a526-5e4c3ad79ddf",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_400e0668-b57e-4fcc-a526-5e4c3ad79ddf-a1.agent_task-1794300159992",
+  "input_snapshot": {
+   "matter_id": "mat_400e0668-b57e-4fcc-a526-5e4c3ad79ddf",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_45916a8e-613c-4827-af47-4227874f1490",
+    "docv_488da38e-ceaa-41c0-ab52-6e2c9f28cd38",
+    "docv_9f954d19-5fd4-46b8-96e1-c48f00566a43",
+    "docv_70df8f97-beaa-4722-85fe-6be414eb4539",
+    "docv_03d49071-a008-427f-83f4-29972ee48cdc"
+   ],
+   "goal": "请核查管辖与诉讼时效：拟主张的请求为支付验收款余额310,000元、质保金135,000元及逾期付款违约金；我方：拟起诉。\n请确认去哪家法院起诉、时效有没有问题，质保金的付款期限也一并核一下。",
+   "estimate_id": "est_cda57397-a71c-4b48-a72a-064b8d5d6c1d",
+   "title": "管辖与时效核查",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "procedure-check",
+   "skill_title": "管辖与时效核查 · 试用",
+   "skill_version": "1.3.1",
+   "skill_primary_output": "管辖与时效核查表.xlsx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "claims": "支付验收款余额310,000元、质保金135,000元及逾期付款违约金",
+    "side": "拟起诉"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_cda57397-a71c-4b48-a72a-064b8d5d6c1d",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:39.994Z",
+  "updated_at": "2026-11-10T09:24:07.019Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_f03dcf37-2914-4396-a966-9fffc775e2d0",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "管辖与时效核查表-锐川诉禾丰设备款.xlsx",
+   "sha256": "2dae3f38253773fb90c68d71d0b4bea971bc412eefbfac3c5e665dd46105058f",
+   "created_at": "2026-11-10T09:19:45.150Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c619112e-69a4-435f-9416-2f59980c84ce",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-锐川诉禾丰设备款.xlsx",
+   "sha256": "ea4dd6544859fc7a0bc8904e1855fc5ad8a8f6948d3ada8c14b2279f01929e66",
+   "created_at": "2026-11-10T09:21:34.422Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c4096f56-e080-4eff-8a6c-b2a9d74533a3",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "1357b55080e0f48ef614b3839b478259118d58d3dc0b7646e7ce134692098980",
+   "created_at": "2026-11-10T09:24:07.018Z",
+   "title": "已完整读取5份材料，无排除或识别不全，并已生成两份 Excel 草稿。最近的付款",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

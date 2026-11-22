@@ -1,0 +1,44 @@
+{
+ "stack": "w2",
+ "tag": "v16-E2-pleading",
+ "run": "run_1b6011bb-0d40-4c18-b900-08999b3f969b",
+ "status": "succeeded",
+ "open": {
+  "v1-提交前核对清单-澄岸广场二期幕墙分包工程价款纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-提交前核对清单-澄岸广场二期幕墙分包工程款.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-民事起诉状.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-证据目录-澄岸广场二期幕墙分包工程价款纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-证据目录-澄岸广场二期幕墙分包工程款.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-提交前核对清单-澄岸广场二期幕墙分包工程款.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-民事起诉状.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v3-民事起诉状.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v4-民事起诉状.docx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

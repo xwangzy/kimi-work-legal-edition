@@ -1,0 +1,105 @@
+{
+ "run": {
+  "run_id": "run_2afc420d-1330-4a38-bb7a-390fe10cc262",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_7c995bd8-c224-415f-bc01-3e4cb5868723",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_7c995bd8-c224-415f-bc01-3e4cb5868723-a1.agent_task-1794203033148",
+  "input_snapshot": {
+   "matter_id": "mat_7c995bd8-c224-415f-bc01-3e4cb5868723",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_4eae3f4d-c981-4601-a5aa-d372785dfaed"
+   ],
+   "goal": "请从交易文件中逐条整理交割清单（先决条件、交割文件与动作、交割后义务），每条附原文与出处。预计交割日：2026-11-30。\n协议 11 月 6 日签了，客户希望 11 月底交割。请把先决条件、交割文件和交割后义务逐条拉出来，每条算出最晚日期，跟附件对不上的地方标出来。",
+   "estimate_id": "est_9f182369-9561-484b-882c-c602be09ed07",
+   "title": "交割清单",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "closing-checklist",
+   "skill_title": "交割清单 · 试用",
+   "skill_version": "1.0.0",
+   "skill_primary_output": "交割清单.xlsx",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "closing_date": "2026-11-30"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_9f182369-9561-484b-882c-c602be09ed07",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:43:53.152Z",
+  "updated_at": "2026-11-09T06:38:13.843Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_383a00d6-2104-4060-b212-793a1ad87be1",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "交割清单-栖桐智能增资-说明页.xlsx",
+   "sha256": "172b3857dc0da738eee55af8e745b4f1dc7bbe49ab2db4de435db7c0451cf2d2",
+   "created_at": "2026-11-09T06:25:43.926Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e03f21ca-305b-44eb-875f-6a52768925bd",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "交割清单-栖桐智能增资.xlsx",
+   "sha256": "18f401e91329506b891a11e562c9aa919fb4378dbc219f39cda69f32a991a9d4",
+   "created_at": "2026-11-09T06:29:06.974Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_5d3ed72a-c2a9-451d-a8a9-d907e2f941ec",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "ab69762823d35b2860ebf3c68fafb9c2e1dada5a6c6d3dcc747b13bea676e562",
+   "created_at": "2026-11-09T06:38:13.842Z",
+   "title": "已完整读取1份签署版协议并生成交割清单；最近的倒排管理节点是 2026-11-2",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2fcc3cd0-4d0e-4a7a-8dfe-c8ffb2fb7579",
+   "kind": "a1_workspace_file",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "交割清单-栖桐智能增资-完整六表.xlsx",
+   "sha256": "aabc8c193582e1c13a076e5d5886bc2977d8640bbaabe14c03f4d6d1a4fde2fd",
+   "created_at": "2026-11-09T06:38:13.842Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

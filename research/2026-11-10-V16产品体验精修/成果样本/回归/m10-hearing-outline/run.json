@@ -1,0 +1,62 @@
+{
+ "run": {
+  "run_id": "run_c25cfdbc-db0a-4950-8bb2-67ae87106fc2",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_84ec4f68-5df7-4628-a3cf-d70beb9ee103",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_84ec4f68-5df7-4628-a3cf-d70beb9ee103-a1.agent_task-1794280768470",
+  "input_snapshot": {
+   "matter_id": "mat_84ec4f68-5df7-4628-a3cf-d70beb9ee103",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_5a9b7fc7-5f74-435c-80ed-db5bca8627bc",
+    "docv_31525bd7-7ef6-4ba1-859c-8f5ab7cf111d",
+    "docv_41faba23-a184-481a-83c2-218aaaf0571c",
+    "docv_06d1e5c3-dc60-4ced-9129-8331f6f48ad9",
+    "docv_a937cc91-aae1-49cf-9707-83cb2afc7caf",
+    "docv_74f052b8-db2a-49cd-a5bb-c2f07ac35a19",
+    "docv_d7a4df35-caa9-4ad5-8687-badf7dead951",
+    "docv_0a8f4acb-5e6e-4220-80ff-1dc1d3e2fae6"
+   ],
+   "goal": "请准备开庭用的庭审提纲（陈述要点、举证质证顺序、发问提纲、辩论要点），事实分清“律师确认”与“材料记载”，不预测庭审结果。开庭日期：2026-12-09；我方地位：被告 / 被申请人；争议焦点：本案管辖；3号机是否存在质量问题及原告的异议是否逾期；原告主张的外协加工损失与检测费是否成立。\n管辖异议我们会在答辩期内提，但提纲先按法院不移送、照常开庭准备。发问提纲请重点问检测报告和外协合同。",
+   "estimate_id": "est_5523c68a-ad97-45f1-8d87-c7be771bee7c",
+   "title": "庭审提纲",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "hearing-outline",
+   "skill_title": "庭审提纲（内部工作稿）· 试用",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "庭审提纲.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "hearing_on": "2026-12-09",
+    "side": "被告 / 被申请人",
+    "focus_points": "本案管辖；3号机是否存在质量问题及原告的异议是否逾期；原告主张的外协加工损失与检测费是否成立"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 0,
+  "estimate_id": "est_5523c68a-ad97-45f1-8d87-c7be771bee7c",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:28.472Z",
+  "updated_at": "2026-11-10T07:43:00.166Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

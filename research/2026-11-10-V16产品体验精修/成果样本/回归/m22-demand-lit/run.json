@@ -1,0 +1,58 @@
+{
+ "run": {
+  "run_id": "run_0b4b833f-9e5d-4115-9173-3be6f1ad085d",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_80dce657-e81f-442d-b4e9-abd601151126",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_80dce657-e81f-442d-b4e9-abd601151126-a1.agent_task-1794280762260",
+  "input_snapshot": {
+   "matter_id": "mat_80dce657-e81f-442d-b4e9-abd601151126",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_bb9bf714-9034-4788-b43c-41b75352a0ce",
+    "docv_0166881c-aeb7-49bb-a7bd-a4b4f2a0689f",
+    "docv_9f8cc23e-d99e-463c-89c1-94248b4cf197",
+    "docv_f676ddb6-bb04-4ce6-b502-1abb5c54d751",
+    "docv_4cad48b6-8ed8-4ee0-b5f6-89a3ff7c9118"
+   ],
+   "goal": "请起草：催款律师函；期限要求：收函后7日内。\n以苏州衡正律师事务所名义受锐川委托发给禾丰。请回应对方7月15日的质量异议函，语气坚定但别过头。",
+   "estimate_id": "est_4e499f6f-8f41-4a4b-9c53-dc143e899ea9",
+   "title": "律师函 / 催告函",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "demand-letter",
+   "skill_title": "律师函 / 催告函",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "律师函或催告函（草稿）.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "letter_type": "催款律师函",
+    "deadline": "收函后7日内"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 0,
+  "estimate_id": "est_4e499f6f-8f41-4a4b-9c53-dc143e899ea9",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:22.261Z",
+  "updated_at": "2026-11-10T07:43:00.180Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

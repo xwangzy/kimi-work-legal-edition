@@ -1,0 +1,187 @@
+{
+ "run": {
+  "run_id": "run_74caa8f7-7439-4808-9ada-27a9ddff5855",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_34a12263-da89-467b-80c5-b049eebe947a",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_34a12263-da89-467b-80c5-b049eebe947a-a1.agent_task-1794203291941",
+  "input_snapshot": {
+   "matter_id": "mat_34a12263-da89-467b-80c5-b049eebe947a",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_70db07ec-01c9-441a-9a8b-130ca8179871",
+    "docv_e96ef47c-3a7b-41f4-bcf3-6db7e86cb81a",
+    "docv_a33c70c3-605f-4866-beac-c7ae783ad69e"
+   ],
+   "goal": "请起草临时股东会的文件（有限责任公司）：开会的出会议通知、决议与签署页，书面决定不开会的只出决定与签署页；拟议事项：增加注册资本 250 万元（由 1,000 万元增至 1,250 万元），由上海澜屹创业投资合伙企业（有限合伙）以 5,000 万元认缴，其中 250 万元计入注册资本、4,750 万元计入资本公积；原股东放弃优先认缴权；修改公司章程；董事会由三名增至五名，选举澜屹委派的范以宁为董事，另一名新增董事人选待定；批准祁暮川将发明专利 ZL202110347256.X 无偿转让给公司。以公司章程为准，没有章程的逐项标出待核，表决结果留空。\n这是交割先决条件里的股东会。按章程来，先看要不要先开董事会；专利转让是创始人和公司之间的交易，表决怎么处理请写清楚。表决结果留空。",
+   "estimate_id": "est_c94ffb01-8b49-40c9-a20c-3905003b0164",
+   "title": "股东会与董事会文件",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "corporate-resolutions",
+   "skill_title": "股东会与董事会文件 · 试用",
+   "skill_version": "1.3.0",
+   "skill_primary_output": "会议通知（草稿）.docx",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "meeting": "临时股东会",
+    "company_type": "有限责任公司",
+    "matters": "增加注册资本 250 万元（由 1,000 万元增至 1,250 万元），由上海澜屹创业投资合伙企业（有限合伙）以 5,000 万元认缴，其中 250 万元计入注册资本、4,750 万元计入资本公积；原股东放弃优先认缴权；修改公司章程；董事会由三名增至五名，选举澜屹委派的范以宁为董事，另一名新增董事人选待定；批准祁暮川将发明专利 ZL202110347256.X 无偿转让给公司"
+   }
+  },
+  "budget_points": 35,
+  "points_reserved": 35,
+  "points_charged": 35,
+  "estimate_id": "est_c94ffb01-8b49-40c9-a20c-3905003b0164",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:48:11.944Z",
+  "updated_at": "2026-11-09T06:54:27.628Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_53e60e8a-817a-4083-930c-010b4c4e130c",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "杭州栖桐智能科技有限公司关于召开临时〔自然人·J5FX0J〕会会议的通知.docx",
+   "sha256": "9651e6c8079705341c1623cc4aab6636bd0306fa189f9344b6f1df2187f95d08",
+   "created_at": "2026-11-09T06:44:37.629Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_02ef5cd1-79ca-444d-8090-19618ab632b9",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "杭州栖桐智能科技有限公司临时〔自然人·J5FX0J〕会决议.docx",
+   "sha256": "17f0202cc0b68abc4b757b9e0f15f5c2b851be1fd5eb9db5a6ed8303caa3214a",
+   "created_at": "2026-11-09T06:45:11.161Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e29ab46a-b95b-4d01-aff8-c2bd1ed66295",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "杭州栖桐智能科技有限公司临时〔自然人·J5FX0J〕会决议签署页.docx",
+   "sha256": "e4809e7bd2fa0d74fdf7106c2544e5d323ea8005e96a35bab22912c5e53c9963",
+   "created_at": "2026-11-09T06:45:38.937Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_5e6a0046-faa9-408b-9227-f432d219ff03",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "杭州栖桐智能科技有限公司关于召开临时股东会会议的通知.docx",
+   "sha256": "744cd130c6c5f6e9a03305cf1b9cf30f09631e6ca3fef324aef6da20594d2fd5",
+   "created_at": "2026-11-09T06:46:25.984Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_980fe307-ae25-4cba-b5f2-0503c338579e",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "杭州栖桐智能科技有限公司临时股东会决议.docx",
+   "sha256": "eff55da3b01599101b1b57ee1ddd84157f75270f0e5da34832e5f35c0aeb9ad9",
+   "created_at": "2026-11-09T06:47:27.811Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_9f093c3a-b350-4654-a696-44ac75bbeada",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "杭州栖桐智能科技有限公司临时股东会决议签署页.docx",
+   "sha256": "482ed69c8165bfa9a76069f2b8c543e44b10c9bd7084531d19325fb83a011055",
+   "created_at": "2026-11-09T06:47:45.193Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2bca1b95-155c-4d30-bfb5-ba777754bda8",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "召集与表决核对表-增资及关联交易.xlsx",
+   "sha256": "05d6cc8fed4c8bbeb305f298cd954b7777c1310557c40794951065e410ab3059",
+   "created_at": "2026-11-09T06:50:09.828Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_88b0664b-b66a-4a0d-b89f-d938f3f5a209",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "杭州栖桐智能科技有限公司关于召开临时股东会会议的通知.docx",
+   "sha256": "3878d839cff8732965459f8aed2951e8408be74d4e28dfaa1c8e84b213d73990",
+   "created_at": "2026-11-09T06:51:10.202Z",
+   "title": null,
+   "kind_version": 7,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_0fe6abbe-6c79-469e-8d18-094bf594063a",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "1eecf7d952a2121c74c141cc5790c9c18a9e5ed44676e324aa3358a92234f928",
+   "created_at": "2026-11-09T06:52:54.230Z",
+   "title": "已收到并完整读取 3 份材料，均可读取、无排除材料；章程为摘录，完整章程及历次修",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_ad4e78cc-db72-46e3-8beb-876c4d20c374",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-杭州栖桐智能科技有限公司关于召开临时〔自然人·J5FX0J〕会会议的通知.md",
+   "sha256": "c8cf9e9d5eb36b7009f7005da72f3088943ea9515ee9720f33b64194598bb44e",
+   "created_at": "2026-11-09T06:54:27.628Z",
+   "title": "独立复核意见：杭州栖桐智能科技有限公司关于召开临时〔自然人·J5FX0J〕会会议",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

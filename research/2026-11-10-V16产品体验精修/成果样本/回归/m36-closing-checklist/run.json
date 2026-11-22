@@ -1,0 +1,53 @@
+{
+ "run": {
+  "run_id": "run_ff68b2f5-f565-4c74-8bbd-a3e5ff6d44ef",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_9f960716-6d2a-4d29-949a-f02daad07d83",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_9f960716-6d2a-4d29-949a-f02daad07d83-a1.agent_task-1794280773472",
+  "input_snapshot": {
+   "matter_id": "mat_9f960716-6d2a-4d29-949a-f02daad07d83",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_20d324c8-51d9-45fb-b33f-ced18c7cf74c"
+   ],
+   "goal": "请从交易文件中逐条整理交割清单（先决条件、交割文件与动作、交割后义务），每条附原文与出处。预计交割日：2026-11-30。\n协议 11 月 6 日签了，客户希望 11 月底交割。请把先决条件、交割文件和交割后义务逐条拉出来，每条算出最晚日期，跟附件对不上的地方标出来。",
+   "estimate_id": "est_8ae05b00-4c85-49b9-8367-154a78c88d97",
+   "title": "交割清单",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "closing-checklist",
+   "skill_title": "交割清单 · 试用",
+   "skill_version": "1.0.0",
+   "skill_primary_output": "交割清单.xlsx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "closing_date": "2026-11-30"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 0,
+  "estimate_id": "est_8ae05b00-4c85-49b9-8367-154a78c88d97",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:33.473Z",
+  "updated_at": "2026-11-10T07:43:00.161Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,188 @@
+{
+ "run": {
+  "run_id": "run_05619e88-e354-4696-a0aa-fcf215884e0b",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_c487e8b4-da0c-4e49-9591-78fcef36d582",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 14,
+  "idempotency_key": "mat_c487e8b4-da0c-4e49-9591-78fcef36d582-a1.agent_task-1794280755275",
+  "input_snapshot": {
+   "matter_id": "mat_c487e8b4-da0c-4e49-9591-78fcef36d582",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_16d50451-2d34-4c45-98cd-23d5352b4f19",
+    "docv_05ed3086-1b43-4a03-8405-622426485f99",
+    "docv_15790aa8-6ec2-4b38-a5fc-c3877b615b86"
+   ],
+   "goal": "请起草商事仲裁申请书，先核对仲裁协议。仲裁机构：宁波仲裁委员会；仲裁请求：支付第三期设备款183,600元及逾期付款违约金（日万分之三，计至实际清偿之日）。我确认过的事实与金额照写，材料载明但未确认的标【待确认】，仲裁规则与收费以我提供的机构文件为准。\n客户是锐川。最后那6万元是甬岚包装代付的，订单也是甬岚包装出的，请核对被申请人该列谁。宁波仲裁委的规则和收费表我还没下载。",
+   "estimate_id": "est_bab0edd6-8aee-4f52-b38b-c74b9fd6ec94",
+   "title": "起草仲裁申请书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "arbitration-application",
+   "skill_title": "仲裁申请书（受限文书）· 试用",
+   "skill_version": "1.2.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "仲裁申请书（草稿）.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "institution": "宁波仲裁委员会",
+    "claims": "支付第三期设备款183,600元及逾期付款违约金（日万分之三，计至实际清偿之日）"
+   }
+  },
+  "budget_points": 35,
+  "points_reserved": 35,
+  "points_charged": 35,
+  "estimate_id": "est_bab0edd6-8aee-4f52-b38b-c74b9fd6ec94",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:15.276Z",
+  "updated_at": "2026-11-10T08:11:30.917Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_98a09656-95ab-4c6d-8566-41eee86beb8b",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仲裁申请书.docx",
+   "sha256": "05b018bf5ea257f3e58c2a42c8768f74443f9eaf949dcd3d7026c9a726a095fa",
+   "created_at": "2026-11-10T07:56:24.821Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_1974f6a0-b476-4ba8-b093-297fe22da332",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-甬岚设备款-截至2026-11-09.xlsx",
+   "sha256": "5fbbc9f21b02627e36587100e741182bd530744e2a3ffa162665d975d0dd9cbe",
+   "created_at": "2026-11-10T07:59:42.402Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_d2b91f7a-0934-4d7c-aa9c-e4068459d1dc",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-甬岚设备款仲裁.xlsx",
+   "sha256": "6e1f6210b21c9fb4a0d8e9f73d087dc34e1acfb971d5567e7425831eddb3ccaf",
+   "created_at": "2026-11-10T07:59:42.410Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_056b919e-c563-4206-b96d-cea9ce1f02ca",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-甬岚设备款仲裁.xlsx",
+   "sha256": "6465ffb34a698ac7e93c474548c301f0a44d9932ec7795d2cdc9156a11d5ac1b",
+   "created_at": "2026-11-10T07:59:42.415Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d6c97671-4948-4fe5-8170-869655384a21",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "仲裁申请书.docx",
+   "sha256": "cb1b1a30b45a1554d100bea0060f068935a1a9c85bbc66036cfa37dca10c682e",
+   "created_at": "2026-11-10T08:00:46.272Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_cd33bd2f-8083-41bb-a3ab-82ce8c914f70",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-甬岚设备款仲裁.xlsx",
+   "sha256": "44135063980bc80e047929d7371046c887a4d2cadc1fc8114446f7f008bc9e4e",
+   "created_at": "2026-11-10T08:02:48.003Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_3fba8165-723c-444b-8b7d-c0b075d7a498",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-甬岚设备款仲裁.xlsx",
+   "sha256": "bd0e90a71f5c3c53ccfccc6cd0650f891084fd77f7758d3761ab6f9a0e5a3a4d",
+   "created_at": "2026-11-10T08:02:48.013Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_721475cf-69cf-405a-ada5-aec0473908ae",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "11192dcc9af4492fddfa3060abcb480b0782f491fbe3b22a55f7ca144d71ff71",
+   "created_at": "2026-11-10T08:03:31.232Z",
+   "title": "收到3份材料，均已完整读取，无识别缺失或排除材料。宁波仲裁委员会现行规则、收费表",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_877b4b32-da44-4664-9b86-a5dbd21964d6",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-仲裁申请书.md",
+   "sha256": "f89fc640d581c39a1166207042c099457c998950c76f99e8555868fef1bc43a2",
+   "created_at": "2026-11-10T08:05:08.608Z",
+   "title": "独立复核意见：仲裁申请书",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8a8fd0b3-cc42-4e45-98cd-8c277d203dcf",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "813d6b45ff1d2246d7607eac7b6fe046e9feab7882c4eda66d3f84514f177d22",
+   "created_at": "2026-11-10T08:11:30.916Z",
+   "title": "已完整读取本事项 3 份材料，均可正常读取，无遗漏识别范围。已生成 Word《仲",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

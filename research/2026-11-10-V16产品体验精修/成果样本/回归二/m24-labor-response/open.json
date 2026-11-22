@@ -1,0 +1,28 @@
+{
+ "stack": "w4",
+ "tag": "m24-labor-response",
+ "run": "run_cf42dd6a-bc49-4a13-8187-6ba087b85023",
+ "status": "succeeded",
+ "open": {
+  "v1-举证责任与证据清单-上海澜栖智能科技有限公司.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-劳动争议应对方案-上海澜栖智能科技有限公司.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v1-请求项与敞口表-上海澜栖智能科技有限公司.xlsx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-劳动争议应对方案-上海澜栖智能科技有限公司.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v2-请求项与敞口表-上海澜栖智能科技有限公司.xlsx": {
+   "opened": true,
+   "pages": 8
+  }
+ }
+}

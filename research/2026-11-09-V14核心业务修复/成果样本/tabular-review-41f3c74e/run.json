@@ -1,0 +1,73 @@
+{
+ "run": {
+  "run_id": "run_41f3c74e-6543-408d-9492-07c2c91a79c1",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_15fe26ce-b56d-4881-b0d3-dbe2f10a1999",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_15fe26ce-b56d-4881-b0d3-dbe2f10a1999-a1.agent_task-1794205631065",
+  "input_snapshot": {
+   "matter_id": "mat_15fe26ce-b56d-4881-b0d3-dbe2f10a1999",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_5aeab803-3702-4ac2-9c9a-8e571116224c",
+    "docv_38379e9c-1169-4a64-9919-d4246f0caa4b",
+    "docv_1787f387-ab88-4d99-b4e8-d6d3d2701533",
+    "docv_c8580155-e32a-44a8-8707-012be13682ff",
+    "docv_858e34c3-52cf-489a-ba99-8121b29ff44c",
+    "docv_5d101381-2764-454d-9ace-bd40ba1ed39e",
+    "docv_5752b2f1-9602-46b3-8bea-527604026436",
+    "docv_5382ee0b-7184-4b07-bd13-dd96466b5105"
+   ],
+   "goal": "按审阅表《证据清单》逐份材料、逐列填写，每格附原文；已核的格子不改",
+   "estimate_id": "est_725e8ba0-d178-483a-8291-6f86391647f9",
+   "title": "表格审阅",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "tabular-review",
+   "skill_title": "表格审阅（逐格带出处）· 试用",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "审阅表（事项材料页）",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "table_id": "rtb_2e34172e-b5e4-480c-b015-91c5e26712cc"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_725e8ba0-d178-483a-8291-6f86391647f9",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:27:11.066Z",
+  "updated_at": "2026-11-09T07:48:50.590Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_0e0b54c0-8db9-409a-b231-ddc3aaf8a26b",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "92f88b1dc32120dc7322531598e291f44ff756c5fbab568f9caa69a31e052bff",
+   "created_at": "2026-11-09T07:48:50.589Z",
+   "title": "已读完 8 份材料，均识别正常、无未读范围；《证据清单》64 格已填完，未改已核",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

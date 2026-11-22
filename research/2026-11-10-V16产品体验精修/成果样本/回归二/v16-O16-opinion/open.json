@@ -1,0 +1,20 @@
+{
+ "stack": "w1",
+ "tag": "v16-O16-opinion",
+ "run": "run_c57dcc66-c619-48f3-bf27-7baca9794647",
+ "status": "succeeded",
+ "open": {
+  "v1-关于公司股权变动、出资催缴及诉讼应对的法律意见书（草稿）.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v1-提交前核对清单-公司股权变动出资催缴及诉讼应对.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-提交前核对清单-公司股权变动出资催缴及诉讼应对.xlsx": {
+   "opened": true,
+   "pages": 2
+  }
+ }
+}

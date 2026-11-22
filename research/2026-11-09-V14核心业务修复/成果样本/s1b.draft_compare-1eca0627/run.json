@@ -1,0 +1,81 @@
+{
+ "run": {
+  "run_id": "run_1eca0627-554d-4379-b4b5-ffba7c0a3494",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_16490728-41ea-4d80-9eca-47db1cbf22cb",
+  "scenario": "s1b.draft_compare",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 3,
+  "idempotency_key": "mat_16490728-41ea-4d80-9eca-47db1cbf22cb-s1b.draft_compare-1794202709500",
+  "input_snapshot": {
+   "matter_id": "mat_16490728-41ea-4d80-9eca-47db1cbf22cb",
+   "scenario": "s1b.draft_compare",
+   "document_version_ids": [
+    "docv_78f4cc58-b9d2-4bad-bb17-6a4f023f63af",
+    "docv_75191909-6c33-450e-b2e3-8766b4c0fec2"
+   ],
+   "baseline_document_version_id": "docv_78f4cc58-b9d2-4bad-bb17-6a4f023f63af",
+   "current_document_version_id": "docv_75191909-6c33-450e-b2e3-8766b4c0fec2",
+   "estimate_id": "est_39361259-bd79-498b-aa71-805bd5b6fa55",
+   "title": "回稿比对（不用 AI）"
+  },
+  "budget_points": 0,
+  "points_reserved": 0,
+  "points_charged": 0,
+  "estimate_id": "est_39361259-bd79-498b-aa71-805bd5b6fa55",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:38:29.503Z",
+  "updated_at": "2026-11-09T05:59:47.959Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_8edb698e-021c-4da7-8d84-a51932951e18",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "回稿比对报告.docx",
+   "sha256": "9cb0d850312f8b9de5a48a44ccf92179db616cc481431a19776392814b8df854",
+   "created_at": "2026-11-09T05:59:47.956Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_7258ae6f-2782-4616-890b-d9a24a7bd6fb",
+   "kind": "s1b_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "回稿比对报告-2026-11-09.docx",
+   "sha256": "9cb0d850312f8b9de5a48a44ccf92179db616cc481431a19776392814b8df854",
+   "created_at": "2026-11-09T05:59:47.957Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_bb1407bd-5496-4372-8048-ebeb594c0f20",
+   "kind": "s1b_diff_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "回稿差异表-2026-11-09.xlsx",
+   "sha256": "317c7b2c37fc07d1ae9dc4d2267e7a3acb18f1a0e4182d59055910680ea0e952",
+   "created_at": "2026-11-09T05:59:47.959Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

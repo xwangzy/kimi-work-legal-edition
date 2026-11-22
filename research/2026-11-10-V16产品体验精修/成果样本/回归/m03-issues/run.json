@@ -1,0 +1,114 @@
+{
+ "run": {
+  "run_id": "run_43810066-ae77-4892-b79e-7a100b6082e1",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_f5eb9cb5-166a-48ee-a52b-98f722a45abf",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "partial",
+  "status_version": 8,
+  "idempotency_key": "mat_f5eb9cb5-166a-48ee-a52b-98f722a45abf-a1.agent_task-1794280674899",
+  "input_snapshot": {
+   "matter_id": "mat_f5eb9cb5-166a-48ee-a52b-98f722a45abf",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_b6899491-4ec1-4681-a4fb-98ea85e9e8be",
+    "docv_23a129b8-e5c5-4ab6-9508-7cf63041fb18",
+    "docv_35e3c6c1-c99c-4218-94d0-ff3316c670ed",
+    "docv_da8e34c5-9557-4bcd-8f4a-85da06142b5d",
+    "docv_50d791c8-0746-4112-90eb-7006b8eb3631",
+    "docv_f409b319-587d-4d7e-94d8-61f0ce5cfb26",
+    "docv_3d3221ba-3a56-4693-b2ba-5c9fc7502641",
+    "docv_abe7ef3b-568e-488b-8026-bf59cdcd2eaf"
+   ],
+   "goal": "请梳理争点与证据：拟主张或需应对的请求为支付验收款余额310,000元、质保金135,000元、逾期付款违约金（日万分之五）及律师费30,000元；我方诉讼地位：原告 / 申请人。有我确认过的事实时只用确认的事实；还没有确认的，用材料载明的事实并标【未确认】，评估写“初步判断”。不评估胜诉率。\n律师费委托合同下周才签，发票还没有。对方肯定会拿3号机质量说事，请把对方抗辩和我们要补的证据列清楚。",
+   "estimate_id": "est_f5303dcc-919f-48bf-89c0-1538e1c38ee3",
+   "title": "争点与证据分析",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "issue-evidence-matrix",
+   "skill_title": "争点—证据矩阵与补证",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "争点—证据矩阵.xlsx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "claims": "支付验收款余额310,000元、质保金135,000元、逾期付款违约金（日万分之五）及律师费30,000元",
+    "side": "原告 / 申请人"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_f5303dcc-919f-48bf-89c0-1538e1c38ee3",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:17:54.900Z",
+  "updated_at": "2026-11-10T07:20:35.516Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_e6745f0b-e30f-45d2-bc14-d10d00c5e6b1",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点证据矩阵-锐川诉禾丰设备款.xlsx",
+   "sha256": "8ebf8772e36d24371c81724d617744acdb767bbc61ef38b5e79f7c01eb3ce286",
+   "created_at": "2026-11-10T07:07:42.977Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_3ed3f49c-6832-43ae-8b1a-b1538dac4054",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点证据矩阵-锐川诉禾丰设备款.xlsx",
+   "sha256": "af35bb4f23c82dc16ac9794dc980310d7d09102017477931bc15af9cff5ba939",
+   "created_at": "2026-11-10T07:12:07.258Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_2adbf908-28f8-475f-8440-6468b1430d1f",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点证据矩阵-锐川诉禾丰设备款.xlsx",
+   "sha256": "e64790008cd61287f5eb8735d43f9a2c50df67f81c31be9ae8dd28ef8a4c30bb",
+   "created_at": "2026-11-10T07:15:37.731Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_2e0d96f0-b583-4a0c-979c-3d1267ba08aa",
+   "kind": "agent_table",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点证据矩阵-锐川诉禾丰设备款.xlsx",
+   "sha256": "fa93be89ad110cc21c55358954531a884596415747a0fd9f69c05c775bb490b6",
+   "created_at": "2026-11-10T07:20:08.979Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

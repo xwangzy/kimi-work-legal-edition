@@ -1,0 +1,173 @@
+{
+ "run": {
+  "run_id": "run_97a633de-be24-47fe-9fbf-4ad75656740a",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_5c8c9d20-f738-4131-93ea-acd4c783fc81",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_5c8c9d20-f738-4131-93ea-acd4c783fc81-a1.agent_task-1794200522171",
+  "input_snapshot": {
+   "matter_id": "mat_5c8c9d20-f738-4131-93ea-acd4c783fc81",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_f37d21b9-c194-433c-a0d2-1517ce1ca3bc",
+    "docv_093ba967-3a8a-43db-a71d-47097ad823f4",
+    "docv_2a305c25-e621-4859-8b8a-16ef5307d26e"
+   ],
+   "goal": "请起草一份买卖合同，我方立场以事项为准；交易要点：供货方：苏州檀屿医疗器械有限公司（第二类体外诊断试剂生产企业，我方客户）；经销商：浙江禾湾医疗器械有限公司。禾湾在江苏、浙江、安徽三省独家经销檀屿糖化血红蛋白、C反应蛋白测定试剂盒及配套校准品、质控品，期限2027年1月1日至2029年12月31日。年度最低采购额、价格、账期、保证金、库存回购和过渡期见钟总邮件和11月3日会谈纪要；“檀屿”商标许可禾湾在区域内宣传、投标使用；禾湾负责签收后的冷链仓储与配送。\n客户檀屿医疗做二类体外诊断试剂，准备把江苏、浙江、安徽三省的独家经销给浙江禾湾，我们代表供货方。请根据钟总11月5日的邮件、11月3日的会谈纪要和禾湾的资质摘要起草协议初稿，要能直接发给对方。钟总邮件里的要求原则上都照顾到，有不妥的地方在起草说明里说清楚。",
+   "estimate_id": "est_0c89380a-5ccf-4b8f-95c2-db07a4748c14",
+   "title": "起草合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-draft",
+   "skill_title": "起草合同 · 试用",
+   "skill_version": "1.7.3",
+   "skill_primary_output": "合同草稿.docx",
+   "skills_sha256": "sUSOoUiH8MRK2usGoBAWN7Qdst_qplAZMMaWwcW8p8M",
+   "skill_args": {
+    "type": "买卖",
+    "points": "供货方：苏州檀屿医疗器械有限公司（第二类体外诊断试剂生产企业，我方客户）；经销商：浙江禾湾医疗器械有限公司。禾湾在江苏、浙江、安徽三省独家经销檀屿糖化血红蛋白、C反应蛋白测定试剂盒及配套校准品、质控品，期限2027年1月1日至2029年12月31日。年度最低采购额、价格、账期、保证金、库存回购和过渡期见钟总邮件和11月3日会谈纪要；“檀屿”商标许可禾湾在区域内宣传、投标使用；禾湾负责签收后的冷链仓储与配送。"
+   }
+  },
+  "budget_points": 35,
+  "points_reserved": 35,
+  "points_charged": 35,
+  "estimate_id": "est_0c89380a-5ccf-4b8f-95c2-db07a4748c14",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:02:02.176Z",
+  "updated_at": "2026-11-09T05:31:11.109Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_29a432a6-5897-4dad-b59d-53f753e1c678",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独家经销协议.docx",
+   "sha256": "000c6975272973edb96438708d973245ada7a0433a19c051e919ead6e69ba505",
+   "created_at": "2026-11-09T05:17:55.128Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8cd11091-879f-419e-90c1-fd43d7b1632c",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-独家经销协议.docx",
+   "sha256": "1cc16260bad550ae20b2fb8ed22e7bb5374f321da66583512513815dbb1217b5",
+   "created_at": "2026-11-09T05:21:22.830Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d5147dfd-63cd-41c3-aa35-3b3069110b41",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独家经销协议.docx",
+   "sha256": "df6df01be1142c41e41f34e7887c6b9d8d71c83b351cc239271ad2c54c66921b",
+   "created_at": "2026-11-09T05:23:39.075Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_bff6d029-bc63-4056-9948-f8ba89988841",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-独家经销协议.docx",
+   "sha256": "07f1e38d88b4a1371e49d952b7e8a3a5b9c44392cf9f4b146ebfb758f26861e5",
+   "created_at": "2026-11-09T05:23:39.106Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_ef1c5f1b-5baa-45f7-b9d9-cb3bacb3d5ef",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "461254f7b68b8c87989174e2c30a3c924c58fb33464e06ec14a5f583d178e751",
+   "created_at": "2026-11-09T05:25:11.583Z",
+   "title": "已完整读取全部3份材料，无未读或排除材料，已生成两份Word草稿：",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_c3e9e323-fb99-4063-9a0e-cda5939b4a0d",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-独家经销协议.md",
+   "sha256": "41abf0448c83abc218023d84135dc2fc69fc8c4dceb815dea6d1ca4b4dd479d6",
+   "created_at": "2026-11-09T05:28:55.536Z",
+   "title": "独立复核意见：独家经销协议",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_9047d39a-0546-4bf3-a327-be91c382ff0b",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独家经销协议.docx",
+   "sha256": "eae42fa1a389fb7289e63434231b783ecd4035931275a3c842ed4d604990a919",
+   "created_at": "2026-11-09T05:30:15.671Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_fa2f189c-3668-4052-8764-7e6a73a4acd9",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-独家经销协议.docx",
+   "sha256": "a7303b4e02388f38adea63f92d14afec9f0a514b634c1142771fdf5ee993e85c",
+   "created_at": "2026-11-09T05:30:36.862Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_22959ec6-f595-4339-8199-6deb4156b0da",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "cc8dc8a088aa6e1cc1a1649747442bd7e17f04dfbc2a734b93f5aa377374888c",
+   "created_at": "2026-11-09T05:31:11.108Z",
+   "title": "已完整读取全部3份材料，无未读或排除材料，并完成以下两份Word草稿：",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

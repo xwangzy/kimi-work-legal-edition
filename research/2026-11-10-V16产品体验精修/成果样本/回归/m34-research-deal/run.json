@@ -1,0 +1,52 @@
+{
+ "run": {
+  "run_id": "run_3cf380f9-7d79-4108-a529-e01dcb6e6c8d",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_99ff0605-ab6f-401f-ae5c-bbdfc3c64adc",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_99ff0605-ab6f-401f-ae5c-bbdfc3c64adc-a1.agent_task-1794280767034",
+  "input_snapshot": {
+   "matter_id": "mat_99ff0605-ab6f-401f-ae5c-bbdfc3c64adc",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "研究问题：有限责任公司增资协议中约定由目标公司与创始人连带回购投资方股权（未完成合格上市时，按投资款加年化 8% 单利回购）。在 2023 年修订的公司法施行后，目标公司回购约定的效力与可执行性如何？目标公司履行回购须满足哪些程序（减资、债权人保护）？创始人回购与目标公司回购在实务上如何区别对待？请区分有法律、司法解释依据的结论和只有会议纪要或裁判观点支持的结论。\n对方在回稿里删了目标公司的连带回购，我们要判断坚持还是放掉。备忘录给合伙人看，结论先行，依据要能核。",
+   "estimate_id": "est_55b6f042-c782-4f8e-aa34-603bf8d85c8b",
+   "title": "交易法规研究",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "legal-research-memo",
+   "skill_title": "法律研究备忘录",
+   "skill_version": "1.6.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "研究备忘录.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "question": "有限责任公司增资协议中约定由目标公司与创始人连带回购投资方股权（未完成合格上市时，按投资款加年化 8% 单利回购）。在 2023 年修订的公司法施行后，目标公司回购约定的效力与可执行性如何？目标公司履行回购须满足哪些程序（减资、债权人保护）？创始人回购与目标公司回购在实务上如何区别对待？请区分有法律、司法解释依据的结论和只有会议纪要或裁判观点支持的结论。"
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 0,
+  "estimate_id": "est_55b6f042-c782-4f8e-aa34-603bf8d85c8b",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:27.035Z",
+  "updated_at": "2026-11-10T07:43:00.193Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

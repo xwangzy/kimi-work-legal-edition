@@ -1,0 +1,143 @@
+[
+ {
+  "event_id": 190,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81812",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:21:45.529Z"
+ },
+ {
+  "event_id": 191,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:21:45.529Z"
+ },
+ {
+  "event_id": 192,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 3,
+   "loaded": 3,
+   "failed": 0,
+   "files": [
+    {
+     "name": "庭审情况摘要（2026-10-28第一次开庭）.docx",
+     "chars": 911,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "华东区独家经销协议（摘录）.docx",
+     "chars": 343,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "民事起诉状（鸿岫贸易诉启澜精密）.docx",
+     "chars": 922,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_a6078148-6734-4486-be14-efcfbe27f997",
+     "parse_version_id": "psv_34a38116-baa9-4350-9c9c-fb7e593ee950"
+    },
+    {
+     "document_version_id": "docv_21c8e54f-b9a0-4b9d-9c1c-689c24d67ffa",
+     "parse_version_id": "psv_dc0166be-c248-4de5-bdd5-b19cbe826d51"
+    },
+    {
+     "document_version_id": "docv_e80c10a3-55cb-4e59-9922-9ddaa56f3be2",
+     "parse_version_id": "psv_edf758b0-cf68-4428-a32b-ae5e65c549c6"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:21:45.530Z"
+ },
+ {
+  "event_id": 193,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_2d64cb9e-1bb9-4306-b1c6-8b0ce6e47994_att_da78af03-aecd-4905-bd64-49c3b5fb76ff",
+   "attempt_id": "att_da78af03-aecd-4905-bd64-49c3b5fb76ff"
+  },
+  "created_at": "2026-11-10T03:21:46.032Z"
+ },
+ {
+  "event_id": 194,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_28302615-d6eb-4a62-99e9-30645b2bb6b8",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:21:46.835Z"
+ },
+ {
+  "event_id": 195,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 预扣费额度失败, 用户剩余额度: ¥0.354186, 需要预扣费额度: ¥1.124414 (request id: 202611100321461111794198268d9d6gnnHh00c)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:21:46.835Z"
+ },
+ {
+  "event_id": 196,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 预扣费额度失败, 用户剩余额度: ¥0.354186, 需要预扣费额度: ¥1.124414 (request id: 202611100321461111794198268d9d6gnnHh00c)"
+  },
+  "created_at": "2026-11-10T03:21:46.835Z"
+ },
+ {
+  "event_id": 197,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 预扣费额度失败, 用户剩余额度: ¥0.354186, 需要预扣费额度: ¥1.124414 (request id: 202611100321461111794198268d9d6gnnHh00c)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:21:46.835Z"
+ }
+]

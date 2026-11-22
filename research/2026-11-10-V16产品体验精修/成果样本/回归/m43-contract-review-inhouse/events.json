@@ -1,0 +1,119 @@
+[
+ {
+  "event_id": 161,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81811",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:20:37.462Z"
+ },
+ {
+  "event_id": 162,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:20:37.462Z"
+ },
+ {
+  "event_id": 163,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 1,
+   "loaded": 1,
+   "failed": 0,
+   "files": [
+    {
+     "name": "智能立体仓储系统采购及安装合同（拓衡装备提供稿）.docx",
+     "chars": 1479,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_6a19bea6-9038-492e-aa2c-0c7b47a6a812",
+     "parse_version_id": "psv_022d133b-7404-4f66-9741-d44dd4372cc5"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:20:37.462Z"
+ },
+ {
+  "event_id": 164,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_b58dbd65-7eb1-4df4-8d57-6ea784a86be1_att_1516de9b-4950-4181-8817-efee2ef8f5a7",
+   "attempt_id": "att_1516de9b-4950-4181-8817-efee2ef8f5a7"
+  },
+  "created_at": "2026-11-10T03:20:38.642Z"
+ },
+ {
+  "event_id": 165,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_f96c5fab-8d82-4f22-b7fa-95ca629d26c6",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:20:39.443Z"
+ },
+ {
+  "event_id": 166,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 预扣费额度失败, 用户剩余额度: ¥0.686858, 需要预扣费额度: ¥1.124492 (request id: 202611100320387249507198268d9d6H0RPZsZP)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:39.444Z"
+ },
+ {
+  "event_id": 167,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 预扣费额度失败, 用户剩余额度: ¥0.686858, 需要预扣费额度: ¥1.124492 (request id: 202611100320387249507198268d9d6H0RPZsZP)"
+  },
+  "created_at": "2026-11-10T03:20:39.444Z"
+ },
+ {
+  "event_id": 168,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 预扣费额度失败, 用户剩余额度: ¥0.686858, 需要预扣费额度: ¥1.124492 (request id: 202611100320387249507198268d9d6H0RPZsZP)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:39.445Z"
+ }
+]

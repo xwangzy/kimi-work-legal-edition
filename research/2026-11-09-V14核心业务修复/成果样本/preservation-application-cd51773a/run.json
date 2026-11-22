@@ -1,0 +1,98 @@
+{
+ "run": {
+  "run_id": "run_cd51773a-fa50-471b-9093-111b2c8ef047",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_e98f97b2-2cee-4ae3-929d-85ec0f792e97",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 9,
+  "idempotency_key": "mat_e98f97b2-2cee-4ae3-929d-85ec0f792e97-a1.agent_task-1794202161020",
+  "input_snapshot": {
+   "matter_id": "mat_e98f97b2-2cee-4ae3-929d-85ec0f792e97",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_02a04d0b-a588-463f-abb3-8ec984f4a124",
+    "docv_23f0da45-4fb5-4ac1-bd67-f20e6b663971",
+    "docv_ed4335fc-a960-4a54-89f8-9a17cf297681",
+    "docv_14017c0a-10f5-4358-ac37-a0221ad488f5",
+    "docv_24c737a7-5aea-4a81-a5e1-08e606b89bb3"
+   ],
+   "goal": "请起草财产保全申请书：保全阶段为诉前（尚未起诉或申请仲裁）；请求保全数额：41万元。财产线索与担保只用我提供的，不联网查询对方财产。\n禾丰朋友圈说明年1月整体搬到安徽，客户想先冻结。担保准备用人保的诉讼保全责任保险保函，财产线索只用访谈记录里客户给的。",
+   "estimate_id": "est_206e0869-b145-45aa-9bad-61865bfebce3",
+   "title": "财产保全申请",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "preservation-application",
+   "skill_title": "财产保全申请书（受限文书）· 试用",
+   "skill_version": "1.3.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "财产保全申请书（草稿）.docx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "stage": "诉前（尚未起诉或申请仲裁）",
+    "amount": "41万元"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_206e0869-b145-45aa-9bad-61865bfebce3",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:29:21.023Z",
+  "updated_at": "2026-11-09T06:31:28.866Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_5c5368c2-b236-4ff6-9047-30bf6ee22b18",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "财产保全申请书.docx",
+   "sha256": "14144bf4175cd71132e48bad157a938733d7534eba475d612be7034927b5831e",
+   "created_at": "2026-11-09T06:28:55.689Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f258a778-3790-4b2a-a453-30dc7a0bef12",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "保全财产线索与担保核对表-锐川诉禾丰.xlsx",
+   "sha256": "7b363449ae333d31c7e1f3ee3df3b6050ce5bd4494e5cb2d5d5f87cfdbe855c7",
+   "created_at": "2026-11-09T06:30:06.760Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_4799f44a-8306-449d-bcf7-a18af8ba7b55",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "f7441cd14b546405b61d75f1d878bc55587f0d6d27373e2bb010b16ab3ac22aa",
+   "created_at": "2026-11-09T06:31:28.865Z",
+   "title": "采取保全措施后三十日内须依法提起诉讼或申请仲裁，否则法院应当解除保全。",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

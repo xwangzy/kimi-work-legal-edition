@@ -1,0 +1,83 @@
+{
+ "run": {
+  "run_id": "run_ffc5c54d-c8c7-47ce-9a5c-e35c996bdea6",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_07052439-04c9-4a83-a9f7-b70dfeeb57d8",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_07052439-04c9-4a83-a9f7-b70dfeeb57d8-a1.agent_task-1794300213460",
+  "input_snapshot": {
+   "matter_id": "mat_07052439-04c9-4a83-a9f7-b70dfeeb57d8",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_3412046c-5494-44ff-b801-92cabee2d679",
+    "docv_1ca6f575-1f3d-417b-a249-95d7201ba2f9"
+   ],
+   "goal": "请比对我方上一稿与对方回稿，并只对改动部分重新审查（材料按勾选顺序：第一份是我方上一稿，第二份是对方回稿）；重点关注：违约责任、交割 / 验收、争议解决。\n栖桐律师 10 月 30 日回稿，邮件里说“我方修改均已在修订模式下标出”。请逐处比对，别只看修订痕迹；我们 v1 的立场哪些被改掉了，要列清楚，下周一跟对方开会谈。",
+   "estimate_id": "est_f061bd6a-2df1-4b12-8048-b460a25bcfea",
+   "title": "对方回稿：比对与重审",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "redraft-review",
+   "skill_title": "回稿比对与重审",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "变更清单.xlsx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "focus": "违约责任、交割 / 验收、争议解决",
+    "baseline": "增资协议（投资方稿v1）.docx",
+    "current": "增资协议（目标公司回稿v2）.docx"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_f061bd6a-2df1-4b12-8048-b460a25bcfea",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:33.461Z",
+  "updated_at": "2026-11-10T09:43:31.271Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_ee9f2838-c25e-4868-b403-2862ebef7a9b",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "变更清单-栖桐科技增资协议-回稿20261030.xlsx",
+   "sha256": "92965b0ab6712e32624044f46c39c9068cbd6f7fee4f7ba56711b64980698ede",
+   "created_at": "2026-11-10T09:42:24.905Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b76cbf32-a076-4af3-a71e-0213d990097a",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "f35477aa655d51e4e957bab987da01a3e8271b5e70ccd7b03d65810158d4da1a",
+   "created_at": "2026-11-10T09:43:31.271Z",
+   "title": "收到2份材料，均已完整读取，无未读或排除材料。已生成Excel 《变更清单-栖桐",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

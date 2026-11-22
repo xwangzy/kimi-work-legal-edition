@@ -1,0 +1,82 @@
+{
+ "run": {
+  "run_id": "run_913074b9-4b9a-4165-b82c-d6d9fbb2ddcd",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_547c832b-0823-434f-a901-fcff5dffca98",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_547c832b-0823-434f-a901-fcff5dffca98-a1.agent_task-1794209261782",
+  "input_snapshot": {
+   "matter_id": "mat_547c832b-0823-434f-a901-fcff5dffca98",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_a39a1881-4a4e-4804-81ec-751f22811ce9",
+    "docv_93aa73b5-49c4-4065-8498-e40259b68ec0"
+   ],
+   "goal": "请比对我方上一稿与对方回稿，并只对改动部分重新审查（材料按勾选顺序：第一份是我方上一稿，第二份是对方回稿）；重点关注：违约责任、交割 / 验收、争议解决。\n栖桐律师 10 月 30 日回稿，邮件里说“我方修改均已在修订模式下标出”。请逐处比对，别只看修订痕迹；我们 v1 的立场哪些被改掉了，要列清楚，下周一跟对方开会谈。",
+   "estimate_id": "est_37055a01-48e0-4de0-9c44-ca3ee4ba3b8c",
+   "title": "对方回稿：比对与重审",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "redraft-review",
+   "skill_title": "回稿比对与重审",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "变更清单.xlsx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "focus": "违约责任、交割 / 验收、争议解决",
+    "baseline": "增资协议（投资方稿v1）.docx",
+    "current": "增资协议（目标公司回稿v2）.docx"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_37055a01-48e0-4de0-9c44-ca3ee4ba3b8c",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T07:27:41.784Z",
+  "updated_at": "2026-11-09T07:42:44.730Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_315bfe86-3e17-4cfb-b411-4a964f82ad39",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "变更清单-栖桐科技增资协议-2026年10月30日回稿.xlsx",
+   "sha256": "3daffe7fc33828ad0a7897fcce271803b67e38a4a4514bb1699574ec5858b656",
+   "created_at": "2026-11-09T07:40:56.510Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2b0f6b96-f7b6-4bc3-ab21-b5dfdf31975c",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "79c2c9a7918d1be6cb616c556104d07fe7811f56b3b7c2b28ab580c42d68c02c",
+   "created_at": "2026-11-09T07:42:44.729Z",
+   "title": "收到并完整读取两份协议，识别质量均正常，无未读取或排除范围。已以投资方稿 v1 ",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

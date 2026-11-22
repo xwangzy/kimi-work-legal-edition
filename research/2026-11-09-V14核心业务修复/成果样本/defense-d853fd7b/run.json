@@ -1,0 +1,180 @@
+{
+ "run": {
+  "run_id": "run_d853fd7b-cef2-40ac-9e42-d8221d65fc1e",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_a8397c23-e815-496e-b3eb-255a4972f3bc",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 9,
+  "idempotency_key": "mat_a8397c23-e815-496e-b3eb-255a4972f3bc-a1.agent_task-1794201398684",
+  "input_snapshot": {
+   "matter_id": "mat_a8397c23-e815-496e-b3eb-255a4972f3bc",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_1f2acd08-dee7-4b31-9c34-15127bfa4857",
+    "docv_545c5c1a-dcd1-45e0-b831-e1826c5ff123",
+    "docv_cbf0ab54-4107-41ca-be8e-855dfb718f8f",
+    "docv_27827a01-35ce-4d2c-a0af-70d33e801e07",
+    "docv_1e09abba-6193-4ad7-a67f-63dd92c49e9b",
+    "docv_2cae7d46-5cf1-42c8-ac91-b7cd357e0c1d",
+    "docv_05f7c62d-cfd7-4832-b47b-2cbce3d11cfa",
+    "docv_5c8ef889-67bd-4c65-968d-61469b327855"
+   ],
+   "goal": "请起草民事答辩状（一审）。收到起诉状副本的日期：2026-11-03；被告在境内有无住所：有；总体意见：全部不认可。我确认过的事实照写；材料载明但我还没确认的标【待确认】，材料没有的写【待填】，不要推测。\n我方代理被告锐川。合同约定的是卖方住所地法院，对方却在嘉兴起诉；对方还欠我们31万验收款，要不要反诉请一并提示。",
+   "estimate_id": "est_1abed092-6e99-4997-b997-fa42f3607dc2",
+   "title": "起草答辩状",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "defense-draft",
+   "skill_title": "民事答辩状（受限文书）",
+   "skill_version": "1.6.1",
+   "skill_requires_outline": true,
+   "skill_primary_output": "民事答辩状（草稿）.docx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "received_on": "2026-11-03",
+    "domicile": "有",
+    "stance": "全部不认可"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_1abed092-6e99-4997-b997-fa42f3607dc2",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:16:38.688Z",
+  "updated_at": "2026-11-09T06:15:27.492Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_06dd6ba5-380c-4c1b-8533-804c7870f7a8",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "民事答辩状.docx",
+   "sha256": "14e3c0b9d8d534233fb417f9ae8bf630fb6fca9bc27c4575ee5cb9fb6bc6617d",
+   "created_at": "2026-11-09T06:04:18.253Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_42c60691-4634-482d-b022-4c1f5f304c5e",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "答辩要点与证据对照表-禾丰诉锐川.xlsx",
+   "sha256": "1bb8d9eaef7a6c340cd1fd76cecf997973a05c5f72e12d949b915c7ed0b09ac1",
+   "created_at": "2026-11-09T06:06:34.828Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8f69a361-26c2-437a-995c-df01634506b4",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-禾丰诉锐川.xlsx",
+   "sha256": "dde19c1ced7c83495f4ba56d9fc784faf3e1d7b68c1acf477c8bf28f9af4f9bb",
+   "created_at": "2026-11-09T06:06:34.843Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_44afc8c0-037a-4867-94df-4ba7f6b2c52d",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "771c83c9b4ed104a12a9b3e97df537705c97de0fb13dc7131621cc514f4e7c8d",
+   "created_at": "2026-11-09T06:07:45.947Z",
+   "title": "管辖权异议须在 2026年11月18日 答辩期届满前，并在实体答辩或反诉之前或同",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_ee9647cc-4609-49eb-ae92-523138a50859",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-民事答辩状.md",
+   "sha256": "9ebda454e52c620c4603a446a457fc37cc10e7765f16ae09a1db8e6ac4bc3164",
+   "created_at": "2026-11-09T06:10:21.215Z",
+   "title": "独立复核意见：民事答辩状",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_298f9d2b-e0e0-404c-9591-450a357c99d7",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "民事答辩状.docx",
+   "sha256": "a14eed39e3c0b68833457b40055056c76d4b00f53b1ddf8c3d435e9c42a539a7",
+   "created_at": "2026-11-09T06:12:35.981Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8a5a91f1-2b0c-4c2b-a19f-126b64259ec7",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "答辩要点与证据对照表-禾丰诉锐川.xlsx",
+   "sha256": "81849c8a0e36a7b7b73cc22953493a3152cfe5d55ae562a47985b554d3fce8b9",
+   "created_at": "2026-11-09T06:14:43.393Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8c7b0fe8-d174-4c18-8a20-4c1793d2e588",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-禾丰诉锐川.xlsx",
+   "sha256": "ca4235660120a73db2ba199edb6aa0ed26885661c7a3d99662e13a5d3d0b8a59",
+   "created_at": "2026-11-09T06:14:43.407Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_9e071422-b0e4-4bde-a126-aab497b7994c",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "376aac02f221a2616a436ea1a785bd4b4acdd68943da6442617e5a8ac06eb64b",
+   "created_at": "2026-11-09T06:15:27.491Z",
+   "title": "管辖权异议须在 2026年11月18日 答辩期届满前，并在实体答辩或反诉之前或同",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

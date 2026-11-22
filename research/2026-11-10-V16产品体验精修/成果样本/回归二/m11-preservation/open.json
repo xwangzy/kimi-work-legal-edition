@@ -1,0 +1,16 @@
+{
+ "stack": "w3",
+ "tag": "m11-preservation",
+ "run": "run_f90a5fea-858b-4ae1-9a4c-fc9bf17d3d00",
+ "status": "succeeded",
+ "open": {
+  "v1-保全财产线索与担保核对表-锐川诉禾丰.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-财产保全申请书.docx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

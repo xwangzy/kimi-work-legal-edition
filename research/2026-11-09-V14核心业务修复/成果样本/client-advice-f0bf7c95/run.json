@@ -1,0 +1,132 @@
+{
+ "run": {
+  "run_id": "run_f0bf7c95-c878-438f-917b-1051516fe840",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_fea7ed67-92f1-4245-b64c-e618aa99931e",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_fea7ed67-92f1-4245-b64c-e618aa99931e-a1.agent_task-1794203419601",
+  "input_snapshot": {
+   "matter_id": "mat_fea7ed67-92f1-4245-b64c-e618aa99931e",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_01a35499-8260-46e7-84b4-76887adf81c9"
+   ],
+   "goal": "请答复以下问题：新加坡母公司要求我们从 2026 年 12 月 1 日起把全体员工的人事数据迁到集团 OneHR 平台（服务器在新加坡），2027 年 1 月 1 日上线。这需要申报数据出境安全评估、签标准合同，还是可以直接传？除此之外还要做哪些合规动作？能不能按原计划时间上线？业务背景：公司不是关键信息基础设施运营者；在职 2,340 人（含劳务派遣 235 人）；人力资源部已发了内部规定并在员工手册签收单里加了同意条款。\n这是人力资源部提给法务的问题，答复要给 HR 总监和信息安全部，结论先说，需要谁去做什么写清楚。",
+   "estimate_id": "est_a23011e9-7104-4306-85da-7cc51f7f5be9",
+   "title": "合规问答 / 顾问答复",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "client-advice",
+   "skill_title": "顾问答复",
+   "skill_version": "1.7.2",
+   "skill_primary_output": "顾问答复.docx",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "question": "新加坡母公司要求我们从 2026 年 12 月 1 日起把全体员工的人事数据迁到集团 OneHR 平台（服务器在新加坡），2027 年 1 月 1 日上线。这需要申报数据出境安全评估、签标准合同，还是可以直接传？除此之外还要做哪些合规动作？能不能按原计划时间上线？",
+    "background": "公司不是关键信息基础设施运营者；在职 2,340 人（含劳务派遣 235 人）；人力资源部已发了内部规定并在员工手册签收单里加了同意条款。"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_a23011e9-7104-4306-85da-7cc51f7f5be9",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:50:19.604Z",
+  "updated_at": "2026-11-09T07:58:56.644Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_b2c7cd22-b187-4cc1-9b77-2b45b300542f",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "顾问答复-OneHR员工个人信息出境.docx",
+   "sha256": "4d5d5af45526bdbba8366fdaca092e5996f898fdfa87b034e62235738ad13a8b",
+   "created_at": "2026-11-09T07:46:46.040Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_24e1788e-d341-4a23-90b9-9284e13d7301",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "顾问答复-OneHR员工个人信息出境.docx",
+   "sha256": "90e6f8d014ab362dd0031a0114cc627b7aff98000d3266e4edc595dc60d58a32",
+   "created_at": "2026-11-09T07:47:07.889Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_22a4087c-95a5-4e4a-ac1f-0f555ddb1013",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "2bd24f565319de1ed3e4ef431c61a9b6869855a573a3deb47c2e0f80efd5c6b8",
+   "created_at": "2026-11-09T07:48:24.288Z",
+   "title": "已生成 Word 文书 《顾问答复-OneHR员工个人信息出境.docx》，交付",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d5143abe-8290-4b49-9546-faaaae4e7efc",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-顾问答复-OneHR员工个人信息出境.md",
+   "sha256": "e5892fb2ebf2256699d03cc7e284b8008ca622b5ad9b1a81d6c9c9b1a960e172",
+   "created_at": "2026-11-09T07:52:42.516Z",
+   "title": "独立复核意见：顾问答复-OneHR员工个人信息出境",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_79fa4351-9466-48d7-8637-f06b0f200af7",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "顾问答复-OneHR员工个人信息出境.docx",
+   "sha256": "df8ca247269d4606bebd6f3c6d7557efa4580ff0912e799c771c2947ec27787e",
+   "created_at": "2026-11-09T07:57:15.483Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a916b199-0121-459a-a920-c4efbbbad6b9",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "5f89e2501fe696f449ddb5a9bd3ed988c6d5088f90d2d2468f26e979d6ac5d8f",
+   "created_at": "2026-11-09T07:58:56.643Z",
+   "title": "已按四条复核意见完成11处修改，最新版 《顾问答复-OneHR员工个人信息出境.",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

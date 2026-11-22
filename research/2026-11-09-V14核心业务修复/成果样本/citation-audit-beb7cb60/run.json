@@ -1,0 +1,119 @@
+{
+ "run": {
+  "run_id": "run_beb7cb60-478f-4017-990b-149c6950056f",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_4565a554-4fc6-4747-bd93-ca567aaf2160",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_4565a554-4fc6-4747-bd93-ca567aaf2160-a1.agent_task-1794204874703",
+  "input_snapshot": {
+   "matter_id": "mat_4565a554-4fc6-4747-bd93-ca567aaf2160",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_4d5c89bf-f98c-4907-aae9-f776ea3a2c7b"
+   ],
+   "goal": "请核对这份文稿里的法律引用与论证；事件发生时点：合同2025年9月签订，争议发生于2026年。\n助理写的初稿，我还没看。请逐条核对引用的法条，能改的给改引建议。",
+   "estimate_id": "est_948cd5aa-e068-44bd-af40-4f7d1e22554d",
+   "title": "文稿体检：引用与论证",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "citation-check",
+   "skill_title": "文稿体检：引用与论证",
+   "skill_version": "1.3.1",
+   "skill_primary_output": "引用核验表.xlsx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "when": "合同2025年9月签订，争议发生于2026年",
+    "document": "10-内部备忘录（初步分析，律师助理草稿）.docx"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_948cd5aa-e068-44bd-af40-4f7d1e22554d",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:14:34.706Z",
+  "updated_at": "2026-11-09T07:02:13.079Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_2a082366-9c98-4d78-9faf-b662630c9ed0",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "引用核验表-10-内部备忘录（初步分析，律师助理草稿）.xlsx",
+   "sha256": "822f08cb966e7d832b7fd53f2ff606bbf8c9a9fbabe5265bf39d91a2dbbb0bfd",
+   "created_at": "2026-11-09T06:50:55.515Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_51c87426-6cb9-4ffd-aee5-0a8893d51878",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "引用核验表-10-内部备忘录（初步分析，律师助理草稿）.xlsx",
+   "sha256": "d7aca057af89e2d18f370dd942a8beb243fc3eb62362b48a25cff228eddd3025",
+   "created_at": "2026-11-09T06:52:46.638Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_cdee1e48-9700-4729-b9cf-e28ae14dae15",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "引用核验表-10-内部备忘录（初步分析，律师助理草稿）.xlsx",
+   "sha256": "f660f27a25ea30c885b3df0bd5d5efb130a52b93a0d1dcd744b557e003e369ff",
+   "created_at": "2026-11-09T06:57:17.232Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_5d36f7d7-2b4d-42e1-ae82-012e9a6ccca0",
+   "kind": "agent_table",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "引用核验表-10-内部备忘录（初步分析，律师助理草稿）.xlsx",
+   "sha256": "fb045da8d406bd6f8c233831a48e2ffb5f4a2d3d1fbb6aff67a0f85308e1586c",
+   "created_at": "2026-11-09T07:00:56.440Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_92692a29-dcff-4726-8891-3202f8ef4036",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "973a4d05429de3223e028ff9de5da5624f2324b642816946c28bc8cc068c3f38",
+   "created_at": "2026-11-09T07:02:13.079Z",
+   "title": "已完成核验。收到并完整读取备忘录1份，无未读、无法识别或排除范围。因未提供合同及",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

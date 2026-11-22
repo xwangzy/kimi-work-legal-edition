@@ -1,0 +1,35 @@
+{
+ "tag": "m37-corporate-resolutions",
+ "card": "corporate-resolutions",
+ "veto": [],
+ "score": 18,
+ "tier": "需中度修改",
+ "status": "未通过",
+ "open_ok": true,
+ "minutes": 24,
+ "questions": 0,
+ "top_issues": [
+  "复核修改轮把职工董事的条件式分析（“应先核查……职工人数三百人以上的……应在五名董事组成中落实”）写进股东会、董事会决议及章程修改条款，决议失去确定性",
+  "股东会签署页对栖梧、岚汐仍只有“签名或盖章”一栏，未写非自然人签署方式",
+  "未结合增资协议 4.3 款 60 日（2027-01-05）倒排会议时间，仍写“不采用全体股东书面一致同意”"
+ ],
+ "prev_score": 19,
+ "v14_score": 19,
+ "known_defects_recurring": [],
+ "new_defects": [
+  "复核修改轮没有“对外文书只写决议事项、分析写进核对表或答复”的约束，复核意见被原样改写进决议正文"
+ ],
+ "fix_checks": {
+  "review_law_text_attached": "已生效（间接：复核引公司法第68条原文）",
+  "review_covers_xlsx_and_all_word": "已生效（7 份）",
+  "name_code_false_positive": "已生效（未再现）",
+  "no_disclaimer_line_in_files": "已生效（只在最终答复）",
+  "fact_n_reference": "已生效（成果无事实N）",
+  "versions_v1_v3": "v2 主助手自查 2 处、v3 复核修改轮；均逐处修改，无无谓重出"
+ },
+ "product_defect": [
+  "复核修改轮把分析性、条件式内容写进对外公司文书（决议、章程修改条款），交付前检查没有拦",
+  "公司文件 docx 的 dc:creator 仍为“Kimi Work 法律行业发行版（AI 辅助生成，须经律师复核）”",
+  "公司决议方法仍不要求按交割最后期限倒排通知期，并把“不采用全体股东书面一致同意”写成固定口径"
+ ]
+}

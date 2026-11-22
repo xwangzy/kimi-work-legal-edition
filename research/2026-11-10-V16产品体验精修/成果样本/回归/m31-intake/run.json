@@ -1,0 +1,53 @@
+{
+ "run": {
+  "run_id": "run_cb298bcd-d6da-4dc7-97dc-5f6307aecbe1",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_91fe0c96-7979-44ef-a9a7-8ffa11a6a6be",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_91fe0c96-7979-44ef-a9a7-8ffa11a6a6be-a1.agent_task-1794280729584",
+  "input_snapshot": {
+   "matter_id": "mat_91fe0c96-7979-44ef-a9a7-8ffa11a6a6be",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_1c114f9b-6981-410e-9faa-66f688fd80d2"
+   ],
+   "goal": "请根据访谈记录整理访谈纪要与材料收集清单；访谈对象：目标公司财务负责人。\n把 10 月 16 日对苏晚亭的访谈整理成纪要，列出她答应补的材料和还要找谁核实。纪要要能给项目组内部传阅。",
+   "estimate_id": "est_fa931926-3b92-4e9c-a51a-d4f63d7f961e",
+   "title": "访谈纪要与材料清单",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "intake-notes",
+   "skill_title": "访谈纪要、材料收集清单与新案待核事项",
+   "skill_version": "1.3.0",
+   "skill_primary_output": "访谈纪要.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "who": "目标公司财务负责人"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 0,
+  "estimate_id": "est_fa931926-3b92-4e9c-a51a-d4f63d7f961e",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:18:49.588Z",
+  "updated_at": "2026-11-10T07:43:00.187Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

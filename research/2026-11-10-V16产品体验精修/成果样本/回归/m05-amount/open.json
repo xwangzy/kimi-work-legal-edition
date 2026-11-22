@@ -1,0 +1,16 @@
+{
+ "stack": "w3",
+ "tag": "m05-amount",
+ "run": "run_0d3beeba-5f57-46a4-8cee-22abd389cd39",
+ "status": "succeeded",
+ "open": {
+  "v1-计算明细-设备买卖合同-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v2-计算明细-设备买卖合同-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 7
+  }
+ }
+}

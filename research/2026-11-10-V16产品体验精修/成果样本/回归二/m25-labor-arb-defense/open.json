@@ -1,0 +1,36 @@
+{
+ "stack": "w5",
+ "tag": "m25-labor-arb-defense",
+ "run": "run_a9ff2633-e523-4eae-a805-6ca50ac657ca",
+ "status": "succeeded",
+ "open": {
+  "v1-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-提交前核对清单-澜栖公司劳动争议.xlsx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v1-证据目录-澜栖公司劳动争议.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-提交前核对清单-澜栖公司劳动争议.xlsx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v2-证据目录-澜栖公司劳动争议.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v3-提交前核对清单-澜栖公司劳动争议.xlsx": {
+   "opened": true,
+   "pages": 12
+  }
+ }
+}

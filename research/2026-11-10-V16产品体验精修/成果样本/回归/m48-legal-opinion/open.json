@@ -1,0 +1,32 @@
+{
+ "stack": "w2",
+ "tag": "m48-legal-opinion",
+ "run": "run_5e6ea63b-138d-45a9-9482-f361828755bb",
+ "status": "succeeded",
+ "open": {
+  "v1-关于借款保证相关事项的法律意见书（草稿）.docx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v1-关于棣华借款保证事项的法律意见书（草稿）.docx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v1-计算明细-借款保证事项-截至2026年11月10日.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-关于借款保证相关事项的法律意见书（草稿）.docx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-关于棣华借款保证事项的法律意见书（草稿）.docx": {
+   "opened": true,
+   "pages": 7
+  },
+  "v2-计算明细-借款保证事项-截至2026年11月10日.xlsx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

@@ -1,0 +1,190 @@
+{
+ "run": {
+  "run_id": "run_24b5e7ec-628d-4cf9-8b54-b81c35d28dac",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_101a0250-adfe-42f6-ad84-1654fd818fb6",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "partial",
+  "status_version": 16,
+  "idempotency_key": "mat_101a0250-adfe-42f6-ad84-1654fd818fb6-a1.agent_task-1794280662045",
+  "input_snapshot": {
+   "matter_id": "mat_101a0250-adfe-42f6-ad84-1654fd818fb6",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_16c9eaa5-3834-4b3c-9512-5baa7ef0f62a",
+    "docv_1716a13f-2dfb-4773-98b9-c383375de4f5",
+    "docv_38408769-c41f-4e16-916d-a833290421ef",
+    "docv_bbbbc62c-6d2e-423b-b999-c8d13a17da7f",
+    "docv_bb445604-9316-4168-b170-8601e9b19213"
+   ],
+   "goal": "请评估拟解除这名员工的风险与程序：解除理由为严重违反规章制度。\n总经理已批示9月4日前办完。请评估这样解除的风险，程序上还缺什么，必要时给替代方案。",
+   "estimate_id": "est_a085c868-3f97-411a-9cf5-82c6b234f57e",
+   "title": "解除员工前的风险评估",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "labor-dispute",
+   "skill_title": "劳动争议：仲裁应对、仲裁申请与解除前评估 · 试用",
+   "skill_version": "1.3.2",
+   "skill_primary_output": "解除风险评估.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "mode": "解除前评估",
+    "side": "用人单位",
+    "reason": "严重违反规章制度"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_a085c868-3f97-411a-9cf5-82c6b234f57e",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:17:42.046Z",
+  "updated_at": "2026-11-10T07:35:25.757Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_5b8e4319-2fb8-4e3e-9c7d-389cd1fd9d6b",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除风险评估-上海澜栖智能科技有限公司.docx",
+   "sha256": "e57e2c7d654fdc71f6fb521f12172e262ba3a446c74859cff6cc1436d9ff05e2",
+   "created_at": "2026-11-10T07:01:33.205Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_1f2e9f5d-faff-4a85-b2f0-765d892958f3",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除程序核对清单-上海澜栖智能科技有限公司.xlsx",
+   "sha256": "716cf6be6613842d97655095edb86c7638f4f0efd887c337f40ab6d5e2edf56f",
+   "created_at": "2026-11-10T07:04:37.886Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_d9670467-51df-4dc0-b5ea-7b5402e29d57",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-上海澜栖智能科技有限公司.xlsx",
+   "sha256": "e2743d5d542fd201c52e4a6a47a9056c8fec221d2854a8d4fb809009bb1e845f",
+   "created_at": "2026-11-10T07:04:37.898Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_3e8267c8-fe40-4ced-a45e-495986760643",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "7a881d2f76c86580270610a9fa4147e2e8a69b4b04cc00d07d6c8a60b6a2bfba",
+   "created_at": "2026-11-10T07:06:44.379Z",
+   "title": "已收到并读全5份材料，无未读、部分读取或排除材料。按“2026年9月4日解除并终",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b16bb8b9-1709-477a-ba5f-a11df7071571",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-解除风险评估-上海澜栖智能科技有限公司.md",
+   "sha256": "0b513a8999793c0c06a7a8d2ddb4cad0d018d8be9c2f52408448e88976e4a53b",
+   "created_at": "2026-11-10T07:08:40.756Z",
+   "title": "独立复核意见：解除风险评估-上海澜栖智能科技有限公司",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_9342bf3f-26cf-4a48-80e8-88a9bf07cbc1",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除风险评估-上海澜栖智能科技有限公司严重违纪解除.docx",
+   "sha256": "17f2fd3b2871eb4a42ec70696475363ddf8c7d0caff39ae45c9dde89adbc5629",
+   "created_at": "2026-11-10T07:27:32.077Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_93584ffa-b410-403b-a72e-9cfcddeaa154",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除风险评估-上海澜栖智能科技有限公司严重违纪解除.docx",
+   "sha256": "4519a27203f67786431a0220bbba43b2873383b9dd22692f20ad7b1cbee691af",
+   "created_at": "2026-11-10T07:27:58.488Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_19104d39-602e-496b-a132-801cca2fe0d2",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除程序核对清单-上海澜栖智能科技有限公司严重违纪解除.xlsx",
+   "sha256": "8b38d245e66a11e9361901b725c076d58b1d135907c322f62c357de93c834bc5",
+   "created_at": "2026-11-10T07:32:09.343Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_6d4e1e97-5483-449a-a4f1-26de2a55eb6a",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-上海澜栖智能科技有限公司严重违纪解除.xlsx",
+   "sha256": "7b18f432a976b984eaf63de5c84dfae1173eb519208a9f277f645513eefe0aef",
+   "created_at": "2026-11-10T07:32:09.351Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_3a137f3c-a100-4b03-bd5a-bcc45cae50d1",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除程序核对清单-上海澜栖智能科技有限公司严重违纪解除.xlsx",
+   "sha256": "48e0d606f93b41290579d8b726145b348f19b30902004b392223dca732a2f3b2",
+   "created_at": "2026-11-10T07:34:15.443Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

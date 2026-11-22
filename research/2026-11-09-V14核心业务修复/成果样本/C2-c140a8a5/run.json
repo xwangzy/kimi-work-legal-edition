@@ -1,0 +1,148 @@
+{
+ "run": {
+  "run_id": "run_c140a8a5-8f08-4fca-b8dd-d66aba5c1b96",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_39cab209-5705-4167-879d-a311e6fdfeaa",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_39cab209-5705-4167-879d-a311e6fdfeaa-a1.agent_task-1794205198006",
+  "input_snapshot": {
+   "matter_id": "mat_39cab209-5705-4167-879d-a311e6fdfeaa",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_358af816-e32d-44d1-bad5-a19aa1f68f7e",
+    "docv_f36fee93-6dd8-4f1f-9a2c-d4600d0e4922",
+    "docv_b9e9c63b-29b6-42fe-a9d7-6bda51626d23",
+    "docv_0cb8b5cb-b92e-436f-ab7e-d8ce75ec4612"
+   ],
+   "goal": "请起草一份租赁合同，我方立场以事项为准；交易要点：出租人：上海朗峤融资租赁有限公司（我方客户）；承租人：江苏麓铖精密机械有限公司；出卖人：苏州岑格智能装备销售有限公司；回购担保人：浙江翊驰数控装备股份有限公司（设备制造商）。直租模式：麓铖选定翊驰数控生产的五轴联动立式加工中心3台、卧式加工中心2台，由朗峤向岑格购买后出租给麓铖使用，租期36个月，按月付租，期满留购；翊驰对麓铖的租金债务提供回购担保。设备价款、首付款、融资额、利率、保证金、设备款支付节点和质保金见条款清单V2和11月5日四方会谈纪要，客户的补充要求见韦总11月7日邮件。邵衡远个人保证另签，不在本协议内。\n我们代表出租人上海朗峤融资租赁有限公司。客户希望四方签一份协议，把买卖、融资租赁和回购担保放在一起，附件附租赁物清单、租金支付表和租赁物接收确认书格式。请根据韦总11月7日的邮件、11月5日的四方会谈纪要、条款清单V2和四方主体资料起草协议初稿，供客户11月13日风险审查委员会上会后发给其他三方。韦总邮件里的要求能照顾的都照顾，做不了或者有风险的，在起草说明里说清楚原因和替代办法。",
+   "estimate_id": "est_2732fd4c-9ef3-40ae-9f98-f7e14e0f82c9",
+   "title": "起草合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-draft",
+   "skill_title": "起草合同 · 试用",
+   "skill_version": "1.8.0",
+   "skill_primary_output": "合同草稿.docx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "type": "租赁",
+    "points": "出租人：上海朗峤融资租赁有限公司（我方客户）；承租人：江苏麓铖精密机械有限公司；出卖人：苏州岑格智能装备销售有限公司；回购担保人：浙江翊驰数控装备股份有限公司（设备制造商）。直租模式：麓铖选定翊驰数控生产的五轴联动立式加工中心3台、卧式加工中心2台，由朗峤向岑格购买后出租给麓铖使用，租期36个月，按月付租，期满留购；翊驰对麓铖的租金债务提供回购担保。设备价款、首付款、融资额、利率、保证金、设备款支付节点和质保金见条款清单V2和11月5日四方会谈纪要，客户的补充要求见韦总11月7日邮件。邵衡远个人保证另签，不在本协议内。"
+   }
+  },
+  "budget_points": 40,
+  "points_reserved": 40,
+  "points_charged": 40,
+  "estimate_id": "est_2732fd4c-9ef3-40ae-9f98-f7e14e0f82c9",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:19:58.010Z",
+  "updated_at": "2026-11-09T06:57:12.004Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_71b1251d-2977-441d-9dfa-a6860e47cac6",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "设备买卖、融资租赁及回购协议.docx",
+   "sha256": "8b902d6a4b5bc39e3e94b8cc76d426d3ddd7ec90037a0e2c822626e39b0e33b4",
+   "created_at": "2026-11-09T06:38:21.819Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_ead457f8-9319-49a8-b171-a5b07f0412d8",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-设备买卖、融资租赁及回购协议.docx",
+   "sha256": "9368c6bc2b77fe81d506d736cb4a7709616a4d906e3dcc12218b0776b1658700",
+   "created_at": "2026-11-09T06:42:09.251Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_50422806-f935-4a13-a093-a8b04619b686",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "3e7a186a68da2ef96960df4089b660390cf7377a2180d0b3de134ba8ba3337b6",
+   "created_at": "2026-11-09T06:45:41.022Z",
+   "title": "已完整读取全部4份材料，无未读或识别不全的材料。已生成两份Word草稿，可供11",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_07014b9e-37a2-4ab7-a163-7c2510a2fc98",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-设备买卖、融资租赁及回购协议.md",
+   "sha256": "2be10fe50d8d1a0ef3985b117f61a1f8a16c38105b29cd3e6e0d9284335a803b",
+   "created_at": "2026-11-09T06:50:44.747Z",
+   "title": "独立复核意见：设备买卖、融资租赁及回购协议",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_65f479ee-81f8-49b7-9eb5-2e24a092624f",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "设备买卖、融资租赁及回购协议.docx",
+   "sha256": "4ba4aba23e2ef8104e14c1f8f5e678ee6ad487183b604bd84cad23af942c1025",
+   "created_at": "2026-11-09T06:55:32.790Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_6124a386-94b7-4d61-a5b8-994ea7128b96",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-设备买卖、融资租赁及回购协议.docx",
+   "sha256": "e9fe1e983548e90799ca0ca6f343576fafb7b2dd6e17a6a8fd1c8b10e9a7a661",
+   "created_at": "2026-11-09T06:55:32.825Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_7c997302-89c6-41a0-b3af-d1f4ea806d26",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "2da064cb05081d7770d2dfea2ca50051caf4cfc258641aa531512b6ea9c15d70",
+   "created_at": "2026-11-09T06:57:12.003Z",
+   "title": "已完整读取全部4份材料，无未读或识别不全的材料。独立复核提出的4条意见均成立，已",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

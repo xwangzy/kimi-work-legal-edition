@@ -1,0 +1,118 @@
+{
+ "run": {
+  "run_id": "run_e3f4f92c-70db-4203-890e-f204330cd697",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_95b31bee-8955-449b-9034-e883359af5cd",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_95b31bee-8955-449b-9034-e883359af5cd-a1.agent_task-1794204846864",
+  "input_snapshot": {
+   "matter_id": "mat_95b31bee-8955-449b-9034-e883359af5cd",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "研究问题：买卖合同约定买方到货后15日内验收、质保期自验收合格起12个月。买方验收合格约8个月后，以设备产能不达标为由书面提出质量异议，要求减价30%并暂停支付已到期货款。请研究：（1）约定检验期限与质量保证期如何区分适用；（2）买方能否以质保期内出现的质量问题拒付或抵扣已到期货款；（3）买方在对账函上确认欠款并注明“设备问题另行协商”，对其质量异议有何影响。事件发生时点：合同2025年9月签订，2025年11月验收，2026年7月提出异议。\n我方代理卖方。只做法规研究，不用找案例；结论有争议的地方请写明不同观点。",
+   "estimate_id": "est_2c6f4ddb-47e6-40c5-8ed2-fdcc2b942646",
+   "title": "法规研究备忘录",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "legal-research-memo",
+   "skill_title": "法律研究备忘录",
+   "skill_version": "1.5.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "研究备忘录.docx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "question": "买卖合同约定买方到货后15日内验收、质保期自验收合格起12个月。买方验收合格约8个月后，以设备产能不达标为由书面提出质量异议，要求减价30%并暂停支付已到期货款。请研究：（1）约定检验期限与质量保证期如何区分适用；（2）买方能否以质保期内出现的质量问题拒付或抵扣已到期货款；（3）买方在对账函上确认欠款并注明“设备问题另行协商”，对其质量异议有何影响。",
+    "when": "合同2025年9月签订，2025年11月验收，2026年7月提出异议"
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 20,
+  "estimate_id": "est_2c6f4ddb-47e6-40c5-8ed2-fdcc2b942646",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:14:06.867Z",
+  "updated_at": "2026-11-09T06:36:29.366Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_b7f35a5d-f1cc-42c7-a6c3-a3ab8191ce69",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-设备质量异议与到期货款.docx",
+   "sha256": "0fae3f4f180dde844774526f2c99d9f7b611fd0dd049b0de954241cc05273f47",
+   "created_at": "2026-11-09T06:32:53.031Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_debe579f-96a6-4726-b4b4-846e22a7016a",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "来源目录-设备质量异议与到期货款.xlsx",
+   "sha256": "d925174e18e3c1370fe57ac53d1a947d51d2ecb79fbc6482c9f40fc06a708061",
+   "created_at": "2026-11-09T06:33:47.350Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_97108633-c95c-47b1-8413-afde9189a3d6",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-设备质量异议与到期货款.docx",
+   "sha256": "21d783ad94862b5a118f6153d231e9d0c0d838a1702d7639b57411977c9f9083",
+   "created_at": "2026-11-09T06:34:06.551Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_bcada831-6c34-4a54-91fb-596364404dcd",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "5965d782599f2284ee0149cf3e42d48c53e16b52659e62f298f4a5ea5fe6de90",
+   "created_at": "2026-11-09T06:35:49.245Z",
+   "title": "本事项未附材料：收到0份、读取0份，无无法识别或排除的材料。研究以律师确认的任务",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_36e90963-0548-46d7-9d91-e255da2d3ffd",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-研究备忘录-设备质量异议与到期货款.md",
+   "sha256": "6ea6544f7e3657ead22e99d6197c808fe5a60926f4e45595978c1e8662d53dbf",
+   "created_at": "2026-11-09T06:36:29.366Z",
+   "title": "独立复核意见：研究备忘录-设备质量异议与到期货款",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

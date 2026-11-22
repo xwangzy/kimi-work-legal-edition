@@ -1,0 +1,134 @@
+{
+ "run": {
+  "run_id": "run_209be092-d6b6-4f61-a7f1-1faa4420f03f",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_c0a574bc-64c8-4f46-ab77-d705a5c7dc65",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 9,
+  "idempotency_key": "mat_c0a574bc-64c8-4f46-ab77-d705a5c7dc65-a1.agent_task-1794277296543",
+  "input_snapshot": {
+   "matter_id": "mat_c0a574bc-64c8-4f46-ab77-d705a5c7dc65",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "请根据本事项三份材料，起草买方版本的《冷库自动化分拣系统采购、安装及运维合同》，三方签署（买方澍衡冷链、卖方钧垣智能、保证人钧垣控股），要 Word 稿。材料之间对不上的地方不要替客户做商业决定，列出来问我；客户邮件里的要求如果有法律问题请指出并给出替代写法。",
+   "estimate_id": "est_39dc04bc-c5c5-42f9-a5c4-5479d491dfec",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 20,
+  "estimate_id": "est_39dc04bc-c5c5-42f9-a5c4-5479d491dfec",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T02:21:36.545Z",
+  "updated_at": "2026-11-10T02:56:09.774Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_867eb49c-a162-4083-8f05-c7348daa8119",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "冷库自动化分拣系统采购、安装及运维合同.docx",
+   "sha256": "02f1acfbd3b2ac3fffb75c343949790b982fe07a409104615ed541b59b1b53ee",
+   "created_at": "2026-11-10T02:44:31.580Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_15ba8735-c7f5-4a8b-99e8-3259ccf2041e",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-冷库自动化分拣系统采购、安装及运维合同.docx",
+   "sha256": "39a176f14005e39eecc7b58d4bae9d4a1695a93791c5e7858e8e505400c6912e",
+   "created_at": "2026-11-10T02:47:27.478Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_1c26f8bd-9931-44d8-91ee-041c3240e18f",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "6e1faf395e715a6e4cc3b7e98b13e70383b7d3bc1a33f7effd4826ec0284bd76",
+   "created_at": "2026-11-10T02:50:18.735Z",
+   "title": "已收到并完整读取三份材料，无未读、识别不全或排除材料。已按买方立场及您选定的口径",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_21940a0a-9244-42af-9ea1-40d44d4480fc",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-冷库自动化分拣系统采购、安装及运维合同.md",
+   "sha256": "b81136f20556421ecbff0d849ccacfb2fe50bc6af1c35e829790709e3cd25cec",
+   "created_at": "2026-11-10T02:53:28.541Z",
+   "title": "独立复核意见：冷库自动化分拣系统采购、安装及运维合同",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_406cdc4b-a5eb-4504-87ee-27d3e7a6e3f8",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "冷库自动化分拣系统采购、安装及运维合同.docx",
+   "sha256": "9092cca678a247f61d1886b959038edc4ec5358eba9cc1283af38a040d4b1b39",
+   "created_at": "2026-11-10T02:55:17.745Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_65e9c59e-e1a4-41a7-a29f-a05f79ea40d7",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-冷库自动化分拣系统采购、安装及运维合同.docx",
+   "sha256": "9d2d158dcc1de99c1debb17891d0b07614c87d25ef9680a39fea962296c26a76",
+   "created_at": "2026-11-10T02:55:17.781Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_1eb86b29-4f80-4b90-b5aa-89ab0fe571be",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "1c649dbbeccc18513fb38e906e5690f8bc4e2a18a90ba60a89de1ff05cf72f92",
+   "created_at": "2026-11-10T02:56:09.773Z",
+   "title": "已收到并完整读取三份材料，无未读、识别不全或排除材料。独立复核提出的四项意见均成",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

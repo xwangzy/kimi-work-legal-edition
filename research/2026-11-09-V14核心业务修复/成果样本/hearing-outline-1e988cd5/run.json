@@ -1,0 +1,140 @@
+{
+ "run": {
+  "run_id": "run_1e988cd5-428f-479c-b8d2-c8ce72a7329f",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_311c878b-e723-4cf2-8684-19def9b056ca",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_311c878b-e723-4cf2-8684-19def9b056ca-a1.agent_task-1794201787706",
+  "input_snapshot": {
+   "matter_id": "mat_311c878b-e723-4cf2-8684-19def9b056ca",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_9c12760b-62b5-4efe-8429-6d8ecc0003c7",
+    "docv_9e9ba342-90a9-4add-a54d-32d096504da1",
+    "docv_81f16e44-46f2-4cf8-87b7-56bdde40715f",
+    "docv_ca044722-8307-4a91-ba3a-cea0a1a89e9d",
+    "docv_d38b2225-a886-4d9e-bca6-23d27b1cd72f",
+    "docv_8985ca28-41af-4cf4-891f-83be903de086",
+    "docv_3fdfc97f-0592-4909-bb44-19d233bf68c7",
+    "docv_6a5844dc-67c3-4496-ac7c-10d842d214af"
+   ],
+   "goal": "请准备开庭用的庭审提纲（陈述要点、举证质证顺序、发问提纲、辩论要点），事实分清“律师确认”与“材料记载”，不预测庭审结果。开庭日期：2026-12-09；我方地位：被告 / 被申请人；争议焦点：本案管辖；3号机是否存在质量问题及原告的异议是否逾期；原告主张的外协加工损失与检测费是否成立。\n管辖异议我们会在答辩期内提，但提纲先按法院不移送、照常开庭准备。发问提纲请重点问检测报告和外协合同。",
+   "estimate_id": "est_6d56c94c-b8cf-419a-96eb-09a255940ae4",
+   "title": "庭审提纲",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "hearing-outline",
+   "skill_title": "庭审提纲（内部工作稿）· 试用",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "庭审提纲.docx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "hearing_on": "2026-12-09",
+    "side": "被告 / 被申请人",
+    "focus_points": "本案管辖；3号机是否存在质量问题及原告的异议是否逾期；原告主张的外协加工损失与检测费是否成立"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_6d56c94c-b8cf-419a-96eb-09a255940ae4",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:23:07.710Z",
+  "updated_at": "2026-11-09T06:39:14.182Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_679c93d8-ad89-4c7f-ade3-448e01a292af",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "庭审提纲-禾丰诉锐川买卖合同纠纷.docx",
+   "sha256": "bf05fdefed6ab4eb0b73af10ce98a9cb529a52af96a7de799e8911fddd71e012",
+   "created_at": "2026-11-09T06:29:08.885Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_914ba190-14f8-4e99-9ddc-22a5705b0b47",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "庭审提纲-禾丰诉锐川买卖合同纠纷.docx",
+   "sha256": "0bfc373d53e1e30f3b91f2309d8b79914726a9239715b07f74eb5a8c7687d213",
+   "created_at": "2026-11-09T06:34:01.149Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_67d089a6-d665-4059-b86f-9a31a1096bf0",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "庭审提纲-禾丰诉锐川买卖合同纠纷.docx",
+   "sha256": "0851125d512ffd2539fb33eb766e1941a09c6626456ba05b159a040d76f65582",
+   "created_at": "2026-11-09T06:37:02.617Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_e1f5fa99-335e-4afe-ae37-be42852b9a46",
+   "kind": "agent_report",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "庭审提纲-禾丰诉锐川买卖合同纠纷.docx",
+   "sha256": "9c7f9ce20d2507f5ab9ebfd9a7b3f899d143d6a560606185d9b74619ec519563",
+   "created_at": "2026-11-09T06:38:02.608Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8f463535-cccd-44b0-82e7-1f760fb85053",
+   "kind": "agent_report",
+   "version": 5,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "庭审提纲-禾丰诉锐川买卖合同纠纷.docx",
+   "sha256": "21e55cbe651c205602eabf9bee492689d3f32851360c36f70f46cd2e0c388bb9",
+   "created_at": "2026-11-09T06:38:23.374Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_cc90dad0-d8a6-47e1-8c5b-de08ae2e2183",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "facde4d57df4301f8b6cb0fda4dd1accf9a0ea93d59b25f759183d87a9937504",
+   "created_at": "2026-11-09T06:39:14.181Z",
+   "title": "已完整读取全部8份材料，并生成Word草稿 《庭审提纲-禾丰诉锐川买卖合同纠纷》",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

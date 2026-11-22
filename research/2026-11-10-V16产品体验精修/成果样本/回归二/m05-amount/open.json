@@ -1,0 +1,20 @@
+{
+ "stack": "w3",
+ "tag": "m05-amount",
+ "run": "run_afe9b1bb-4b99-418e-842f-0b8779cd5c94",
+ "status": "succeeded",
+ "open": {
+  "v1-计算明细-设备买卖合同逾期付款-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v2-计算明细-设备买卖合同逾期付款-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v3-计算明细-设备买卖合同逾期付款-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 7
+  }
+ }
+}

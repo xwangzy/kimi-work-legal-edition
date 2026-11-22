@@ -1,0 +1,36 @@
+{
+ "stack": "w4",
+ "tag": "m17-labor-apply",
+ "run": "run_a52aa5cb-fda6-4ade-aec9-68c94b7c6783",
+ "status": "partial",
+ "open": {
+  "v1-举证责任与证据清单-澜栖违法解除争议.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-劳动争议应对方案-上海澜栖违法解除及竞业限制.docx": {
+   "opened": true,
+   "pages": 12
+  },
+  "v1-劳动争议应对方案-澜栖违法解除争议.docx": {
+   "opened": true,
+   "pages": 11
+  },
+  "v1-请求项与敞口表-澜栖违法解除争议.xlsx": {
+   "opened": true,
+   "pages": 8
+  },
+  "v2-劳动争议应对方案-上海澜栖违法解除及竞业限制.docx": {
+   "opened": true,
+   "pages": 12
+  },
+  "v2-劳动争议应对方案-澜栖违法解除争议.docx": {
+   "opened": true,
+   "pages": 11
+  },
+  "v3-劳动争议应对方案-澜栖违法解除争议.docx": {
+   "opened": true,
+   "pages": 11
+  }
+ }
+}

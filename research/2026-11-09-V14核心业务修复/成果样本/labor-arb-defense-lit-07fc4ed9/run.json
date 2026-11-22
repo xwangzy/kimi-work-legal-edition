@@ -1,0 +1,180 @@
+{
+ "run": {
+  "run_id": "run_07fc4ed9-33a4-415b-895c-7d910657a1ad",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_62726d38-6c64-4dcb-89f8-664dca554ae4",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "partial",
+  "status_version": 7,
+  "idempotency_key": "mat_62726d38-6c64-4dcb-89f8-664dca554ae4-a1.agent_task-1794204838363",
+  "input_snapshot": {
+   "matter_id": "mat_62726d38-6c64-4dcb-89f8-664dca554ae4",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_30409d42-739a-4493-9f10-b4cea7b561b9",
+    "docv_73fb43c0-4179-4246-8e76-f459ceb099a0",
+    "docv_b951cc4b-1448-4dd7-b71b-3a14a62c4552",
+    "docv_8ed4b5bf-4d91-4ae8-aab2-f20193738b08",
+    "docv_3f05ea3e-fc80-4cf1-a3b6-a04b7e292fe5",
+    "docv_10e10b56-63bf-4b5d-ae27-a1b3bfa1eb5b",
+    "docv_265ce8de-4291-42ff-ac59-7ad0fdbe8050"
+   ],
+   "goal": "请起草劳动仲裁答辩书：我方为用人单位；收到仲裁申请书副本的日期：2026-10-30（答辩期十个工作日，管辖异议与反申请须在期满前提出）；对方请求：违法解除赔偿金等五项，合计518,213.47元。\n我方代理澜栖。公司还想反申请竞业违约金50万元，证据只有一张脉脉截图，请评估后告诉我要不要提、什么时候前提。",
+   "estimate_id": "est_1a7439c8-c076-4eaf-b69b-5299a096c68e",
+   "title": "劳动仲裁答辩书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "labor-arbitration-draft",
+   "skill_title": "劳动仲裁申请书与答辩书（受限文书）· 试用",
+   "skill_version": "1.2.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "劳动仲裁答辩书（草稿）.docx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "doc_kind": "答辩书",
+    "side": "用人单位",
+    "received_on": "2026-10-30",
+    "claims": "违法解除赔偿金等五项，合计518,213.47元"
+   }
+  },
+  "budget_points": 55,
+  "points_reserved": 55,
+  "points_charged": 55,
+  "estimate_id": "est_1a7439c8-c076-4eaf-b69b-5299a096c68e",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:13:58.364Z",
+  "updated_at": "2026-11-09T07:00:52.373Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_2539fb3b-84a7-4480-82f1-9105504f8d79",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动仲裁答辩书.docx",
+   "sha256": "7603c025fd2ad6400beb7a67cb8d6fe3a2bedff2ba89a7f4ba3a790ba2653042",
+   "created_at": "2026-11-09T06:35:27.343Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_6759dbbb-78f6-4028-890c-08ea7f867087",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-澜栖劳动争议.xlsx",
+   "sha256": "969446869d6c123b6a129846c2373940fb49bea7007b7fc7466516053d6a09b0",
+   "created_at": "2026-11-09T06:37:48.442Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_31bb9a99-1a58-4c6e-b948-d0c23c01e0c9",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-澜栖劳动争议.xlsx",
+   "sha256": "a1b363996fa9c186a05022cd9963e5eefbd5c64aefc747cacee1222afdd97321",
+   "created_at": "2026-11-09T06:37:48.453Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_26d9bbf8-806a-4e3a-bb73-6945c9f47f57",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-澜栖劳动争议.xlsx",
+   "sha256": "0137d8ad4b9e30ca119422dfeb4200a0d63b8e9ffa6cf0bbc0faf6f4f3d8c49b",
+   "created_at": "2026-11-09T06:38:52.559Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_84fb8965-3f1d-4b9d-96a3-b3234c7b9424",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "7434544950a9a936ed318ee5ffc184f611136c2f05e4b46abad93723ac83cfa8",
+   "created_at": "2026-11-09T06:40:34.312Z",
+   "title": "已完成可交付草稿。收到并完整读取 7份材料，均可正常识别，无未读页。已按确认后的",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_91116883-c1de-4e3a-bb99-d76888cfa126",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-劳动仲裁答辩书.md",
+   "sha256": "c5df8e96d21968522a81d449363a413dd4533587ca0b5b8070010208b45b836a",
+   "created_at": "2026-11-09T06:45:51.336Z",
+   "title": "独立复核意见：劳动仲裁答辩书",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e3d3b396-5424-4f9d-ae63-bb2ff049d8c7",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动仲裁答辩书.docx",
+   "sha256": "4f245f594e6e67cd1bb633a9933b9286a0b41a1de93434ff769fc9c18c0d1489",
+   "created_at": "2026-11-09T06:55:02.483Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8defd4b5-5bae-405c-94f3-a56e7e29ca27",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动仲裁答辩书.docx",
+   "sha256": "3b3eac02c07f3a694c9e06b398e97d9325833cf77f6c8ee67cebf032b118a576",
+   "created_at": "2026-11-09T06:57:54.010Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_16eabef9-40fc-4d9a-8443-7a570e4bec90",
+   "kind": "agent_report",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动仲裁答辩书.docx",
+   "sha256": "46ca368d78ba36c9daa9091a30182c7f98aec0307e058272d3e31b613250b9b3",
+   "created_at": "2026-11-09T06:59:34.188Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

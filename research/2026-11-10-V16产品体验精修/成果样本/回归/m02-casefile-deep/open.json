@@ -1,0 +1,36 @@
+{
+ "stack": "w3",
+ "tag": "m02-casefile-deep",
+ "run": "run_e183ad31-40c4-4783-b089-70378cbe61b0",
+ "status": "succeeded",
+ "open": {
+  "v1-事实时间线-锐川诉禾丰设备买卖合同纠纷（卖方·精读）.xlsx": {
+   "opened": true,
+   "pages": 13
+  },
+  "v1-时间线（按付款线索；另列3号机质量与维修线索）-设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v1-案卷总目录-设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-缺口清单-设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-时间线（按付款线索；另列3号机质量与维修线索）-设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v2-案卷总目录-设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v3-案卷总目录-设备买卖合同纠纷.xlsx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

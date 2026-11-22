@@ -1,0 +1,87 @@
+{
+ "run": {
+  "run_id": "run_5165b9ed-70c2-4d70-8644-20d725e12c87",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_5a22e95e-7108-4709-9a76-9f728f7896bd",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_5a22e95e-7108-4709-9a76-9f728f7896bd-a1.agent_task-1794201302216",
+  "input_snapshot": {
+   "matter_id": "mat_5a22e95e-7108-4709-9a76-9f728f7896bd",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_1314f0a7-09b8-4556-ac6f-d0aa2c05f601",
+    "docv_b526c3ed-5a00-46d3-8d3d-262fac8a8079",
+    "docv_2c2ff620-f759-4f3d-be47-9067c59a5a81",
+    "docv_b178ae39-26ad-484b-ba30-14afcb78f2fe",
+    "docv_6ce0e8ef-7d6c-4d2f-b620-8979a0a49778",
+    "docv_a31cceaf-2186-4d65-89ca-65c98fee9fdf",
+    "docv_13a454b0-f972-4c33-b4f0-0a400916d3d7",
+    "docv_5b3b6d40-c93b-4b4b-80dd-d3235e3efdd5"
+   ],
+   "goal": "请梳理争点与证据：拟主张或需应对的请求为支付验收款余额310,000元、质保金135,000元、逾期付款违约金（日万分之五）及律师费30,000元；我方诉讼地位：原告 / 申请人。有我确认过的事实时只用确认的事实；还没有确认的，用材料载明的事实并标【未确认】，评估写“初步判断”。不评估胜诉率。\n律师费委托合同下周才签，发票还没有。对方肯定会拿3号机质量说事，请把对方抗辩和我们要补的证据列清楚。",
+   "estimate_id": "est_832a499a-7074-4d35-b50b-d7fe3413679b",
+   "title": "争点与证据分析",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "issue-evidence-matrix",
+   "skill_title": "争点—证据矩阵与补证",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "争点—证据矩阵.xlsx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "claims": "支付验收款余额310,000元、质保金135,000元、逾期付款违约金（日万分之五）及律师费30,000元",
+    "side": "原告 / 申请人"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_832a499a-7074-4d35-b50b-d7fe3413679b",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:15:02.219Z",
+  "updated_at": "2026-11-09T05:35:23.140Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_d7b984ed-87d6-4301-90fc-df9f1d0307af",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点证据矩阵-锐川诉禾丰设备款.xlsx",
+   "sha256": "e4b7931e0c150855ec73cd433c649382fec5160ef99a5322b9ef728ca354d47a",
+   "created_at": "2026-11-09T05:34:08.138Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_72dcc00d-9453-4ae7-8f95-2ea8c12366ce",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "03234137d5b50a6690ed3110ff468918784a8ed0a935e76cc917c1459071938e",
+   "created_at": "2026-11-09T05:35:23.139Z",
+   "title": "已收到并完整读取8份材料，无读不出或部分读取；事实时间线原有确认事实为0，矩阵依",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,36 @@
+{
+ "stack": "w3",
+ "tag": "m09-arbitration-app",
+ "run": "run_05619e88-e354-4696-a0aa-fcf215884e0b",
+ "status": "succeeded",
+ "open": {
+  "v1-仲裁申请书.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-提交前核对清单-甬岚设备款仲裁.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-计算明细-甬岚设备款-截至2026-11-09.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-证据目录-甬岚设备款仲裁.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-仲裁申请书.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-提交前核对清单-甬岚设备款仲裁.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-证据目录-甬岚设备款仲裁.xlsx": {
+   "opened": true,
+   "pages": 3
+  }
+ }
+}

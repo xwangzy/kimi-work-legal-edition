@@ -1,0 +1,20 @@
+{
+ "stack": "w4",
+ "tag": "m22-demand-lit",
+ "run": "run_b35f680a-13ad-4968-97ba-f95f6c4157a7",
+ "status": "succeeded",
+ "open": {
+  "v1-依据与发送前核对-设备款催收.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v1-律师函.docx": {
+   "opened": true,
+   "pages": 1
+  },
+  "v1-计算明细-设备款催收-截至2026-11-09.xlsx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

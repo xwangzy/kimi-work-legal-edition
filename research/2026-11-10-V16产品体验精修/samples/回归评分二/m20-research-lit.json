@@ -1,0 +1,6 @@
+{"tag": "m20-research-lit", "card": "research-lit", "veto": [], "score": 20, "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 36, "questions": 1,
+ "top_issues": ["法规库回读的合同编通则解释第31条带令牌化代号，复核据此判必须改，修改轮把“原告应先履行的抗辩”改成“原告先履行的抗辩”", "正文称资料限于本机离线法规库，修改轮实际调用WebSearch两次", "正文保留34处核验状态标签与44处“事实N”编号"],
+ "prev_score": null, "v14_score": 19,
+ "product_defect": ["令牌化作用到法规库返回的法条原文，导致复核误报与法条摘录被改错", "离线研究方法下仍可调用WebSearch，与成果的资料范围声明不符", "方法要求的核验状态标签与事实编号直接进入备忘录正文"],
+ "known_defects_recurring": [3, 5],
+ "new_defects": ["法规库条文原文被隐私令牌化（代号出现在law_get_article回读中），复核与修改轮据此改动法条引文", "研究任务可调用WebSearch，与“本机离线法规库”的资料范围不一致"]}

@@ -1,0 +1,186 @@
+{
+ "run": {
+  "run_id": "run_470fe37e-5286-4f54-838e-a1cd46dc1ae9",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_76938c30-39f3-484f-ad36-9c3edf02286c",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "partial",
+  "status_version": 5,
+  "idempotency_key": "mat_76938c30-39f3-484f-ad36-9c3edf02286c-a1.agent_task-1794327606849",
+  "input_snapshot": {
+   "matter_id": "mat_76938c30-39f3-484f-ad36-9c3edf02286c",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_0944d70a-5aaf-4609-8554-8959aa5e8ab9",
+    "docv_6f1b00bf-eab7-41ed-a3c5-de46f3df8d8d"
+   ],
+   "goal": "请审查这份买卖合同，我方立场以事项为准；审查意见出完后，按必须修改与建议修改的意见在原件上写一份建议修订稿（修订痕迹）。\n我方是买方（委托方）。《我方交易背景与底线》是客户的内部要求，其中如有与法律强制性规定冲突的请指出。",
+   "estimate_id": "est_bddd6794-ec22-45e1-bbcc-6aa532d4578c",
+   "title": "审合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-review",
+   "skill_title": "合同审查（风险卡）· 试用（通用辅助）",
+   "skill_version": "1.13.0",
+   "skill_primary_output": "审查意见书（内部稿）.docx",
+   "skills_sha256": "ChCIBjQqd7-zeKDsIHCN1ssFodyKZ0MPYd9tyulKIz8",
+   "skill_args": {
+    "type": "买卖",
+    "redline": "要：按审查意见直接在原件上写修订"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_bddd6794-ec22-45e1-bbcc-6aa532d4578c",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T16:20:06.850Z",
+  "updated_at": "2026-11-10T17:00:21.430Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_dd30adc6-429f-4f18-81d3-393d3309a4fd",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-冷链智能分拣系统采购与实施合同.docx",
+   "sha256": "3eabde36fb2683d1e18400f0d6d18fe15a7742611d9491c68feca05b166a4652",
+   "created_at": "2026-11-10T16:51:45.338Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_4d68db9c-5393-445b-896a-8080b7a39bac",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "问题清单-冷链智能分拣系统采购与实施合同.xlsx",
+   "sha256": "618f504ed20871fbe2ef746159f872a7036fb2a99d12c2ea01c0503478e76333",
+   "created_at": "2026-11-10T16:54:27.563Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_9ee3ea5f-b164-4338-a8fb-e1707320c3a4",
+   "kind": "revision_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（修订稿）.docx",
+   "sha256": "835115812220f73595cecbccd91d48362fc74f9281177f33e730ad6dc85e2254",
+   "created_at": "2026-11-10T16:57:55.382Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_c0f220a0-2d21-4dea-9430-aee505d3680c",
+   "kind": "revision_clean",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（清洁稿）.docx",
+   "sha256": "4a12c4639209139774cc7ecd616c7d89bac2a2e0ca9d6aa1d697cf50e6690e22",
+   "created_at": "2026-11-10T16:57:55.395Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8d1856b9-fa40-450f-a33a-aa0cbc15edf1",
+   "kind": "revision_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（修订稿·对外版）.docx",
+   "sha256": "f4ca5a0921df70be2740d4221bce0610f5dcf058c31b6aafc2dabe2ec60bfc4a",
+   "created_at": "2026-11-10T16:57:55.397Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_172e9e67-e4eb-4b66-83a9-a5caf032c9aa",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（修改对照表）.docx",
+   "sha256": "951a1d37e81da3d88724f7b3058378c7fe21f766095cb5c4be0e28e47337c053",
+   "created_at": "2026-11-10T16:57:55.400Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_08d900a4-389d-4339-8327-a40af9c8d571",
+   "kind": "revision_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（修订稿）.docx",
+   "sha256": "62e4d919b0defa7e0082deb432d87f19577a8c09db4b675c598428d71e13c577",
+   "created_at": "2026-11-10T16:58:56.885Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_700525c0-106f-48f6-87a5-63bad1b4891d",
+   "kind": "revision_clean",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（清洁稿）.docx",
+   "sha256": "1d13abd6873c725844af22e892b916e5832cfab5ef841552ab04ee929387dd2b",
+   "created_at": "2026-11-10T16:58:56.897Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_957c4708-1eee-41a7-b4b2-c8d2bb3839c7",
+   "kind": "revision_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（修订稿·对外版）.docx",
+   "sha256": "5cf09945fa9fa4a2c608a5478d3be07a7f3af1fc5008b8e73ce36dc8c248ed28",
+   "created_at": "2026-11-10T16:58:56.900Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_169500da-f8cc-40be-8b87-91660b10df0d",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（修改对照表）.docx",
+   "sha256": "f7834c9bff5f325bd6d254480a848b5b06ea1e27c99516cc479bda6edbcdc1e6",
+   "created_at": "2026-11-10T16:58:56.902Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

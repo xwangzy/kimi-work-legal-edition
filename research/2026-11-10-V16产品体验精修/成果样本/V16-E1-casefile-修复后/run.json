@@ -1,0 +1,128 @@
+{
+ "run": {
+  "run_id": "run_33dfd5af-87b3-4807-8a5c-d8793b478565",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_3d08cd70-c5f1-44c6-a6cb-210cb3ebe1a6",
+  "scenario": "s2.case_file",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 3,
+  "idempotency_key": "mat_3d08cd70-c5f1-44c6-a6cb-210cb3ebe1a6-s2.case_file-1794295362958",
+  "input_snapshot": {
+   "matter_id": "mat_3d08cd70-c5f1-44c6-a6cb-210cb3ebe1a6",
+   "scenario": "s2.case_file",
+   "document_version_ids": [
+    "docv_18c1ec0f-387b-4455-a372-7ff997b8883c",
+    "docv_43a4e1dd-de49-4289-b183-3e03ca8dcb21",
+    "docv_1df1aee8-ead3-4566-91ea-0d0e86552760",
+    "docv_2da6c856-3be9-44e4-9067-83ea6c4272b3",
+    "docv_f85c970f-8cb0-444d-9d8c-4b7a6ff16f9e",
+    "docv_20a23ba4-9fe0-496c-88d5-dd78d593cfe5",
+    "docv_bd04ecd4-234a-4c69-aa84-e15a9af8fbf0",
+    "docv_74df5766-7044-4fd7-884c-ee5cd130f34a",
+    "docv_bb5192af-52ae-4301-9d5f-df75806f15a8",
+    "docv_b7c99c23-9983-4ce8-ae92-a28a4a1e3249",
+    "docv_576a0afe-43b1-4375-8fe2-7169ccc87001"
+   ],
+   "estimate_id": "est_161dca48-0058-4fc5-850d-c8849b25b5a3",
+   "title": "整理案卷"
+  },
+  "budget_points": 0,
+  "points_reserved": 0,
+  "points_charged": 0,
+  "estimate_id": "est_161dca48-0058-4fc5-850d-c8849b25b5a3",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T07:22:42.960Z",
+  "updated_at": "2026-11-10T07:22:42.990Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_9b472f8e-e821-455c-8f2c-77c8dc07a098",
+   "kind": "s2_catalog",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-2026-11-10.xlsx",
+   "sha256": "146860b843e861550c3d7eec2e69c64f7b2cd0f446fb82a5c33e66e698500c40",
+   "created_at": "2026-11-10T07:22:42.987Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_773448e0-e61a-4087-a2de-1f124eb31a2f",
+   "kind": "s2_timeline",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "事实时间轴-2026-11-10.xlsx",
+   "sha256": "9cab8653b1ba9e4513c1fb6e60489af4c5e61a99abb1a95509e267bdf22ef898",
+   "created_at": "2026-11-10T07:22:42.987Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_1ca28143-b413-4080-8886-e9cf028761eb",
+   "kind": "s2_evidence_catalog",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-2026-11-10.xlsx",
+   "sha256": "b255284364e9be5e71d695471a02fa0afb97c729006b7482512809ef9c22cddc",
+   "created_at": "2026-11-10T07:22:42.988Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_5768deae-de99-40c8-aa83-aa8a5ea5d4f2",
+   "kind": "s2_matrix",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点证据矩阵-2026-11-10.xlsx",
+   "sha256": "5ca60e5377b7659035593e2106b1c452ecfca1ea1a887c21685703b8c214b54a",
+   "created_at": "2026-11-10T07:22:42.989Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_365774e6-fd48-448c-ad18-ea1af53a81f5",
+   "kind": "s2_supplement",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "补证清单-2026-11-10.docx",
+   "sha256": "f96ba4edc97f37bcc6c155beff6db1c2985c162c8dc51aaa40be4f3040ddcf02",
+   "created_at": "2026-11-10T07:22:42.989Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_d5c20c82-8de8-4e66-92ee-24b86d701f5a",
+   "kind": "s2_quality_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "材料质量报告-2026-11-10.docx",
+   "sha256": "5c1b13525fbf90227c5027bd3fce2c4b3b52214811c6a82014af919172f5ecca",
+   "created_at": "2026-11-10T07:22:42.990Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

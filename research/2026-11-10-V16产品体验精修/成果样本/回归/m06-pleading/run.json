@@ -1,0 +1,179 @@
+{
+ "run": {
+  "run_id": "run_e9587305-187c-47ac-85b7-1f5958a89f87",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_13eb17d8-7735-437a-9314-5d685890bf7f",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 12,
+  "idempotency_key": "mat_13eb17d8-7735-437a-9314-5d685890bf7f-a1.agent_task-1794280714484",
+  "input_snapshot": {
+   "matter_id": "mat_13eb17d8-7735-437a-9314-5d685890bf7f",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_19b77b0c-140e-4a26-82f9-baa707186b20",
+    "docv_b4f4ac5f-3201-4f87-9f37-caa9b2b401df",
+    "docv_8eee8ebd-1884-45f2-a54f-87f843b26368",
+    "docv_c0e94b52-baad-4ba4-ba00-e654bb2dd815",
+    "docv_ebf43fa9-8704-4492-9db0-6a2feefaaa66",
+    "docv_56b44967-a68f-4b7f-a24b-81780795f10c",
+    "docv_d18d251c-23f5-405c-957b-cb36904c4a06",
+    "docv_9b6cac7b-b428-4c66-9a77-b1461d14b482"
+   ],
+   "goal": "请起草民事起诉状。拟受理法院：苏州市虎丘区人民法院。\n原告锐川、被告禾丰。违约金暂计到2026年11月30日，律师费30,000元委托合同还没签。请一并列证据目录和提交前核对清单。",
+   "estimate_id": "est_a932eafa-d7d7-43a8-8108-c50f98e11f4c",
+   "title": "起草起诉状",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "pleading-draft",
+   "skill_title": "民事起诉状（受限文书）",
+   "skill_version": "1.5.1",
+   "skill_requires_outline": true,
+   "skill_primary_output": "民事起诉状（草稿）.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "court": "苏州市虎丘区人民法院"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_a932eafa-d7d7-43a8-8108-c50f98e11f4c",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:18:34.485Z",
+  "updated_at": "2026-11-10T07:51:02.022Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_9ade01b1-5795-4eb6-9702-f4319180afb0",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "民事起诉状.docx",
+   "sha256": "2560db25b3d9a69bb19c694bc4759f2a2a541129b812a05997ed308ccd2f73ff",
+   "created_at": "2026-11-10T07:39:10.744Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_086890f1-4ab5-4805-b588-75ff5f2a0816",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-锐川诉禾丰-截至2026-11-30.xlsx",
+   "sha256": "894aacd70abcf517280e9f1f232226c4f397f0429ff1bd34eb15dc2deca661a0",
+   "created_at": "2026-11-10T07:40:29.739Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_82404d32-7930-43ba-bf1c-1e8ded9d98bb",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-锐川诉禾丰.xlsx",
+   "sha256": "f3807093056f09de4ec24f9eee4107698dbcabf260f87436c83b7e109e94724a",
+   "created_at": "2026-11-10T07:41:33.164Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a0d76c0f-9e75-4b86-8e65-b6040cb62332",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-锐川诉禾丰.xlsx",
+   "sha256": "5a6583f3cc76daaac7274591ca3421444b22e2263fecc86047f60438bb258b40",
+   "created_at": "2026-11-10T07:44:39.164Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_25333186-d483-499e-bab1-0709af982afb",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-锐川诉禾丰.xlsx",
+   "sha256": "0ad3a2089f1905e1bc3ed90cbfe2eccaeba937f957be9cc560c97fdd1d57cf90",
+   "created_at": "2026-11-10T07:45:38.771Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_37b11e2b-3918-4e0b-9e04-bcabd72c00a4",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "计算明细-锐川诉禾丰-截至2026-11-30.xlsx",
+   "sha256": "99baf9f1be24479ade4e55463d494de95b113ae9eeb14cb233d2ccb970829e93",
+   "created_at": "2026-11-10T07:47:33.113Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_dc6df52d-3536-4ec3-9903-45514b89665d",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-锐川诉禾丰.xlsx",
+   "sha256": "6ce4632f3e058918ec71ddd531477f5b4517c88aeb8771082f315ce989026e0d",
+   "created_at": "2026-11-10T07:48:37.719Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_bc8cdcac-828c-4e95-892b-3126338b5599",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "d60d38ac4f68a052defb6f26b33c31a3fdb53648d47b6d3992bb3abf61a02551",
+   "created_at": "2026-11-10T07:49:46.927Z",
+   "title": "已完成。收到 8 份材料，完整读取 8 份，无无法读取、部分读取或排除材料。律师",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2ff295ba-ddac-4681-8637-da36a67e7e26",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-民事起诉状.md",
+   "sha256": "1f658ad0a6b54dd4e45e878b937e48c37cc911eb5a970f89e5fef8b5f5fac2ae",
+   "created_at": "2026-11-10T07:51:02.022Z",
+   "title": "独立复核意见：民事起诉状",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,121 @@
+{
+ "run": {
+  "run_id": "run_c57dcc66-c619-48f3-bf27-7baca9794647",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_f13d8a54-f803-4051-9fc8-fc9776d1ee0b",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_f13d8a54-f803-4051-9fc8-fc9776d1ee0b-a1.agent_task-1794300145700",
+  "input_snapshot": {
+   "matter_id": "mat_f13d8a54-f803-4051-9fc8-fc9776d1ee0b",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_84e858a4-e49c-4792-9bb6-bb3e973c2757",
+    "docv_d7f5e153-c2df-4482-a045-69622c1ee147"
+   ],
+   "goal": "请就以下问题出具正式的法律意见书（Word），签署栏留空：请就《公司基本情况与股权变动说明》第五部分的四个问题出具法律意见，结论要明确，把握不大的地方如实说明；引用的法律依据逐条核对，核对不了的标出来。致送对象：泓屿精密部件（宁波）有限公司董事会。",
+   "estimate_id": "est_66d7789c-86a4-4807-97a8-228904ae9b57",
+   "title": "出具法律意见书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "client-advice",
+   "skill_title": "顾问答复",
+   "skill_version": "1.9.0",
+   "skill_primary_output": "法律意见书（草稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "question": "请就《公司基本情况与股权变动说明》第五部分的四个问题出具法律意见，结论要明确，把握不大的地方如实说明；引用的法律依据逐条核对，核对不了的标出来。",
+    "addressee": "泓屿精密部件（宁波）有限公司董事会"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_66d7789c-86a4-4807-97a8-228904ae9b57",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:25.701Z",
+  "updated_at": "2026-11-10T09:05:04.877Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_32bcab9c-e2b7-4b27-92fc-5b97413a7db4",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "关于公司股权变动、出资催缴及诉讼应对的法律意见书（草稿）.docx",
+   "sha256": "215e6371223663770380be5675cced4747d11edd7e98c7c7f3b66a54abbf3c76",
+   "created_at": "2026-11-10T09:01:48.886Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_edca09b6-fb0e-41fe-a62f-5378099c615b",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-公司股权变动出资催缴及诉讼应对.xlsx",
+   "sha256": "c58ee9bfb3180d9783459e0a634a23e84945cea7325eb00a790ad659d2d5162d",
+   "created_at": "2026-11-10T09:02:47.026Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_53bacb33-3090-4ab0-94ce-d62c57abcec5",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-公司股权变动出资催缴及诉讼应对.xlsx",
+   "sha256": "afc02cd835ab581740538b57d105f1817215a9c27c83b692689ee3692bf63865",
+   "created_at": "2026-11-10T09:03:16.755Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2dbcbca3-a49e-408f-9336-326310491624",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "040d10935edc4e0c6506f8584d499b134b45a583b26afdd099bac2be307dc1d4",
+   "created_at": "2026-11-10T09:04:15.115Z",
+   "title": "两份材料已全部读取，无读不出或排除的材料。答辩及管辖异议期间将于2026年11月",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_04e9c8a1-f432-4ce7-a5e1-f0507278e199",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-关于公司股权变动、出资催缴及诉讼应对的法律意见书（草稿）.md",
+   "sha256": "49ff02bdc399dbc71ca9513f76b28ac753e42c147bddbf0928eeea7d9756977c",
+   "created_at": "2026-11-10T09:05:04.877Z",
+   "title": "独立复核意见：关于公司股权变动、出资催缴及诉讼应对的法律意见书（草稿）",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

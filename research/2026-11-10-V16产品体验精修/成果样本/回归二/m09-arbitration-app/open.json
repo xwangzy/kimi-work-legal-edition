@@ -1,0 +1,24 @@
+{
+ "stack": "w3",
+ "tag": "m09-arbitration-app",
+ "run": "run_a9bea5f2-3f5c-4cb1-b330-ec46f7121c7e",
+ "status": "succeeded",
+ "open": {
+  "v1-仲裁申请书.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-提交前核对清单-锐川设备款仲裁.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-证据目录-锐川设备款仲裁.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-仲裁申请书.docx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

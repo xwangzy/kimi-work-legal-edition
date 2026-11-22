@@ -1,0 +1,32 @@
+{
+ "stack": "w5",
+ "tag": "m35-contract-draft",
+ "run": "run_b827bf72-a66f-40b1-8abd-5bab49372bb9",
+ "status": "succeeded",
+ "open": {
+  "v1-专利权转让协议.docx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v1-起草说明与待定事项-专利权转让协议.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-专利权转让协议.docx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v2-起草说明与待定事项-专利权转让协议.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v3-专利权转让协议.docx": {
+   "opened": true,
+   "pages": 9
+  },
+  "v3-起草说明与待定事项-专利权转让协议.docx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

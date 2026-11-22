@@ -1,0 +1,84 @@
+{
+ "run": {
+  "run_id": "run_8396a155-45fc-4951-80cd-54d38713615d",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_5dd8d354-47dc-40f5-a8b8-5296b2290616",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_5dd8d354-47dc-40f5-a8b8-5296b2290616-a1.agent_task-1794202207730",
+  "input_snapshot": {
+   "matter_id": "mat_5dd8d354-47dc-40f5-a8b8-5296b2290616",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_62712038-8134-447c-911c-8d5249db42b3",
+    "docv_529152ed-5c2e-48c2-9c7d-9759978897ad",
+    "docv_b03a06d3-ade7-4398-9d41-0d52505c0135",
+    "docv_c86c5c25-c3a1-4bcf-a085-3b0486d6ccfd",
+    "docv_b0c2a3c1-73d6-4219-84c1-7ea207876423"
+   ],
+   "goal": "请核查管辖与诉讼时效：拟主张的请求为支付验收款余额310,000元、质保金135,000元及逾期付款违约金；我方：拟起诉。\n请确认去哪家法院起诉、时效有没有问题，质保金的付款期限也一并核一下。",
+   "estimate_id": "est_7811ccd6-c054-4f52-b563-78c7ef1a08ef",
+   "title": "管辖与时效核查",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "procedure-check",
+   "skill_title": "管辖与时效核查 · 试用",
+   "skill_version": "1.2.2",
+   "skill_primary_output": "管辖与时效核查表.xlsx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "claims": "支付验收款余额310,000元、质保金135,000元及逾期付款违约金",
+    "side": "拟起诉"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_7811ccd6-c054-4f52-b563-78c7ef1a08ef",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:30:07.734Z",
+  "updated_at": "2026-11-09T07:17:26.288Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_3fff62bc-0464-4631-9332-3e5d6fdc0384",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "2e0e731c547cb37e6d3eb3a39c549e066c6c6732bf078be9020529d458eb5e7f",
+   "created_at": "2026-11-09T07:17:26.287Z",
+   "title": "已收到并完整读取5份材料，无未读或排除材料；最近的已识别期限是无顺延分支下质保金",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_1507d22f-c103-4704-b447-b5c74e22ba36",
+   "kind": "a1_workspace_file",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "管辖与时效核查表-设备买卖合同纠纷.xlsx",
+   "sha256": "02512e641f3df9392c7a4f167aa8d134e6999acf1bca6350f9b76ffca1de4760",
+   "created_at": "2026-11-09T07:17:26.288Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

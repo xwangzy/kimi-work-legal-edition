@@ -1,0 +1,28 @@
+{
+ "stack": "w1",
+ "tag": "v16-D3-missing",
+ "run": "run_798aa196-d08b-44ac-a800-df3e502841bd",
+ "status": "succeeded",
+ "open": {
+  "v1-股权代持协议.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v1-起草说明与待定事项-股权代持协议.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-股权代持协议.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v2-起草说明与待定事项-股权代持协议.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v3-股权代持协议.docx": {
+   "opened": true,
+   "pages": 12
+  }
+ }
+}

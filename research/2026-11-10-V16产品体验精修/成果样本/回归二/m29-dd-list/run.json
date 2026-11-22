@@ -1,0 +1,121 @@
+{
+ "run": {
+  "run_id": "run_8dff1a14-280f-4f2f-ab47-15562c9a768a",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_352adf9b-0725-499d-8d71-754a0b8f4834",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_352adf9b-0725-499d-8d71-754a0b8f4834-a1.agent_task-1794300171012",
+  "input_snapshot": {
+   "matter_id": "mat_352adf9b-0725-499d-8d71-754a0b8f4834",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_76c3eb8a-2a3b-4bd3-aea7-76117dc502fa"
+   ],
+   "goal": "请为这笔增资交易列出尽调清单、可直接发给对方的资料清单与访谈提纲；关注重点：出资是否实缴、核心专利和软件著作权归属、关联担保与资金占用、大客户合同控制权变更条款、技术秘密诉讼。\n澜屹准备投栖桐 5,000 万，拿 20%。先出一版尽调清单和给目标公司的资料清单，资料清单明天要发给对方董秘，别把我们的关注点写进去。访谈提纲先按财务负责人和创始人两个对象准备。",
+   "estimate_id": "est_dee7aa02-8f98-445a-b02a-3918edc09bcd",
+   "title": "尽调清单与访谈提纲",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "due-diligence",
+   "skill_title": "法律尽职调查（清单 / 发现）· 试用",
+   "skill_version": "1.3.2",
+   "skill_primary_output": "尽调清单.xlsx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "stage": "清单",
+    "deal_type": "增资",
+    "focus": "出资是否实缴、核心专利和软件著作权归属、关联担保与资金占用、大客户合同控制权变更条款、技术秘密诉讼"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_dee7aa02-8f98-445a-b02a-3918edc09bcd",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:51.013Z",
+  "updated_at": "2026-11-10T09:31:04.564Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_0a38e676-b840-48d9-8384-2ec7ebf0e463",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "尽调清单-澜屹增资栖桐.xlsx",
+   "sha256": "d794ae7e71de98d4f247b9ddb343b9c06419cc508e487b53b297065b527afeb9",
+   "created_at": "2026-11-10T09:24:54.896Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_dccce8e5-995a-42eb-83ab-cc459f7772da",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "资料清单（致目标公司）-澜屹增资栖桐.xlsx",
+   "sha256": "69e36e5a97e21c34ed321a0258685d69cfea4d88f89dfe7ee2ce1f5ae3934f56",
+   "created_at": "2026-11-10T09:26:57.303Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_190477c9-a792-4e89-8481-37a1e3f15c35",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈提纲-澜屹增资栖桐.docx",
+   "sha256": "d8138a6e9316cbf0d10a70d66b1c9ab6e25fa16cb34e62b79ac4a7bc86141773",
+   "created_at": "2026-11-10T09:29:25.472Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_8b3d4401-f4e6-4749-9d6c-97ce2756911c",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "5763fe155348cc59925bb6edad3f395db298290839a7cd7d0ba4d00152403476",
+   "created_at": "2026-11-10T09:30:48.845Z",
+   "title": "需优先核对访谈记录所述2026年11月20日技术秘密案件举证日期，以法院正式通知",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_1f5624b1-a70b-4162-97bc-994f600304de",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-访谈提纲-澜屹增资栖桐.md",
+   "sha256": "f583b4a30805f503b9fcc4a5496b8548472055ed724d0964e8d79a287870b142",
+   "created_at": "2026-11-10T09:31:04.563Z",
+   "title": "独立复核意见：访谈提纲-澜屹增资栖桐",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

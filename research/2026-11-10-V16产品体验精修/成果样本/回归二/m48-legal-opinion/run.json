@@ -1,0 +1,164 @@
+{
+ "run": {
+  "run_id": "run_364a318a-9ed9-4755-8978-450032ca7198",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_a6268d05-6f2c-4da9-b136-96576a1da1d0",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_a6268d05-6f2c-4da9-b136-96576a1da1d0-a1.agent_task-1794300182060",
+  "input_snapshot": {
+   "matter_id": "mat_a6268d05-6f2c-4da9-b136-96576a1da1d0",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_28d69d1f-7984-48e7-bf82-a8d8f3ed6549",
+    "docv_15146ea4-bb07-4a20-8bfb-e72b42aa3944",
+    "docv_6fcab32e-9a0a-4548-b6b0-a91262f889f5",
+    "docv_879c0f2a-da3b-4b9f-902b-c5038fe4f1ad",
+    "docv_65bca417-9a03-47bc-aa50-8fb2cb70c512",
+    "docv_55b517d8-f958-4a7c-8748-5db81e9677d0"
+   ],
+   "goal": "请就以下问题出具正式的法律意见书（Word），签署栏留空：请就客户咨询邮件中提出的四个问题（保证合同效力与能否要求棣升承担责任、保证期间、保证方式、现在应该做什么）出具法律意见，结论要明确，把握不大的地方如实说明；引用的法律依据逐条核对，核对不了的标出来。致送对象：合肥恪远贸易有限公司。",
+   "estimate_id": "est_16a23976-d385-47ce-b36b-f70cbb31cf45",
+   "title": "出具法律意见书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "client-advice",
+   "skill_title": "顾问答复",
+   "skill_version": "1.9.0",
+   "skill_primary_output": "法律意见书（草稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "question": "请就客户咨询邮件中提出的四个问题（保证合同效力与能否要求棣升承担责任、保证期间、保证方式、现在应该做什么）出具法律意见，结论要明确，把握不大的地方如实说明；引用的法律依据逐条核对，核对不了的标出来。",
+    "addressee": "合肥恪远贸易有限公司"
+   }
+  },
+  "budget_points": 50,
+  "points_reserved": 50,
+  "points_charged": 50,
+  "estimate_id": "est_16a23976-d385-47ce-b36b-f70cbb31cf45",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:02.061Z",
+  "updated_at": "2026-11-10T09:42:52.577Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_64145121-2835-44f5-847b-812fa8569a3e",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "关于棣华借款保证事项的法律意见书（草稿）.docx",
+   "sha256": "50a3fea846fcb43cf670c892de765f61ad912b70104d0de1597b2780acc1b21b",
+   "created_at": "2026-11-10T09:31:26.409Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_49042a51-a49b-461b-845c-60500b15e6c8",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "关于棣华借款保证事项的法律意见书（草稿）.docx",
+   "sha256": "22988a690d0ad58a40dc612ef5696892c694a056090abaeb9e4f5ac603aa281b",
+   "created_at": "2026-11-10T09:31:41.321Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_33fcbae8-2ddf-4655-bbf7-2dfcca12dccd",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "法律依据核验与提交前核对清单.xlsx",
+   "sha256": "eef1a3311856e2fb2da48c9cdc3b04504752318dc0e67f0c0b0a31650d4812f9",
+   "created_at": "2026-11-10T09:33:29.604Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d72039d0-2962-4c26-a365-d602a0150bf8",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "124e37e9c5fa720e67dd19c4619a1602cc114d05ab827c90a23e6cf1bbc542a9",
+   "created_at": "2026-11-10T09:35:07.080Z",
+   "title": "六份材料均已完整读取，无无法读取或排除的材料。最紧迫的是：保证期间将于2026年",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_bf51141b-edd6-45b2-97a4-06d18abecc2e",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-关于棣华借款保证事项的法律意见书（草稿）.md",
+   "sha256": "69be76839889e40dc880a65bb66422cc21d9567841f5ed7b02230731cc6e3a11",
+   "created_at": "2026-11-10T09:37:39.954Z",
+   "title": "独立复核意见：关于棣华借款保证事项的法律意见书（草稿）",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_91643280-33a2-4c72-a209-9ed9018eea79",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "关于棣华借款保证事项的法律意见书（草稿）.docx",
+   "sha256": "2c9634ff30bcb460d1165403185909c51bbfb6a0604c10c96c42497d66e707ee",
+   "created_at": "2026-11-10T09:40:56.414Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2716fa4e-c720-4d54-b0eb-3fac7d792868",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "法律依据核验与提交前核对清单.xlsx",
+   "sha256": "ed535038a0e066f580d934d48712514be81e28b7c264cb470bca75931dfb8c59",
+   "created_at": "2026-11-10T09:41:34.789Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_98ecdd5e-925b-497d-bd30-15806fb27ae5",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "98d4cdec80393ebf02843905ca7da9cbf14b727cd6e6f71e4f191f85a45daed4",
+   "created_at": "2026-11-10T09:42:52.577Z",
+   "title": "六份材料均已完整读取，无无法读取或排除的材料。最紧迫的是：保证期间将于2026年",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

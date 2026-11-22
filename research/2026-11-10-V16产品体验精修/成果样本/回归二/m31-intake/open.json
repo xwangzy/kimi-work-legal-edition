@@ -1,0 +1,24 @@
+{
+ "stack": "w5",
+ "tag": "m31-intake",
+ "run": "run_f7732768-8782-498d-9834-721e66222f34",
+ "status": "succeeded",
+ "open": {
+  "v1-材料收集清单-栖桐科技增资尽调.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-紧急期限与冲突待核清单-栖桐科技增资尽调.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-访谈纪要-2026-10-16.docx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v2-紧急期限与冲突待核清单-栖桐科技增资尽调.xlsx": {
+   "opened": true,
+   "pages": 5
+  }
+ }
+}

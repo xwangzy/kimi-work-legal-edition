@@ -1,0 +1,181 @@
+{
+ "run": {
+  "run_id": "run_7a9f0dc2-ff09-41b9-ac91-56af51a0ede1",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_5eeaa8e0-fbd9-484f-80f5-2562027ac42e",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 9,
+  "idempotency_key": "mat_5eeaa8e0-fbd9-484f-80f5-2562027ac42e-a1.agent_task-1794300157066",
+  "input_snapshot": {
+   "matter_id": "mat_5eeaa8e0-fbd9-484f-80f5-2562027ac42e",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_b542e85b-7148-444a-b72a-fddf0b980e23",
+    "docv_8eb6ada4-c3c7-4edf-8577-b77e61a3cf48",
+    "docv_4077ecb3-a4a9-4030-9fe6-44e108ca4660",
+    "docv_00a3dac8-6e23-47a0-9096-b8cf239fe8f1",
+    "docv_a19c5dc2-69b2-4b07-a49f-0b74962bdb7b",
+    "docv_c249ef74-7732-45c4-9e11-10ec837ba3ab",
+    "docv_db3fe8af-46be-446f-a000-21706ef852ba"
+   ],
+   "goal": "请起草劳动仲裁答辩书：收到仲裁申请书副本的日期：2026-11-06（答辩期十个工作日，管辖异议与反申请须在期满前提出）；员工请求：违法解除赔偿金168,000元等四项。",
+   "estimate_id": "est_7b007c63-7bfd-4703-9dce-aa85ee4ea20d",
+   "title": "劳动仲裁答辩书",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "labor-arbitration-draft",
+   "skill_title": "劳动仲裁申请书与答辩书（受限文书）· 试用",
+   "skill_version": "1.3.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "劳动仲裁答辩书（草稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "doc_kind": "答辩书",
+    "side": "用人单位",
+    "received_on": "2026-11-06",
+    "claims": "违法解除赔偿金168,000元等四项"
+   }
+  },
+  "budget_points": 55,
+  "points_reserved": 55,
+  "points_charged": 55,
+  "estimate_id": "est_7b007c63-7bfd-4703-9dce-aa85ee4ea20d",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:37.067Z",
+  "updated_at": "2026-11-10T09:13:56.642Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_6193aa01-2355-4bdf-a392-da11dd304378",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动仲裁答辩书.docx",
+   "sha256": "943b022c6ac6401ae1321001e66c801af74cb0aaa5ef4c92cd607e06c5840368",
+   "created_at": "2026-11-10T09:02:47.026Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8ce234eb-91df-4813-adc4-95450c07c491",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-苏州棠奕劳动争议.xlsx",
+   "sha256": "b922644b9512fabfec0e760d47cd974346230a0c9e70b35e633e89a49c7f22af",
+   "created_at": "2026-11-10T09:06:44.327Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_abbd8890-3e94-4ce1-b8c0-de7fcbb4fde8",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-苏州棠奕劳动争议.xlsx",
+   "sha256": "52f88ef698220f051a8f543314838b8e2e3e0e3fc4f0eab41cd327a7c9a30e9e",
+   "created_at": "2026-11-10T09:06:44.339Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_cbfb7391-e106-4d03-b9e9-44857e6aa639",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动仲裁答辩书.docx",
+   "sha256": "96828a665b764ede1de60e684642dbd6f52a47a40cb965165b324b846d61a1e0",
+   "created_at": "2026-11-10T09:08:26.649Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_9e53d3dc-9b7b-4198-9ce9-a6136cb0f507",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "提交前核对清单-苏州棠奕劳动争议.xlsx",
+   "sha256": "1a8300cd7762d53608e231fa54fbff84c9f74bf06d80fa4bf64a50a141190e29",
+   "created_at": "2026-11-10T09:08:26.664Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_0840ee3c-b30b-4210-bb59-ba9dbd9b0cba",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "4522011e5347a41935afadbafdd2e1debbfef50fa949493b4c99a9635d492489",
+   "created_at": "2026-11-10T09:09:59.025Z",
+   "title": "答辩期、管辖异议与反申请的截止日均为 2026 年 11 月 20 日，举证期限",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_6f03d43d-3186-4b7a-89ac-3b2259f21e0a",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-劳动仲裁答辩书.md",
+   "sha256": "f7cd6b895a75c991131a11d7021e9e60772ef752ec6ab451a25086ab52b85464",
+   "created_at": "2026-11-10T09:12:17.269Z",
+   "title": "独立复核意见：劳动仲裁答辩书",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_75b5869f-1c58-4491-b354-ebe35fccdce6",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动仲裁答辩书.docx",
+   "sha256": "5768cda83a85b11c9a5b1bdb7fc6736046fd6abcaed9a0b314935b5a2db08af2",
+   "created_at": "2026-11-10T09:13:22.401Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_48cbc3ab-07ce-466e-a4bf-9776d8164e6d",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "0cb92b15d81b70a8c1a1cbe669dbf5da7720d0836e462d625de9a6be1dec7ff3",
+   "created_at": "2026-11-10T09:13:56.642Z",
+   "title": "答辩期、管辖异议与反申请的截止日均为 2026 年 11 月 20 日，举证期限",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,172 @@
+{
+ "run": {
+  "run_id": "run_89895738-53e0-4e33-9929-943bafd1cedf",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_1a565989-b7b6-443e-8fec-f4e015826bca",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_1a565989-b7b6-443e-8fec-f4e015826bca-a1.agent_task-1794300209103",
+  "input_snapshot": {
+   "matter_id": "mat_1a565989-b7b6-443e-8fec-f4e015826bca",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_69c9ad6c-8a08-44a6-9272-bd1fc0a7666e"
+   ],
+   "goal": "请审查这份服务 / 技术服务合同，我方立场以事项为准；重点关注：付款、违约责任、知识产权、争议解决。\n客户禾屿零售有约 380 万会员，这份是数衡云智给的标准文本，客户想 12 月签、明年 1 月上线。我们代表客户（甲方）。会员数据怎么处理是客户最关心的，审查意见书先给客户法务看。",
+   "estimate_id": "est_11219191-51be-49cc-895e-b8586147bbaf",
+   "title": "审合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-review",
+   "skill_title": "合同审查（风险卡）· 试用（通用辅助）",
+   "skill_version": "1.11.0",
+   "skill_primary_output": "审查意见书（内部稿）.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "type": "服务 / 技术服务",
+    "focus": "付款、违约责任、知识产权、争议解决"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 25,
+  "estimate_id": "est_11219191-51be-49cc-895e-b8586147bbaf",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:29.104Z",
+  "updated_at": "2026-11-10T10:03:32.937Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_c19a6407-8b33-4697-b346-7e05095fcb39",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-会员数据平台技术服务合同.docx",
+   "sha256": "d9099db74edc9bf094c8c0c89106ddc8f04a127a6ac44c8aff884eb09aa238aa",
+   "created_at": "2026-11-10T09:53:28.973Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8fe09fa2-691c-433b-afce-b4dc20422137",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "问题清单-会员数据平台技术服务合同.xlsx",
+   "sha256": "408890fd9999deeec8523e6af812536d7117219524a62826e2d422e7e78a9c83",
+   "created_at": "2026-11-10T09:56:11.822Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_a79cf81d-d338-4e05-bb8e-76c6e2dfdb70",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "问题清单-会员数据平台技术服务合同.xlsx",
+   "sha256": "e5ca566e482d3690b123d28a23a41c4d65ac90a4d05975056b9e27bfd97d782d",
+   "created_at": "2026-11-10T09:57:22.942Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_836d443a-ae59-480a-a392-022a637cd80a",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "c84fede8dd8c60f6dea0138db4aa8c50291fecf713cd687be2b36bc0ae698c2e",
+   "created_at": "2026-11-10T09:58:13.496Z",
+   "title": "已完成审查。收到合同 1 份，已完整读取全文及签署页，无未读、无法识别或排除的材",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_42b78f98-49ab-44b4-9320-7cc06e5a7750",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-审查意见书（内部稿）-会员数据平台技术服务合同.md",
+   "sha256": "81dcce07a4fc15c70f42c23c4229b5095522c3baa9984bed0a6afd4ce179f0bc",
+   "created_at": "2026-11-10T09:59:02.017Z",
+   "title": "独立复核意见：审查意见书（内部稿）-会员数据平台技术服务合同",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a520831a-3dfa-40c2-92c7-19b0b45e8262",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "审查意见书（内部稿）-会员数据平台技术服务合同.docx",
+   "sha256": "b661433a1189c1e2e76ea3e839ca6b7138eeb3fe3b382fe3920dabd66253651b",
+   "created_at": "2026-11-10T10:01:17.567Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_05231094-56be-4394-b402-52b08e05a73e",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "问题清单-会员数据平台技术服务合同.xlsx",
+   "sha256": "dfdf0a78e257aa05fa4d8efef57e76f48efa18e2db1dc987146afbf7409ab9e8",
+   "created_at": "2026-11-10T10:01:17.590Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_9e101a0c-8bdf-4a60-9457-4bf1fb4793e4",
+   "kind": "agent_table",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "问题清单-会员数据平台技术服务合同.xlsx",
+   "sha256": "9d70e5530741499c313bfe8fb207785c31e5f2627e7850a2dbf21ab51c7b4727",
+   "created_at": "2026-11-10T10:01:42.467Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_23753697-e1c2-4849-b460-494f1ec99bec",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "74dca1e5c68ac700215bde6da77ef326d6d331f927cba859659e0d0023ee781c",
+   "created_at": "2026-11-10T10:03:32.936Z",
+   "title": "已完成独立复核及修改。合同材料共 1 份，已完整读取，无未读或无法识别部分；本次",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,110 @@
+{
+ "run": {
+  "run_id": "run_4c1e8100-4dd5-4487-9bba-bdce113fcede",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_971c99af-466f-40e5-8971-33c51f19427e",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 9,
+  "idempotency_key": "mat_971c99af-466f-40e5-8971-33c51f19427e-a1.agent_task-1794204884104",
+  "input_snapshot": {
+   "matter_id": "mat_971c99af-466f-40e5-8971-33c51f19427e",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_54175652-f2a2-4411-882f-890f302996f2",
+    "docv_b9198b06-2bfa-43d3-91b5-7088a940af71",
+    "docv_5119e582-b424-49a0-a104-6576084ef668",
+    "docv_7f01ecd7-c157-4fe7-a6cd-82ff873a23e6",
+    "docv_25ea04d8-5ecf-41e3-8a21-604b98f94182"
+   ],
+   "goal": "请起草：催款律师函；期限要求：收函后7日内。\n以苏州衡正律师事务所名义受锐川委托发给禾丰。请回应对方7月15日的质量异议函，语气坚定但别过头。",
+   "estimate_id": "est_d9321889-9ed6-4adc-8ff8-daca769c8723",
+   "title": "律师函 / 催告函",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "demand-letter",
+   "skill_title": "律师函 / 催告函",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "律师函或催告函（草稿）.docx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "letter_type": "催款律师函",
+    "deadline": "收函后7日内"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_d9321889-9ed6-4adc-8ff8-daca769c8723",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:14:44.106Z",
+  "updated_at": "2026-11-09T07:04:31.703Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_186038ba-7df7-4a57-bc0d-47c483335712",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "律师函.docx",
+   "sha256": "9c90446ceaf90c322ae71d74ae4bbc9ae77b29a5545d8c26c64fab9e0115cb33",
+   "created_at": "2026-11-09T07:00:50.830Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_361f4bcf-b481-409e-90b8-353850eb135b",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "依据与发送前核对-设备款催收.xlsx",
+   "sha256": "b951fe63e92825b85e3a834367c5fb7e3f0ce7b50243e4f411a93d831c4c8efe",
+   "created_at": "2026-11-09T07:02:12.160Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a3b801e3-3da1-42be-9ba5-a80cafabd3d0",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "bc726bb56a3ef03c5dfa2c664a1becf8679ea1af3ff3a87c9d0be18c575ac456",
+   "created_at": "2026-11-09T07:04:02.637Z",
+   "title": "已收到并完整读取全部5份材料，无读不出或排除的材料。未见独立验收单、第三方检测报",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f61aad99-b621-4e8f-a943-ee36cd261be7",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-律师函.md",
+   "sha256": "2a39e8f0bdf1c7f4343411f4990d730a3a22364cd6043f59d546cce4bef3a733",
+   "created_at": "2026-11-09T07:04:31.702Z",
+   "title": "独立复核意见：律师函",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

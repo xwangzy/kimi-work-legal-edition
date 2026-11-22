@@ -1,0 +1,68 @@
+{
+ "run": {
+  "run_id": "run_3b8b79cf-1ecf-4866-85f9-408c021efd6d",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_bc85dc5b-dc7f-4794-96f9-b1d90e749fe0",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_bc85dc5b-dc7f-4794-96f9-b1d90e749fe0-a1.agent_task-1794300233694",
+  "input_snapshot": {
+   "matter_id": "mat_bc85dc5b-dc7f-4794-96f9-b1d90e749fe0",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_1a402b87-d6cf-4b31-9c8e-29c1fbfbd6b2",
+    "docv_93fd6eb6-b081-47e5-a6c2-dd11e1301a88"
+   ],
+   "goal": "请从本事项的范本里整理审查要点草稿：每条写条款、我方标准、可退让、不可谈，并写明出处。范本是：本所技术服务合同（采购方）范本 2025 版；禾屿零售法务部信息系统采购合同审核标准（2026-03 第 3 版）。\n以后审禾屿的系统和 SaaS 合同按这套要点判偏离。本所范本和客户标准不一致的地方并列给我，我去跟客户确认，别替我选。",
+   "estimate_id": "est_126b0230-51ec-404b-b638-c95a2166a04e",
+   "title": "从范本整理审查要点",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "review-rules-draft",
+   "skill_title": "从范本整理审查要点",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "审查要点草稿（待你审定）",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "basis": "本所技术服务合同（采购方）范本 2025 版；禾屿零售法务部信息系统采购合同审核标准（2026-03 第 3 版）"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_126b0230-51ec-404b-b638-c95a2166a04e",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:53.695Z",
+  "updated_at": "2026-11-10T09:55:00.359Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_433679c8-3116-40da-97c9-766099b6ef9f",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "39436cc53a217f23dd8dd82f3317b6d816c87fb4b57c481418934ad1c95b3b26",
+   "created_at": "2026-11-10T09:55:00.358Z",
+   "title": "已收到并完整读取两份范本，无未读范围。已整理 27 条审查要点，存为《禾屿零售系",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

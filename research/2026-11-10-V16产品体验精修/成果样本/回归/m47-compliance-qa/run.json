@@ -1,0 +1,54 @@
+{
+ "run": {
+  "run_id": "run_5667d397-be0b-4f82-ba56-aca6d199abf8",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_6ffe17d5-f8e5-40fa-87c8-5728899e446c",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_6ffe17d5-f8e5-40fa-87c8-5728899e446c-a1.agent_task-1794280760747",
+  "input_snapshot": {
+   "matter_id": "mat_6ffe17d5-f8e5-40fa-87c8-5728899e446c",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_45932864-4112-4c7d-9879-acb8246333f0"
+   ],
+   "goal": "请答复以下问题：新加坡母公司要求我们从 2026 年 12 月 1 日起把全体员工的人事数据迁到集团 OneHR 平台（服务器在新加坡），2027 年 1 月 1 日上线。这需要申报数据出境安全评估、签标准合同，还是可以直接传？除此之外还要做哪些合规动作？能不能按原计划时间上线？业务背景：公司不是关键信息基础设施运营者；在职 2,340 人（含劳务派遣 235 人）；人力资源部已发了内部规定并在员工手册签收单里加了同意条款。\n这是人力资源部提给法务的问题，答复要给 HR 总监和信息安全部，结论先说，需要谁去做什么写清楚。",
+   "estimate_id": "est_c3dfa017-fdbb-485d-ad8f-dd580a688719",
+   "title": "合规问答 / 顾问答复",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "client-advice",
+   "skill_title": "顾问答复",
+   "skill_version": "1.8.0",
+   "skill_primary_output": "顾问答复.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "question": "新加坡母公司要求我们从 2026 年 12 月 1 日起把全体员工的人事数据迁到集团 OneHR 平台（服务器在新加坡），2027 年 1 月 1 日上线。这需要申报数据出境安全评估、签标准合同，还是可以直接传？除此之外还要做哪些合规动作？能不能按原计划时间上线？",
+    "background": "公司不是关键信息基础设施运营者；在职 2,340 人（含劳务派遣 235 人）；人力资源部已发了内部规定并在员工手册签收单里加了同意条款。"
+   }
+  },
+  "budget_points": 25,
+  "points_reserved": 25,
+  "points_charged": 0,
+  "estimate_id": "est_c3dfa017-fdbb-485d-ad8f-dd580a688719",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:20.748Z",
+  "updated_at": "2026-11-10T07:43:00.158Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

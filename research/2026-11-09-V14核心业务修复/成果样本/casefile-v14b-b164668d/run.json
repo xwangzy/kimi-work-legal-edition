@@ -1,0 +1,129 @@
+{
+ "run": {
+  "run_id": "run_b164668d-ad78-4ba8-8e95-b86088a48553",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_43a46456-b5ef-419c-aa33-fdda63329ba9",
+  "scenario": "s2.case_file",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 3,
+  "idempotency_key": "mat_43a46456-b5ef-419c-aa33-fdda63329ba9-s2.case_file-1794209832460",
+  "input_snapshot": {
+   "matter_id": "mat_43a46456-b5ef-419c-aa33-fdda63329ba9",
+   "scenario": "s2.case_file",
+   "document_version_ids": [
+    "docv_200e9152-9672-42f4-b1b3-65002c834f89",
+    "docv_77a6f126-8953-461b-9bca-37d6242639ad",
+    "docv_742a9646-a2bf-46e0-afbb-38919eec7e20",
+    "docv_3a4a068a-cdca-4239-a13b-b5f7a931f928",
+    "docv_5db1f54b-ebad-441a-afda-f2b3bc401c69",
+    "docv_efe4669f-98f8-4c31-af48-a0456dc6f6e1",
+    "docv_2f69c55f-cbc8-449d-b637-55ad042402bb",
+    "docv_6285a24f-8314-4e65-b80b-04127bbd1b08"
+   ],
+   "issues": [
+    "验收款余额31万元是否到期",
+    "质保金13.5万元是否到期",
+    "禾丰质量异议是否成立"
+   ],
+   "estimate_id": "est_5bc513f2-5cf3-418d-ab46-dafad0668753",
+   "title": "整理案卷"
+  },
+  "budget_points": 0,
+  "points_reserved": 0,
+  "points_charged": 0,
+  "estimate_id": "est_5bc513f2-5cf3-418d-ab46-dafad0668753",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T07:37:12.464Z",
+  "updated_at": "2026-11-09T07:37:12.495Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_e8447680-7bd9-4f83-bba5-d4cd0c483a76",
+   "kind": "s2_catalog",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-2026-11-09.xlsx",
+   "sha256": "d264a9fee7fbc7613c2d054250ffdeb3c4718e49d0445cf81127b6923a3f0bb6",
+   "created_at": "2026-11-09T07:37:12.491Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_fea06155-dece-4ff7-8ba2-ae818891a047",
+   "kind": "s2_timeline",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "事实时间轴-2026-11-09.xlsx",
+   "sha256": "55c0a1eba32c9abcfa63161d805b26e7846da8f4093aa42859e7dbdb3446b9f2",
+   "created_at": "2026-11-09T07:37:12.492Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_6bfa4122-59f6-4602-83b1-ffb2427c59cf",
+   "kind": "s2_evidence_catalog",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "证据目录-2026-11-09.xlsx",
+   "sha256": "d4951239a675ae2c247c372d644670a94ea427c0a6805080a0c35b424c91a2a7",
+   "created_at": "2026-11-09T07:37:12.493Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_cd48a2e0-cd86-427e-88f1-71ad6dccc190",
+   "kind": "s2_matrix",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点证据矩阵-2026-11-09.xlsx",
+   "sha256": "16d6c49ad211f700c91659d26d0609adc19597f4533e7cba01bc959c5f1103fc",
+   "created_at": "2026-11-09T07:37:12.493Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_5684d91d-bd78-4017-bea5-c10caca2fd29",
+   "kind": "s2_supplement",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "补证清单-2026-11-09.docx",
+   "sha256": "204da558108fd2a63597c77a7cae6a8e77d9ed5e3bd24dc01f95fa7f16058fb7",
+   "created_at": "2026-11-09T07:37:12.494Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_dcfb68a4-fd51-466b-9fd5-0cf781f7677b",
+   "kind": "s2_quality_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "材料质量报告-2026-11-09.docx",
+   "sha256": "feefbe15d46cdf6155836aa9e1394c8b9b252f5ae9bac9263c321e54af607b8d",
+   "created_at": "2026-11-09T07:37:12.494Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

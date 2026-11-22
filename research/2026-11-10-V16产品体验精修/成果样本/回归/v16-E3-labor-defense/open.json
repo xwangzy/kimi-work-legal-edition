@@ -1,0 +1,40 @@
+{
+ "stack": "w2",
+ "tag": "v16-E3-labor-defense",
+ "run": "run_dfe0028a-159a-44a1-97cd-7a37d432ae11",
+ "status": "succeeded",
+ "open": {
+  "v1-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-提交前核对清单-棠奕精密劳动争议.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v1-提交前核对清单-苏州棠奕精密制造有限公司劳动争议.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-证据目录-棠奕精密劳动争议.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-证据目录-苏州棠奕精密制造有限公司劳动争议.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-提交前核对清单-苏州棠奕精密制造有限公司劳动争议.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v3-劳动仲裁答辩书.docx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

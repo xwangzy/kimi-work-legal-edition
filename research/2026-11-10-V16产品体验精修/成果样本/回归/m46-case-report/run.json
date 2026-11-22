@@ -1,0 +1,56 @@
+{
+ "run": {
+  "run_id": "run_2d64cb9e-1bb9-4306-b1c6-8b0ce6e47994",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_932cb144-e544-40c6-86a0-d0caa40a7a31",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_932cb144-e544-40c6-86a0-d0caa40a7a31-a1.agent_task-1794280748352",
+  "input_snapshot": {
+   "matter_id": "mat_932cb144-e544-40c6-86a0-d0caa40a7a31",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_a6078148-6734-4486-be14-efcfbe27f997",
+    "docv_21c8e54f-b9a0-4b9d-9c1c-689c24d67ffa",
+    "docv_e80c10a3-55cb-4e59-9922-9ddaa56f3be2"
+   ],
+   "goal": "请撰写案件进展汇报，汇报对象：管理层；截至：2026-11-09。\n周三总经理办公会要听鸿岫案，一页纸。法院让 11 月 30 日前答复调解，这件事要管理层定。别写胜诉率。",
+   "estimate_id": "est_09bb3b6a-9acf-4dff-852f-ddb54a5bf47e",
+   "title": "重大案件进展汇报",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "case-report",
+   "skill_title": "案件进展汇报",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "案件进展汇报.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "audience": "管理层",
+    "as_of": "2026-11-09"
+   }
+  },
+  "budget_points": 35,
+  "points_reserved": 35,
+  "points_charged": 0,
+  "estimate_id": "est_09bb3b6a-9acf-4dff-852f-ddb54a5bf47e",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:08.354Z",
+  "updated_at": "2026-11-10T07:43:00.156Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

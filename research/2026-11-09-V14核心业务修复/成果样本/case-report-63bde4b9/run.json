@@ -1,0 +1,95 @@
+{
+ "run": {
+  "run_id": "run_63bde4b9-dab9-401e-a7c2-f5a4592d5a24",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_c280db50-4a17-47e5-9ea7-383183493443",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_c280db50-4a17-47e5-9ea7-383183493443-a1.agent_task-1794203409959",
+  "input_snapshot": {
+   "matter_id": "mat_c280db50-4a17-47e5-9ea7-383183493443",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_e08f063e-e3bc-4d32-a5a3-41a39f39adbd",
+    "docv_5786bb8e-14d9-4e74-b1dd-20a07fcc64a3",
+    "docv_ec5c3d5a-a637-4d07-b940-28c8ec415594"
+   ],
+   "goal": "请撰写案件进展汇报，汇报对象：管理层；截至：2026-11-09。\n周三总经理办公会要听鸿岫案，一页纸。法院让 11 月 30 日前答复调解，这件事要管理层定。别写胜诉率。",
+   "estimate_id": "est_7061ed9a-9bb6-449e-8f19-279fbd2d2bf3",
+   "title": "重大案件进展汇报",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "case-report",
+   "skill_title": "案件进展汇报",
+   "skill_version": "1.0.0",
+   "skill_primary_output": "案件进展汇报.docx",
+   "skills_sha256": "0hiMTR1ITdyMPrUbutpFNTBlR0NBQ2Z2MEcizRuEosk",
+   "skill_args": {
+    "audience": "管理层",
+    "as_of": "2026-11-09"
+   }
+  },
+  "budget_points": 35,
+  "points_reserved": 35,
+  "points_charged": 35,
+  "estimate_id": "est_7061ed9a-9bb6-449e-8f19-279fbd2d2bf3",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:50:09.962Z",
+  "updated_at": "2026-11-09T07:36:35.205Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_4ee343f7-ddd9-49bc-a259-208e53a43f27",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案件进展汇报-鸿岫案-2026-11-09.docx",
+   "sha256": "60b71b88a7c9a4fbb25300c5c103445b554f3dc4eae5efc03d57dfef7cb202b2",
+   "created_at": "2026-11-09T07:33:22.435Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f87b87d7-9ae7-47d4-acc7-31dcf689b63f",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "进展与风险附表-鸿岫案-2026-11-09.xlsx",
+   "sha256": "2b9375065d1d5c0f6b87bb3c56916f54929bb4158b5d1a85af84aa8c09c241d5",
+   "created_at": "2026-11-09T07:34:34.857Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_58afea48-21a3-4123-9abe-7a86cb831236",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "1becf15dbd014475eb07243f33eb107f96113759a555063f25ee192ed5382ad6",
+   "created_at": "2026-11-09T07:36:35.205Z",
+   "title": "已完整读取全部3份材料，无未读或排除材料。已完成管理层一页汇报及附表，未写胜诉率",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

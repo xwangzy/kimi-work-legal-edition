@@ -1,0 +1,143 @@
+[
+ {
+  "event_id": 214,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81812",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:21:49.412Z"
+ },
+ {
+  "event_id": 215,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:21:49.412Z"
+ },
+ {
+  "event_id": 216,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 3,
+   "loaded": 3,
+   "failed": 0,
+   "files": [
+    {
+     "name": "目标公司章程（摘录）.docx",
+     "chars": 1012,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "股东名册.xlsx",
+     "chars": 465,
+     "quality": [
+      "xlsx_values_only"
+     ]
+    },
+    {
+     "name": "增资协议（签署版）.docx",
+     "chars": 4818,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_8caeaa3c-be38-40df-ac2d-a58e8db5771e",
+     "parse_version_id": "psv_50f58a6e-dc95-4e6d-bed2-ba2bda2ca5a5"
+    },
+    {
+     "document_version_id": "docv_94d1ba8d-f8bc-41b4-bf5c-a77b9d011e67",
+     "parse_version_id": "psv_7710bdf7-ac50-4be1-92b1-116902e2c280"
+    },
+    {
+     "document_version_id": "docv_40a86ad0-880b-472b-b10c-583c41de2f09",
+     "parse_version_id": "psv_f5098a00-43ba-49d5-9cd1-7ed5a96ecb5d"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:21:49.413Z"
+ },
+ {
+  "event_id": 217,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_ee0eaafe-7814-4a57-bab1-14c052bdb5c9_att_281f2c59-00be-4755-84b1-0cacc0bb95a3",
+   "attempt_id": "att_281f2c59-00be-4755-84b1-0cacc0bb95a3"
+  },
+  "created_at": "2026-11-10T03:21:49.908Z"
+ },
+ {
+  "event_id": 218,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_1709c747-f22c-4980-a926-81f0afe887c2",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:21:50.710Z"
+ },
+ {
+  "event_id": 219,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 预扣费额度失败, 用户剩余额度: ¥0.354186, 需要预扣费额度: ¥1.129002 (request id: 202611100321500210098848268d9d6nQvAabuc)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:21:50.711Z"
+ },
+ {
+  "event_id": 220,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 预扣费额度失败, 用户剩余额度: ¥0.354186, 需要预扣费额度: ¥1.129002 (request id: 202611100321500210098848268d9d6nQvAabuc)"
+  },
+  "created_at": "2026-11-10T03:21:50.711Z"
+ },
+ {
+  "event_id": 221,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 预扣费额度失败, 用户剩余额度: ¥0.354186, 需要预扣费额度: ¥1.129002 (request id: 202611100321500210098848268d9d6nQvAabuc)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:21:50.711Z"
+ }
+]

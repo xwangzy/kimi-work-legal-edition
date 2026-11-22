@@ -1,0 +1,36 @@
+{
+  "tag": "v16-E3-labor-response",
+  "card": "labor-response",
+  "veto": [],
+  "score": 22,
+  "tier": "可交付",
+  "status": "已通过",
+  "open_ok": true,
+  "minutes": 33,
+  "questions": 4,
+  "top_issues": [
+    "独立复核所附本机法条原文不全（漏劳动合同法47/48/87、办案规则33/80等，第50条误标无法核对），复核据此误报“核验声明失实”",
+    "提问第3题推荐项主张2024年度年休假时效抗辩，第4题把地方统计数据与调解上限捆在一题",
+    "敞口上限写到170,735.65元，未提示仲裁一般以请求额168,000元为限；本卡未出对外答辩书"
+  ],
+  "prev_score": 19,
+  "v14_score": 16,
+  "product_defect": [
+    "独立复核请求所附法条原文不全，且把主任务已取到原文的办案规则第五十条标为“无法核对”，诱发复核误报",
+    "labor-dispute 提问：一题捆绑两个独立决定（地方统计数据＋调解上限）；推荐项与方案自身判断相反（推荐2024年度时效抗辩）",
+    "“手工计算，请复核”工具提示仍进入内部 Word 与表格（已知 #9 轻度残留）"
+  ],
+  "known_defects_recurring": [9],
+  "new_defects": [
+    "复核请求所附法条原文缺条、误标“无法核对”，导致复核误报",
+    "提问把两个独立决定捆在一题、推荐项与自身分析相反"
+  ],
+  "fix_check": {
+    "1_ask_before_drafting": "已生效（质量部分：捆绑题、推荐项不妥）",
+    "2_two_deadline_bases": "已生效",
+    "3_review_statutes_xlsx_namecode": "部分生效：附了原文但不全；覆盖xlsx；无代号误报",
+    "4_disclaimer_not_in_files": "已生效",
+    "5_fact_n_crosswalk": "不适用（无事实N）",
+    "6_lawyer_answers_followed": "已生效"
+  }
+}

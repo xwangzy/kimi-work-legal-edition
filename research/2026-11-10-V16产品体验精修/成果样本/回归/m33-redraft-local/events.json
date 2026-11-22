@@ -1,0 +1,77 @@
+[
+ {
+  "event_id": 211,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "s1b.draft_compare",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:82048",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:20:17.524Z"
+ },
+ {
+  "event_id": 212,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "整稿比对（含静默改动）",
+    "生成比对报告与差异表",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:20:17.524Z"
+ },
+ {
+  "event_id": 213,
+  "seq": 30,
+  "type": "compare.completed",
+  "payload": {
+   "added": 2,
+   "deleted": 1,
+   "modified": 8,
+   "silent": 6,
+   "tracked": 5,
+   "header_footer_changed": 1,
+   "curHasTrackedChanges": true,
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:20:17.530Z"
+ },
+ {
+  "event_id": 214,
+  "seq": 40,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_ebca566b-7ed5-4228-aa75-a083ee460563",
+   "kind": "s1b_report",
+   "filename": "回稿比对报告-2026-11-10.docx",
+   "sha256": "fc9550ed68d229f7f3ce8511e8b731cbd421f8aa58519da5f98b8e1eaae892c9"
+  },
+  "created_at": "2026-11-10T03:20:17.533Z"
+ },
+ {
+  "event_id": 215,
+  "seq": 41,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_cd87417a-bb11-4a6a-9e71-430fad1b4a32",
+   "kind": "s1b_diff_table",
+   "filename": "回稿差异表-2026-11-10.xlsx",
+   "sha256": "4d2e6ded6fdef544f2c2e565f55cfd2a62ffdc5e7d19a154f9226a84dac211ba"
+  },
+  "created_at": "2026-11-10T03:20:17.536Z"
+ },
+ {
+  "event_id": 216,
+  "seq": 60,
+  "type": "run.succeeded",
+  "payload": {
+   "points_charged": 0
+  },
+  "created_at": "2026-11-10T03:20:17.536Z"
+ }
+]

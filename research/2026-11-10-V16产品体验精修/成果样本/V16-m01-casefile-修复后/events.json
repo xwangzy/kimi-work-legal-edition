@@ -1,0 +1,242 @@
+[
+ {
+  "event_id": 195,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "s2.case_file",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:94254",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T07:22:55.140Z"
+ },
+ {
+  "event_id": 196,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "事实抽取（确定性，锚点入库）",
+    "生成目录/时间轴/矩阵/补证/质量报告",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T07:22:55.140Z"
+ },
+ {
+  "event_id": 197,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 8,
+   "loaded": 8,
+   "failed": 0,
+   "files": [
+    {
+     "name": "08-售后服务记录（3号机）.xlsx",
+     "chars": 469,
+     "quality": [
+      "xlsx_values_only"
+     ]
+    },
+    {
+     "name": "07-微信聊天摘录（韩启明与禾丰周宏亮）.txt",
+     "chars": 862,
+     "quality": [
+      "plain_text"
+     ]
+    },
+    {
+     "name": "06-催款函（2026-08-18）及EMS妥投记录.docx",
+     "chars": 672,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "05-质量异议函（禾丰，2026-07-15）.docx",
+     "chars": 512,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "04-对账确认函（截至2026-06-30，禾丰7月3日盖章）.docx",
+     "chars": 451,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "03-收款记录与开票明细.xlsx",
+     "chars": 664,
+     "quality": [
+      "xlsx_values_only"
+     ]
+    },
+    {
+     "name": "02-送货单、验收单与现场服务确认单.docx",
+     "chars": 1679,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "01-设备买卖合同（RC-XS-2025-118）.docx",
+     "chars": 1894,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_55c538d7-0576-4464-82ba-676f4edd0d9b",
+     "parse_version_id": "psv_e94dc32b-7705-4c48-bdad-e94661aa8592"
+    },
+    {
+     "document_version_id": "docv_59fcdc47-a25b-47e8-bcfa-116baafc9ece",
+     "parse_version_id": "psv_e78a037f-593c-4483-8307-f729d2afa364"
+    },
+    {
+     "document_version_id": "docv_d15f9d9c-c4a9-4559-9442-543ae3f5289d",
+     "parse_version_id": "psv_025d03e8-9fa3-4587-bf1d-0ba95ed76ba1"
+    },
+    {
+     "document_version_id": "docv_31e07f4d-0d57-4639-b18b-d55ccd9723f0",
+     "parse_version_id": "psv_ab6ce3ff-67cd-4511-a576-6d240d794661"
+    },
+    {
+     "document_version_id": "docv_8a96eb36-9e5e-4215-9038-67db3d375a25",
+     "parse_version_id": "psv_b506a58d-b7b8-4966-a27b-1d8758d00249"
+    },
+    {
+     "document_version_id": "docv_159c2997-c811-4483-b1c3-93d16b3171d2",
+     "parse_version_id": "psv_41841fdc-b5ab-4f56-b285-ac8899c4b599"
+    },
+    {
+     "document_version_id": "docv_02239331-1870-4f86-ace5-e3ec238fdbed",
+     "parse_version_id": "psv_13cdd130-48c5-4539-ae5d-aa7f57b1e16c"
+    },
+    {
+     "document_version_id": "docv_7180c743-f6fe-444e-a4f1-b2d1303182fa",
+     "parse_version_id": "psv_80a77812-e186-40e1-84f7-5caeb0531cf6"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T07:22:55.141Z"
+ },
+ {
+  "event_id": 198,
+  "seq": 30,
+  "type": "facts.extracted",
+  "payload": {
+   "dates": 77,
+   "amounts": 11,
+   "parties": 0,
+   "anchors_persisted": 88,
+   "facts_submitted": 68,
+   "note": "类型标签均为材料记载，已放进事实表待你确认；推断与证明力由律师完成",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T07:22:55.150Z"
+ },
+ {
+  "event_id": 199,
+  "seq": 40,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_eb14cf23-ccbf-41b6-8eb4-32ce82134a0b",
+   "kind": "s2_catalog",
+   "filename": "案卷总目录-2026-11-10.xlsx",
+   "sha256": "d264a9fee7fbc7613c2d054250ffdeb3c4718e49d0445cf81127b6923a3f0bb6"
+  },
+  "created_at": "2026-11-10T07:22:55.157Z"
+ },
+ {
+  "event_id": 200,
+  "seq": 41,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_d337d4f9-432e-4f11-b16a-9314a663546d",
+   "kind": "s2_timeline",
+   "filename": "事实时间轴-2026-11-10.xlsx",
+   "sha256": "d571a5c8de822da709f508125b7e0168c704531705a347a46df8dcb28f9b9c65"
+  },
+  "created_at": "2026-11-10T07:22:55.158Z"
+ },
+ {
+  "event_id": 201,
+  "seq": 42,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_2daf2525-5629-41a1-8a6f-ca0f71557724",
+   "kind": "s2_evidence_catalog",
+   "filename": "证据目录-2026-11-10.xlsx",
+   "sha256": "d4951239a675ae2c247c372d644670a94ea427c0a6805080a0c35b424c91a2a7"
+  },
+  "created_at": "2026-11-10T07:22:55.159Z"
+ },
+ {
+  "event_id": 202,
+  "seq": 43,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_6952949f-5444-4b9a-9c8b-9edfc5d92e01",
+   "kind": "s2_matrix",
+   "filename": "争点证据矩阵-2026-11-10.xlsx",
+   "sha256": "29271fe580e0751c92edb8e484cdbc344db60611f82d525ff46cde6883f41b15"
+  },
+  "created_at": "2026-11-10T07:22:55.159Z"
+ },
+ {
+  "event_id": 203,
+  "seq": 44,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_200ab93a-d4df-473e-bb1b-574856d48e3a",
+   "kind": "s2_supplement",
+   "filename": "补证清单-2026-11-10.docx",
+   "sha256": "5a0773631fb0877cc769a42eee89ca485c68aa6ab18166d75f35d9f73fb59776"
+  },
+  "created_at": "2026-11-10T07:22:55.160Z"
+ },
+ {
+  "event_id": 204,
+  "seq": 45,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_bdaf1e1b-16ac-439c-bb67-f41dabcb14ad",
+   "kind": "s2_quality_report",
+   "filename": "材料质量报告-2026-11-10.docx",
+   "sha256": "74ac4c111913f240a39dee86d6cce2bbc08ec32f22632747e0b20e2ada219297"
+  },
+  "created_at": "2026-11-10T07:22:55.160Z"
+ },
+ {
+  "event_id": 205,
+  "seq": 60,
+  "type": "run.succeeded",
+  "payload": {
+   "points_charged": 0
+  },
+  "created_at": "2026-11-10T07:22:55.160Z"
+ }
+]

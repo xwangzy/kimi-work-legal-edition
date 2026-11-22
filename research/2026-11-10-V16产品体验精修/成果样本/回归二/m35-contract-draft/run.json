@@ -1,0 +1,170 @@
+{
+ "run": {
+  "run_id": "run_b827bf72-a66f-40b1-8abd-5bab49372bb9",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_7ed53b69-e184-44fd-a1a2-a367e3f8925c",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_7ed53b69-e184-44fd-a1a2-a367e3f8925c-a1.agent_task-1794300250845",
+  "input_snapshot": {
+   "matter_id": "mat_7ed53b69-e184-44fd-a1a2-a367e3f8925c",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "请起草一份其他（通用辅助）合同，我方立场以事项为准；交易要点：起草《专利权转让协议》，作为增资交割先决条件。转让方：祁暮川（栖桐科技董事长）；受让方：杭州栖桐智能科技有限公司。标的：发明专利“一种基于多光谱成像的焊缝缺陷检测方法”，专利号 ZL202110347256.X，申请日 2021-03-15，授权日 2023-06-20，专利权人祁暮川。无偿转让。转让方 2023 年 7 月 1 日曾许可栖桐科技无偿使用（普通许可），另许可杭州澄岳电子有限公司使用，许可合同未提供。转让方配合办理国家知识产权局著录项目变更登记，登记费用由受让方承担。投资方澜屹创投要求：转让方保证专利有效、无质押、无权属争议；澄岳电子的许可须在交割前终止；转让方承诺不再就该技术申请新专利。签署日期待定。\n这份协议是增资的交割文件，我们站在受让方（目标公司）和投资方一边写。没给的信息列待定事项，别编。",
+   "estimate_id": "est_d2c5d536-07c0-4b62-b08a-8e2c54bcdbdd",
+   "title": "起草合同",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "contract-draft",
+   "skill_title": "起草合同 · 试用",
+   "skill_version": "1.8.0",
+   "skill_primary_output": "合同草稿.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "type": "其他（通用辅助）",
+    "points": "起草《专利权转让协议》，作为增资交割先决条件。转让方：祁暮川（栖桐科技董事长）；受让方：杭州栖桐智能科技有限公司。标的：发明专利“一种基于多光谱成像的焊缝缺陷检测方法”，专利号 ZL202110347256.X，申请日 2021-03-15，授权日 2023-06-20，专利权人祁暮川。无偿转让。转让方 2023 年 7 月 1 日曾许可栖桐科技无偿使用（普通许可），另许可杭州澄岳电子有限公司使用，许可合同未提供。转让方配合办理国家知识产权局著录项目变更登记，登记费用由受让方承担。投资方澜屹创投要求：转让方保证专利有效、无质押、无权属争议；澄岳电子的许可须在交割前终止；转让方承诺不再就该技术申"
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 20,
+  "estimate_id": "est_d2c5d536-07c0-4b62-b08a-8e2c54bcdbdd",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:44:10.847Z",
+  "updated_at": "2026-11-10T10:06:56.686Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_79153e3d-4009-488f-9abf-61891cc8bc3b",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "专利权转让协议.docx",
+   "sha256": "89e03b5da99dbdb089e1f55e8618f34cc543527f70d75e8a18705c4267e5915a",
+   "created_at": "2026-11-10T09:57:57.158Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_93b7da1e-64d1-44d8-99d9-c1c9cf289e80",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-专利权转让协议.docx",
+   "sha256": "5cf0b083156667e4cea10eb7c3d1aab67ab52d63889f1225761698609098b9a8",
+   "created_at": "2026-11-10T10:00:46.236Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_8b9b5b71-e10d-4fcf-ba53-25a68596eea2",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "专利权转让协议.docx",
+   "sha256": "39d897566abb8bb7d6d729c6cc60831ed700bca6cc92d4c486b2eee6bf1ccb6f",
+   "created_at": "2026-11-10T10:02:23.022Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_27e705e0-865f-4906-b0dc-642b10b4fa79",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-专利权转让协议.docx",
+   "sha256": "663d62bfcbc56cc5f67b590178b3030eff45b741010c96aa4febdc485a3df6a6",
+   "created_at": "2026-11-10T10:02:23.051Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_3bcad1c8-a43c-432b-ba04-9c2a8955d99d",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "起草说明与待定事项-专利权转让协议.docx",
+   "sha256": "80fd145f3dfcc5895553f00f1bade4a304991b4d12f9dad5780bb461e401abe4",
+   "created_at": "2026-11-10T10:03:26.557Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_bc976379-51bf-4533-a9e6-0ad9c09000be",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "32678fa7062d642a3c2f6d9de42744f6a38e717ffcdfdaf068386b391b8e1834",
+   "created_at": "2026-11-10T10:04:11.520Z",
+   "title": "事项目录共列示 12 份材料，本次完整读取其中 6 份相关文件，其余 6 份与本",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_43226ded-03f4-4e13-9271-342986c58bf6",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-专利权转让协议.md",
+   "sha256": "2331fe5ec1ecda18173577a52e89d26115b75b328200084b440d74bb67021c83",
+   "created_at": "2026-11-10T10:05:49.288Z",
+   "title": "独立复核意见：专利权转让协议",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_adddb8b3-c09c-4992-85ac-92b6e0f17a8f",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "专利权转让协议.docx",
+   "sha256": "a612accec66eb7565bd82146c20d2b8b5a54ce3d0d2205a8122c411d7d3b9d06",
+   "created_at": "2026-11-10T10:06:29.536Z",
+   "title": null,
+   "kind_version": 6,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_d34f0d29-f7df-4753-9f44-3f79dd1e253b",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "e17cee3972c7a03863c530f137ce159540d6515d8419d0891b65751344b9fc92",
+   "created_at": "2026-11-10T10:06:56.686Z",
+   "title": "事项目录共列示 12 份材料，本次完整读取其中 6 份相关文件，其余 6 份与本",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

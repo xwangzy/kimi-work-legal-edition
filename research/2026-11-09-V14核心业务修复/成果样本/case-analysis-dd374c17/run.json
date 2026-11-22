@@ -1,0 +1,153 @@
+{
+ "run": {
+  "run_id": "run_dd374c17-5ddc-4fc3-a3b6-cc17f08c051b",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_8976f4ef-4f58-4da8-874e-11485bea962d",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_8976f4ef-4f58-4da8-874e-11485bea962d-a1.agent_task-1794201311609",
+  "input_snapshot": {
+   "matter_id": "mat_8976f4ef-4f58-4da8-874e-11485bea962d",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_c3299dc7-3f90-4b77-b713-bfc7e097673f",
+    "docv_828f9504-d9c3-4913-8781-0dd462053654",
+    "docv_acf71cf4-89b1-4e45-93da-b24c83c3eae8",
+    "docv_30dcc439-de74-455c-ac43-c9aacc8e8036",
+    "docv_6bff2328-0576-4aeb-afdd-1c4b55e2baec",
+    "docv_00373c66-824a-4eda-a3a8-2d0e680ccfb0",
+    "docv_6430913c-c952-4e54-b9fd-0d3a91ae46a0",
+    "docv_129dd281-559b-405b-bdfb-e3c3c5e72296",
+    "docv_b555b29b-a3ac-4aac-b48d-ea368031f9af"
+   ],
+   "goal": "请分析案情并提出诉讼策略建议：我方目标为追回尾款及质保金共44.5万元，并主张违约金和律师费；我方地位：尚未起诉（我方拟起诉）。未确认的事实请标出，不评估胜诉率。\n客户很急，担心禾丰明年初搬去安徽。请给出起诉时点、保全和是否先发律师函的建议，内部稿即可。",
+   "estimate_id": "est_44395372-ab3c-467f-8b10-2dd8b9621f36",
+   "title": "案情分析与诉讼策略",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "case-analysis",
+   "skill_title": "案情分析与诉讼策略（内部稿）",
+   "skill_version": "1.2.2",
+   "skill_primary_output": "案情分析备忘录（内部稿）.docx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "goal": "追回尾款及质保金共44.5万元，并主张违约金和律师费",
+    "side": "尚未起诉（我方拟起诉）"
+   }
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_44395372-ab3c-467f-8b10-2dd8b9621f36",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:15:11.612Z",
+  "updated_at": "2026-11-09T05:44:53.666Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_6857405c-4c7a-44ff-b4bd-e15b47b368cb",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案情分析备忘录（内部稿）-锐川诉禾丰设备款.docx",
+   "sha256": "a53e3ed764c626e6d814510f28fc8c2b26ae86c7f3935f14f6790189c03380f4",
+   "created_at": "2026-11-09T05:34:11.216Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_1ddccdb6-5c08-47a2-830f-61ad0000ce74",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点与风险表-锐川诉禾丰设备款.xlsx",
+   "sha256": "47870c422edc84f2a70f65863fe38aa203e163c791cd2cc91c66a3f942733acf",
+   "created_at": "2026-11-09T05:35:08.460Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d4d62d3f-72b1-4064-a107-223f1ca26be8",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "f6752a4307172f9a42173bcf20104717cb6103096be2716b1f72a17a179de4e6",
+   "created_at": "2026-11-09T05:36:46.325Z",
+   "title": "已完成。九份材料均已完整读取，无未读或部分读取材料；未确认事实、证据缺口及两处材",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_43e09133-1673-4d4b-917e-b7bb01660b0f",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-案情分析备忘录（内部稿）-锐川诉禾丰设备款.md",
+   "sha256": "4d2d213d766b40db028fff6b51160b8db876dae1b6942514b18d56a3d177d147",
+   "created_at": "2026-11-09T05:38:41.773Z",
+   "title": "独立复核意见：案情分析备忘录（内部稿）-锐川诉禾丰设备款",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_0f8cdba2-7d01-48fe-b746-eb3570a6ab26",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案情分析备忘录（内部稿）-锐川诉禾丰设备款.docx",
+   "sha256": "8fdb3f6681b8ac0e775dfecc6bfda5eb77f16c44eafa5f98cfb3d71cb0c38352",
+   "created_at": "2026-11-09T05:42:37.035Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_aa1b190c-f8f9-45b0-9fbd-47b827e166bb",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "争点与风险表-锐川诉禾丰设备款.xlsx",
+   "sha256": "cc8d102c0e9e825af8a28bac64dc6ccc5d47a6a79025994aa22a8841a1796656",
+   "created_at": "2026-11-09T05:43:32.086Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_0cd40bcd-d26d-4980-bbca-8e063712f05e",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "27ea5eb62e673b976269b92ffbdb7b0b8f8a1c769c48d205aed124a80f0fc7aa",
+   "created_at": "2026-11-09T05:44:53.665Z",
+   "title": "已完成独立复核并更新交付件。九份材料均已完整读取，两份文件均通过交付前检查，未评",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

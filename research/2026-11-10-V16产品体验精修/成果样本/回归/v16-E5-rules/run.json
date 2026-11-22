@@ -1,0 +1,68 @@
+{
+ "run": {
+  "run_id": "run_68655508-c7e1-4086-8a94-8150d59f4bdc",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_c8def705-8f92-48a1-a445-1ab431c1fd78",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 10,
+  "idempotency_key": "mat_c8def705-8f92-48a1-a445-1ab431c1fd78-a1.agent_task-1794280698458",
+  "input_snapshot": {
+   "matter_id": "mat_c8def705-8f92-48a1-a445-1ab431c1fd78",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_f779f3b2-3d0b-4b5f-bf19-6d07a7da3a4d",
+    "docv_112160e5-dbb5-4d42-8a7d-3b9fe5825898"
+   ],
+   "goal": "请从公司的范本与标准里整理本事项的审查要点草稿：每条写条款、我方标准、可退让、不可谈，并写明出处。范本是：公司销售合同范本（KM-FB-SALES-2026V2）与销售合同审核标准（2026年9月）。",
+   "estimate_id": "est_d38d8453-d45c-4ba9-8de7-fcf08011e21a",
+   "title": "从公司范本整理审核标准",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "review-rules-draft",
+   "skill_title": "从范本整理审查要点",
+   "skill_version": "1.1.0",
+   "skill_primary_output": "审查要点草稿（待你审定）",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "basis": "公司销售合同范本（KM-FB-SALES-2026V2）与销售合同审核标准（2026年9月）"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_d38d8453-d45c-4ba9-8de7-fcf08011e21a",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:18:18.459Z",
+  "updated_at": "2026-11-10T07:27:27.856Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_105fc640-3d24-47be-a40d-9ee112a00879",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "c56d594fb406323dbcd270dfdcdcd900c7efd471621db195b1eccdec214f6d44",
+   "created_at": "2026-11-10T07:27:27.853Z",
+   "title": "已收到并完整读取两份材料，无未读或排除范围。现已整理并提交 16条公司销售合同审",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

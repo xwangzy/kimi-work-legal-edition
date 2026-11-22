@@ -1,0 +1,73 @@
+{
+ "run": {
+  "run_id": "run_ce085eee-a627-435b-b54c-b6b4d7b49f5d",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_ba77f522-bdef-4881-9c19-08fc8d0cff74",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "run_5c524bcd-a762-427c-8728-7d3b85417114-followup-1794205568637",
+  "input_snapshot": {
+   "matter_id": "mat_ba77f522-bdef-4881-9c19-08fc8d0cff74",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_f7235501-469a-44b8-93ee-30933cae6b39",
+    "docv_75611b88-6d5b-44a1-b3df-c646ff1d9e6e"
+   ],
+   "goal": "客户顾总说上诉状太长，法官不爱看。请在不改变上诉请求和事实的前提下，把上诉理由压缩到两页以内，另出一版 Word，原来那版保留。压缩时哪些论点删了、为什么删，在答复里列出来。",
+   "estimate_id": "est_d223e9a2-1a50-4612-bdd1-68cd66685a55",
+   "run_options": {
+    "mode": "default",
+    "plan_first": false,
+    "preauthorized": []
+   },
+   "followup_of": "run_5c524bcd-a762-427c-8728-7d3b85417114",
+   "continue_session_id": "session_742c459b-7dd5-4fa9-b1c8-b54cfd25e360"
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_d223e9a2-1a50-4612-bdd1-68cd66685a55",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T06:26:08.639Z",
+  "updated_at": "2026-11-09T07:04:36.331Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_7b513cbf-c047-4bf7-93b7-09b984e10495",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "民事上诉状.docx",
+   "sha256": "ae8f1f2ab2ee707a52660a38ae388c7cdb51ff188d789eac8f2d78b7defeac36",
+   "created_at": "2026-11-09T07:03:42.600Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_d07de7bb-02b6-4845-8136-3680adbe3e13",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "8345eeeb5d54557e643fb5ed41a4d1bb48ac20a51ccfefe5c74a9a0d056d90eb",
+   "created_at": "2026-11-09T07:04:36.331Z",
+   "title": "上诉期届满日仍为 2026年11月19日。本轮无新增材料，继续依据已完整读取的一",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

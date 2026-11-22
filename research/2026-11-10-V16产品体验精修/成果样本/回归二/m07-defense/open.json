@@ -1,0 +1,36 @@
+{
+ "stack": "w3",
+ "tag": "m07-defense",
+ "run": "run_590f6ecd-9051-4394-90ad-825b88cefa5f",
+ "status": "succeeded",
+ "open": {
+  "v1-提交前核对清单-禾丰诉锐川.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v1-民事答辩状.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-答辩要点与证据对照表-禾丰诉锐川.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-计算明细-禾丰诉锐川-截至2026-11-10.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-提交前核对清单-禾丰诉锐川.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-民事答辩状.docx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-计算明细-禾丰诉锐川-截至2026-11-10.xlsx": {
+   "opened": true,
+   "pages": 5
+  }
+ }
+}

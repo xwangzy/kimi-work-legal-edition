@@ -1,0 +1,16 @@
+{
+ "stack": "w1",
+ "tag": "v16-D2-review",
+ "run": "run_e9bb5ac9-26b7-45cd-9a82-2374b649bcda",
+ "status": "partial",
+ "open": {
+  "v1-审查意见书（内部稿）-冷链智能分拣系统采购与实施合同.docx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v1-问题清单-冷链智能分拣系统采购与实施合同.xlsx": {
+   "opened": true,
+   "pages": 10
+  }
+ }
+}

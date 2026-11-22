@@ -1,0 +1,209 @@
+[
+ {
+  "event_id": 226,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:81810",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T03:20:49.633Z"
+ },
+ {
+  "event_id": 227,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T03:20:49.633Z"
+ },
+ {
+  "event_id": 228,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 8,
+   "loaded": 8,
+   "failed": 0,
+   "files": [
+    {
+     "name": "08-售后服务记录（3号机）.xlsx",
+     "chars": 469,
+     "quality": [
+      "xlsx_values_only"
+     ]
+    },
+    {
+     "name": "07-微信聊天摘录（韩启明与禾丰周宏亮）.txt",
+     "chars": 862,
+     "quality": [
+      "plain_text"
+     ]
+    },
+    {
+     "name": "05-质量异议函（禾丰，2026-07-15）.docx",
+     "chars": 512,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "02-送货单、验收单与现场服务确认单.docx",
+     "chars": 1679,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "01-设备买卖合同（RC-XS-2025-118）.docx",
+     "chars": 1894,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "03-应诉通知书、举证通知书、传票与送达回证.docx",
+     "chars": 971,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "02-原告证据清单及证据摘录.docx",
+     "chars": 1206,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "01-民事起诉状（禾丰诉锐川，南湖法院）.docx",
+     "chars": 1028,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_5a9b7fc7-5f74-435c-80ed-db5bca8627bc",
+     "parse_version_id": "psv_b90654e5-a635-4a1e-b35b-ab7e20ac1c74"
+    },
+    {
+     "document_version_id": "docv_31525bd7-7ef6-4ba1-859c-8f5ab7cf111d",
+     "parse_version_id": "psv_aa559bf6-b31f-41f3-905d-8232e7d957b1"
+    },
+    {
+     "document_version_id": "docv_41faba23-a184-481a-83c2-218aaaf0571c",
+     "parse_version_id": "psv_3f789762-37e7-406d-86d3-7f747c15fe24"
+    },
+    {
+     "document_version_id": "docv_06d1e5c3-dc60-4ced-9129-8331f6f48ad9",
+     "parse_version_id": "psv_a2da0d0c-e8ab-417c-ad72-71fe2534d5f2"
+    },
+    {
+     "document_version_id": "docv_a937cc91-aae1-49cf-9707-83cb2afc7caf",
+     "parse_version_id": "psv_f147ba10-4dc3-47bc-af3a-509f6f201017"
+    },
+    {
+     "document_version_id": "docv_74f052b8-db2a-49cd-a5bb-c2f07ac35a19",
+     "parse_version_id": "psv_f21bfb64-cfbd-4c26-a1d7-1084d83102cc"
+    },
+    {
+     "document_version_id": "docv_d7a4df35-caa9-4ad5-8687-badf7dead951",
+     "parse_version_id": "psv_d46430fb-189b-458b-9f10-f269afa0b0ef"
+    },
+    {
+     "document_version_id": "docv_0a8f4acb-5e6e-4220-80ff-1dc1d3e2fae6",
+     "parse_version_id": "psv_e5973f26-81aa-4501-8daf-9cf75fb4c385"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T03:20:49.634Z"
+ },
+ {
+  "event_id": 229,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_c25cfdbc-db0a-4950-8bb2-67ae87106fc2_att_327b03dd-56b1-4ec6-bc43-6a4b5461c10b",
+   "attempt_id": "att_327b03dd-56b1-4ec6-bc43-6a4b5461c10b"
+  },
+  "created_at": "2026-11-10T03:20:50.111Z"
+ },
+ {
+  "event_id": 230,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_4496fa20-17c2-47ae-bb48-1db1a5b67cb5",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-10T03:20:50.913Z"
+ },
+ {
+  "event_id": 231,
+  "seq": 10004,
+  "type": "agent.error",
+  "payload": {
+   "code": "provider.auth_error",
+   "message": "403 预扣费额度失败, 用户剩余额度: ¥0.058280, 需要预扣费额度: ¥1.128742 (request id: 202611100320501875888148268d9d6ljdhHPsO)",
+   "retryable": false
+  },
+  "created_at": "2026-11-10T03:20:50.914Z"
+ },
+ {
+  "event_id": 232,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "failed",
+   "reason": "host_reported_failure",
+   "remaining": [],
+   "artifacts": [],
+   "error": "403 预扣费额度失败, 用户剩余额度: ¥0.058280, 需要预扣费额度: ¥1.128742 (request id: 202611100320501875888148268d9d6ljdhHPsO)"
+  },
+  "created_at": "2026-11-10T03:20:50.914Z"
+ },
+ {
+  "event_id": 233,
+  "seq": 90,
+  "type": "run.failed",
+  "payload": {
+   "error": "任务没有完成：403 预扣费额度失败, 用户剩余额度: ¥0.058280, 需要预扣费额度: ¥1.128742 (request id: 202611100320501875888148268d9d6ljdhHPsO)；可以点“重新运行”",
+   "note": "保留已完成且可验证的部分；失败不重复扣点（§2.6）"
+  },
+  "created_at": "2026-11-10T03:20:50.914Z"
+ }
+]

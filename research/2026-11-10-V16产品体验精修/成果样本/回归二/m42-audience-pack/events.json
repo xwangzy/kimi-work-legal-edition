@@ -1,0 +1,92 @@
+[
+ {
+  "event_id": 1027,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "s6.redaction",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:10723",
+   "where": "本机"
+  },
+  "created_at": "2026-11-10T09:48:58.766Z"
+ },
+ {
+  "event_id": 1028,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "确定性脱敏",
+    "生成脱敏件与报告",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-10T09:48:58.766Z"
+ },
+ {
+  "event_id": 1029,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 1,
+   "loaded": 1,
+   "failed": 0,
+   "files": [
+    {
+     "name": "门店收银系统维保服务合同（签署版·含账户与联系人信息）.docx",
+     "chars": 1217,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "list_numbers_rendered",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_db480055-fc57-46f4-986c-0ee8b1d39399",
+     "parse_version_id": "psv_e7f07f0f-6dc4-45f5-a567-96a73f479f78"
+    }
+   ]
+  },
+  "created_at": "2026-11-10T09:48:58.767Z"
+ },
+ {
+  "event_id": 1030,
+  "seq": 40,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_1e5d3fc5-ef87-48e4-b577-9584bd00b74c",
+   "kind": "s6_redacted",
+   "filename": "脱敏件-门店收银系统维保服务合同（签署版·含账户与联系人信息）.docx",
+   "sha256": "d9d524234dc7ab7c2444d3666680915fbfe40479435e97e556345cc8997c7b54"
+  },
+  "created_at": "2026-11-10T09:48:58.780Z"
+ },
+ {
+  "event_id": 1031,
+  "seq": 68,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_a00d1974-885c-43d8-be6d-3d4c69d86f21",
+   "kind": "s6_report",
+   "filename": "脱敏报告-2026-11-10.docx",
+   "sha256": "29474139a55e6067939fc7565bf0015b844eab648a059be7165b6db486af723e"
+  },
+  "created_at": "2026-11-10T09:48:58.781Z"
+ },
+ {
+  "event_id": 1032,
+  "seq": 60,
+  "type": "run.succeeded",
+  "payload": {
+   "points_charged": 0
+  },
+  "created_at": "2026-11-10T09:48:58.781Z"
+ }
+]

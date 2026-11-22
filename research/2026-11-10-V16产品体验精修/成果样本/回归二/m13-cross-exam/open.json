@@ -1,0 +1,32 @@
+{
+ "stack": "w4",
+ "tag": "m13-cross-exam",
+ "run": "run_6dce5fc5-640e-4e28-981f-e06a55e99fff",
+ "status": "succeeded",
+ "open": {
+  "v1-质证意见.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-质证意见表-禾丰诉锐川设备质量纠纷.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v2-质证意见.docx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v2-质证意见表-禾丰诉锐川设备质量纠纷.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v3-质证意见表-禾丰诉锐川设备质量纠纷.xlsx": {
+   "opened": true,
+   "pages": 6
+  },
+  "v4-质证意见表-禾丰诉锐川设备质量纠纷.xlsx": {
+   "opened": true,
+   "pages": 6
+  }
+ }
+}

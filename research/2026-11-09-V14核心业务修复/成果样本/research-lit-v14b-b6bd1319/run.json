@@ -1,0 +1,144 @@
+{
+ "run": {
+  "run_id": "run_b6bd1319-5596-42c5-a10d-ed5d664c0eae",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_a039f30f-24a7-48d9-bdfa-7b638c572683",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_a039f30f-24a7-48d9-bdfa-7b638c572683-a1.agent_task-1794209248115",
+  "input_snapshot": {
+   "matter_id": "mat_a039f30f-24a7-48d9-bdfa-7b638c572683",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [],
+   "goal": "研究问题：买卖合同约定买方到货后15日内验收、质保期自验收合格起12个月。买方验收合格约8个月后，以设备产能不达标为由书面提出质量异议，要求减价30%并暂停支付已到期货款。请研究：（1）约定检验期限与质量保证期如何区分适用；（2）买方能否以质保期内出现的质量问题拒付或抵扣已到期货款；（3）买方在对账函上确认欠款并注明“设备问题另行协商”，对其质量异议有何影响。事件发生时点：合同2025年9月签订，2025年11月验收，2026年7月提出异议。\n我方代理卖方。只做法规研究，不用找案例；结论有争议的地方请写明不同观点。",
+   "estimate_id": "est_a94c9cd2-eaf2-486a-b234-9bc08818d010",
+   "title": "法规研究备忘录",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "legal-research-memo",
+   "skill_title": "法律研究备忘录",
+   "skill_version": "1.5.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "研究备忘录.docx",
+   "skills_sha256": "wi-2chN4vxIfCKnY5fUTUZqtBPjBSy9EFeAXFWRM11A",
+   "skill_args": {
+    "question": "买卖合同约定买方到货后15日内验收、质保期自验收合格起12个月。买方验收合格约8个月后，以设备产能不达标为由书面提出质量异议，要求减价30%并暂停支付已到期货款。请研究：（1）约定检验期限与质量保证期如何区分适用；（2）买方能否以质保期内出现的质量问题拒付或抵扣已到期货款；（3）买方在对账函上确认欠款并注明“设备问题另行协商”，对其质量异议有何影响。",
+    "when": "合同2025年9月签订，2025年11月验收，2026年7月提出异议"
+   }
+  },
+  "budget_points": 20,
+  "points_reserved": 20,
+  "points_charged": 20,
+  "estimate_id": "est_a94c9cd2-eaf2-486a-b234-9bc08818d010",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T07:27:28.119Z",
+  "updated_at": "2026-11-09T07:46:45.923Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_adf3ecb5-b6a4-4dda-9608-97d5616b2ac4",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-买卖合同检验期质保期与拒付抗辩.docx",
+   "sha256": "7f28ac18be279a85dfbdf01ea42e07742493edb72fa5a57dab679b55cb8cfb4f",
+   "created_at": "2026-11-09T07:42:55.803Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d1630bce-942c-4779-ab0e-42480fee9173",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "来源目录-买卖合同检验期质保期与拒付抗辩.xlsx",
+   "sha256": "bbac1a617cd6e497e8afa59cca81bdecbef2e696af0fc194d50a068c9cb0efbf",
+   "created_at": "2026-11-09T07:44:07.970Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_20e1f203-d6a8-4e7e-bfeb-ba942451c054",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-买卖合同检验期质保期与拒付抗辩.docx",
+   "sha256": "6bde501b199383150b7e5bc4678f31429c750868a4773e3b6d9025a26e12cf0f",
+   "created_at": "2026-11-09T07:44:23.621Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d43e4191-e0a3-402f-a551-e7cd5036ee9b",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-买卖合同检验期质保期与拒付抗辩.docx",
+   "sha256": "40a5e15f976bfae4bd76ab16dc701fdf38ec2a310f57fc2e60484c6d31ce5ac0",
+   "created_at": "2026-11-09T07:45:06.792Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_b9dd51da-75b1-4d2b-9e2d-b49b5d43de81",
+   "kind": "agent_report",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-买卖合同检验期质保期与拒付抗辩.docx",
+   "sha256": "88499bd14a6edf64a79aaa9488e19394aa031885dce5e31d7a245366752405bc",
+   "created_at": "2026-11-09T07:45:24.730Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_c4a9662b-c926-4f55-abfb-7551eec75e0e",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "a0055382556ac07fd824b53990cf665c36e48e681ef1cbd6797f71b07cb67656",
+   "created_at": "2026-11-09T07:46:12.295Z",
+   "title": "已完成限定资料法规研究。本任务未附合同、验收单、异议函或对账函等材料，因此未对案",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_69082abe-5982-4f9b-b6bb-910ea0676ae7",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-研究备忘录-买卖合同检验期质保期与拒付抗辩.md",
+   "sha256": "5706fc5923085f1a3f7ea204f5c4b1575b541f7eaf2e3f87c7074cb6d39165a7",
+   "created_at": "2026-11-09T07:46:45.923Z",
+   "title": "独立复核意见：研究备忘录-买卖合同检验期质保期与拒付抗辩",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

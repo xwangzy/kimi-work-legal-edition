@@ -1,0 +1,85 @@
+{
+ "run": {
+  "run_id": "run_bf07c157-06e8-4e7f-b418-c30d021b48f0",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_3e4895b2-48b1-4a62-9d7b-abb542430de7",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 8,
+  "idempotency_key": "mat_3e4895b2-48b1-4a62-9d7b-abb542430de7-a1.agent_task-1794280688879",
+  "input_snapshot": {
+   "matter_id": "mat_3e4895b2-48b1-4a62-9d7b-abb542430de7",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_4c84a1f4-970c-4aeb-b3fc-17543fbe8f5d",
+    "docv_70fb8d71-44d9-4845-8314-df799f9dddb9",
+    "docv_9bef58eb-6d06-449e-801d-171ab379938a",
+    "docv_c3b82578-d99c-4b35-bc75-8449a9288fca",
+    "docv_e0079dcf-9a14-4800-868b-aedffd5ad794"
+   ],
+   "goal": "请核查管辖与诉讼时效：拟主张的请求为支付验收款余额310,000元、质保金135,000元及逾期付款违约金；我方：拟起诉。\n请确认去哪家法院起诉、时效有没有问题，质保金的付款期限也一并核一下。",
+   "estimate_id": "est_617d565b-fd7d-4ae2-843b-b305e594c1d9",
+   "title": "管辖与时效核查",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "procedure-check",
+   "skill_title": "管辖与时效核查 · 试用",
+   "skill_version": "1.2.2",
+   "skill_primary_output": "管辖与时效核查表.xlsx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "claims": "支付验收款余额310,000元、质保金135,000元及逾期付款违约金",
+    "side": "拟起诉"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_617d565b-fd7d-4ae2-843b-b305e594c1d9",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:18:08.888Z",
+  "updated_at": "2026-11-10T07:20:26.992Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_16fc0722-4a64-43fb-a82a-4d543521250b",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "4c21e0fe044b4d7652432411ce2d06d6c51e5eaaf77337464a40fb510c7b076c",
+   "created_at": "2026-11-10T07:20:26.990Z",
+   "title": "已完整读取5份材料，无未读、识别不全或排除材料；最近期限是2026-11-03质",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_f32af18b-347f-41c3-84cc-ae8342c313c7",
+   "kind": "a1_workspace_file",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "管辖与时效核查表-锐川设备款.xlsx",
+   "sha256": "63d8eca09787b7c99e1ceae29abe704d4aa91de3e371f60e7de36cc1a5678e8f",
+   "created_at": "2026-11-10T07:20:26.991Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

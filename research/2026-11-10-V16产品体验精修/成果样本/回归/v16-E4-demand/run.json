@@ -1,0 +1,110 @@
+{
+ "run": {
+  "run_id": "run_e14d61d4-eba3-4531-b68e-874297263e23",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_ecd701da-42b4-46be-bd9c-e42336d5e802",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 10,
+  "idempotency_key": "mat_ecd701da-42b4-46be-bd9c-e42336d5e802-a1.agent_task-1794280686901",
+  "input_snapshot": {
+   "matter_id": "mat_ecd701da-42b4-46be-bd9c-e42336d5e802",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_2b6200ab-cbce-420e-91de-3b0c75163ab2",
+    "docv_6aac672c-b81f-45bc-a987-aed414e08bc4",
+    "docv_bc10d147-bd7c-4a5e-9b1b-4cd849c4f85d",
+    "docv_b8150ff2-b419-4802-bd7d-a5fcf6bbda1a"
+   ],
+   "goal": "请就以下履约问题梳理履约事实与依据，并起草函件：订单PO-2026-0917（金额1,284,000元）约定交货期2026-09-30，至今未到货。卖方三次推迟交期，现称11月中旬交付，并提出可先发2万片。我方此前只回复过“收到，知悉，请保持沟通”和“确认后回复”，没有发过正式书面催告函。业务部要求今天就发解除通知、解除整份长期供货合同。函件类型：先帮我判断该走哪条路径。",
+   "estimate_id": "est_4aa9f409-57f8-4b86-9699-ec11142020f6",
+   "title": "履约问题与催告函",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "demand-letter",
+   "skill_title": "律师函 / 催告函",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "律师函或催告函（草稿）.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "issue": "订单PO-2026-0917（金额1,284,000元）约定交货期2026-09-30，至今未到货。卖方三次推迟交期，现称11月中旬交付，并提出可先发2万片。我方此前只回复过“收到，知悉，请保持沟通”和“确认后回复”，没有发过正式书面催告函。业务部要求今天就发解除通知、解除整份长期供货合同。",
+    "letter_type": "先帮我判断该走哪条路径"
+   }
+  },
+  "budget_points": 40,
+  "points_reserved": 40,
+  "points_charged": 40,
+  "estimate_id": "est_4aa9f409-57f8-4b86-9699-ec11142020f6",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:18:06.903Z",
+  "updated_at": "2026-11-10T07:20:05.939Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_47d6d5ee-d405-4ecc-a899-3c99f24cfe52",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "解除前催告函.docx",
+   "sha256": "14421a568f24f170402272ea80c9b7da1f3db57c3ce921872f27ec0a921147b0",
+   "created_at": "2026-11-10T07:16:22.045Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_229e159b-c425-4d1a-b101-d33da6a499bc",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "依据与发送前核对-PO-2026-0917逾期交货.xlsx",
+   "sha256": "1f72b5700e44f8533cd4198d5e57236cf293dc6124e14a0605cd1c5761a4c2a7",
+   "created_at": "2026-11-10T07:17:55.924Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_2f462054-2de4-4720-9a8a-c512a176d5ba",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "66371ab37f59888ee4d21f67cedc59fb5843e2c5143427779a8f79f3ae230c53",
+   "created_at": "2026-11-10T07:19:46.562Z",
+   "title": "已完整读取全部4份材料，无读不出或排除的材料；履约事实及逐字出处已提交事实时间线",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_9232f6db-0c89-450d-ac71-e74a06583080",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-解除前催告函.md",
+   "sha256": "728acf5dea5f3fc00f197847651c5f60b959f703d2f308acc38776b9802cfea8",
+   "created_at": "2026-11-10T07:20:05.939Z",
+   "title": "独立复核意见：解除前催告函",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

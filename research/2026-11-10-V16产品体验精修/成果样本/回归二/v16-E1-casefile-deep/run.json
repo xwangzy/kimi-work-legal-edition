@@ -1,0 +1,126 @@
+{
+ "run": {
+  "run_id": "run_ea81d16c-1e14-4f26-a716-85133f0ae531",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_9c110798-c899-4b63-92c1-10cee16b5e46",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_9c110798-c899-4b63-92c1-10cee16b5e46-a1.agent_task-1794300120689",
+  "input_snapshot": {
+   "matter_id": "mat_9c110798-c899-4b63-92c1-10cee16b5e46",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_280dcea3-2399-4a34-8e80-e6429d399049",
+    "docv_2f873bb0-fd25-4eb4-ab56-36013f6c795d",
+    "docv_de65aabb-708b-4ad7-bc84-c5dcde1c1e2a",
+    "docv_f473a828-9cb9-4f40-a847-ce526f63c6df",
+    "docv_0cfdf48d-2560-449f-8854-901cf1f35ffd",
+    "docv_26873065-1331-4661-9cfc-ef8b89829f22",
+    "docv_e699b2c0-31ea-401e-8aa4-1ecf3d356191",
+    "docv_71b50a43-835b-4917-8703-4e7aa212f2fd",
+    "docv_fd334249-4bf7-4ef9-a09f-6dc60bd1b486",
+    "docv_5b1ab2d5-d076-40f7-97de-e02a5457ee13",
+    "docv_caa4bfec-812d-4f54-a830-82e4ae21a247"
+   ],
+   "goal": "请逐份精读本事项的案卷材料，编目、按时间整理事实（每条附原文）并列出缺口。",
+   "estimate_id": "est_a2a5bc20-f50b-4e83-9b6d-cb38a2aa2e1c",
+   "title": "整理案卷（精读版）",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "casefile-organize",
+   "skill_title": "案卷整理（目录与时间线）",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "案卷总目录.xlsx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo"
+  },
+  "budget_points": 60,
+  "points_reserved": 60,
+  "points_charged": 60,
+  "estimate_id": "est_a2a5bc20-f50b-4e83-9b6d-cb38a2aa2e1c",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:42:00.690Z",
+  "updated_at": "2026-11-10T09:02:14.871Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_10ebda50-41f9-4085-9e37-65d2c8f14f30",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "案卷总目录-澄岸广场幕墙分包.xlsx",
+   "sha256": "f7a005a41dab94d0218957e8634ef23da8cb37b4b6b741c221c086d2917357dd",
+   "created_at": "2026-11-10T08:55:39.516Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_5d360115-f8a2-4bf1-b148-206a7ac99e89",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "缺口清单-澄岸广场幕墙分包.xlsx",
+   "sha256": "da4043b10c588ac82d2ac90965835ef23b48150071d967d9f4d4a181183fa8b0",
+   "created_at": "2026-11-10T09:00:07.590Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_7d1984f6-9fb5-4bc4-817f-4b70f6900c9d",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "缺口清单-澄岸广场幕墙分包.xlsx",
+   "sha256": "b347df5473a4f001db6cbac62d4cb77fa0890ef89d1ab4de2eeacf8c7947763d",
+   "created_at": "2026-11-10T09:00:15.611Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_3fc875d2-ee6f-48f1-889e-86edc3fccdd5",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "事实时间线-枢岩幕墙诉禾郢建设幕墙分包欠款.xlsx",
+   "sha256": "c295aaef479c7fbd3da9555e5bd03ce4fa070dfb51baf9dff8001418ac47f548",
+   "created_at": "2026-11-10T09:02:14.870Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_d6bc59f2-9141-4bcb-84ff-689ade6b5ae4",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "43d26c739a0f19f346f34c1cdde548de1b4ddbf368ee4902d39dfbc5714d8345",
+   "created_at": "2026-11-10T09:02:14.871Z",
+   "title": "11 份案卷材料已全部精读，无读不出、部分读取或排除的材料；暂不计任何中断事由时",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,36 @@
+{
+ "stack": "w3",
+ "tag": "m06-pleading",
+ "run": "run_e9587305-187c-47ac-85b7-1f5958a89f87",
+ "status": "succeeded",
+ "open": {
+  "v1-提交前核对清单-锐川诉禾丰.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-民事起诉状.docx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v1-计算明细-锐川诉禾丰-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v1-证据目录-锐川诉禾丰.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-提交前核对清单-锐川诉禾丰.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v2-计算明细-锐川诉禾丰-截至2026-11-30.xlsx": {
+   "opened": true,
+   "pages": 4
+  },
+  "v3-提交前核对清单-锐川诉禾丰.xlsx": {
+   "opened": true,
+   "pages": 4
+  }
+ }
+}

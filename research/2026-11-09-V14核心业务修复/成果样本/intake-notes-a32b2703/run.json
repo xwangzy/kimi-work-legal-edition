@@ -1,0 +1,106 @@
+{
+ "run": {
+  "run_id": "run_a32b2703-a193-4ff8-bcc0-b51b50238e57",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_7394cc3a-5872-4da0-b1ae-affaade355eb",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_7394cc3a-5872-4da0-b1ae-affaade355eb-a1.agent_task-1794202198335",
+  "input_snapshot": {
+   "matter_id": "mat_7394cc3a-5872-4da0-b1ae-affaade355eb",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_0f59a035-157c-42e9-afff-3d17d6744de8",
+    "docv_1bd63359-e3b5-4d25-9486-56423fc0502b"
+   ],
+   "goal": "请根据访谈记录整理访谈纪要与材料收集清单，并列出紧急期限与需要做利益冲突检索的主体；案件类型：买卖合同。\n昨天见了客户，笔记比较乱。请整理纪要、要客户补的材料，以及要做冲突检索的主体。",
+   "estimate_id": "est_ffbd5b42-cd23-4264-b6e6-5c552c2c912c",
+   "title": "新案受理与访谈",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "intake-notes",
+   "skill_title": "访谈纪要、材料收集清单与新案待核事项",
+   "skill_version": "1.3.0",
+   "skill_primary_output": "访谈纪要.docx",
+   "skills_sha256": "pOGdpSTbdfCsJk5LYJ_TA8E67-Pf1dm0ZOuILEIcWDs",
+   "skill_args": {
+    "case_type": "买卖合同"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_ffbd5b42-cd23-4264-b6e6-5c552c2c912c",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-09T05:29:58.338Z",
+  "updated_at": "2026-11-09T07:04:33.236Z",
+  "terminal_reason": null,
+  "is_mine": true
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_145848e5-2736-41df-b367-02c9fbc7d537",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "访谈纪要-2026-10-28.docx",
+   "sha256": "bc08d5e7ba2a2dab33e249c71fce2bea9a0b45b76aee6cb584616400088af502",
+   "created_at": "2026-11-09T06:58:07.449Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_31ed9829-e437-44fe-9f76-e38664b0bbb2",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "材料收集清单-锐川诉禾丰买卖合同纠纷.xlsx",
+   "sha256": "7e056432063fc445167480dc3cc3484232a826b724ff9d03d10ad0e5e7a428ff",
+   "created_at": "2026-11-09T07:01:57.749Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_eaefb4da-da93-4438-bf30-0217dff46b33",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "紧急期限与冲突待核清单-锐川诉禾丰买卖合同纠纷.xlsx",
+   "sha256": "b4d3a839611e74de62e98c83523e5b71432525de8ff490466b036e62008d3468",
+   "created_at": "2026-11-09T07:01:57.761Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_4945c794-2e5c-4f58-92ae-172ae0c50407",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "a0b8c7c398cfb7f376aad6cfba282f277a47f8488998b8da93c08e74fd3720fe",
+   "created_at": "2026-11-09T07:04:33.236Z",
+   "title": "收到2份材料，已完整读取2份，无读不出、部分读取或排除材料。质保金支付期限可能临",
+   "kind_version": 1,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

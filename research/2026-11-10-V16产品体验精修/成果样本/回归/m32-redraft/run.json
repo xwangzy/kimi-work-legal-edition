@@ -1,0 +1,56 @@
+{
+ "run": {
+  "run_id": "run_04e19c50-6813-40f2-8778-3832ec49dd48",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_c6b1e5d2-d1d2-47ee-b36d-2b3b2c490227",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "cancelled",
+  "status_version": 5,
+  "idempotency_key": "mat_c6b1e5d2-d1d2-47ee-b36d-2b3b2c490227-a1.agent_task-1794280742551",
+  "input_snapshot": {
+   "matter_id": "mat_c6b1e5d2-d1d2-47ee-b36d-2b3b2c490227",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_1f5f124d-b769-4c9c-a696-fb1bef1ac315",
+    "docv_ad605f03-61f1-4c44-90bd-57980a1f4b52"
+   ],
+   "goal": "请比对我方上一稿与对方回稿，并只对改动部分重新审查（材料按勾选顺序：第一份是我方上一稿，第二份是对方回稿）；重点关注：违约责任、交割 / 验收、争议解决。\n栖桐律师 10 月 30 日回稿，邮件里说“我方修改均已在修订模式下标出”。请逐处比对，别只看修订痕迹；我们 v1 的立场哪些被改掉了，要列清楚，下周一跟对方开会谈。",
+   "estimate_id": "est_a54d8cd1-3358-4e94-9426-5b731da6e2e8",
+   "title": "对方回稿：比对与重审",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "redraft-review",
+   "skill_title": "回稿比对与重审",
+   "skill_version": "1.2.0",
+   "skill_primary_output": "变更清单.xlsx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "focus": "违约责任、交割 / 验收、争议解决",
+    "baseline": "增资协议（投资方稿v1）.docx",
+    "current": "增资协议（目标公司回稿v2）.docx"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 0,
+  "estimate_id": "est_a54d8cd1-3358-4e94-9426-5b731da6e2e8",
+  "cancel_reason": "用户取消",
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:19:02.553Z",
+  "updated_at": "2026-11-10T07:43:00.190Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "未占用额度"
+ },
+ "artifacts": [],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

@@ -1,0 +1,178 @@
+{
+ "run": {
+  "run_id": "run_a52aa5cb-fda6-4ade-aec9-68c94b7c6783",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_ad3ac6df-7ae7-4c96-8afc-ebdcbdf1cff0",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "partial",
+  "status_version": 12,
+  "idempotency_key": "mat_ad3ac6df-7ae7-4c96-8afc-ebdcbdf1cff0-a1.agent_task-1794280700362",
+  "input_snapshot": {
+   "matter_id": "mat_ad3ac6df-7ae7-4c96-8afc-ebdcbdf1cff0",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_c6c5f6b2-fd52-468b-8eea-5efeafe31053",
+    "docv_de309bfc-8223-49f1-95b2-27a6336aee63",
+    "docv_28ef4976-ee06-42a3-82f2-31f784584ad2",
+    "docv_cd388ac3-95ad-4793-8e5a-7ad366f8fb8b",
+    "docv_c61693c2-37fb-4f47-9b75-e82c5c762944",
+    "docv_4c30785c-ac0a-44cd-a7ee-38066e7985bc"
+   ],
+   "goal": "请为劳动者梳理应主张的全部仲裁请求、时效与证据：当事人2021年3月1日入职上海澜栖，高级算法工程师，月工资基本18,000元加岗位津贴6,000元加绩效。2026年9月4日公司以8月17日至19日旷工三天、8月21日把代码传到个人网盘为由按严重违纪解除，不付补偿。年休假部门领导在OA批过，上传代码是领导让在家做演示。加班费一直按18,000元算。签过竞业协议，月补偿2,500元，离职后没付过。\n当事人不想回公司，想要赔偿。他手上有杭州深瞳（协议点名的竞争对手）的offer，要求11月16日入职，问能不能去。",
+   "estimate_id": "est_675268e0-0760-412b-a29b-8d6e44c66e65",
+   "title": "劳动者请求梳理与金额测算",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "labor-dispute",
+   "skill_title": "劳动争议：仲裁应对、仲裁申请与解除前评估 · 试用",
+   "skill_version": "1.3.2",
+   "skill_primary_output": "劳动争议应对方案.docx",
+   "skills_sha256": "qABPJ9rzACxffaCOFfX_hCvOtQH7jIJOFC9_8XPFe_k",
+   "skill_args": {
+    "mode": "仲裁申请",
+    "side": "劳动者",
+    "situation": "当事人2021年3月1日入职上海澜栖，高级算法工程师，月工资基本18,000元加岗位津贴6,000元加绩效。2026年9月4日公司以8月17日至19日旷工三天、8月21日把代码传到个人网盘为由按严重违纪解除，不付补偿。年休假部门领导在OA批过，上传代码是领导让在家做演示。加班费一直按18,000元算。签过竞业协议，月补偿2,500元，离职后没付过。"
+   }
+  },
+  "budget_points": 50,
+  "points_reserved": 50,
+  "points_charged": 50,
+  "estimate_id": "est_675268e0-0760-412b-a29b-8d6e44c66e65",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T03:18:20.364Z",
+  "updated_at": "2026-11-10T08:02:24.015Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_b6d067e5-ca80-47c6-839f-ee77dedc671d",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-澜栖违法解除争议.docx",
+   "sha256": "9016a77fa1d52780e76be6243dd69a62721450daa399bc26628f6cf8dc35e8db",
+   "created_at": "2026-11-10T07:21:46.543Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_e7b265d3-4af0-4116-b83f-ecbc6f3a27df",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-澜栖违法解除争议.docx",
+   "sha256": "5f0d37ed2461afcf9aa559f6a3b144775f138e989af1c5d3ffb4770d3523a097",
+   "created_at": "2026-11-10T07:21:59.448Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_45df9260-ea3d-4103-8f4e-75957e767d70",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "举证责任与证据清单-澜栖违法解除争议.xlsx",
+   "sha256": "005030fa939591af10936d4f403ebe45a7e5609bfe52a298f5fb90f121a5782b",
+   "created_at": "2026-11-10T07:25:27.248Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_b7c71f60-bb8c-43e2-b7cf-855fbb2fce4e",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "请求项与敞口表-澜栖违法解除争议.xlsx",
+   "sha256": "7e900a72fe1bdf5eb688f3eae2fd3f50fc898e054c932134db613d6a0ef08b3e",
+   "created_at": "2026-11-10T07:27:11.584Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_a4ab5c7f-06fa-4781-b477-56a094723fff",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-澜栖违法解除争议.docx",
+   "sha256": "d52b1b6d5aa5393632161bc6b307ef5ab00a66d112384a83bc83c8eb0e95d66f",
+   "created_at": "2026-11-10T07:29:01.755Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_1627dbab-b37b-4772-ba59-526f9e14d28a",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "f02dda0ad08da91ca5c5f80ece3afa04de9d53cc30224443d56233b032627a2f",
+   "created_at": "2026-11-10T07:30:05.869Z",
+   "title": "六份材料均已完整读取，无无法读取或排除的材料；最近期限是2027年1月4日，即2",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_39df0748-823d-4c7e-ade7-a6200a5dcc48",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-劳动争议应对方案-澜栖违法解除争议.md",
+   "sha256": "97278e3c8d008ef3fafd60a7cfd22575b594d0afc885221106a34e28f5bed80f",
+   "created_at": "2026-11-10T07:35:03.554Z",
+   "title": "独立复核意见：劳动争议应对方案-澜栖违法解除争议",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_06ff0a83-ebd8-435d-bf9e-00b5160cae07",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-上海澜栖违法解除及竞业限制.docx",
+   "sha256": "16bffa952793f092ef859db9f590fd1c1ad6c9e5e4a01772d6f40aeeb040498e",
+   "created_at": "2026-11-10T08:00:33.245Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_a6be30e5-dcb5-40b0-8c35-95812d7bb756",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "劳动争议应对方案-上海澜栖违法解除及竞业限制.docx",
+   "sha256": "b655b954f8fde058625cf07bfb2bc055120e6ca37a3d13f029d4ddfcbdd6e9cd",
+   "created_at": "2026-11-10T08:01:57.155Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

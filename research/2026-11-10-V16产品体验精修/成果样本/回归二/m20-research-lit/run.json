@@ -1,0 +1,213 @@
+{
+ "run": {
+  "run_id": "run_86376f4a-748f-4275-b89a-fe0cffd663d4",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_283acf30-96ca-407a-980b-90145808c549",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 7,
+  "idempotency_key": "mat_283acf30-96ca-407a-980b-90145808c549-a1.agent_task-1794300208671",
+  "input_snapshot": {
+   "matter_id": "mat_283acf30-96ca-407a-980b-90145808c549",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_b5d061e7-0b38-445b-8d8b-2889438a0522",
+    "docv_c11f1c62-990a-4a2e-a5bd-d63e6bcc908d"
+   ],
+   "goal": "研究问题：买卖合同约定买方到货后15日内验收、质保期自验收合格起12个月。买方验收合格约8个月后，以设备产能不达标为由书面提出质量异议，要求减价30%并暂停支付已到期货款。请研究：（1）约定检验期限与质量保证期如何区分适用；（2）买方能否以质保期内出现的质量问题拒付或抵扣已到期货款；（3）买方在对账函上确认欠款并注明“设备问题另行协商”，对其质量异议有何影响。事件发生时点：合同2025年9月签订，2025年11月验收，2026年7月提出异议。\n我方代理卖方。只做法规研究，不用找案例；结论有争议的地方请写明不同观点。",
+   "estimate_id": "est_d8851f19-42ef-4602-89a7-0d93e10fc312",
+   "title": "法规研究备忘录",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "legal-research-memo",
+   "skill_title": "法律研究备忘录",
+   "skill_version": "1.6.0",
+   "skill_requires_outline": true,
+   "skill_primary_output": "研究备忘录.docx",
+   "skills_sha256": "LcY-0sOe2RR6ZpGpFJbYHS9WEKVnan1ORfG1dEM6uRo",
+   "skill_args": {
+    "question": "买卖合同约定买方到货后15日内验收、质保期自验收合格起12个月。买方验收合格约8个月后，以设备产能不达标为由书面提出质量异议，要求减价30%并暂停支付已到期货款。请研究：（1）约定检验期限与质量保证期如何区分适用；（2）买方能否以质保期内出现的质量问题拒付或抵扣已到期货款；（3）买方在对账函上确认欠款并注明“设备问题另行协商”，对其质量异议有何影响。",
+    "when": "合同2025年9月签订，2025年11月验收，2026年7月提出异议"
+   }
+  },
+  "budget_points": 30,
+  "points_reserved": 30,
+  "points_charged": 30,
+  "estimate_id": "est_d8851f19-42ef-4602-89a7-0d93e10fc312",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T08:43:28.672Z",
+  "updated_at": "2026-11-10T10:08:43.128Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_4b1311b9-f679-4fbb-8905-57563cc662e8",
+   "kind": "agent_report",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-设备验收质保与货款抗辩.docx",
+   "sha256": "407acbe53139f15679631e7050d4b7db8105cba261de4773b0958df15a9b7238",
+   "created_at": "2026-11-10T09:53:05.577Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_3b97808a-3f99-4c49-8707-dea391cebabd",
+   "kind": "agent_report",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-设备验收质保与货款抗辩.docx",
+   "sha256": "c86c298a385e307c5cb9f6c0591fd9638bb9a1982acbfb57cebe43166fdfc446",
+   "created_at": "2026-11-10T09:54:16.714Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_b84d1a10-8cf0-4ef6-8ab8-4da986fdef87",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "来源目录-设备验收质保与货款抗辩.xlsx",
+   "sha256": "58f184019c08ca4315b7f1fe962283f74090e9dc2cc608a9792b1355083caff4",
+   "created_at": "2026-11-10T09:54:16.730Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_d81e359f-d3b7-427f-b192-11eda29b953e",
+   "kind": "agent_report",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-设备验收质保与货款抗辩.docx",
+   "sha256": "9695a99c38a7d071ea20d8eb324c7a70a3c99b91aab297aa0880d4026f3018f4",
+   "created_at": "2026-11-10T09:55:44.334Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_489891c4-c11d-480d-bf97-bf7d942a438f",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "来源目录-设备验收质保与货款抗辩.xlsx",
+   "sha256": "d321f7feef392242256d32df520b578b3101ca2e5655132b7795c7e96a6e3588",
+   "created_at": "2026-11-10T09:55:44.353Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_5b4fb5bd-6ab7-4aec-bb67-f9942a67b4a1",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "b329c33686f55ac445358792f49e2f7636672929209ad77fef14ba085bc81830",
+   "created_at": "2026-11-10T09:56:54.969Z",
+   "title": "收到2份材料，已完整读取2份，无无法读取或排除的材料。对账函原文、验收单、付款流",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_e8d1b0af-970e-4a00-bf74-ea3e2c275910",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-研究备忘录-设备验收质保与货款抗辩.md",
+   "sha256": "f31f6b322b16ab49836b12d6afbcfacf9ca5850c0a259375c4baa75a67e80181",
+   "created_at": "2026-11-10T09:58:25.941Z",
+   "title": "独立复核意见：研究备忘录-设备验收质保与货款抗辩",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_5ea347eb-cf5d-4d29-966b-3ad0767843cf",
+   "kind": "agent_report",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-设备验收质保与货款抗辩.docx",
+   "sha256": "84f02f9ac09b5d7673a9173e3e5e4c9fd1ccfeda8678549ed33a6906faaf712c",
+   "created_at": "2026-11-10T10:03:10.853Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_63504bf4-3b80-4730-9bf0-33f2120febea",
+   "kind": "agent_table",
+   "version": 3,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "来源目录-设备验收质保与货款抗辩.xlsx",
+   "sha256": "3be02c09836c0c27728af42dd68c4dd9811f15f128d15c86c4a4293d078da93d",
+   "created_at": "2026-11-10T10:03:10.860Z",
+   "title": null,
+   "kind_version": 3,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_db77b566-0f52-4c09-a26b-c93c8fc4fd55",
+   "kind": "agent_table",
+   "version": 4,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "来源目录-设备验收质保与货款抗辩.xlsx",
+   "sha256": "747713cf18e5cdd9fe8f12694b1fbfebebcba4516d26c1135a42f9c2d9d3ae9d",
+   "created_at": "2026-11-10T10:03:42.959Z",
+   "title": null,
+   "kind_version": 4,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_0fe0ac77-766d-4890-8eef-5d010de50195",
+   "kind": "agent_report",
+   "version": 5,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "研究备忘录-设备验收质保与货款抗辩.docx",
+   "sha256": "9329624cad5ae6293203aed298f8e343ada887b5f26106b1a56abf53ae923504",
+   "created_at": "2026-11-10T10:07:45.392Z",
+   "title": null,
+   "kind_version": 5,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_9aaf0dce-609a-4c2f-9314-36a232479c86",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-10.md",
+   "sha256": "a9e49ee09c6d0772731da4fffb80236d68a7a2138054061e54c7b09a7a5ab4d5",
+   "created_at": "2026-11-10T10:08:43.127Z",
+   "title": "收到2份材料，已完整读取2份，无无法读取或排除的材料。对账函原文、验收单、付款流",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}

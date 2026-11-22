@@ -1,0 +1,678 @@
+[
+ {
+  "event_id": 1099,
+  "seq": 10,
+  "type": "run.started",
+  "payload": {
+   "scenario": "a1.agent_task",
+   "workflow_version": "v5.0.0-g0",
+   "worker": "WANGZEYUdeMacBook-Pro.local:5973",
+   "where": "本机"
+  },
+  "created_at": "2026-11-09T07:00:52.375Z"
+ },
+ {
+  "event_id": 1100,
+  "seq": 11,
+  "type": "plan.created",
+  "payload": {
+   "steps": [
+    "载入材料",
+    "启动 Agent 宿主（独立进程，非系统沙箱）",
+    "执行并镜像事件",
+    "产出草稿（仅草稿）",
+    "结算"
+   ],
+   "note": "计划先行（第 2 篇 §4.4）；v0 为固定步骤"
+  },
+  "created_at": "2026-11-09T07:00:52.375Z"
+ },
+ {
+  "event_id": 1101,
+  "seq": 20,
+  "type": "materials.loaded",
+  "payload": {
+   "requested": 2,
+   "loaded": 2,
+   "failed": 0,
+   "files": [
+    {
+     "name": "03-庭审笔录（2026-09-15）.docx",
+     "chars": 1577,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "tables_as_rows",
+      "comments_revisions_ignored"
+     ]
+    },
+    {
+     "name": "04-民事判决书（一审，2026-10-27）.docx",
+     "chars": 1852,
+     "quality": [
+      "v0_crude_docx_parser",
+      "no_page_anchors",
+      "comments_revisions_ignored"
+     ]
+    }
+   ],
+   "parse_versions": [
+    {
+     "document_version_id": "docv_38fcec64-793e-4907-b9ff-747553e170a6",
+     "parse_version_id": "psv_092468fc-c9d6-4687-9170-75a6534158aa"
+    },
+    {
+     "document_version_id": "docv_e1af91f0-b3b9-4d5d-b222-050b6a2950ea",
+     "parse_version_id": "psv_b02f63b9-1f09-411e-9ecc-67246e4c055c"
+    }
+   ]
+  },
+  "created_at": "2026-11-09T07:00:52.376Z"
+ },
+ {
+  "event_id": 1102,
+  "seq": 40,
+  "type": "agent.task_started",
+  "payload": {
+   "agent_task_id": "kap_run_829c529e-e0c2-45a2-969b-755ddbbab0b5_att_5c0b5472-4de5-42d3-8db1-2e5add147e53",
+   "attempt_id": "att_5c0b5472-4de5-42d3-8db1-2e5add147e53"
+  },
+  "created_at": "2026-11-09T07:00:52.919Z"
+ },
+ {
+  "event_id": 1103,
+  "seq": 10001,
+  "type": "agent.started",
+  "payload": {
+   "session_id": "session_e9c17026-350d-4be2-88ea-f2397e7e0505",
+   "mode": "default",
+   "requested_mode": "default",
+   "channel": "desktop",
+   "model": "legal/k3",
+   "data_level": "L2",
+   "plan_first": true
+  },
+  "created_at": "2026-11-09T07:00:53.721Z"
+ },
+ {
+  "event_id": 1106,
+  "seq": 10003,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Skill_0_f9ba5fbb",
+   "tool": "Skill",
+   "description": "Invoke skill case-report",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:01:03.333Z"
+ },
+ {
+  "event_id": 1107,
+  "seq": 10004,
+  "type": "agent.skill",
+  "payload": {
+   "skill": "case-report"
+  },
+  "created_at": "2026-11-09T07:01:03.333Z"
+ },
+ {
+  "event_id": 1108,
+  "seq": 10005,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Skill_0_f9ba5fbb",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:01:03.333Z"
+ },
+ {
+  "event_id": 1109,
+  "seq": 10006,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__materials_list_1_96e3e00d",
+   "tool": "mcp__legal__materials_list",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:01:18.561Z"
+ },
+ {
+  "event_id": 1110,
+  "seq": 10007,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_list_2_bbd997e0",
+   "tool": "mcp__legal__facts_list",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:01:18.562Z"
+ },
+ {
+  "event_id": 1111,
+  "seq": 10008,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Read_3_d9e811e4",
+   "tool": "Read",
+   "description": "Reading /private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal--claude-worktrees-kimi-legal-v14-workflow-f0c1f6/a5b2bce2-ecd0-4c08-947f-80a0c5fd3ce5/scratchpad/kwl/stack14d/web-data/demo-firm/kap/mat_e58f5108-f686-4862-b1cd-eb0c6db18c25/materials/001.txt",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:01:18.562Z"
+ },
+ {
+  "event_id": 1112,
+  "seq": 10009,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Read_4_38a302f3",
+   "tool": "Read",
+   "description": "Reading /private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal--claude-worktrees-kimi-legal-v14-workflow-f0c1f6/a5b2bce2-ecd0-4c08-947f-80a0c5fd3ce5/scratchpad/kwl/stack14d/web-data/demo-firm/kap/mat_e58f5108-f686-4862-b1cd-eb0c6db18c25/materials/002.txt",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:01:18.562Z"
+ },
+ {
+  "event_id": 1113,
+  "seq": 10010,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__materials_list_1_96e3e00d",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:01:18.562Z"
+ },
+ {
+  "event_id": 1114,
+  "seq": 10011,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_list_2_bbd997e0",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:01:18.562Z"
+ },
+ {
+  "event_id": 1115,
+  "seq": 10012,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Read_3_d9e811e4",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:01:18.566Z"
+ },
+ {
+  "event_id": 1116,
+  "seq": 10013,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Read_4_38a302f3",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:01:18.566Z"
+ },
+ {
+  "event_id": 1123,
+  "seq": 10014,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__calc_deadline_5_2360063f",
+   "tool": "mcp__legal__calc_deadline",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:02:06.665Z"
+ },
+ {
+  "event_id": 1124,
+  "seq": 10015,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Read_6_60cd1bd1",
+   "tool": "Read",
+   "description": "Reading /private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal--claude-worktrees-kimi-legal-v14-workflow-f0c1f6/a5b2bce2-ecd0-4c08-947f-80a0c5fd3ce5/scratchpad/kwl/stack14d/web-data/demo-firm/kap/mat_e58f5108-f686-4862-b1cd-eb0c6db18c25/materials/002.txt",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:02:06.666Z"
+ },
+ {
+  "event_id": 1125,
+  "seq": 10016,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Read_7_dbc07445",
+   "tool": "Read",
+   "description": "Reading /private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal--claude-worktrees-kimi-legal-v14-workflow-f0c1f6/a5b2bce2-ecd0-4c08-947f-80a0c5fd3ce5/scratchpad/kwl/stack14d/web-data/demo-firm/kap/mat_e58f5108-f686-4862-b1cd-eb0c6db18c25/materials/001.txt",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:02:06.666Z"
+ },
+ {
+  "event_id": 1126,
+  "seq": 10017,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__calc_deadline_5_2360063f",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:02:06.666Z"
+ },
+ {
+  "event_id": 1127,
+  "seq": 10018,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Read_6_60cd1bd1",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:02:06.666Z"
+ },
+ {
+  "event_id": 1128,
+  "seq": 10019,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Read_7_dbc07445",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:02:06.666Z"
+ },
+ {
+  "event_id": 1176,
+  "seq": 10020,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "Write_8_807a62ca",
+   "tool": "Write",
+   "description": "Writing /private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal--claude-worktrees-kimi-legal-v14-workflow-f0c1f6/a5b2bce2-ecd0-4c08-947f-80a0c5fd3ce5/scratchpad/kwl/stack14d/web-data/demo-firm/kap/mat_e58f5108-f686-4862-b1cd-eb0c6db18c25/home/sessions/wd_work_e5f671d40791/session_e9",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:03:52.464Z"
+ },
+ {
+  "event_id": 1177,
+  "seq": 10021,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "Write_8_807a62ca",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:03:52.465Z"
+ },
+ {
+  "event_id": 1178,
+  "seq": 10022,
+  "type": "agent.approval_requested",
+  "payload": {
+   "approval_id": "approval_b55f7888-9513-40e0-9ad6-8de3204758d0",
+   "tool": "ExitPlanMode",
+   "reason": "tool_confirmation:plan_review_by_card",
+   "cross_boundary": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:03:56.472Z"
+ },
+ {
+  "event_id": 1182,
+  "seq": 10023,
+  "type": "agent.approval_decided",
+  "payload": {
+   "approval_id": "approval_b55f7888-9513-40e0-9ad6-8de3204758d0",
+   "decision": "approve",
+   "scope": "once",
+   "approver_channel": "desktop"
+  },
+  "created_at": "2026-11-09T07:04:09.302Z"
+ },
+ {
+  "event_id": 1183,
+  "seq": 10025,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "ExitPlanMode_9_148121ba",
+   "tool": "ExitPlanMode",
+   "description": "Presenting plan and exiting plan mode",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:04:09.302Z"
+ },
+ {
+  "event_id": 1184,
+  "seq": 10026,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "ExitPlanMode_9_148121ba",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:04:09.302Z"
+ },
+ {
+  "event_id": 1192,
+  "seq": 10027,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "TodoList_10_d927e309",
+   "tool": "TodoList",
+   "description": "Updating todo list",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:04:32.558Z"
+ },
+ {
+  "event_id": 1193,
+  "seq": 10028,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "TodoList_10_d927e309",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:04:32.559Z"
+ },
+ {
+  "event_id": 1218,
+  "seq": 10029,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_submit_11_3d9cf748",
+   "tool": "mcp__legal__facts_submit",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:04:59.007Z"
+ },
+ {
+  "event_id": 1219,
+  "seq": 10030,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_submit_11_3d9cf748",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:04:59.007Z"
+ },
+ {
+  "event_id": 1238,
+  "seq": 10031,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_submit_12_04d27dc7",
+   "tool": "mcp__legal__facts_submit",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:05:14.242Z"
+ },
+ {
+  "event_id": 1239,
+  "seq": 10032,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__facts_submit_12_04d27dc7",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:05:14.242Z"
+ },
+ {
+  "event_id": 1254,
+  "seq": 10033,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "NotifyUser_13_e717a54b",
+   "tool": "NotifyUser",
+   "description": "Notifying the user",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:05:29.467Z"
+ },
+ {
+  "event_id": 1255,
+  "seq": 10034,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "TodoList_14_d936bd4a",
+   "tool": "TodoList",
+   "description": "Updating todo list",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:05:29.468Z"
+ },
+ {
+  "event_id": 1256,
+  "seq": 10035,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "NotifyUser_13_e717a54b",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:05:29.468Z"
+ },
+ {
+  "event_id": 1257,
+  "seq": 10036,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "TodoList_14_d936bd4a",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:05:29.468Z"
+ },
+ {
+  "event_id": 1264,
+  "seq": 10037,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__docx_render_report_15_17f2b40a",
+   "tool": "mcp__legal__docx_render_report",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:07:14.496Z"
+ },
+ {
+  "event_id": 1265,
+  "seq": 10038,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__docx_render_report_15_17f2b40a",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:07:14.496Z"
+ },
+ {
+  "event_id": 1287,
+  "seq": 10039,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "TodoList_16_c39e63ed",
+   "tool": "TodoList",
+   "description": "Updating todo list",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:08:11.407Z"
+ },
+ {
+  "event_id": 1288,
+  "seq": 10040,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "TodoList_16_c39e63ed",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:08:11.407Z"
+ },
+ {
+  "event_id": 1291,
+  "seq": 10041,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__xlsx_render_table_17_8608736c",
+   "tool": "mcp__legal__xlsx_render_table",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:09:05.115Z"
+ },
+ {
+  "event_id": 1292,
+  "seq": 10042,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__xlsx_render_table_17_8608736c",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:09:05.116Z"
+ },
+ {
+  "event_id": 1315,
+  "seq": 10043,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "TodoList_18_8f191fce",
+   "tool": "TodoList",
+   "description": "Updating todo list",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:09:41.190Z"
+ },
+ {
+  "event_id": 1316,
+  "seq": 10044,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__docx_edit_draft_19_78ec770b",
+   "tool": "mcp__legal__docx_edit_draft",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:09:41.191Z"
+ },
+ {
+  "event_id": 1317,
+  "seq": 10045,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "TodoList_18_8f191fce",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:09:41.191Z"
+ },
+ {
+  "event_id": 1318,
+  "seq": 10046,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__docx_edit_draft_19_78ec770b",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:09:41.191Z"
+ },
+ {
+  "event_id": 1319,
+  "seq": 10047,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "mcp__legal__docx_compare_20_3c22d5a3",
+   "tool": "mcp__legal__docx_compare",
+   "description": null,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:09:50.007Z"
+ },
+ {
+  "event_id": 1320,
+  "seq": 10048,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "mcp__legal__docx_compare_20_3c22d5a3",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:09:50.007Z"
+ },
+ {
+  "event_id": 1321,
+  "seq": 10049,
+  "type": "agent.tool_started",
+  "payload": {
+   "tool_call_id": "TodoList_21_9e302d60",
+   "tool": "TodoList",
+   "description": "Updating todo list",
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:10:09.242Z"
+ },
+ {
+  "event_id": 1322,
+  "seq": 10050,
+  "type": "agent.tool_result",
+  "payload": {
+   "tool_call_id": "TodoList_21_9e302d60",
+   "is_error": false,
+   "agent_id": "main"
+  },
+  "created_at": "2026-11-09T07:10:09.242Z"
+ },
+ {
+  "event_id": 1339,
+  "seq": 68,
+  "type": "agent.outcome",
+  "payload": {
+   "status": "succeeded",
+   "reason": null,
+   "remaining": [],
+   "artifacts": [
+    {
+     "kind": "final_message",
+     "filename": "final_message.md",
+     "sha256": "e944ffd510beabb65de163e303c131f0c6de37d68229e9d76135f32b8ebb65cb",
+     "bytes": 1580
+    }
+   ],
+   "error": null
+  },
+  "created_at": "2026-11-09T07:10:33.292Z"
+ },
+ {
+  "event_id": 1340,
+  "seq": 69,
+  "type": "artifact.drafted",
+  "payload": {
+   "artifact_version_id": "artv_9584a7c0-cecd-4e6d-84c4-67e79a765c15",
+   "kind": "a1_agent_draft",
+   "filename": "草稿-2026-11-09.md",
+   "sha256": "e944ffd510beabb65de163e303c131f0c6de37d68229e9d76135f32b8ebb65cb"
+  },
+  "created_at": "2026-11-09T07:10:33.294Z"
+ },
+ {
+  "event_id": 1341,
+  "seq": 60,
+  "type": "run.succeeded",
+  "payload": {
+   "points_charged": 30
+  },
+  "created_at": "2026-11-09T07:10:33.295Z"
+ }
+]

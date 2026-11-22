@@ -1,0 +1,28 @@
+{
+ "stack": "w2",
+ "tag": "v16-E1-casefile-deep",
+ "run": "run_045401d4-e6c1-4c1d-8920-607b3a3e3899",
+ "status": "succeeded",
+ "open": {
+  "v1-事实时间线-枢岩幕墙诉禾郢建设幕墙分包欠款.xlsx": {
+   "opened": true,
+   "pages": 10
+  },
+  "v1-案卷总目录-澄岸广场幕墙分包.xlsx": {
+   "opened": true,
+   "pages": 5
+  },
+  "v1-缺口清单-澄岸广场幕墙分包.xlsx": {
+   "opened": true,
+   "pages": 2
+  },
+  "v2-案卷总目录-澄岸广场幕墙分包.xlsx": {
+   "opened": true,
+   "pages": 3
+  },
+  "v2-缺口清单-澄岸广场幕墙分包.xlsx": {
+   "opened": true,
+   "pages": 2
+  }
+ }
+}

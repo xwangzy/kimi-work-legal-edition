@@ -1,0 +1,124 @@
+{
+ "run": {
+  "run_id": "run_1a24d84a-917b-45ac-a902-d3a7134a6429",
+  "tenant_id": "ten_demo-firm",
+  "matter_id": "mat_e53c50cb-7ef5-41e5-9cea-a01495b25fe3",
+  "scenario": "a1.agent_task",
+  "workflow_version": "v5.0.0-g0",
+  "status": "succeeded",
+  "status_version": 5,
+  "idempotency_key": "mat_e53c50cb-7ef5-41e5-9cea-a01495b25fe3-a1.agent_task-1794327634134",
+  "input_snapshot": {
+   "matter_id": "mat_e53c50cb-7ef5-41e5-9cea-a01495b25fe3",
+   "scenario": "a1.agent_task",
+   "document_version_ids": [
+    "docv_9f105805-6bd7-427f-a515-3037624f66c3",
+    "docv_c851306b-67e7-42f7-b34b-76826d098f42",
+    "docv_6d8e2e38-3060-40f8-a106-be2a9c678f83",
+    "docv_138455b0-60f4-4b15-899e-a9cf269c2c6c",
+    "docv_e570fd85-fc6b-465d-9a62-a2926d47b8ac"
+   ],
+   "goal": "请核查管辖与诉讼时效：拟主张的请求为支付验收款余额310,000元、质保金135,000元及逾期付款违约金；我方：拟起诉。\n请确认去哪家法院起诉、时效有没有问题，质保金的付款期限也一并核一下。",
+   "estimate_id": "est_b89f3f48-a21c-4155-83e9-b627a3a34f54",
+   "title": "管辖与时效核查",
+   "run_options": {
+    "mode": "default",
+    "plan_first": true,
+    "preauthorized": []
+   },
+   "skill": "procedure-check",
+   "skill_title": "管辖与时效核查 · 试用",
+   "skill_version": "1.4.0",
+   "skill_primary_output": "管辖与时效核查表.xlsx",
+   "skills_sha256": "ChCIBjQqd7-zeKDsIHCN1ssFodyKZ0MPYd9tyulKIz8",
+   "skill_args": {
+    "claims": "支付验收款余额310,000元、质保金135,000元及逾期付款违约金",
+    "side": "拟起诉"
+   }
+  },
+  "budget_points": 45,
+  "points_reserved": 45,
+  "points_charged": 45,
+  "estimate_id": "est_b89f3f48-a21c-4155-83e9-b627a3a34f54",
+  "cancel_reason": null,
+  "created_by": "usr_demo-firm_demo-lawyer",
+  "created_at": "2026-11-10T16:20:34.136Z",
+  "updated_at": "2026-11-10T17:05:19.830Z",
+  "terminal_reason": null,
+  "is_mine": true,
+  "usage_display": "已用本任务预留额度的 100%"
+ },
+ "artifacts": [
+  {
+   "artifact_version_id": "artv_a0f8683e-b83d-49a8-947c-90ef3398b31e",
+   "kind": "agent_table",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "管辖与时效核查表-设备买卖合同纠纷.xlsx",
+   "sha256": "2a847cbece63f426a492a1522efb4529f665df4b4aa34d43e2b6bad3a1042d48",
+   "created_at": "2026-11-10T17:00:57.714Z",
+   "title": null,
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_0490c872-d5fa-4873-9128-14d3590c9707",
+   "kind": "agent_table",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "管辖与时效核查表-设备买卖合同纠纷.xlsx",
+   "sha256": "4aa7919673489f8f9e074e5e3a1832fe2cdd72fab01d413efe09c9d3380a4b2e",
+   "created_at": "2026-11-10T17:01:37.465Z",
+   "title": null,
+   "kind_version": 2,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_e40d13dd-6883-42e4-8dd3-09725b6ac625",
+   "kind": "a1_agent_draft",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-11.md",
+   "sha256": "ab6501388985cb5432eda99b9b0dd9daf0247ba7b1ac5ef8d2f8d690eb6eb964",
+   "created_at": "2026-11-10T17:02:47.228Z",
+   "title": "五份材料均已完整读取，无未读页；最近的付款节点是2026年11月13日（按202",
+   "kind_version": 1,
+   "is_latest": false
+  },
+  {
+   "artifact_version_id": "artv_3a27d55e-ef77-454a-a955-8273d9b3af6c",
+   "kind": "a1_review_note",
+   "version": 1,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "独立复核意见-管辖与时效核查表-设备买卖合同纠纷.md",
+   "sha256": "fa81befcc6b519c45c592a636f3985593f56d9683bab67f737a38a852729f59e",
+   "created_at": "2026-11-10T17:03:53.205Z",
+   "title": "独立复核意见：管辖与时效核查表-设备买卖合同纠纷",
+   "kind_version": 1,
+   "is_latest": true
+  },
+  {
+   "artifact_version_id": "artv_39234ae8-8b9b-47c2-93da-07a9e5c6b9ad",
+   "kind": "a1_agent_draft",
+   "version": 2,
+   "audience": "internal",
+   "status": "draft",
+   "filename": "草稿-2026-11-11.md",
+   "sha256": "da44ab5943fb26b5a61dcf7662929664946023d3611a5042539b9791c7f41a7e",
+   "created_at": "2026-11-10T17:05:19.829Z",
+   "title": "五份材料均已完整读取，无未读页；最近的付款节点是2026年11月13日（按202",
+   "kind_version": 2,
+   "is_latest": true
+  }
+ ],
+ "inflight": {
+  "model": 0,
+  "search": 0,
+  "fetch": 0
+ },
+ "unresolved_operations": []
+}
