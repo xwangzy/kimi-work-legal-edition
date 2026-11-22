@@ -32,7 +32,7 @@ const basis = { engagement: "confirmed", personal_info: "confirmed", sensitive: 
 
 /** 事项：快照里只有一份条款清单；另有一份没勾选进任务的 Word 原件，里面有从没识别过的姓名。 */
 async function matterWithUnseenDocx(marker: string, name: string) {
-  const { matter } = await tk.inv("matters.create", { title: `原件识别 ${marker}`, stance: "买方", basis, model_endpoint: "standard" });
+  const { matter } = await tk.inv("matters.create", { title: `原件识别 ${marker}`, stance: "买方", basis, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条", model_endpoint: "standard" });
   const a = await importBytes(tk.inv, matter.matter_id, "交易条款清单.txt", Buffer.from("设备：压装设备一台。价款：人民币120万元。", "utf8"), "text/plain");
   const docx = createDocx("设备买卖合同", [{ heading: "第一条 标的", paragraphs: ["1.1 买方向卖方购买压装设备一台。", `1.2 卖方联系人：${name}，负责安装与验收。`] }], { mark: false });
   const b = await importBytes(tk.inv, matter.matter_id, "设备买卖合同（对方稿）.docx", docx, DOCX);

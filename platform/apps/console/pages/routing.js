@@ -353,7 +353,7 @@ function panePrices(pane, d, reload) {
           ...PRICE_COLS.map(([k, label]) => ({ key: k, label, num: true, value: (r) => r[k] ?? null, render: (r) => (r[k] === null || r[k] === undefined ? h("span", { class: "muted" }, "未定价") : fmt.price(r[k])) })),
         ],
       }),
-      { sub: `单位：元 / 百万 token · 生效于 ${fmt.full(prices.effective_at)}`, actions: btn("改价目…", () => editPrices(rows, prices, reload), { kind: "primary", disabled: !can("route.manage") || !rows.length, title: needs("route.manage") }) },
+      { sub: `单位：元 / 百万 token · 生效于 ${fmt.full(prices.effective_at)}`, actions: btn("改价目…", () => editPrices(rows, prices, reload), { kind: "primary", disabled: !can("price.manage") || !rows.length, title: needs("price.manage") ?? (rows.length ? undefined : "还没有模型别名：先在“模型别名”里添加") }) },
     ),
     panel(
       "版本历史",

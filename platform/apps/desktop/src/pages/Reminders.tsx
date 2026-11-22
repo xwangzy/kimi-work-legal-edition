@@ -15,7 +15,7 @@ import { nav } from "../App.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
-import { agendaEntries, audienceText, bjToday, cloudStateText, countTone, daysUntil, defaultForm, dueText, importCandidates, PERIOD_PRESETS, REMINDER_KINDS, reminderKindLabel, rejectReasonText, reminderLine, scheduleLine, dueBuckets, dueDateText, type AgendaEntry, type ImportCandidate } from "../lib/reminders.ts";
+import { agendaEntries, agendaGroups, audienceText, bjToday, cloudStateText, countPill, dayMarks, daysUntil, defaultForm, dueText, entryTitle, importCandidates, leafParts, monthGrid, monthsFrom, PERIOD_PRESETS, REMINDER_KINDS, reminderKindLabel, rejectReasonText, reminderLine, scheduleHuman, scheduleLine, dueDateText, type AgendaEntry, type ImportCandidate } from "../lib/reminders.ts";
 import { Select } from "../components/Select.tsx";
 import { Icon } from "../components/Icons.tsx";
 import { BusyLabel, ListSkeleton, LoadError } from "../components/Loading.tsx";
@@ -113,7 +113,14 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
   };
   // 一份日程（第 49 批）：我设的 + 收到的合成；新到的就地标“新”；已读且没有对应行的进页底“看过的提醒”
   const { entries, history, unread } = agendaEntries(data?.reminders ?? [], data?.inbox ?? []);
-  const buckets = dueBuckets(entries);
+  // 第 56 批：日程分组（已过期 / 本周 / 本月 / 以后），右栏两个小月历；点月历上的某天滚到那天并高亮
+  const groups = agendaGroups(entries);
+  const [focusDate, setFocusDate] = useState<string | null>(null);
+  const jumpTo = (date: string) => {
+    setFocusDate(date);
+    document.getElementById(`rm-day-${date}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => setFocusDate((d) => (d === date ? null : d)), 2400);
+  };
   const read = history.slice(0, 20);
   const retry = (id: string) => void api.reminderRetry(id).then(refreshThenSync, (e) => setErr((e as Error).message));
   const cancel = async (id: string) => {
@@ -125,10 +132,11 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
     }
     refreshThenSync();
   };
-  const upcoming = buckets.filter((b) => b.key !== "past");
+  const upcoming = groups.filter((b) => b.key !== "past");
   const next = upcoming[0]?.items[0] ?? null;
-  const within7 = upcoming.filter((b) => b.key !== "later").reduce((n, b) => n + b.items.length, 0);
-  const rowProps = { cloudConfigured: data?.cloud.configured ?? false, onEdit: (r: ReminderItem) => setEditing({ reminder: r }), onRetry: retry, onCancel: cancel, onRead: (items: ReminderInboxItem[]) => void markRead(items) };
+  const within7 = upcoming.filter((b) => b.key === "week").reduce((n, b) => n + b.items.length, 0);
+  const rowProps = { cloudConfigured: data?.cloud.configured ?? false, focusDate, onEdit: (r: ReminderItem) => setEditing({ reminder: r }), onRetry: retry, onCancel: cancel, onRead: (items: ReminderInboxItem[]) => void markRead(items) };
+  const marks = dayMarks(entries);
   return (
     <main className="main">
       <div className="main-wide rm-page">
@@ -228,31 +236,43 @@ export function RemindersPage({ newForMatter }: { newForMatter?: string }) {
             </div>
           </Modal>
         )}
-        {data && entries.length > 0 && upcoming.length === 0 && <p className="muted">没有还没到期的提醒。</p>}
-        {data &&
-          upcoming.map((b) => (
-            <section key={b.key} className="rm-bucket" aria-label={b.label}>
-              <h2 className="rm-bucket-h">
-                {b.label}
-                <span className="rm-bucket-n">{b.items.length}</span>
-              </h2>
-              <AgendaList items={b.items} {...rowProps} />
-            </section>
-          ))}
-        {data &&
-          buckets
-            .filter((b) => b.key === "past")
-            .map((b) => (
-              <details key={b.key} className="rm-fold">
-                <summary>已过期（{b.items.length}）</summary>
-                <AgendaList items={b.items} {...rowProps} />
-              </details>
-            ))}
-
-        {read.length > 0 && (
+        {data && entries.length > 0 && (
+          <div className="rm-layout">
+            <div className="rm-col">
+              {upcoming.length === 0 && <p className="muted">没有还没到期的提醒。</p>}
+              {/* 已过期的（如有）放最前：过了期还没撤销的，往往正是要处理的 */}
+              {groups.map((b) => (
+                <section key={b.key} className={`rm-bucket rm-bucket-${b.key}`} aria-label={b.label}>
+                  <h2 className="rm-bucket-h">
+                    {b.label}
+                    <span className="rm-bucket-n">{b.items.length}</span>
+                  </h2>
+                  <AgendaList items={b.items} {...rowProps} />
+                </section>
+              ))}
+              {read.length > 0 && (
+                <details className="rm-fold">
+                  <summary>看过的提醒（{read.length}）</summary>
+                  <AgendaList items={read.map((i) => ({ key: `h:${i.reminder_id}:${i.version}`, due_date: i.due_date, reminder: null, received: i, fresh: [] }))} {...rowProps} anchors={false} />
+                </details>
+              )}
+            </div>
+            <aside className="rm-aside" aria-label="月历">
+              {monthsFrom(bjToday()).map((m) => (
+                <MiniMonth key={`${m.year}-${m.month}`} year={m.year} month={m.month} today={bjToday()} marks={marks} focus={focusDate} onPick={jumpTo} />
+              ))}
+              <p className="rm-legend">
+                <span className="rm-mk rm-mk-red" aria-hidden="true" />3 天内
+                <span className="rm-mk rm-mk-orange" aria-hidden="true" />7 天内
+                <span className="rm-mk rm-mk-plain" aria-hidden="true" />以后
+              </p>
+            </aside>
+          </div>
+        )}
+        {data && entries.length === 0 && read.length > 0 && (
           <details className="rm-fold">
             <summary>看过的提醒（{read.length}）</summary>
-            <AgendaList items={read.map((i) => ({ key: `h:${i.reminder_id}:${i.version}`, due_date: i.due_date, reminder: null, received: i, fresh: [] }))} {...rowProps} />
+            <AgendaList items={read.map((i) => ({ key: `h:${i.reminder_id}:${i.version}`, due_date: i.due_date, reminder: null, received: i, fresh: [] }))} {...rowProps} anchors={false} />
           </details>
         )}
       </div>
@@ -280,18 +300,65 @@ function agendaSummary(within7: number, next: Entry | null): string {
   const n = next?.reminder ?? next?.received ?? null;
   if (!n) return "没有临近的期限。";
   const head = within7 > 0 ? `7 天内有 ${within7} 个期限` : "7 天内没有期限";
-  return `${head}；最近的是 ${dueDateText(n.due_date)} ${reminderKindLabel(n.kind)}（${dueText(n.due_date)}）。`;
+  return `${head}；最近的是 ${dueDateText(n.due_date)} ${reminderKindLabel(n.kind)}，${dueText(n.due_date)}。`;
 }
 
-/** 日期列：“11月22日 / 周日”两行小字（北京时间的日历日）。 */
-function DateCell({ due }: { due: string }) {
-  const t = dueDateText(due);
-  const i = t.lastIndexOf(" ");
+/** 日历叶（第 56 批）：上“11月”小字（跨年“2027 · 1月”）、中大号日、下“周二”；固定宽度，永不折行。读屏读整句日期。 */
+function DateLeaf({ due }: { due: string }) {
+  const p = leafParts(due);
   return (
-    <span className="rm-date" aria-hidden="true">
-      <span className="rm-date-md">{i > 0 ? t.slice(0, i) : t}</span>
-      <span className="rm-date-w">{i > 0 ? t.slice(i + 1) : ""}</span>
+    <span className="rm-leaf" title={dueDateText(due)}>
+      <span className="sr-only">{dueDateText(due)}</span>
+      <span className="rm-leaf-m" aria-hidden="true">{p.top}</span>
+      <span className="rm-leaf-d" aria-hidden="true">{p.day}</span>
+      <span className="rm-leaf-w" aria-hidden="true">{p.week}</span>
     </span>
+  );
+}
+
+const WEEK_HEAD = ["一", "二", "三", "四", "五", "六", "日"];
+
+/** 小月历（第 56 批）：周一开头；有期限的日子带点（3 天内红、7 天内橙、其余灰蓝、已过灰），今天有圈；点有期限的日子滚到日程里那一天。 */
+function MiniMonth({ year, month, today, marks, focus, onPick }: { year: number; month: number; today: string; marks: Map<string, string>; focus: string | null; onPick: (date: string) => void }) {
+  const g = monthGrid(year, month);
+  return (
+    <section className="rm-cal" aria-label={g.label}>
+      <h3 className="rm-cal-h">{g.label}</h3>
+      <table className="rm-cal-grid" role="grid">
+        <thead>
+          <tr>
+            {WEEK_HEAD.map((w) => (
+              <th key={w} scope="col">{w}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {g.weeks.map((wk, i) => (
+            <tr key={i}>
+              {wk.map((c, j) => {
+                if (!c) return <td key={j} />;
+                const mk = marks.get(c.date);
+                const cls = `rm-cal-day${c.date === today ? " is-today" : ""}${c.date < today ? " is-past" : ""}${mk ? " has-due" : ""}${focus === c.date ? " is-focus" : ""}`;
+                return (
+                  <td key={j}>
+                    {mk ? (
+                      <button className={cls} onClick={() => onPick(c.date)} aria-label={`${dueDateText(c.date)}，有期限`}>
+                        {c.day}
+                        <span className={`rm-mk rm-mk-${mk}`} aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <span className={cls} aria-current={c.date === today ? "date" : undefined}>
+                        {c.day}
+                      </span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -299,11 +366,15 @@ function DateCell({ due }: { due: string }) {
  * 一组日程行（第 49 批）。我设的提醒：修改、撤销；收到的提醒（事项成员设的、别的设备送来的）：只有“知道了”。
  * 新到的：类型前一个圆点 + 读屏文字“新到的提醒”，“知道了”把这一行的未读版本标为已读。
  */
-function AgendaList(props: { items: Entry[]; cloudConfigured: boolean; onEdit: (r: ReminderItem) => void; onRetry: (id: string) => void; onCancel: (id: string) => Promise<void>; onRead: (items: ReminderInboxItem[]) => void }) {
+function AgendaList(props: { items: Entry[]; cloudConfigured: boolean; focusDate?: string | null; anchors?: boolean; onEdit: (r: ReminderItem) => void; onRetry: (id: string) => void; onCancel: (id: string) => Promise<void>; onRead: (items: ReminderInboxItem[]) => void }) {
   const { cloudConfigured, onEdit, onRetry, onCancel, onRead } = props;
+  const seen = new Set<string>();
   return (
     <div className="rm-list" role="list">
       {props.items.map((e) => {
+        // 每天的第一条带锚点，月历点那天时滚到这里
+        const anchor = props.anchors !== false && !seen.has(e.due_date) ? `rm-day-${e.due_date}` : undefined;
+        seen.add(e.due_date);
         const r = e.reminder;
         const i = e.received;
         const kind = r?.kind ?? i?.kind ?? "";
@@ -315,10 +386,11 @@ function AgendaList(props: { items: Entry[]; cloudConfigured: boolean; onEdit: (
         const cs = r && cloudConfigured ? cloudStateText(r.cloud_state, cloudConfigured, { targets: r.cloud_targets, audience: r.audience }) : null;
         // 已结案的事项、期限已过的提醒只能撤销（复核 S10B-08）
         const editable = !!r && r.matter_lifecycle === "active" && daysUntil(r.due_date) >= 0;
-        const tone = countTone(e.due_date);
+        const pill = countPill(e.due_date);
+        const title = entryTitle(kind, note);
         return (
-          <div key={e.key} className={`rm-row${isNew ? " is-new" : ""}`} role="listitem">
-            <DateCell due={e.due_date} />
+          <div key={e.key} id={anchor} className={`rm-row${isNew ? " is-new" : ""}${props.focusDate === e.due_date ? " is-focus" : ""}`} role="listitem">
+            <DateLeaf due={e.due_date} />
             <div className="rm-main">
               <div className="rm-line1">
                 {isNew && (
@@ -327,18 +399,20 @@ function AgendaList(props: { items: Entry[]; cloudConfigured: boolean; onEdit: (
                     <span className="sr-only">新到的提醒：</span>
                   </>
                 )}
-                <span className="rm-kind">{reminderKindLabel(kind)}</span>
-                {note && <span className="rm-note" title={note}>{note}</span>}
+                <span className="rm-title" title={title}>{title}</span>
+                <span className={`rm-pill rm-pill-${pill.tone}`} title={dueDateText(e.due_date)}>
+                  {pill.text}
+                </span>
               </div>
               <div className="rm-meta">
                 {matterTitle ? (
-                  <button className="btn-link rm-matter" onClick={() => nav(`/matter/${matterId}`)}>
+                  <button className="btn-link rm-matter" onClick={() => nav(`/matter/${matterId}`)} title={matterTitle}>
                     {matterTitle}
                   </button>
                 ) : (
                   <span>（这台电脑上没有这个事项）</span>
                 )}
-                {r && <span>{scheduleLine(r)}</span>}
+                {r && <span title={scheduleLine(r)}>{scheduleHuman(r)}</span>}
                 {i && !i.from_me && <span>{i.from_name ?? "事项成员"}设的提醒</span>}
                 {/* “只提醒我”是缺省，每行都写就成了噪音：只在也提醒事项成员时写（第 27 批，评审 U3-28） */}
                 {r && r.audience !== "me" && <span>{audienceText(r.audience, r.collab_scope === "team")}</span>}
@@ -355,9 +429,6 @@ function AgendaList(props: { items: Entry[]; cloudConfigured: boolean; onEdit: (
               </div>
             </div>
             <div className="rm-side">
-              <span className={`rm-count rm-count-${tone}`} title={dueDateText(e.due_date)}>
-                {dueText(e.due_date)}
-              </span>
               <div className="rm-actions">
                 {isNew && (
                   <button className="btn-ghost btn-sm" onClick={() => onRead(e.fresh)}>

@@ -39,6 +39,8 @@ function draw(box, d) {
   clear(
     box,
     d.priced === false ? h("div", { class: "banner warn" }, "价目未配齐：未定价的套餐或模型在下表显示“未定价”，合计只含已定价部分，不估算。") : null,
+    // 第 56 批：历史月份按该月结束时记下的套餐、席位、单价与加量算；没有记录的更早月份只能按当前值估
+    rows.some((b) => b.basis === "current_estimate") ? h("div", { class: "banner warn" }, `有 ${rows.filter((b) => b.basis === "current_estimate").length} 家律所这个月的席位费与加量费是按“现在的”套餐与席位估的（当月结束时没有留下记录）：出账前请人工核对。`) : null,
     h(
       "div",
       { class: "kpis" },
@@ -55,7 +57,7 @@ function draw(box, d) {
       empty: `${d.period ?? st.period} 没有账单`,
       columns: [
         { key: "name", label: "律所", render: (b) => h("div", { class: "cell-2" }, h("b", {}, b.name ?? b.tid), mono(b.tid)) },
-        { key: "plan", label: "套餐", class: "opt", value: (b) => b.plan?.label ?? "" },
+        { key: "plan", label: "套餐", class: "opt", value: (b) => b.plan?.label ?? "", render: (b) => h("span", {}, b.plan?.label ?? "", b.basis === "current_estimate" ? badge("按当前估", "warn", "这个月结束时没有留下套餐与席位记录：按现在的值估算") : null) },
         { key: "seats", label: "席位", num: true, render: (b) => fmt.int(b.seats) },
         { key: "seat_price_cny", label: "席位单价", num: true, class: "opt", value: (b) => b.seat_price_cny ?? null, render: (b) => fmt.cny(b.seat_price_cny) },
         { key: "seat_fee_cny", label: "席位费", num: true, value: (b) => b.seat_fee_cny ?? null, render: (b) => fmt.cny(b.seat_fee_cny) },

@@ -4,11 +4,17 @@
  * 电脑坏了：在新电脑的激活页点“从备份恢复”。律师层不出现“主密钥、DPAPI、证书”等词。
  * 第二轮复核处置：恢复码逐行编号、打印带抬头与配对编号（R2B-18、R2B-21）；保存后提醒把恢复包放到别处、自动展开“试一下”（R2B-17）；
  * 以前生成的恢复包仍然有效（R2A-01）；开通律所的电脑的恢复包另有提示（R2A-02）；备份进行中显示进度（R2B-19）。
+ *
+ * 第 56 批：逻辑收进 useRecoveryBackup，两种呈现共用——
+ * - RecoveryBackup：首次使用引导里的三格（Welcome 页，原样）；
+ * - BackupTrack：设置 → 备份与安全的“页首一条状态 + 纵向三步”（轨道语言：左侧细线 + 节点；当前一步展开，做完的收成一行，没轮到的置灰写原因）。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { recovery } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
+import { backupPlan, type StepState } from "../lib/device-status.ts";
 import { WaitBlock } from "./Loading.tsx";
+import { Icon } from "./Icons.tsx";
 import { countProgress } from "../lib/waiting.ts";
 
 interface Created {
@@ -25,7 +31,7 @@ export function numberedCodeLines(code: string): { no: number | null; text: stri
   return rows.map((text, i) => ({ no: i === 0 ? null : i, text }));
 }
 
-export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
+function useRecoveryBackup(onChanged?: () => void) {
   const [st, setSt] = useState<any | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
   const [copied, setCopied] = useState(false);
@@ -95,8 +101,86 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
       if (f?.risk === "onedrive" || f?.risk === "cloud" || f?.risk === "network") setSyncNote(true);
     }, "备份位置已设好，并已完成第一次备份。之后每天自动备份一次。");
 
-  const days = typeof st?.stale_days === "number" ? st.stale_days : null;
+  const runNow = () => run(() => recovery.runBackup(), "已备份");
+
+  return { st, created, setCreated, copied, setCopied, msg, busy, verifyCode, setVerifyCode, verifyOpen, setVerifyOpen, verifyByButton, setVerifyByButton, devPath, setDevPath, syncNote, placeNote, dialogs, create, verify, chooseFolder, runNow };
+}
+type Rb = ReturnType<typeof useRecoveryBackup>;
+
+/** 刚生成的恢复码（只显示这一次）：可打印；勾“我已抄下或打印好”才能收起。 */
+function CreatedCard({ rb }: { rb: Rb }) {
+  const { created, placeNote, copied, setCopied, setCreated } = rb;
+  if (!created) return null;
+  return (
+    <div className="card recovery-print" role="status">
+      <div className="recovery-print-head">
+        Kimi Work 恢复码 · {created.firmName} · 生成于 {fmtTime(created.createdAt)} · 配对编号 {created.setId.slice(0, 8)}
+      </div>
+      <div className="no-print">恢复码（只显示这一次；请手抄或打印，不要复制粘贴、拍照或发微信）：</div>
+      <ol className="members-code recovery-code" aria-label="恢复码">
+        {numberedCodeLines(created.code).map((l, i) => (
+          <li key={i} className="recovery-line">
+            <span className="recovery-no">{l.no === null ? "" : `${l.no}.`}</span> {l.text}
+          </li>
+        ))}
+      </ol>
+      {created.founder && (
+        <p className="banner banner-orange">
+          这台是开通律所的电脑：这份恢复包里还有律所的管理钥匙（能以管理员身份加人、解开全所托管的事项），丢失的后果不止这台电脑——请按律所公章同等保管。
+        </p>
+      )}
+      {placeNote === "local" && <p className="muted no-print">恢复包如果存在这台电脑上（例如“文档”），电脑坏了它也会一起丢：请把它复制到 U 盘，或交给律所负责人保管。</p>}
+      {placeNote === "sync" && <p className="muted no-print">恢复包会同步到网盘（是加密的，网盘看不到内容）；恢复码就更不要放在网盘里了。</p>}
+      <div className="settings-choice no-print">
+        <button className="btn-ghost btn-sm" onClick={() => window.print()}>
+          打印
+        </button>
+        <label>
+          <input type="checkbox" checked={copied} onChange={(e) => setCopied(e.target.checked)} /> 我已抄下或打印好
+        </label>
+        <button className="btn-ghost btn-sm" disabled={!copied} onClick={() => setCreated(null)}>
+          收起
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** 试一下：输入恢复码，选恢复包打开一次。 */
+function VerifyPanel({ rb, bare = false }: { rb: Rb; bare?: boolean }) {
+  const { busy, verifyCode, setVerifyCode, verifyByButton, setVerifyOpen, setVerifyByButton, verify } = rb;
+  return (
+    <section className={bare ? "recovery-verify bk-verify" : "panel recovery-verify"} aria-label="试一下恢复包">
+      <label className="field">
+        <span>恢复码（打印纸上的全部内容，含第一行）</span>
+        <textarea rows={4} value={verifyCode} onChange={(e) => setVerifyCode(e.target.value)} spellCheck={false} placeholder="KWR1-…" autoFocus={verifyByButton} />
+      </label>
+      <div className="settings-choice">
+        <button className="btn-primary btn-sm" disabled={busy || verifyCode.trim().length < 10} onClick={() => void verify()}>
+          选择恢复包，打开试试
+        </button>
+        {!bare && (
+          <button className="btn-ghost btn-sm" onClick={() => { setVerifyOpen(false); setVerifyByButton(false); }}>
+            收起
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function Running({ st }: { st: any }) {
   const running = st?.running as { done: number; total: number } | null | undefined;
+  if (!running) return null;
+  /* 备份进行中（第 51 批统一等待块）：有总数才写“已处理 n/m 个文件”，没有就写“正在准备”，不画假进度 */
+  return <WaitBlock title={countProgress(running.done, running.total) ? `正在备份：已处理 ${countProgress(running.done, running.total)!.text} 个文件` : "正在准备备份…"} hint="可以继续工作，请不要拔出备份用的移动硬盘。" />;
+}
+
+/** 首次使用引导（Welcome）里的三格呈现（原样保留）。 */
+export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
+  const rb = useRecoveryBackup(onChanged);
+  const { st, busy, msg, devPath, setDevPath, syncNote, dialogs, verifyOpen, setVerifyOpen, setVerifyByButton, create, chooseFolder, runNow } = rb;
+  const days = typeof st?.stale_days === "number" ? st.stale_days : null;
   const step1 = !!st?.packages_created;
   const step2 = !!st?.packages_verified;
   const step3 = !!st?.configured && !!st?.last_ok_at;
@@ -146,20 +230,14 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
               {st?.configured ? "更换位置" : "选择备份位置"}
             </button>
             {st?.configured && (
-              <button className="btn-ghost btn-sm" disabled={busy || st?.revoked} onClick={() => void run(() => recovery.runBackup(), "已备份")}>
+              <button className="btn-ghost btn-sm" disabled={busy || st?.revoked} onClick={() => void runNow()}>
                 立即备份
               </button>
             )}
           </div>
         </li>
       </ol>
-      {/* 备份进行中（第 51 批统一等待块）：有总数才写“已处理 n/m 个文件”，没有就写“正在准备”，不画假进度 */}
-      {running && (
-        <WaitBlock
-          title={countProgress(running.done, running.total) ? `正在备份：已处理 ${countProgress(running.done, running.total)!.text} 个文件` : "正在准备备份…"}
-          hint="可以继续工作，请不要拔出备份用的移动硬盘。"
-        />
-      )}
+      <Running st={st} />
       <p className="muted recovery-tip">恢复包和恢复码要分开放：例如恢复包放 U 盘，恢复码打印后锁进柜子。第一次备份要复制全部案卷，可能较慢。</p>
       {(st?.recent_packages?.length ?? 0) > 1 && (
         <p className="muted">
@@ -172,60 +250,157 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
           <input value={devPath} onChange={(e) => setDevPath(e.target.value)} />
         </label>
       )}
-      {created && (
-        <div className="card recovery-print" role="status">
-          <div className="recovery-print-head">
-            Kimi Work 恢复码 · {created.firmName} · 生成于 {fmtTime(created.createdAt)} · 配对编号 {created.setId.slice(0, 8)}
-          </div>
-          <div className="no-print">恢复码（只显示这一次；请手抄或打印，不要复制粘贴、拍照或发微信）：</div>
-          <ol className="members-code recovery-code" aria-label="恢复码">
-            {numberedCodeLines(created.code).map((l, i) => (
-              <li key={i} className="recovery-line">
-                <span className="recovery-no">{l.no === null ? "" : `${l.no}.`}</span> {l.text}
-              </li>
-            ))}
-          </ol>
-          {created.founder && (
-            <p className="banner banner-orange">
-              这台是开通律所的电脑：这份恢复包里还有律所的管理钥匙（能以管理员身份加人、解开全所托管的事项），丢失的后果不止这台电脑——请按律所公章同等保管。
-            </p>
-          )}
-          {placeNote === "local" && (
-            <p className="muted no-print">恢复包如果存在这台电脑上（例如“文档”），电脑坏了它也会一起丢：请把它复制到 U 盘，或交给律所负责人保管。</p>
-          )}
-          {placeNote === "sync" && <p className="muted no-print">恢复包会同步到网盘（是加密的，网盘看不到内容）；恢复码就更不要放在网盘里了。</p>}
-          <div className="settings-choice no-print">
-            <button className="btn-ghost btn-sm" onClick={() => window.print()}>
-              打印
-            </button>
-            <label>
-              <input type="checkbox" checked={copied} onChange={(e) => setCopied(e.target.checked)} /> 我已抄下或打印好
-            </label>
-            <button className="btn-ghost btn-sm" disabled={!copied} onClick={() => setCreated(null)}>
-              收起
-            </button>
-          </div>
-        </div>
-      )}
+      <CreatedCard rb={rb} />
       {/* 只留一个“试一下”入口（第 27 批，评审 U3-34）：第 2 步的按钮点开这里；原来下方还常驻一个同名折叠，展开是空文本框 */}
-      {verifyOpen && (
-        <section className="panel recovery-verify" aria-label="试一下恢复包">
-          <label className="field">
-            <span>恢复码（打印纸上的全部内容，含第一行）</span>
-            <textarea rows={4} value={verifyCode} onChange={(e) => setVerifyCode(e.target.value)} spellCheck={false} placeholder="KWR1-…" autoFocus={verifyByButton} />
-          </label>
-          <div className="settings-choice">
-            <button className="btn-primary btn-sm" disabled={busy || verifyCode.trim().length < 10} onClick={() => void verify()}>
-              选择恢复包，打开试试
-            </button>
-            <button className="btn-ghost btn-sm" onClick={() => { setVerifyOpen(false); setVerifyByButton(false); }}>
-              收起
-            </button>
-          </div>
-        </section>
-      )}
+      {verifyOpen && <VerifyPanel rb={rb} />}
       {msg && <p className="muted" role="status">{msg}</p>}
       {syncNote && <p className="muted">提示：这个备份位置会同步到网盘或网络存储。备份的内容与文件名都是加密的，对方只看得到文件数量、大小与备份时间。</p>}
     </div>
+  );
+}
+
+const TONE_DOT: Record<string, string> = { ok: "sdot-ok", warn: "sdot-warn", bad: "sdot-bad", info: "sdot-idle" };
+
+/**
+ * 设置 → 备份与安全（第 56 批）：页首一条状态（结论 + 后果 | 唯一的下一步按钮）+ 一行安静的案卷保护说明 + 纵向三步。
+ * 页首按钮与该步里的按钮做同一件事。浏览器形态（没有系统对话框）时，“文件位置”输入框只出现在需要它的那一步里。
+ */
+export function BackupTrack({ safe, onChanged }: { safe: { tone: "ok" | "warn" | "info"; line: string }; onChanged?: () => void }) {
+  const rb = useRecoveryBackup(onChanged);
+  const { st, busy, msg, devPath, setDevPath, syncNote, dialogs, create, chooseFolder, runNow, setVerifyOpen, setVerifyByButton } = rb;
+  const plan = backupPlan(st);
+  const [open, setOpen] = useState<"create" | "verify" | "auto" | null>(null);
+  const pathRef = useRef<HTMLInputElement | null>(null);
+  const revoked = !!st?.revoked;
+  // 浏览器形态要先填文件位置：空着点按钮时把焦点放进输入框，不发一个必然失败的请求
+  const needPath = (key: "create" | "verify" | "auto") => {
+    if (dialogs || devPath.trim()) return false;
+    setOpen(key);
+    window.setTimeout(() => pathRef.current?.focus(), 0);
+    return true;
+  };
+  const doAction = (kind: "create" | "verify" | "folder" | "run") => {
+    if (kind === "create") return needPath("create") || void create();
+    if (kind === "verify") {
+      setOpen("verify");
+      setVerifyByButton(true);
+      setVerifyOpen(true);
+      return;
+    }
+    if (kind === "folder") return needPath("auto") || void chooseFolder();
+    return void runNow();
+  };
+  const isOpen = (key: "create" | "verify" | "auto", state: StepState) => state === "now" || open === key;
+  const pathField = (hint: string) =>
+    dialogs ? null : (
+      <label className="field bk-path">
+        <span>{hint}</span>
+        <input ref={pathRef} value={devPath} onChange={(e) => setDevPath(e.target.value)} placeholder="例如 /Volumes/U盘/Kimi Work" />
+      </label>
+    );
+  const [s1, s2, s3] = plan.steps.length ? plan.steps : [null, null, null];
+  return (
+    <div className="bk" id="recovery-backup">
+      <section className={`bk-status bk-status-${plan.tone}`} aria-live="polite">
+        <div className="bk-status-text">
+          <div className="bk-status-h">
+            <span className={`sdot ${TONE_DOT[plan.tone]}`} aria-hidden="true" />
+            {plan.headline}
+          </div>
+          {plan.consequence && <p className="bk-status-why">{plan.consequence}</p>}
+        </div>
+        {plan.action && (
+          <button className="btn-primary" disabled={busy || revoked} onClick={() => doAction(plan.action!.kind)}>
+            {plan.action.label}
+          </button>
+        )}
+      </section>
+      <p className="bk-safe">
+        <span className={`sdot ${safe.tone === "ok" ? "sdot-ok" : safe.tone === "warn" ? "sdot-warn" : "sdot-idle"}`} aria-hidden="true" />
+        {safe.line}
+      </p>
+
+      <Running st={st} />
+      {/* 刚生成的恢复码只显示这一次：紧跟在状态下面，不让它落到页底被错过 */}
+      {msg && (
+        <p className="bk-msg" role="status">
+          {msg}
+        </p>
+      )}
+      <CreatedCard rb={rb} />
+
+      {s1 && s2 && s3 && (
+        <ol className="bk-track" aria-label="备份三步">
+          <TrackStep
+            no={1}
+            title="生成恢复包"
+            state={s1.state}
+            summary={s1.summary}
+            open={isOpen("create", s1.state)}
+            onReopen={() => setOpen(open === "create" ? null : "create")}
+            reopenLabel="重新生成"
+          >
+            <p>电脑坏了或丢了，用恢复包和恢复码在新电脑上找回全部案卷。</p>
+            <p className="bk-note">恢复包和恢复码要分开放：例如恢复包放 U 盘，恢复码打印后锁进柜子。</p>
+            {pathField("恢复包保存到哪里（文件路径）")}
+            <div className="bk-actions">
+              <button className={s1.state === "done" ? "btn-ghost btn-sm" : "btn-primary btn-sm"} disabled={busy || revoked} onClick={() => doAction("create")}>
+                {s1.state === "done" ? "再生成一份" : "生成恢复包"}
+              </button>
+            </div>
+            {(st?.recent_packages?.length ?? 0) > 1 && (
+              <p className="bk-note">以前生成的恢复包仍然有效（最近几次：{(st.recent_packages as string[]).map((t) => fmtTime(t)).join("、")}）。不用的那份请销毁；丢了请告诉所内 IT。</p>
+            )}
+          </TrackStep>
+          <TrackStep no={2} title="试着恢复一次" state={s2.state} summary={s2.summary} why="先完成上一步" open={isOpen("verify", s2.state) || rb.verifyOpen} onReopen={() => setOpen(open === "verify" ? null : "verify")} reopenLabel="再试一次">
+            <p>用恢复码打开一次恢复包，确认真的能用——不会改动这台电脑上的任何东西。</p>
+            {pathField("恢复包文件在哪里（文件路径）")}
+            <VerifyPanel rb={rb} bare />
+          </TrackStep>
+          <TrackStep no={3} title="每天自动备份" state={s3.state} summary={s3.summary} why="先完成上一步" open={isOpen("auto", s3.state)} onReopen={() => setOpen(open === "auto" ? null : "auto")} reopenLabel="修改">
+            <p>每天把案卷加密备份到移动硬盘或所内共享盘。第一次要复制全部案卷，可能较慢。</p>
+            {pathField("备份到哪个文件夹（文件夹路径）")}
+            <div className="bk-actions">
+              <button className={st?.configured ? "btn-ghost btn-sm" : "btn-primary btn-sm"} disabled={busy || revoked} onClick={() => doAction("folder")}>
+                {st?.configured ? "更换位置" : "选择备份位置"}
+              </button>
+              {st?.configured && (
+                <button className="btn-ghost btn-sm" disabled={busy || revoked} onClick={() => void runNow()}>
+                  立即备份
+                </button>
+              )}
+            </div>
+          </TrackStep>
+        </ol>
+      )}
+      {syncNote && <p className="bk-note">提示：这个备份位置会同步到网盘或网络存储。备份的内容与文件名都是加密的，对方只看得到文件数量、大小与备份时间。</p>}
+    </div>
+  );
+}
+
+/** 轨道上的一步：节点（做完打勾 / 当前醒目 / 没轮到空心）+ 标题；当前一步展开，做完的收成一行可再展开，没轮到的置灰写原因。 */
+function TrackStep(props: { no: number; title: string; state: StepState; summary: string; why?: string; open: boolean; onReopen: () => void; reopenLabel: string; children: ReactNode }) {
+  const { no, title, state, summary, why, open, onReopen, reopenLabel, children } = props;
+  const expanded = state !== "todo" && open;
+  return (
+    <li className={`bk-step bk-${state}${expanded ? " is-open" : ""}`} aria-current={state === "now" ? "step" : undefined}>
+      <span className="bk-node" aria-hidden="true">
+        {state === "done" ? <Icon.check /> : no}
+      </span>
+      <div className="bk-step-body">
+        <div className="bk-step-head">
+          <span className="bk-step-title">{title}</span>
+          {state === "done" && summary && <span className="bk-step-sum">{summary}</span>}
+          {state === "now" && summary && <span className="bk-step-sum bk-step-sum-warn">{summary}</span>}
+          {state === "todo" && <span className="bk-step-sum">{why ?? "先完成上一步"}</span>}
+          {state === "done" && (
+            <button className="btn-link bk-step-toggle" aria-expanded={expanded} onClick={onReopen}>
+              {expanded ? "收起" : reopenLabel}
+            </button>
+          )}
+        </div>
+        {expanded && <div className="bk-step-detail">{children}</div>}
+      </div>
+    </li>
   );
 }

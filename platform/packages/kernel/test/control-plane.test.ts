@@ -65,7 +65,7 @@ test("开通同步：设备登记、许可、租户盐、目录、最严模板�
 });
 
 test("放宽类律所策略：管理员在本机签名后才生效（自动档出现在档位选择；抓取白名单追加生效）", { timeout: 60_000 }, async () => {
-  const { matter } = await tk.inv("matters.create", { title: "策略生效", stance: "原告", basis: FULL });
+  const { matter } = await tk.inv("matters.create", { title: "策略生效", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   const allowed0 = (await tk.inv("matters.get", { matter_id: matter.matter_id })).run_policy.allowed_modes;
   assert.ok(!allowed0.includes("auto"), "最严模板：没有自动档");
   const body = { max_mode: "auto", auto_preauthorizations: ["search_generalized"], fetch_allowlist_extra: ["regulator-example.cn"], l3a_standard_model: "deny" };
@@ -90,7 +90,7 @@ test("放宽类律所策略：管理员在本机签名后才生效（自动档�
 });
 
 test("网关二次检查：事项匿名摘要经控制面送达网关；自报级别低于摘要、L3b 事项一律拒绝（收敛 D-20）", { timeout: 120_000 }, async () => {
-  const { matter } = await tk.inv("matters.create", { title: "摘要二次检查", stance: "出借人", basis: FULL, model_endpoint: "standard", key_dates: { analysis_as_of: "2026-10-01" } });
+  const { matter } = await tk.inv("matters.create", { title: "摘要二次检查", stance: "出借人", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条", model_endpoint: "standard", key_dates: { analysis_as_of: "2026-10-01" } });
   const doc = await importText(tk.inv, matter.matter_id, "借款合同.txt", "借款合同（示例）\n借款人：甲科技有限公司。\n第三条 借款金额人民币伍万元，年利率 6%。");
   const { run } = await runScenario(tk.inv, matter.matter_id, "s1.contract_review", { document_version_ids: [doc.document_version_id] });
   assert.equal(run.status, "succeeded");
@@ -148,7 +148,7 @@ test("吊销：控制面吊销同事设备 → 本机设备表同步吊销并推
 });
 
 test("许可到期进入退出模式：新任务不可用，查看与列表照常；续期后恢复", { timeout: 60_000 }, async () => {
-  const { matter: m } = await tk.inv("matters.create", { title: "退出模式", stance: "原告", basis: FULL });
+  const { matter: m } = await tk.inv("matters.create", { title: "退出模式", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   cloud.cp.ops.terminateLicense(TID);
   await new Promise((r) => setTimeout(r, 5));
   const rep = await tk.inv("control_plane.sync");

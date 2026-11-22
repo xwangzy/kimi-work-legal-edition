@@ -241,7 +241,19 @@ export function controlPlaneErrorText(code: string, o: { min_version?: string | 
       return clientOutdatedText(o.min_version ?? null);
     case "staff_client_forbidden":
       return "这是中软平台人员账号，请在网页控制台登录";
+    // 第 56 批（真实流程验收）：律所策略草稿被规则拒绝时，原先一律说“中软服务暂时不可用”——管理员以为服务坏了，其实是没签名或草稿过时
+    case "admin_threshold_not_met":
+      return "这份草稿放宽了规则，要管理员先在自己的电脑上确认签名才能发布（团队版 1 人，律所版 2 人）";
+    case "draft_published":
+      return "这份草稿已经发布过了：刷新后看当前生效的策略";
+    case "draft_stale":
+      return "已有更新的策略发布了，这份草稿已过时：请重新起草";
+    case "draft_unknown":
+      return "找不到这份草稿：可能已被撤下，请刷新后重新起草";
     default:
       return "中软服务暂时不可用，请稍后重试";
   }
 }
+
+/** 规则类拒绝（不是服务故障）：界面按“这件事现在不能做”提示，不提示“稍后重试”。 */
+export const CP_RULE_REJECTIONS: ReadonlySet<string> = new Set(["admin_threshold_not_met", "draft_published", "draft_stale", "draft_unknown"]);

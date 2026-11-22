@@ -24,6 +24,7 @@ function draw(box, raw) {
   clear(
     box,
     d.priced === false ? h("div", { class: "banner warn" }, "价目未配齐：未定价的项显示“未定价”，合计只含已定价部分。") : null,
+    d.basis === "current_estimate" ? h("div", { class: "banner warn" }, "这个月的席位费与加量费按现在的套餐与席位估算（当月结束时没有留下记录），以账单为准。") : null,
     h(
       "div",
       { class: "kpis" },

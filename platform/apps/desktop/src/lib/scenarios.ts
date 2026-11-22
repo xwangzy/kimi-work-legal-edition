@@ -97,7 +97,30 @@ export interface ScenarioCard {
   primaryBy?: { field: string; map: Record<string, string> };
   /** 卡片固定的方法参数（v9.4：同一方法的不同卡，例如劳动争议的“仲裁应对 / 解除前评估”）；与律师填写的字段一起作为方法参数传给 Agent。 */
   args?: Record<string, string>;
+  /**
+   * 这份文书要写当事人身份首部（D-224）：法定首部（起诉状、答辩状、上诉状、仲裁申请书、保全、执行、劳动仲裁申请书与答辩书）
+   * 与惯例首部（律师函、合同、决议、代理词）。开始面板显示本事项《当事人信息（律师填写）》已填 / 未填，发起时自动计入可读材料。
+   */
+  needsParties?: boolean;
 }
+
+/** 要写当事人身份首部的卡（D-224，证据报告 D2 第 4 题逐张核对）。用例核对它与卡片上的 needsParties 一致。 */
+export const NEEDS_PARTIES_CARDS = [
+  "pleading",
+  "defense",
+  "appeal",
+  "arbitration-app",
+  "preservation",
+  "enforcement",
+  "labor-arb-application",
+  "labor-arb-defense-lit",
+  "labor-arb-defense",
+  "demand-lit",
+  "demand-inhouse",
+  "contract-draft",
+  "corporate-resolutions",
+  "agency",
+] as const;
 
 /**
  * 即将推出（v9.4 第 20 批；评审 S1 §5.1 第 4 条：没有方法的业务不挂到相近的方法上，宁可灰显）。只展示、不能发起。
@@ -192,16 +215,10 @@ const more = (f: ScenarioField): ScenarioField => ({ ...f, more: true });
 /** 发函名义（两张函件卡共用）。 */
 const SENDER: ScenarioField = { key: "sender", label: "发函名义", kind: "select", goalOnly: true, options: ["本所受委托发函", "当事人自己发函", "先问我"], more: true };
 
-/** 当事人信息（对外文书的首部）：事项里只有名称，住所、代码、法定代表人写在这里；不写的在文书里留【待填】。 */
-const PARTY_INFO: ScenarioField = {
-  key: "party_info",
-  label: "当事人信息",
-  kind: "long",
-  goalOnly: true,
-  more: true,
-  placeholder: "原告：名称、住所地、统一社会信用代码、法定代表人及职务\n被告：……（自然人写姓名、性别、出生日期、民族、住所、身份证号）",
-  help: "不填的项目在文书里留【待填】；姓名、证件号发给 AI 前会换成代号，导出时还原。",
-};
+/*
+ * 当事人信息（D-224）：原来起诉状、仲裁申请书两张卡各有一栏“当事人信息”自由文字，每份文书重填。现在改成事项里存一次的
+ * 材料《当事人信息（律师填写）.txt》（lib/parties.ts），要写身份首部的卡标 needsParties，开始面板显示已填 / 未填并自动带入。
+ */
 
 export const SCENARIOS: ScenarioCard[] = [
   // ── 诉讼仲裁 ──
@@ -321,8 +338,9 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "pleading-draft",
     allowPartial: true,
+    needsParties: true,
     verb: "开始起草",
-    goal: "请起草民事起诉状。诉讼请求（按我列的顺序与取舍写）：{claims}。拟受理法院：{court}。管辖依据：{forum_basis}。财产保全：{preserve}。当事人信息：{party_info}。",
+    goal: "请起草民事起诉状。诉讼请求（按我列的顺序与取舍写）：{claims}。拟受理法院：{court}。管辖依据：{forum_basis}。财产保全：{preserve}。",
     // 第 35 批真实走查 R4：卡片自带的“补充要求”与面板通用的“补充要求（可选）”同名并列，律师写在哪栏都一样——只留通用栏
     // 第 55 批：补上案情、逐项诉讼请求、当事人信息、管辖依据与保全（原来只有“拟受理法院”一栏）
     fields: [
@@ -330,7 +348,6 @@ export const SCENARIOS: ScenarioCard[] = [
       { key: "court", label: "拟受理法院", kind: "text", placeholder: "可空，待确认" },
       { key: "forum_basis", label: "管辖依据", kind: "select", options: ["协议管辖", "被告住所地", "合同履行地", "不动产所在地（专属）", "待核"], more: true },
       { key: "preserve", label: "财产保全", kind: "select", options: ["不申请", "同时申请", "先问我"], more: true },
-      PARTY_INFO,
     ],
     minMaterials: 0,
     brief: CASE_BRIEF,
@@ -349,6 +366,7 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["民事答辩状（草稿）.docx", "答辩要点与证据对照表.xlsx（附件）", "提交前核对清单（答辩期、管辖异议、反诉）"],
     scenario: "a1.agent_task",
     skill: "defense-draft",
+    needsParties: true,
     verb: "开始起草",
     goal: "请起草民事答辩状（一审）。收到起诉状副本的日期：{received_on}；被告在境内有无住所：{domicile}；总体意见：{stance}。拟提的程序抗辩与反诉：{procedural}。我确认过的事实照写；材料载明但我还没确认的，正文照材料写并注明证据、或用附条件写法，待确认事项列进提交前核对清单（正文不留【待确认】）；非填不可、材料没有的写【待填】，不要推测。",
     fields: [
@@ -375,6 +393,7 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["民事上诉状（草稿）.docx", "上诉理由与一审认定对照表.xlsx（附件）", "提交前核对清单（上诉期、上诉范围、副本份数）"],
     scenario: "a1.agent_task",
     skill: "appeal-draft",
+    needsParties: true,
     verb: "开始起草",
     goal: "请起草民事上诉状（不服一审{ruling}）。判决书或裁定书的送达日期：{served_on}；上诉范围：{scope}；不服的判项：{disputed}；上诉请求：{appeal_claim}；上诉人在境内有无住所：{domicile}。我确认过的事实照写，材料载明但未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），不预测二审结果。",
     fields: [
@@ -400,12 +419,12 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["仲裁申请书（草稿）.docx", "证据目录.xlsx（附件）", "提交前核对清单（仲裁协议、机构规则、时效）"],
     scenario: "a1.agent_task",
     skill: "arbitration-application",
+    needsParties: true,
     verb: "开始起草",
-    goal: "请起草商事仲裁申请书，先核对仲裁协议。仲裁机构：{institution}；仲裁请求（按我列的顺序与取舍写）：{claims}；当事人信息：{party_info}。我确认过的事实与金额照写，材料载明但未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），仲裁规则与收费以我提供的机构文件为准。",
+    goal: "请起草商事仲裁申请书，先核对仲裁协议。仲裁机构：{institution}；仲裁请求（按我列的顺序与取舍写）：{claims}。我确认过的事实与金额照写，材料载明但未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），仲裁规则与收费以我提供的机构文件为准。",
     fields: [
       { key: "institution", label: "仲裁机构", kind: "text", placeholder: "以合同约定为准，可空" },
       claimsField("仲裁请求", "例如：裁决被申请人支付货款 500,000 元"),
-      PARTY_INFO,
     ],
     minMaterials: 1,
     brief: CASE_BRIEF,
@@ -445,6 +464,7 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["财产保全申请书（草稿）.docx", "保全财产线索与担保核对表.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "preservation-application",
+    needsParties: true,
     verb: "开始起草",
     goal: "请起草财产保全申请书：保全阶段为{stage}；请求保全数额：{amount}；担保方式：{guarantee}。财产线索：{assets}。财产线索与担保只用我提供的，不联网查询对方财产。",
     fields: [
@@ -467,6 +487,7 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["强制执行申请书（草稿）.docx", "执行标的计算表.xlsx（含迟延履行期间的利息）", "申请执行核对清单（申请执行期间等）"],
     scenario: "a1.agent_task",
     skill: "enforcement-application",
+    needsParties: true,
     verb: "开始起草",
     goal: "请起草强制执行申请书，并计算执行标的（金额由计算工具算出，算不了的标待算）。法律文书生效日期：{effective_on}；文书规定的履行期限最后一日：{due_on}；对方已履行情况：{paid}。此前是否已保全：{preserved}。",
     fields: [
@@ -513,6 +534,7 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["代理词（草稿）.docx", "争点与依据对照表.xlsx（附件）"],
     scenario: "a1.agent_task",
     skill: "agency-statement",
+    needsParties: true,
     verb: "开始起草",
     goal: "请起草代理词。法庭归纳的争议焦点：{focus_points}。提交期限：{deadline}。事实以我确认过的与已质证的证据为准，未确认的正文用附条件或保守写法、列进提交前核对清单（正文不留【待确认】），不评估胜诉率。",
     fields: [
@@ -604,6 +626,7 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "labor-arbitration-draft",
     args: { doc_kind: "申请书" },
+    needsParties: true,
     verb: "开始起草",
     goal: "请起草劳动仲裁申请书：我方为{side}；拟主张的请求：{claims}。入职日期：{hired_on}；离职日期：{left_on}；离职方式：{leave_type}；月工资：{monthly_wage}。",
     fields: [
@@ -629,6 +652,7 @@ export const SCENARIOS: ScenarioCard[] = [
     args: { doc_kind: "答辩书" },
     // 第 31 批：方法前言 outputs 第一项是申请书，不写 primary 时提示词会把“主交付物”说成申请书
     primary: "劳动仲裁答辩书（草稿）.docx",
+    needsParties: true,
     verb: "开始起草",
     goal: "请起草劳动仲裁答辩书：我方为{side}；收到仲裁申请书副本的日期：{received_on}；请算出答辩期届满日，管辖异议与反申请须在期满前提出；对方请求：{claims}。",
     fields: [
@@ -736,6 +760,7 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "demand-letter",
     allowPartial: true,
+    needsParties: true,
     verb: "开始起草",
     // 第 26 批（评审 S2-12）：字段键与方法参数 letter_type 一致（原来叫 purpose，方法收不到）；类型与方法的六类函件一致
     // 第 55 批：补上案情、要求对方做什么、发函名义（原来没有事实入口，方法只能任务中途问“以谁的名义、要求什么”）
@@ -865,6 +890,7 @@ export const SCENARIOS: ScenarioCard[] = [
     scenario: "a1.agent_task",
     skill: "contract-draft",
     allowPartial: true,
+    needsParties: true,
     verb: "开始起草",
     goal: "请起草一份{type}合同，我方立场以事项为准；交易要点：{points}。争议解决：{dispute}。",
     fields: [
@@ -929,6 +955,7 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["决议（草稿）.docx", "会议通知（草稿）.docx（书面决定不开会的不出）", "签署页（草稿）.docx", "召集与表决核对表.xlsx（通知期限、表决比例、回避）"],
     scenario: "a1.agent_task",
     skill: "corporate-resolutions",
+    needsParties: true,
     verb: "开始起草",
     goal: "请起草{meeting}的文件（{company_type}）：开会的出会议通知、决议与签署页，书面决定不开会的只出决定与签署页；拟议事项：{matters}。会议日期：{meeting_on}；召开方式：{meeting_mode}。以公司章程为准，没有章程的逐项标出待核，表决结果留空。",
     // 第 31 批：全体股东书面决定、一人公司股东决定不开会，主交付物是决定本身（原先恒为《会议通知》）
@@ -1057,6 +1084,7 @@ export const SCENARIOS: ScenarioCard[] = [
     gets: ["律师函或催告函（草稿）.docx（催告函、解除通知或保证责任主张，按你选的路径）", "依据与发送前核对.xlsx"],
     scenario: "a1.agent_task",
     skill: "demand-letter",
+    needsParties: true,
     verb: "开始处理",
     goal: "请就以下履约问题梳理履约事实与依据，并起草函件：{issue}。函件类型：{letter_type}。要求对方：{demand}；发函名义：{sender}。",
     fields: [
@@ -1152,6 +1180,7 @@ export const SCENARIOS: ScenarioCard[] = [
     skill: "labor-arbitration-draft",
     args: { doc_kind: "答辩书", side: "用人单位" },
     primary: "劳动仲裁答辩书（草稿）.docx",
+    needsParties: true,
     verb: "开始起草",
     goal: "请起草劳动仲裁答辩书：收到仲裁申请书副本的日期：{received_on}；请算出答辩期届满日，管辖异议与反申请须在期满前提出；员工请求：{claims}。",
     fields: [

@@ -508,7 +508,10 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
           const ra = retryAfterOf(r.headers["retry-after"]);
           if (ra !== null) retryAfters.push(ra);
         } else all429 = false;
-        if (r.status === 429 || r.status >= 500) tk.failure(code);
+        // 第 56 批（云端审计 6-A）：429 是上游限流，不是上游坏了——照常换下一个候选，但不计入熔断。
+        // 原先连续 3 次 429 就熔断 30 秒；只有一个上游的部署（现状）里，这 30 秒全平台都报“没有可用的上游”，把一次限流放大成一次停服。
+        if (r.status === 429) tk.neutral(code);
+        else if (r.status >= 500) tk.failure(code);
         else {
           // 其他 4xx（请求本身的问题、上游密钥被拒）：不切换
           tk.neutral(code);

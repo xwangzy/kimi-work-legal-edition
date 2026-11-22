@@ -8,6 +8,7 @@ import { BASIS_FIELDS, BASIS_VALUE_LABELS, ENDPOINT_LABELS } from "../lib/labels
 import { jurisdictionLabel, stanceLabel } from "../lib/labels.ts";
 import { Icon } from "./Icons.tsx";
 import { authorizationLine } from "./Consent.tsx";
+import { AuthorizationTrail } from "./AuthorizationTrail.tsx";
 import { STAGE_LABELS, type Stage } from "../lib/matter-stage.ts";
 
 export function basisComplete(b: MatterBasis | undefined): boolean {
@@ -36,7 +37,11 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
     refused || level === "L3b"
       ? { icon: Icon.lock, label: "客户要求不上云 · 只用本机功能", tone: "pill-red" }
       : !complete
-        ? { icon: Icon.question, label: "AI 暂不可用：尚未记录客户授权", tone: "pill-orange" }
+        ? // 第 56 批：新事项没有授权记录是常态，不写成“AI 暂不可用”的告警口吻——一句话说清状态和什么时候记
+          { icon: Icon.question, label: "客户授权待记录 · 第一次用 AI 时记录", tone: "pill-orange" }
+        : matter.basis_state === "needs_ref" || matter.basis_state === "reconfirm"
+          ? // D-225：早期记录缺出处、次处理者清单更新——下次用 AI 时在开始前确认里补记 / 重新确认
+            { icon: Icon.question, label: matter.basis_state === "needs_ref" ? "AI 暂不可用：客户授权待补记出处" : "AI 暂不可用：客户授权待重新确认", tone: "pill-orange" }
         : level === "L3a"
           ? { icon: Icon.shield, label: "敏感事项 · 全部化名 · 每条检索都要你确认", tone: "pill-blue" }
           : { icon: Icon.shield, label: `可用 AI · 姓名证件发送前换成代号${fullPseudonym ? " · 公司名称也换" : ""}`, tone: "pill-green" };
@@ -100,6 +105,9 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
           </button>
         )}
       </div>
+      {/* D-225：客户授权一行只读，点开看每一次记录（只有 matters.get 带历史时显示） */}
+      {/* 还没有任何记录时不再单列一行“尚未记录”（上面的胶囊已经说了；第 56 批走查：同一件事在事项头说了三遍） */}
+      {matter.authorization_history !== undefined && !refused && (complete || matter.authorization_history.length > 0) && <AuthorizationTrail matter={matter} />}
       {refused && (
         <div className="mh-note mh-red">
           客户拒绝云端处理（已记录）：不用云端 AI，也不联网检索，只能用律所私有模型（如已部署）或本机能力；补填客户授权情况也不改变这一点。如已取得新的书面同意，核实后再清除这条记录。
@@ -112,10 +120,10 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
       )}
       {basis && !complete && !refused && level !== "L3b" && (
         // 第 48 批：一句话说结果，待确认的具体项放悬停提示；入口是“记录授权”（与开始任务时同一种确认），告知函为辅
-        <div className="mh-note" title={`待确认：${BASIS_FIELDS.filter((f) => basis[f.key] === "pending").map((f) => f.label).join("、")}`}>
+        <div className={`mh-note${basis.engagement === "pending" ? " mh-quiet" : ""}`} title={`待确认：${BASIS_FIELDS.filter((f) => basis[f.key] === "pending").map((f) => f.label).join("、")}`}>
           {/* 第 51 批（D-216）：新事项没有授权记录是常态——第一次用 AI 时“开始前确认”会请律师记录依据与出处；这里说清楚，也可以现在就记 */}
           {basis.engagement === "pending"
-            ? "第一次用 AI 时会请你记录客户授权的依据与出处；在此之前只用本机功能（读材料、比对、核对法条），不发给 AI、不联网。"
+            ? "记录之前只用本机功能（读材料、比对、核对法条），不发给 AI、不联网。"
             : "这一项确认之前，不会把材料发给 AI，也不会联网查询，只能用本机功能（读材料、比对、核对法条）。"}
           {onEditBasis && (
             <button className="btn-link" onClick={onEditBasis}>

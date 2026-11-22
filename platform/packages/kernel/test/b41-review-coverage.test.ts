@@ -71,7 +71,7 @@ const msgs = (body: Record<string, unknown>): Msg[] => (Array.isArray(body.messa
 const REVIEWER = "现在独立复核";
 
 async function start(marker: string, skill: string, goal: string) {
-  const { matter } = await tk.inv("matters.create", { title: `复核覆盖 ${marker}`, stance: "原告", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, model_endpoint: "standard" });
+  const { matter } = await tk.inv("matters.create", { title: `复核覆盖 ${marker}`, stance: "原告", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条", model_endpoint: "standard" });
   const doc = await importBytes(tk.inv, matter.matter_id, "材料.txt", Buffer.from("本金30万元，2026年1月1日到期未付；范本：付款期限不超过30日，不得预付。", "utf8"), "text/plain");
   const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });
   return tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b41-cov-${marker}-${Date.now()}`, goal: `${marker} ${goal}`, skill, document_version_ids: [doc.document_version_id], mode: "default", plan_first: false });

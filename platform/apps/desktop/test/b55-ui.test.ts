@@ -51,19 +51,20 @@ test("方法库搜索：标题、交付件、材料、常用说法都能搜；�
   assert.deepEqual(withExtra.groups.at(-1)!.cards.map((c) => c.id), ["brand-new-card"]);
 });
 
-test("开始面板：起诉状收案情、逐项诉讼请求、当事人信息；请求自动编号；长文字不进方法参数", () => {
+test("开始面板：起诉状收案情、逐项诉讼请求；请求自动编号；长文字不进方法参数（当事人信息 D-224 改为事项材料）", () => {
   const p = card("pleading");
   assert.ok(p.brief, "起诉状可以直接写案情");
-  assert.deepEqual(p.fields.map((f) => f.key), ["claims", "court", "forum_basis", "preserve", "party_info"]);
-  assert.deepEqual(p.fields.filter((f) => f.more).map((f) => f.key), ["forum_basis", "preserve", "party_info"], "不常用的收进更多选项");
+  assert.deepEqual(p.fields.map((f) => f.key), ["claims", "court", "forum_basis", "preserve"]);
+  assert.deepEqual(p.fields.filter((f) => f.more).map((f) => f.key), ["forum_basis", "preserve"], "不常用的收进更多选项");
+  assert.equal(p.needsParties, true);
   assert.equal(numbered(["判令被告支付货款 100 万元。", "  ", "诉讼费由被告承担；"]), "1. 判令被告支付货款 100 万元；2. 诉讼费由被告承担");
   assert.equal(numbered(["只有一项"]), "只有一项");
   assert.equal(numbered([""]), "");
   const goal = buildGoal(p, { claims: ["支付货款 100 万元", "承担诉讼费"], court: "杭州市余杭区人民法院", preserve: "同时申请" }, "");
   assert.equal(goal, "请起草民事起诉状。诉讼请求（按我列的顺序与取舍写）：1. 支付货款 100 万元；2. 承担诉讼费。拟受理法院：杭州市余杭区人民法院。财产保全：同时申请。");
   assert.equal(buildGoal(p, { claims: [""] }, ""), "请起草民事起诉状。", "没填的整句省略");
-  // 方法参数：短字段进，逐项请求与当事人信息（goalOnly）不进
-  assert.deepEqual(skillArgsOf(p, { claims: ["a", "b"], court: "某法院", forum_basis: "协议管辖", party_info: "原告：……" }), { court: "某法院", forum_basis: "协议管辖" });
+  // 方法参数：短字段进，逐项请求（goalOnly）不进
+  assert.deepEqual(skillArgsOf(p, { claims: ["a", "b"], court: "某法院", forum_basis: "协议管辖" }), { court: "某法院", forum_basis: "协议管辖" });
 });
 
 test("开始面板：没有材料、没有事实、也没写案情时不能开始；有其一即可；事实数没读到不拦", () => {
@@ -185,7 +186,8 @@ test("第三轮入口还在：账号页“本所”一行名称与姓名同一�
   assert.match(c, /<span>\s*<b>\{firm\.firm\?\.name\}<\/b>/);
   assert.match(c, /className="settings-grid pd-grid"/);
   for (const t of ["敏感事项可以用通用 AI 服务（强制全部化名）", "律师可以把问题报告直接发给客服", "同事之间可以经中软同步团队事项（加密，中软打不开）", "放宽的规则须管理员各自在电脑上确认后才生效（团队版 1 人，律所版 2 人）。"]) assert.ok(c.includes(t), t);
-  assert.match(src("pages/FirmUsage.tsx"), /<td className="nowrap audit-at">\{fmtTime\(r\.at\)\}<\/td>/);
+  // 第 56 批：操作记录改成一句话记录，时间列用 auditTime（今年不写年）
+  assert.match(src("pages/FirmUsage.tsx"), /<span className="audit-at" role="cell">\{auditTime\(r\.at\)\}<\/span>/);
 });
 
 test("第四轮：不可逆期限的起算日必填；每张卡直接显示的字段不超过 6 个，其余在“更多选项”", () => {

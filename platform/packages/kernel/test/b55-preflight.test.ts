@@ -5,7 +5,7 @@
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { agentFollowUpPrompt, agentGoalPrompt, preflightLine, preflightOf, PREFLIGHT_EMPTY_RULE, PREFLIGHT_KNOWN_RULE } from "../src/executor/executor.ts";
+import { agentFollowUpPrompt, agentGoalPrompt, preflightLine, preflightOf, PREFLIGHT_EMPTY_RULE, PREFLIGHT_KNOWN_RULE, PREFLIGHT_PARTIES_RULE } from "../src/executor/executor.ts";
 import { importText, makeKernel, type TestKernel } from "./helpers.ts";
 
 const KNOWN = "任务说明与方法参数里律师已经写明的（法院、请求、日期、立场、金额口径等）不再问；";
@@ -43,6 +43,18 @@ test("agentGoalPrompt：这一行紧跟【任务】；不传时与旧版逐字�
   // 去掉这一行后与旧版逐字相同
   assert.equal(withPf.replace(preflightLine(pf), ""), old);
   assert.equal(agentFollowUpPrompt("再改一下", "", false).includes("【开工前已知】"), false);
+});
+
+test("第 56 批（Skills 集成核查 P0-2）：【工作方式】查材料目录有条件，与空事项“不必先查材料目录”不矛盾", () => {
+  const base = { stance: "原告", jurisdiction: "内地民商事", asOf: "2026-11-22", facts: "", goal: "起草起诉状", methodLine: "【方法】按起诉状方法。\n", rulesBlock: "", prefsLine: "" };
+  for (const pf of [undefined, { selected: 0, matterMaterials: 0, confirmedFacts: 0, pendingFacts: 0 }, { selected: 2, matterMaterials: 3, confirmedFacts: 1, pendingFacts: 0 }]) {
+    const p = agentGoalPrompt(pf ? { ...base, preflight: pf } : base);
+    assert.ok(p.includes("【工作方式】事项里有材料时，先用法律工具 materials.list 查看材料目录（快照只读，可用读取与搜索工具查阅全文）；开工前已知里写明本事项没有材料的，不查目录；"), p.slice(0, 200));
+    assert.equal(p.includes("【工作方式】先用法律工具 materials.list"), false, "不再无条件要求先查目录");
+  }
+  // 空事项：开工前已知写“不必先查材料目录”，工作方式写“没有材料的不查目录”——两句同向
+  const empty = agentGoalPrompt({ ...base, preflight: { selected: 0, matterMaterials: 0, confirmedFacts: 0, pendingFacts: 0 } });
+  assert.ok(empty.includes(EMPTY) && empty.includes("没有材料的，不查目录"));
 });
 
 let tk: TestKernel | null = null;
@@ -84,4 +96,42 @@ test("preflightOf 从库里算：最新版本、读不出文字、确认与待�
     preflightLine(pf),
     `【开工前已知】本次指定材料 1 份；本事项共 2 份材料（其中读不出文字的 1 份）；本事项已确认事实 2 条、待确认 1 条。${KNOWN}\n`,
   );
+});
+
+// D-224：本事项有《当事人信息（律师填写）》时加固定句；判断按文件名前缀从库里查，不信任界面传值
+const PARTIES = "本事项有《当事人信息（律师填写）》：文书首部的当事人身份事项以它为准，它没写的项写【待填】，不向律师追问。";
+
+test("D-224 当事人信息：固定句逐字；有材料才加；新版本替换旧版本；勾选了材料却没勾它不加", async () => {
+  assert.equal(PREFLIGHT_PARTIES_RULE, PARTIES);
+  assert.equal(
+    preflightLine({ selected: 0, matterMaterials: 1, confirmedFacts: 0, pendingFacts: 0, parties: true }),
+    `【开工前已知】本次指定材料 0 份；本事项共 1 份材料；本事项已确认事实 0 条、待确认 0 条。${KNOWN}${PARTIES}\n`,
+  );
+  assert.equal(preflightLine({ selected: 0, matterMaterials: 1, confirmedFacts: 0, pendingFacts: 0 }).includes("当事人信息"), false);
+
+  tk ??= await makeKernel({}, "b55-preflight-firm");
+  const { matter } = await tk.inv("matters.create", { title: "当事人信息探针", stance: "原告", consent_status: "not_required", key_dates: { analysis_as_of: "2026-11-22" } });
+  const db = tk.kernel.db;
+  const mid = matter.matter_id;
+  const other = await importText(tk.inv, mid, "合同.txt", "甲方与乙方签订买卖合同。");
+  // 名称里只是提到“当事人信息”的不算（按固定前缀）
+  await importText(tk.inv, mid, "关于当事人信息的说明.txt", "无");
+  assert.equal(preflightOf(db, mid, []).parties, undefined);
+
+  const v1 = await importText(tk.inv, mid, "当事人信息（律师填写）.txt", "【当事人信息（律师填写）】……\n一、我方（原告）：华诚贸易有限公司（单位）\n");
+  assert.equal(preflightOf(db, mid, []).parties, true, "没勾材料 = 可读全部材料");
+  assert.equal(preflightOf(db, mid, [other.document_version_id]).parties, undefined, "勾选了材料却没勾它：读不到，不写这一句");
+  assert.equal(preflightOf(db, mid, [other.document_version_id, v1.document_version_id]).parties, true);
+
+  // 新版本：supersedes 指向上一版，事项里只算一份
+  const before = preflightOf(db, mid, []).matterMaterials;
+  const v2 = await tk.inv("materials.import", { matter_id: mid, filename: "当事人信息（律师填写）.txt", data_base64: Buffer.from("【当事人信息（律师填写）】第二版", "utf8").toString("base64"), mime: "text/plain", supersedes: v1.document_version_id });
+  assert.ok(v2.document_version_id);
+  assert.equal(db.get<{ s: string }>(`SELECT supersedes AS s FROM document_versions WHERE document_version_id = ?`, [v2.document_version_id])!.s, v1.document_version_id);
+  assert.equal(preflightOf(db, mid, []).matterMaterials, before, "替换不增加份数");
+  assert.equal(preflightOf(db, mid, [other.document_version_id, v1.document_version_id]).parties, undefined, "只勾了旧版：旧版已被取代，不算");
+  // 已被取代的不能再被取代（并发两处同时保存时后一处要刷新）；别的事项的材料不能取代
+  await assert.rejects(tk.inv("materials.import", { matter_id: mid, filename: "当事人信息（律师填写）.txt", data_base64: Buffer.from("x", "utf8").toString("base64"), mime: "text/plain", supersedes: v1.document_version_id }), /已经有更新的版本/);
+  const { matter: m2 } = await tk.inv("matters.create", { title: "另一个事项", stance: "原告", consent_status: "not_required" });
+  await assert.rejects(tk.inv("materials.import", { matter_id: m2.matter_id, filename: "当事人信息（律师填写）.txt", data_base64: Buffer.from("x", "utf8").toString("base64"), mime: "text/plain", supersedes: v2.document_version_id }), /不在本事项里/);
 });

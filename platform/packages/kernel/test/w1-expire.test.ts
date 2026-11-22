@@ -29,7 +29,7 @@ test("等待律师期间到达总时长上限：任务按过期收尾（终态�
   const { matter } = await inv("matters.create", {
     title: "过期测试",
     stance: "原告",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
   });
   cloud.model.script = (body) => {
     const first = JSON.stringify(msgs(body).find((m) => m.role === "user")?.content ?? "");

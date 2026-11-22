@@ -63,7 +63,7 @@ test("重新运行后独立复核的修改轮接回重新运行那一次的会�
     const { matter } = await tk.inv("matters.create", {
       title: `重新运行复核 ${marker}`,
       stance: "买方",
-      basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+      basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
       model_endpoint: "standard",
     });
     const doc = await importBytes(tk.inv, matter.matter_id, "交易条款清单.txt", Buffer.from("设备：压装设备一台。价款：人民币120万元，验收合格后10日内一次付清。", "utf8"), "text/plain");

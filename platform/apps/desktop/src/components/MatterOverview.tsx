@@ -12,6 +12,8 @@ import { dueText, dueTone } from "../lib/reminders.ts";
 import { ASSIGNEE_LABELS, derivedTodoText, todoMeta } from "../lib/todos.ts";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
+import { partiesSummary } from "../lib/parties.ts";
+import { PartiesDialog, usePartiesInfo, type PartiesDocRow } from "./PartiesInfo.tsx";
 
 export function StageStrip({ matter, readOnly, onChanged }: { matter: Matter; readOnly: boolean; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
@@ -97,6 +99,54 @@ export function StageStrip({ matter, readOnly, onChanged }: { matter: Matter; re
         </div>
       )}
       {err && <div className="banner banner-red">{err}</div>}
+    </div>
+  );
+}
+
+/**
+ * 当事人信息（D-224）：事项里存一次、各文书首部自动带入。没填时一行安静的提示；填了每方一行（名称 · 已填几项）。
+ * 点开是 PartiesDialog，保存成本事项的一份材料（新版本替换旧版本）。
+ */
+export function PartiesInfoRow({ matter, docs, readOnly, onChanged }: { matter: Matter; docs: PartiesDocRow[]; readOnly: boolean; onChanged: () => void }) {
+  const info = usePartiesInfo(docs);
+  const [open, setOpen] = useState(false);
+  const rows = info.parties ? partiesSummary(info.parties) : [];
+  return (
+    <div className="pi-row">
+      <span className="pi-k">当事人信息</span>
+      {!info.doc ? (
+        <span className="pi-v muted">还没有填当事人信息——起诉状、律师函等文书的首部会留【待填】</span>
+      ) : info.loading ? (
+        <span className="pi-v muted">载入中…</span>
+      ) : rows.length > 0 ? (
+        <span className="pi-v pi-list">
+          {rows.map((r, i) => (
+            <span key={i} className="pi-item">
+              <span className="pi-side">{r.side}</span>
+              <span className="pi-name">{r.name}</span>
+              <span className="muted">· 已填 {r.filled} 项</span>
+            </span>
+          ))}
+        </span>
+      ) : (
+        <span className="pi-v muted">{info.parties ? "已建，还没有写内容" : "已填（格式改过，打开看原文）"}</span>
+      )}
+      {!readOnly && (
+        <button className="btn-link pi-edit" onClick={() => setOpen(true)} disabled={info.loading}>
+          {info.doc ? "修改" : "现在填"}
+        </button>
+      )}
+      {open && (
+        <PartiesDialog
+          matter={matter}
+          info={info}
+          onClose={() => setOpen(false)}
+          onSaved={() => {
+            setOpen(false);
+            onChanged();
+          }}
+        />
+      )}
     </div>
   );
 }

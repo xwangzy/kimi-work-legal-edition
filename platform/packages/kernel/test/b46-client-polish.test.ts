@@ -41,7 +41,7 @@ test("发起前检查：要重新登录、账号停用、客户端过旧——�
 test("发起前检查：额度暂停（本期用完 / 律所上限 / 5 小时窗口 / 个人上限）按缓存视图拦，给“查看用量”入口", () => {
   const q = (v: LaunchQuotaView, at = NOW - 60_000) => launchCheck({ ...base, quota: { view: v, at } });
   assert.match(q(view({ paused: "allowance" }))!.message, /^本所本月 AI 额度已用完：请联系律所管理员加量/);
-  assert.match(q(view({ paused: "cap" }))!.message, /律所设定的本月 AI 用量上限（本期额度的 80%）.*设置 → 管理 → 用量/);
+  assert.match(q(view({ paused: "cap" }))!.message, /律所设定的本月 AI 用量上限（本期额度的 80%）.*设置 → 套餐与用量/);
   assert.match(q(view({ paused: "burst" }))!.message, /最近 5 小时.*起恢复/);
   assert.match(q(view({ own: { used_ratio: 1, enforced: true, denominator: "account_limit" } }))!.message, /个人 AI 额度已用完/);
   assert.equal(q(view({ own: { used_ratio: 1.2, enforced: false, denominator: "seat_quota" } })), null, "个人额度没有硬性生效时不拦");

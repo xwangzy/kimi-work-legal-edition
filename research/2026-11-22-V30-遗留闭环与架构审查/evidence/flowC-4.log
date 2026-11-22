@@ -1,0 +1,14 @@
+[C] admin 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] li 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] zhao 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] admin 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] li 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] zhao 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] admin 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] li 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] C3 admin 额度视图： {"unit":"cny","firm":"0.0354/6 (0.6%)","cap_pct":3,"paused":null,"boost":0,"own":{"used":0.0354,"ratio":0.0295,"req":5},"by_member":["王主任:0.0354(5次)"],"notice":null}
+[C] C3 运营告警： []
+[C] V admin 额度视图： {"unit":"cny","firm":"0.0354/6 (0.6%)","cap_pct":3,"paused":null,"boost":0,"own":{"used":0.0354,"ratio":0.0295,"req":5},"by_member":["王主任:0.0354(5次)"],"notice":null}
+[C] V li 额度视图： {"unit":"cny","firm":"null/null (0.6%)","cap_pct":3,"paused":null,"boost":0,"own":{"used":0,"ratio":0,"req":0},"by_member":"（看不到）","notice":null}
+[C] V zhao 额度视图： {"unit":"cny","firm":"null/null (0.6%)","cap_pct":3,"paused":null,"boost":0,"own":{"used":0,"ratio":0,"req":0},"by_member":"（看不到）","notice":null}
+[C] V 运营告警： []

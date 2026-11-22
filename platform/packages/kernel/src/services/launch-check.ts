@@ -70,7 +70,7 @@ export function launchCheck(i: {
   if (paused === "allowance") return { kind: "quota", code: "quota_exhausted", message: `本所${term} AI 额度已用完：请联系律所管理员加量；下期自动重置`, action: "usage" };
   if (paused === "cap") {
     const cap = typeof v.firm.cap_pct === "number" ? `（本期额度的 ${v.firm.cap_pct}%）` : "";
-    return { kind: "quota", code: "quota_cap_reached", message: `已到律所设定的${term} AI 用量上限${cap}：请律所管理员在“设置 → 管理 → 用量”调整上限`, action: "usage" };
+    return { kind: "quota", code: "quota_cap_reached", message: `已到律所设定的${term} AI 用量上限${cap}：请律所管理员在“设置 → 套餐与用量”调整上限`, action: "usage" };
   }
   if (paused === "burst" && !passed(v.burst?.resets_at, i.now)) {
     const at = hhmm(v.burst?.resets_at);

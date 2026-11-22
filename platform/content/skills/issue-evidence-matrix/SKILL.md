@@ -11,7 +11,7 @@ kwl:
   chain: casefile
   tier: beta
   tools_required: [facts.list, materials.list, xlsx.render_table]
-  tools_optional: [xlsx.edit_cells, materials.read_excerpt, law.search, law.get_version, citations.verify, docx.render_report]
+  tools_optional: [xlsx.edit_cells, materials.read_excerpt, law.search, law.get_article, citations.verify, docx.render_report]
   outputs: [争点—证据矩阵.xlsx, 补证清单（同表工作表）]
   source_lineage: [demo:scene-civil-evidence@v1.0#步骤2和4, demo:scene-civil-strategy@v1.0#步骤1, demo:scene-labor-employer-response@v1.0, v9:§6.2四类事实]
 ---
@@ -26,11 +26,11 @@ kwl:
 ## 2. 输入与前置检查
 1. 调用 `facts.list`（先取全部，再区分 confirmed 与未确认），并调用 `materials.list` 取得材料名称与识别质量，用于证据列回链。事实编号一律用 `facts.list` 返回的事实序号（ref，写作“事实 12”；律师在事项的“事实”页按同一序号可以查到），不写 `fct_` 开头的内部编号（V16 第 41 批真实走查：“事实编号”列写了内部编号，被交付前检查打回、整份重出）。
 2. 律师确认的事实为零时**照常出矩阵**（第 29 批，与文书方法 D-154 同一口径；原先只交要件框架，而任务页没有确认事实的入口）：改用材料原文载明的事实作待证事实，事实编号（如“事实 12”）后标“【未确认】”，覆盖评估的理由开头写“基于未确认事实：”；推论与材料没有载明的事实仍不用，列入“未纳入事实”。回报第一句写明“矩阵依据的事实尚未经你确认”，并列出确认后可能改变评估的关键事实。有确认事实时只用确认事实（第 3 节第 3 步）。
-3. 确认口径（`$claims`、`$side` 与任务说明、【开工前已知】里已给出的直接使用，不再问），缺失时用提问工具**一次问清，不超过 3 问**：我方诉讼地位？拟主张的请求（或需应对的对方请求）有哪些？是否有已知的对方抗辩或举证期限？
+3. 确认口径（方法参数 `claims`、`side` 与任务说明、【开工前已知】里已给出的直接使用，不再问），缺失时用提问工具**一次问清，不超过 3 问**：我方诉讼地位？拟主张的请求（或需应对的对方请求）有哪些？是否有已知的对方抗辩或举证期限？
 4. 请求权要件的通用拆分与常见证据见 `references/claim-elements.md`；如可信区存在本所覆盖层，优先适用。
 
 ## 3. 步骤
-1. **确定请求权基础**：每项请求对应一个请求权基础；用 `law.search`、`law.get_version` 定位法源（行为时法以事件时点为准，与现行法不同的分别写明），用 `citations.verify` 核验。核验不通过的标“依据待核实”，要件拆分仍可进行但须注明。
+1. **确定请求权基础**：每项请求对应一个请求权基础；用 `law.search`、`law.get_article` 定位法源（行为时法以事件时点为准，与现行法不同的分别写明），用 `citations.verify` 批量核验。核验不通过的标“依据待核实”，要件拆分仍可进行但须注明。
 2. **拆分要件**：按 `references/claim-elements.md` 拆成要件；每个要件写明举证责任一般在哪一方（“一般由主张方举证”之类的表述，具体分配由律师判断）。
 3. **事实与证据对应**：把律师确认的事实（确认事实为零时按第 2 节第 2 条用材料载明的事实）挂到对应要件下，写明证据（材料名称 + 位置 + 事实编号，如“事实 12”）、证明目的；同一证据支撑多个要件的分别列出。
 4. **覆盖评估**：每个要件标“已有证据 / 证据薄弱 / 无证据”，并写一句理由（例如“仅有复印件，原件待核”“只有我方单方制作的记录”“对方未签收”）。不评估胜诉率。
@@ -39,14 +39,14 @@ kwl:
 7. **成表**：用 `xlsx.render_table` 生成；律师需要文字版时（请求里有“证据分析”“能主张多少”“写一份分析”），用 `docx.render_report` 出《证据分析》（第 35 批，规格见第 5 节；第 34 批真实走查：律师要证据分析，文字稿漏了诉讼时效、管辖与诉请建议，对方在聊天记录里的承认也没列为证据）。回报中写明：要件总数、无证据要件数、未纳入的未确认事实数。
 
 ## 4. 工具调用约定
-| 工具 | 用途 | 关键参数 | 失败时 |
-|---|---|---|---|
-| facts.list | 读取事实与确认状态 | confirmed_only | 不可用：按“确认事实为零”处理（第 2 节第 2 条），回报中说明事实时间线读取失败 |
-| materials.list | 证据名称与识别质量 | 无 | 不可用：证据列只写事实编号（“事实 12”），注明“材料目录不可用” |
-| materials.read_excerpt | 核对证据原文 | parse_version_id，区间 | 失败：该证据标“原文未核对” |
-| law.search / law.get_version | 请求权基础与版本 | query；law + as_of | 未收录：写“法规库未收录”，要件按通用框架列出并标待核实 |
-| citations.verify | 核验请求权基础与抗辩依据 | citations，as_of | 不可用：依据列全部标“未核验” |
-| xlsx.render_table | 矩阵与补证清单 | title，sheets | 不可用：见第 8 节 |
+| 工具 | 用途 | 关键参数 |
+|---|---|---|
+| facts.list | 读取事实与确认状态 | confirmed_only |
+| materials.list | 证据名称与识别质量 | 无 |
+| materials.read_excerpt | 核对证据原文 | parse_version_id，区间 |
+| law.search / law.get_article | 请求权基础与版本 | query；law + article + as_of |
+| citations.verify | 核验请求权基础与抗辩依据 | citations[{law, article}]（本批要引的条文一次带齐），as_of |
+| xlsx.render_table | 矩阵与补证清单 | title，sheets |
 
 ## 5. 输出规格
 **《争点—证据矩阵》**（title：`争点证据矩阵-<事项简称>`）
@@ -78,5 +78,5 @@ kwl:
 
 ## 8. 依赖缺失时的降级
 - `facts.list` 不可用：按“确认事实为零”处理（第 2 节第 2 条），用材料载明的事实出矩阵并标“【未确认】”，回报中说明事实时间线读取失败；材料也读不到时才只交“请求权要件框架”，标题注明“框架 · 待材料补齐”。
-- `citations.verify` 不可用：依据列全部标“未核验”，表首注明。
-- `xlsx.render_table` 不可用：用受限命令行 `kwl-xlsx create` 生成，并注明“未经表格工具生成”。
+- 请求权基础在法规库未收录：要件按通用框架列出并标“待核实”。
+- 其余工具不可用或失败时，按工作准则第 5 条“工具不可用或失败时”一段处理。

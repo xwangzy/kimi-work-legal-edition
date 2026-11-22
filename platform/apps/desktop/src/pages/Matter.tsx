@@ -8,7 +8,7 @@ import { nav } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { BasisEditor, basisComplete, MatterHeader } from "../components/MatterHeader.tsx";
 import { AuthorizationRecord } from "../components/Consent.tsx";
-import { basisAfterConfirm, confirmNeeds, initialRecord, recordReady, type AuthRecord } from "../lib/authorization.ts";
+import { BASIS_REF_MAX, basisAfterConfirm, confirmNeeds, detailReady, detailSource, initialRecord, recordReady, type AuthRecord } from "../lib/authorization.ts";
 import { Modal } from "../components/Modal.tsx";
 import { WaitBlock } from "../components/Loading.tsx";
 import { countProgress } from "../lib/waiting.ts";
@@ -544,6 +544,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           <MatterBoard
             matter={matter}
             runs={runs}
+            docs={docs}
             onChanged={reload}
             onGo={(t) => {
               // 待核清单的去处（v9.4 第 21 批）：事实标签、材料的表格审阅、审查工作台
@@ -571,7 +572,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           onSave={(b, rec) => {
             setBasisOpen(false);
             // 同意状态由内核按四项派生（不由界面直接改写——复核 S5-A09）；按依据记录时带上类型与出处（第 51 批），逐项编辑记为逐项
-            void patch({ basis: b, ...(rec ? { basis_source: rec.kind, basis_ref: rec.ref.trim() } : {}) }, basisComplete(b) ? "已记录客户授权：可以用 AI 和联网查询" : "还有授权待确认（已记录）：本事项暂时只能用不联网的本机功能");
+            void patch({ basis: b, basis_source: rec.kind, basis_ref: rec.ref.trim() },basisComplete(b) ? "已记录客户授权：可以用 AI 和联网查询" : "还有授权待确认（已记录）：本事项暂时只能用不联网的本机功能");
           }}
         />
       )}
@@ -584,35 +585,42 @@ export function MatterPage({ matterId }: { matterId: string }) {
  * 记录客户授权（第 48 批；第 51 批与“开始前确认”同一个记录表单：依据类型 + 出处，敏感事项另勾单独同意，四项收在“逐项记录”）；
  * 已齐备时“调整”直接给四项编辑（撤回某一项、改成不适用等）。改动都有记录。
  */
-function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Matter; basis: MatterBasis; endpoint: string; onClose: () => void; onSave: (b: MatterBasis, rec: AuthRecord | null) => void }) {
+function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Matter; basis: MatterBasis; endpoint: string; onClose: () => void; onSave: (b: MatterBasis, rec: { kind: string; ref: string }) => void }) {
   const complete = basisComplete(basis);
   const [b, setB] = useState(basis);
   const [defaults, setDefaults] = useState<AiAuthorization | null>(null);
   const [record, setRecord] = useState<AuthRecord>(() => initialRecord(null, matter));
   const [touched, setTouched] = useState(false);
+  // 已有出处时沿用（调整四项也要带上出处，D-225）；没有出处时按常用条款预填，律师看到并点确认
+  const [adjustRef, setAdjustRef] = useState(matter.basis_ref ?? "");
   useEffect(() => {
-    if (complete) return;
     api
       .aiAuthorization()
       .then((a) => {
         setDefaults(a);
         if (!touched) setRecord(initialRecord(a, matter));
+        if (!matter.basis_ref && a.engagement_terms && a.default_ref) setAdjustRef((v) => v || a.default_ref || "");
       })
       .catch(() => setDefaults(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complete]);
+  }, []);
   const [detail, setDetail] = useState<MatterBasis | null>(complete ? basis : null);
   const need = confirmNeeds(basis);
-  const ready = detail ? true : recordReady(record, need.sensitive);
+  // D-225：逐项记录、调整四项都须写出处
+  const ready = complete ? detailReady(adjustRef) : detail ? detailReady(record.ref) : recordReady(record, need.sensitive);
   return (
     <Modal title={complete ? "客户授权" : "记录客户授权"} onClose={onClose} wide>
       {complete ? (
         <>
           <p className="muted">
             四项分别记录；任一项改为“待确认”后，本事项只能用不需要联网的本机功能。改动都有记录。
-            {matter.basis_ref ? ` 依据出处：${matter.basis_ref}` : ""}
+            {matter.basis_state === "needs_ref" ? " 这是早期记录，缺少出处，请补记一次。" : ""}
           </p>
           <BasisEditor basis={b} endpoint={endpoint} onChange={setB} />
+          <label className="authz-ref">
+            <span>出处</span>
+            <input value={adjustRef} maxLength={BASIS_REF_MAX} placeholder="委托合同名称或编号、条款号；或客户书面同意的日期与方式" onChange={(e) => setAdjustRef(e.target.value)} aria-label="授权依据的出处" />
+          </label>
         </>
       ) : (
         <AuthorizationRecord
@@ -637,7 +645,13 @@ function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Mat
         <button
           className="btn-primary"
           disabled={!ready}
-          onClick={() => (complete ? onSave(b, null) : detail ? onSave(detail, null) : onSave(basisAfterConfirm(basis, { general: true, sensitive: record.sensitive }), record))}
+          onClick={() =>
+            complete
+              ? onSave(b, { kind: detailSource(record, matter), ref: adjustRef })
+              : detail
+                ? onSave(detail, { kind: detailSource(record, matter), ref: record.ref })
+                : onSave(basisAfterConfirm(basis, { general: true, sensitive: record.sensitive }), { kind: record.kind!, ref: record.ref })
+          }
         >
           {complete ? "保存" : "记录授权"}
         </button>

@@ -15,12 +15,12 @@ window.kwl = (() => {
     setVal(dlg.querySelector('input[placeholder^="例如：甲公司股权转让"]'), m.title);
     if (m.client) setVal(dlg.querySelector('input[placeholder^="委托人"]'), m.client);
     if (m.counter) setVal(dlg.querySelector('input[placeholder^="多个以顿号"]'), m.counter);
-    dlg.querySelectorAll('input[type=radio]')[0].click(); await sleep(300);
+    { const g = [...dlg.querySelectorAll('[role=radio]')].find((b) => b.textContent.trim().startsWith('一般')); if (g && g.getAttribute('aria-checked') !== 'true') g.click(); await sleep(300); }
     if (m.eventDate || m.region || m.asOf) {
       [...dlg.querySelectorAll('button')].find((b) => b.textContent.includes('更多设置')).click(); await sleep(400);
       if (m.eventDate) setVal(dlg.querySelector('input[placeholder^="如 2023-05"]'), m.eventDate);
       if (m.region) setVal(dlg.querySelector('input[placeholder^="如 上海市"]'), m.region);
-      if (m.asOf) setVal(dlg.querySelector('input[type=date]'), m.asOf);
+      if (m.asOf) setVal([...dlg.querySelectorAll('input[type=date]')].at(-1), m.asOf);
       await sleep(300);
     }
     btn(dlg, '创建事项').click();
@@ -35,38 +35,105 @@ window.kwl = (() => {
     await until(() => (document.querySelector('main')?.innerText.match(/已添加/g) ?? []).length >= paths.length, 60000);
     return paths.length;
   }
+  const lastDlg = () => [...document.querySelectorAll('[role=dialog]')].at(-1);
+  // 当事人信息（D-224）：开始面板里的“现在填 / 修改”打开对话框，按 我方 / 对方 分组填；parties = [{ side, name?, kind?, role?, f: { 标签: 值 } }]
+  async function fillParties(dlg, parties) {
+    const entry = await until(() => dlg.querySelector('.ss-parties button'), 20000);
+    entry.click(); await sleep(800);
+    const pd = await until(() => { const d = lastDlg(); return d && d !== dlg && d.querySelector('.pi-group') ? d : null; });
+    for (let i = 0; i < parties.length; i++) {
+      const p = parties[i];
+      let groups = [...pd.querySelectorAll('.pi-group')];
+      if (!groups[i]) { [...pd.querySelectorAll('button')].find((b) => b.className.includes('pi-add')).click(); await sleep(400); groups = [...pd.querySelectorAll('.pi-group')]; }
+      const g = groups[i];
+      if (p.kind) { const k = [...g.querySelectorAll('[role=radio]')].find((b) => b.textContent.trim() === p.kind); if (k && k.getAttribute('aria-checked') !== 'true') { k.click(); await sleep(300); } }
+      if (p.role) setVal(g.querySelector('input[aria-label="称谓"]'), p.role);
+      if (p.name) setVal(g.querySelector('input[aria-label="名称"], input[aria-label="姓名"]'), p.name);
+      await sleep(150);
+      for (const [label, v] of Object.entries(p.f ?? {})) {
+        if (label === '性别') { g.querySelector('[aria-label="性别"]').click(); await sleep(300); await pickOpt(v); continue; }
+        const inp = g.querySelector(`input[aria-label="${label}"]`); if (!inp) throw new Error('no party field ' + label); setVal(inp, v); await sleep(120);
+      }
+    }
+    btn(pd, '保存').click();
+    await until(() => !document.body.contains(pd), 20000);
+    await until(() => /已填/.test(dlg.querySelector('.ss-parties')?.innerText || ''), 20000);
+    await sleep(800);
+  }
   async function start(card, matterId, o = {}) {
     location.hash = '#/start/' + card + '/' + matterId; await sleep(1200);
     const dlg = await until(() => document.querySelector('[role=dialog]'));
-    await until(() => dlg.querySelectorAll('input[type=checkbox]').length >= (o.minDocs ?? o.docs?.length ?? 0), 15000);
+    await until(() => dlg.querySelectorAll('input[type=checkbox][aria-label]').length >= (o.minDocs ?? o.docs?.length ?? 0), 15000);
+    if (o.parties) await fillParties(dlg, o.parties);
+    const docBoxes = () => [...dlg.querySelectorAll('.ss-docs input[type=checkbox][aria-label]')];
     if (o.docs) {
       // 只勾指定的材料，按给出的先后顺序勾（回稿比对要先上一稿、后回稿）
-      for (const c of dlg.querySelectorAll('input[type=checkbox]')) if (c.checked && c.getAttribute('aria-label')) { c.click(); await sleep(120); }
-      for (const d of o.docs) { const c = [...dlg.querySelectorAll('input[type=checkbox]')].find((x) => (x.getAttribute('aria-label') || '').includes(d)); if (!c) throw new Error('no doc ' + d); if (!c.checked) c.click(); await sleep(150); }
-    } else if (o.checkAll !== false) for (const c of dlg.querySelectorAll('input[type=checkbox]')) if (!c.checked && c.getAttribute('aria-label')) c.click();
+      for (const c of docBoxes()) if (c.checked) { c.click(); await sleep(120); }
+      for (const d of o.docs) { const c = docBoxes().find((x) => (x.getAttribute('aria-label') || '').includes(d)); if (!c) throw new Error('no doc ' + d); if (!c.checked) c.click(); await sleep(150); }
+    } else if (o.checkAll !== false) for (const c of docBoxes()) if (!c.checked) { c.click(); await sleep(80); }
     await sleep(300);
-    const spec = FIELDS[card].f;
+    const spec = (o.spec ?? FIELDS[card]).f;
     for (const [k, v] of Object.entries(o.fields ?? {})) {
-      const [label, kind] = spec[k];
-      const field = [...dlg.querySelectorAll('label.ss-field')].find((l) => l.querySelector('.ss-label')?.textContent.replace('*', '').trim() === label);
+      if (!spec[k]) throw new Error('卡上没有字段 ' + k);
+      const [label, kind, more] = spec[k];
+      if (more) { const m = dlg.querySelector('button.ss-more'); if (m && m.getAttribute('aria-expanded') !== 'true') { m.click(); await sleep(400); } }
+      const field = [...dlg.querySelectorAll('.ss-field')].find((l) => l.querySelector('.ss-label')?.textContent.replace('*', '').trim() === label);
       if (!field) throw new Error('no field ' + k);
       if (kind === 'select') { field.querySelector('button').click(); await sleep(300); await pickOpt(v); }
-      else if (kind === 'multi') { for (const x of v) { const c = [...field.querySelectorAll('button')].find((b) => b.textContent.trim() === x); if (c && c.getAttribute('aria-pressed') !== 'true') c.click(); await sleep(150); } }
+      else if (kind === 'multi') { for (const x of v) { const c = [...field.querySelectorAll('button')].find((b) => b.textContent.trim() === x); if (!c) throw new Error('no option ' + x); if (c.getAttribute('aria-pressed') !== 'true') c.click(); await sleep(150); } }
+      else if (kind === 'list') {
+        const items = Array.isArray(v) ? v : [v];
+        for (let i = 0; i < items.length; i++) {
+          let inp = field.querySelector(`input[aria-label="${label}第 ${i + 1} 项"]`);
+          if (!inp) { [...field.querySelectorAll('button')].find((b) => b.textContent.includes('加一项')).click(); await sleep(300); inp = await until(() => field.querySelector(`input[aria-label="${label}第 ${i + 1} 项"]`)); }
+          setVal(inp, items[i]); await sleep(150);
+        }
+      }
       else setVal(field.querySelector('textarea,input'), v);
       await sleep(200);
     }
+    if (o.brief) { const ta = [...dlg.querySelectorAll('textarea')].find((t) => t.getAttribute('aria-label') && t.getAttribute('aria-label') !== '补充要求' && !Object.values(spec).some((s) => s[0] === t.getAttribute('aria-label'))); if (!ta) throw new Error('no brief'); setVal(ta, o.brief); }
     if (o.extra) setVal(dlg.querySelector('textarea[aria-label="补充要求"]'), o.extra);
     await sleep(1800);
-    const go = btn(dlg, FIELDS[card].verb) || btn(dlg, '下一步：确认');
-    if (!go || go.disabled) throw new Error('start disabled: ' + dlg.innerText.slice(-200));
-    go.click(); await sleep(1500);
-    // 开始前确认（若有）
-    for (let i = 0; i < 3 && !/#\/run\//.test(location.hash); i++) {
-      const d2 = document.querySelector('[role=dialog]');
-      if (d2) { if (/还有一个任务在进行/.test(d2.innerText)) throw new Error('matter busy'); const b = btn(d2, '确认发起') || [...d2.querySelectorAll('button')].reverse().find((b) => !/取消|返回|关闭|查看|看看/.test(b.textContent) && !b.disabled); if (b) b.click(); }
-      await sleep(1500);
+    const verb = (o.spec ?? FIELDS[card]).verb;
+    const go = await until(() => { const b = btn(dlg, verb) || btn(dlg, '下一步：确认'); return b && !b.disabled ? b : null; }, 30000).catch(() => null);
+    if (!go) throw new Error('start disabled: ' + dlg.innerText.slice(-300));
+    go.click(); await sleep(1800);
+    // 开始前确认：第一次用 AI 时记录客户授权（委托合同中的 AI 条款 + 出处，D-216 / D-225）
+    for (let i = 0; i < 8 && !/#\/run\//.test(location.hash); i++) {
+      const d2 = lastDlg();
+      const ack = d2 && btn(d2, '我知道了，继续'); // 第一次用 AI 的说明（每台电脑一次）
+      if (ack) { ack.click(); await sleep(2000); continue; }
+      if (d2 && /开始前确认/.test(d2.innerText) && !/正在记录并开始|正在开始/.test(d2.innerText)) {
+        if (/还有一个任务在进行/.test(d2.innerText)) throw new Error('matter busy');
+        const rec = d2.querySelector('.authz-record');
+        if (rec) {
+          const k = [...rec.querySelectorAll('[role=radio]')].find((b) => b.textContent.includes(o.basisKind ?? '委托合同中的 AI 条款'));
+          if (k && k.getAttribute('aria-checked') !== 'true') { k.click(); await sleep(400); }
+          const ref = await until(() => rec.querySelector('input[aria-label="授权依据的出处"]'));
+          if (!ref.value.trim()) setVal(ref, o.basisRef ?? '委托代理合同第 9 条');
+          const sens = rec.querySelector('.authz-sensitive input[type=checkbox]'); if (sens && !sens.checked) sens.click();
+          await sleep(500);
+        }
+        const b = btn(d2, '记录授权并开始') || btn(d2, '重新确认并开始') || btn(d2, '确认发起');
+        if (b && !b.disabled) b.click();
+        else if (i === 7) throw new Error('confirm disabled: ' + d2.innerText.slice(-300));
+      }
+      await sleep(2000);
     }
     return location.hash;
+  }
+  // 复核建议（D-223）：勾选“复核建议”区块里的意见（nos 为空＝全部），点“按勾选的意见修改”，再点“确认追问”
+  async function reviewApply(run, mat, nos) {
+    await open(run, mat); await sleep(1500);
+    const sec = await until(() => document.querySelector('section[aria-label="复核建议"]'), 20000);
+    for (const c of sec.querySelectorAll('input[type=checkbox]')) { const n = Number((c.getAttribute('aria-label') || '').match(/第 (\d+) 条/)?.[1]); if ((!nos || !nos.length || nos.includes(n)) && !c.checked) { c.click(); await sleep(150); } }
+    const head = sec.querySelector('.review-sugg-title')?.textContent;
+    const b = [...sec.querySelectorAll('button')].find((x) => x.textContent.startsWith('按勾选的意见修改')); if (!b || b.disabled) throw new Error('apply disabled');
+    b.click();
+    const ok = await until(() => { const x = btn(document.querySelector('main'), '确认追问'); return x && !x.disabled ? x : null; }, 60000);
+    ok.click(); await sleep(3000);
+    return [head, location.hash];
   }
   async function open(run, mat) { location.hash = '#/run/' + run + '/' + mat; await sleep(2500); return document.querySelector('main')?.innerText ?? ''; }
   async function plan(run, mat) { const t = await open(run, mat); const i = t.indexOf('请确认工作计划'); return i < 0 ? t.slice(0, 600) : t.slice(i, i + 6000); }
@@ -80,7 +147,7 @@ window.kwl = (() => {
     for (let i = 0; i < 4 && !/#\/run\//.test(location.hash); i++) { const d2 = document.querySelector('[role=dialog]'); if (d2) { const b = btn(d2, '开始') || btn(d2, '确认发起'); if (b) b.click(); } await sleep(1500); }
     return location.hash;
   }
-  async function card(c) { const m = await createMatter(c.matter); if (c.files && c.files.length) await inject(c.files); const h = c.id === 'free' ? await free(m, c.goal) : await start(c.id, m, { minDocs: (c.files || []).length, fields: c.fields, extra: c.extra, ...(c.docs ? { docs: c.docs } : {}) }); return [c.id, m, h.match(/run_[0-9a-f-]+/)?.[0]]; }
+  async function card(c) { const m = await createMatter(c.matter); if (c.files && c.files.length) await inject(c.files); const h = c.id === 'free' ? await free(m, c.goal) : await start(c.id, m, { minDocs: (c.files || []).length, fields: c.fields, extra: c.extra, spec: c.spec, parties: c.parties, brief: c.brief, ...(c.docs ? { docs: c.docs } : {}) }); return [c.id, m, h.match(/run_[0-9a-f-]+/)?.[0]]; }
   // 回答提问卡：picks 是选项文字片段；other 给“其他”里要写的话（可选）
   async function answer(run, mat, picks, other) {
     await open(run, mat); const main = document.querySelector('main');
@@ -95,5 +162,5 @@ window.kwl = (() => {
     const cb = [...main.querySelectorAll('input[type=checkbox]')].find((c) => (c.closest('label')?.innerText || '').includes('同时确认')); if (cb && !cb.checked) cb.click(); await sleep(300);
     const b = [...main.querySelectorAll('button')].find((x) => x.textContent.trim().startsWith('确认并开始起草')); if (!b) throw new Error('no outline'); b.click(); await sleep(2000); return main.innerText.slice(0, 80);
   }
-  return { createMatter, inject, start, free, sleep, until, open, plan, approve, question, card, answer, outline };
+  return { createMatter, inject, start, free, sleep, until, open, plan, approve, question, card, answer, outline, reviewApply, fillParties };
 })(); 'ok'

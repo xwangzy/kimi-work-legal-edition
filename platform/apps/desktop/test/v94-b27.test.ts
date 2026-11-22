@@ -122,7 +122,8 @@ test("期限日写给人看：“10月28日 周三”，跨年加年份；没连
   assert.match(page, /const cs = r && cloudConfigured \? cloudStateText\(/);
   // 第 49 批：我设的与收到的合成一份日程（agendaEntries），新到的就地标“新”，页首“全部标为已读”；看过的仍收在页底
   assert.match(page, /agendaEntries\(data\?\.reminders \?\? \[\], data\?\.inbox \?\? \[\]\)/);
-  assert.match(page, /dueBuckets\(entries\)/);
+  // 第 56 批：日程分组改为 已过期 / 本周 / 本月 / 以后（agendaGroups）
+  assert.match(page, /agendaGroups\(entries\)/);
   assert.match(page, /\{unread\.length\} 条新提醒/);
   assert.match(page, /看过的提醒（\{read\.length\}）/);
 });

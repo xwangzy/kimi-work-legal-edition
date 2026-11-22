@@ -35,7 +35,7 @@ class FakeLedger {
   server!: Server;
   base = "";
   tenants = new Map<string, Tenant>();
-  leases = new Map<string, { tid: string; sid: string; holder: string; units: number; closed: boolean }>();
+  leases = new Map<string, { tid: string; sid: string; holder: string; units: number; closed: boolean; revoked?: boolean }>();
   seen = new Set<string>();
   rows: UsageRecord[] = [];
   leaseCalls: Record<string, unknown>[] = [];
@@ -91,7 +91,7 @@ class FakeLedger {
             this.loseNextReply = false;
             return reply(500, { error: { code: "internal", message: "x" } });
           }
-          return reply(200, { ok: true, accepted, duplicates, closed: l.closed });
+          return reply(200, { ok: true, accepted, duplicates, closed: l.closed, ...(l.revoked ? { revoked: true } : {}) });
         }
         reply(404, { error: { code: "not_found", message: "x" } });
       });
@@ -339,5 +339,59 @@ test("复核 S9B-03：只限支持服务的凭据在网关被拒（受众不符�
   servers.push(gw);
   const r = await fetch(`http://127.0.0.1:${(gw.address() as AddressInfo).port}/v1/models`, { headers: { authorization: `Bearer ${token("ten_q_i", "s_i", ["support"])}` } });
   assert.equal(r.status, 401);
+  await quota.close();
+});
+
+test("第 56 批：旧租约余量不够下一次请求时，先把这个席位闲置的旧租约报最终再领新的——接近上限时不被自己没用完的预占挡住；有在途请求的租约不动", async () => {
+  const tid = "ten_q_idle";
+  // 每份租约恰好发本次所需（leaseUnits 0）；账本余量只够“一份整租约 + 一点”——旧租约不归还，第二次请求就领不到
+  L.tenant(tid, { allowance: 0, leaseUnits: 0, limitedBy: "cap" });
+  // lowWaterRatio 0：关掉后台预取，第二次请求必须同步领新租约
+  const quota = new LeaseQuota({ ledger: ledger(), holder: "gw-idle", flushMs: 60_000, lowWaterRatio: 0 });
+  const chat = await gatewayWith(quota, []);
+  // 先探出一次请求的预占量
+  L.tenants.get(tid)!.allowance = 1_000_000;
+  const b0 = L.leaseCalls.length;
+  assert.equal((await chat(tid, "seat_i1")).status, 200);
+  const est = L.leaseCalls[b0]!.need_estimate as { input: number; output: number };
+  const need = est.input + est.output;
+  await quota.flush();
+  const used1 = L.tenants.get(tid)!.used;
+  assert.ok(used1 > 0 && used1 < need, `实际用量 ${used1} 小于预占 ${need}`);
+  // 把上限收紧到：已用 + 一次预占 + 一点点（< 两次预占）。旧租约（未用 need − used1）若仍算在途，余量 = need + 余 − (need − used1) − used1 < need
+  L.tenants.get(tid)!.allowance = used1 + need + 1;
+  const s0 = L.settleCalls.length;
+  const r2 = await chat(tid, "seat_i1");
+  assert.equal(r2.status, 200, `第二次请求应放行（改前 402）：${await r2.clone().text()}`);
+  const finals = L.settleCalls.slice(s0).filter((c) => c.final);
+  assert.equal(finals.length, 1, "领新租约前把闲置旧租约报了最终");
+  assert.equal([...L.leases.values()].filter((l) => l.tid === tid && !l.closed).length, 1, "账本上这个席位只剩一份在途租约");
+  // 额度真的不够时照常拒绝（不是靠归还硬挤）：再来一次，余量 1 + (need − 第二次实际用量)… 小于 need
+  await quota.flush();
+  L.tenants.get(tid)!.allowance = L.tenants.get(tid)!.used + need - 1;
+  const r3 = await chat(tid, "seat_i1");
+  assert.equal(r3.status, 402, "余量不够一次请求：拒绝");
+  assert.equal(((await r3.json()) as { error: { code: string } }).error.code, "quota_cap_reached");
+  await quota.close();
+});
+
+test("第 56 批：控制面收回租约（额度收紧）后，网关下次回报得知，丢掉本机余量——下一次请求重新领，按新约束被拒", async () => {
+  const tid = "ten_q_revoke";
+  L.tenant(tid, { leaseUnits: 500_000, limitedBy: "cap" });
+  const quota = new LeaseQuota({ ledger: ledger(), holder: "gw-rv", flushMs: 60_000, lowWaterRatio: 0 });
+  const chat = await gatewayWith(quota, []);
+  const b0 = L.leaseCalls.length;
+  assert.equal((await chat(tid, "seat_r1")).status, 200);
+  assert.equal((await chat(tid, "seat_r1")).status, 200);
+  assert.equal(L.leaseCalls.length - b0, 1, "一份大租约够用多次");
+  // 管理员调低上限：账本把这份租约标为已收回、余量归零，并且不再发新的
+  for (const l of L.leases.values()) if (l.tid === tid) Object.assign(l, { closed: true, revoked: true });
+  L.tenants.get(tid)!.deny = { status: 402, code: "quota_cap_reached", message: "已到律所设定的本期用量上限" };
+  // 回报之前网关还不知道（本机余量仍在）；回报一次后得知
+  await quota.flush();
+  const r = await chat(tid, "seat_r1");
+  assert.equal(r.status, 402, "收回后不能再从旧租约扣");
+  assert.equal(((await r.json()) as { error: { code: string } }).error.code, "quota_cap_reached");
+  assert.equal(L.leaseCalls.length - b0, 2, "重新向账本领（被拒）");
   await quota.close();
 });

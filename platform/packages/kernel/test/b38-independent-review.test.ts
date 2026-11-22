@@ -37,7 +37,7 @@ async function startRun(marker: string) {
   const { matter } = await tk.inv("matters.create", {
     title: `复核测试 ${marker}`,
     stance: "买方",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
     model_endpoint: "standard",
   });
   const doc = await importBytes(tk.inv, matter.matter_id, "交易条款清单.txt", Buffer.from("设备：压装设备一台。价款：人民币120万元，验收合格后10日内一次付清。", "utf8"), "text/plain");
@@ -250,7 +250,7 @@ test("称呼代号说明随任务说明发出：委托原话写“周总”、�
     return { content: "已收到。" };
   };
   try {
-    const { matter } = await tk.inv("matters.create", { title: "称呼代号", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, model_endpoint: "standard" });
+    const { matter } = await tk.inv("matters.create", { title: "称呼代号", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条", model_endpoint: "standard" });
     const doc = await importBytes(tk.inv, matter.matter_id, "客户指示邮件.txt", Buffer.from("顾律师：协议用我们的抬头起草，先发我看。\n董事长：周启明", "utf8"), "text/plain");
     const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });
     const run = await tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b38-leg-${Date.now()}`, goal: "B38LEG 周总的指示和条款清单不一致的，单独列清单。", document_version_ids: [doc.document_version_id], mode: "default", plan_first: false });
@@ -560,7 +560,7 @@ test("律师退回计划时写的修改意见也交给复核人（V13 W6 复测�
     return inner(body);
   };
   try {
-    const { matter } = await tk.inv("matters.create", { title: "复核测试 B38PLANFB", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, model_endpoint: "standard" });
+    const { matter } = await tk.inv("matters.create", { title: "复核测试 B38PLANFB", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条", model_endpoint: "standard" });
     const doc = await importBytes(tk.inv, matter.matter_id, "交易条款清单.txt", Buffer.from("设备：压装设备一台。价款：人民币120万元。", "utf8"), "text/plain");
     const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });
     const run = await tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b38-planfb-${Date.now()}`, goal: "B38PLANFB 起草设备买卖合同，价款120万元", skill: "contract-draft", document_version_ids: [doc.document_version_id], mode: "default", plan_first: true });

@@ -311,6 +311,8 @@ button.chip:active, :is(button, summary, label).pill:active, .alias-chip:active 
 :is(button, summary, label).pill:hover { background: var(--bg-hover); }
 .mh-note { font-size: var(--fs-body); color: var(--status-warning-strong); }
 .mh-red { color: var(--status-danger-strong); }
+/* 常态说明（新事项还没记授权）：次要灰，不用告警色 */
+.mh-quiet { color: var(--text-secondary); }
 
 .basis-editor { display: flex; flex-direction: column; gap: 10px; }
 .basis-row { display: flex; justify-content: space-between; gap: 16px; align-items: center; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding: 9px 12px; }
@@ -610,6 +612,8 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .msg-meta { font-size: var(--fs-xs); color: var(--text-secondary); margin-top: 2px; }
 .chat-tools { display: flex; justify-content: flex-end; color: var(--text-secondary); }
 .chat-composer textarea { min-height: 56px; }
+/* 问答的适用范围（D-225）：常驻一行安静提示，次要字、不加盒子 */
+.chat-scope-note { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); color: var(--text-secondary); }
 
 /* 等回答的状态（第 48 批；第 51 批改为 Kimi 蓝点，动画与减少动效见 styles-motion.css 的 .kwl-pulse）：蓝点 + 说明 + 已用时间 + 补充说明 */
 .chat-wait { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 280px; max-width: 520px; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-subtle); color: var(--text-secondary); }

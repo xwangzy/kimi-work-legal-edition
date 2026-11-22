@@ -70,7 +70,7 @@ test("重新运行：上一次运行的核对表标成已被取代，不进本�
     const { matter } = await tk.inv("matters.create", {
       title: `重新运行取代 ${marker}`,
       stance: "卖方",
-      basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+      basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
       model_endpoint: "standard",
     });
     const doc = await importBytes(tk.inv, matter.matter_id, "对账单.txt", Buffer.from("买方欠付货款人民币30万元，合同约定收到催款通知后付款。", "utf8"), "text/plain");

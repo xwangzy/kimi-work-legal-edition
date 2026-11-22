@@ -70,7 +70,7 @@ async function nextCard(runId: string, timeoutMs = 60_000): Promise<any> {
 test("检索确认卡：“本任务内”只放行改写后（原文只能逐条）；手动档不提供“本任务内”；L3a 只有改写后、只能逐条", { timeout: 240_000 }, async () => {
   const { inv } = tk;
   // ① L2 默认档：“本任务内 + 原文”被拒；“本任务内”（缺省改写后）放行本运行内后续含当事人的检索，全部以改写后发出
-  const { matter: m1 } = await inv("matters.create", { title: "回购纠纷", stance: "原告", client_name: "孙悦", counterparty: "甲科技有限公司", basis: FULL });
+  const { matter: m1 } = await inv("matters.create", { title: "回购纠纷", stance: "原告", client_name: "孙悦", counterparty: "甲科技有限公司", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   script("WDTASK", [
     { id: "s1", name: "WebSearch", args: { query: "甲科技有限公司 股权回购 判例" } },
     { id: "s2", name: "WebSearch", args: { query: "甲科技有限公司 增资 对赌" } },
@@ -89,7 +89,7 @@ test("检索确认卡：“本任务内”只放行改写后（原文只能逐�
   assert.ok(qs.every((q) => !q.includes("甲科技")), `“本任务内”只发改写后的查询：${JSON.stringify(qs)}`);
 
   // ② 手动档：确认卡只提供“本次”
-  const { matter: m2 } = await inv("matters.create", { title: "手动档事项", stance: "原告", counterparty: "乙商贸有限公司", basis: FULL });
+  const { matter: m2 } = await inv("matters.create", { title: "手动档事项", stance: "原告", counterparty: "乙商贸有限公司", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   script("WDMANUAL", [{ id: "m1", name: "WebSearch", args: { query: "乙商贸有限公司 买卖合同" } }]);
   const r2 = await start(m2.matter_id, "WDMANUAL 研究", "manual");
   const c2 = await nextCard(r2);
@@ -98,7 +98,7 @@ test("检索确认卡：“本任务内”只放行改写后（原文只能逐�
   await waitRun(inv, r2, 120_000);
 
   // ③ L3a：卡片只有改写后、只能逐条；原文变体被拒；改写后逐条放行
-  const { matter: m3 } = await inv("matters.create", { title: "高敏事项", stance: "原告", counterparty: "丙投资有限公司", confidentiality: "high", basis: FULL });
+  const { matter: m3 } = await inv("matters.create", { title: "高敏事项", stance: "原告", counterparty: "丙投资有限公司", confidentiality: "high", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   script("WDL3A", [{ id: "l1", name: "WebSearch", args: { query: "丙投资有限公司 股东出资" } }]);
   const r3 = await start(m3.matter_id, "WDL3A 研究", "default");
   const c3 = await nextCard(r3);
@@ -115,7 +115,7 @@ test("检索确认卡：“本任务内”只放行改写后（原文只能逐�
 
 test("等待律师时宿主退出：任务离开“等待”并进入终态；确认卡与提问消失；作答接口不再受理（复核 S5-B03）", { timeout: 180_000 }, async () => {
   const { inv } = tk;
-  const { matter } = await inv("matters.create", { title: "宿主退出", stance: "原告", basis: FULL });
+  const { matter } = await inv("matters.create", { title: "宿主退出", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   script("WDEXIT", [{ id: "q1", name: "AskUserQuestion", args: { questions: [{ question: "按哪方立场？", header: "立场", options: [{ label: "原告", description: "" }, { label: "被告", description: "" }], multi_select: false }] } }]);
   const runId = await start(matter.matter_id, "WDEXIT 起草", "default");
   let q: any = null;
@@ -144,7 +144,7 @@ test("等待律师时宿主退出：任务离开“等待”并进入终态；�
 });
 
 test("律所档位上限（开发形态的本机配置项）：未设置为“默认”（自动档须律所明示开启）；取值不认识按最严“手动”（复核 S5-A13）", async () => {
-  const mid = (await tk.inv("matters.create", { title: "档位上限", stance: "原告", basis: FULL })).matter.matter_id;
+  const mid = (await tk.inv("matters.create", { title: "档位上限", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" })).matter.matter_id;
   const firm = (env: NodeJS.ProcessEnv) => firmPolicyInputOf(localDevPolicyBody(env));
   assert.equal(kapMatterPolicy(tk.kernel.db, mid, firm({})).maxMode, "default");
   assert.equal(kapMatterPolicy(tk.kernel.db, mid, firm({ ZR_FIRM_MAX_MODE: "autoo" })).maxMode, "manual");
@@ -175,7 +175,7 @@ test("只改端点时复核“不适用”的约束：私有端点下“转委�
     title: "端点变更",
     stance: "原告",
     model_endpoint: "private",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "not_applicable" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "not_applicable" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
   });
   assert.equal(matter.basis_complete, true);
   const r = await inv("matters.update", { matter_id: matter.matter_id, patch: { model_endpoint: "standard" } });
@@ -186,7 +186,7 @@ test("只改端点时复核“不适用”的约束：私有端点下“转委�
 
 test("先出计划：计划卡经内核 runs.interactions 呈现，律师批准后才执行（复核 S5-A14；收敛 D-03 的整链证据）", { timeout: 180_000 }, async () => {
   const { inv } = tk;
-  const { matter } = await inv("matters.create", { title: "先出计划", stance: "原告", basis: FULL });
+  const { matter } = await inv("matters.create", { title: "先出计划", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   const planPath = (body: Record<string, unknown>): string | null => {
     const m = /(\/[^\s"\\]+\/plans\/[A-Za-z0-9._-]+\.md)/.exec(JSON.stringify(body.messages ?? []));
     return m ? m[1]! : null;
@@ -253,7 +253,7 @@ test("对外口径与行为一致（第 06 篇 T20；复核 S5-A01/A14）：“�
   const CORE = "逐条确认，确认后可按原文发出（保留机构当事人名称；已识别的自然人姓名与证件、账号不发出）";
   const conn = readFileSync(fileURLToPath(new URL("../../../apps/desktop/src/pages/Connections.tsx", import.meta.url)), "utf8");
   assert.equal(conn.split(CORE).length - 1, 3, "设置的“资料来源”、律师版“数据去向说明”与“管理 → 诊断”的技术版去向表三处");
-  const { matter } = await inv("matters.create", { title: "口径", stance: "原告", client_name: "己公司", basis: FULL });
+  const { matter } = await inv("matters.create", { title: "口径", stance: "原告", client_name: "己公司", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   const notice = await inv("matters.consent_notice", { matter_id: matter.matter_id });
   const dl = await inv("artifacts.download", { artifact_version_id: notice.artifact_version_id });
   const xml = readZipEntries(Buffer.from(dl.data_base64, "base64")).get("word/document.xml")!.toString("utf8");
@@ -266,7 +266,7 @@ test("对外口径与行为一致（第 06 篇 T20；复核 S5-A01/A14）：“�
 test("审批策略指纹（复核 S5-B18）：当事人词典与事项头当事人的增改不使批准失效；密级、依据、端点等审批相关字段变化才使指纹改变并作废批准", async () => {
   const { inv } = tk;
   const db = tk.kernel.db;
-  const { matter } = await inv("matters.create", { title: "指纹", stance: "原告", client_name: "庚公司", basis: FULL });
+  const { matter } = await inv("matters.create", { title: "指纹", stance: "原告", client_name: "庚公司", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   const mid = matter.matter_id;
   const fp = () => approvalPolicyOf(db.get<any>(`SELECT confidentiality, consent_status, basis, model_endpoint, full_pseudonym, collab_scope FROM matters WHERE matter_id = ?`, [mid])!);
   const keys = generateKeyPairSync("ed25519");

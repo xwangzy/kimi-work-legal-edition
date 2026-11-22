@@ -18,6 +18,8 @@ import type { ScenarioCard } from "../lib/scenarios.ts";
 import type { ScenarioField } from "../lib/scenarios.ts";
 import { briefFilename, briefGoalLine, buildGoal, canStartPartial, caseGap, materialScopeText, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelBrief, startPanelInitial, wordDocGap } from "../lib/scenarios.ts";
 import { localDay } from "../lib/recovery-reminder.ts";
+import { PARTIES_PREFIX, partiesShort, withPartiesDoc } from "../lib/parties.ts";
+import { PartiesDialog, usePartiesInfo } from "./PartiesInfo.tsx";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { scenarioChoice } from "./ModeSelector.tsx";
@@ -41,7 +43,9 @@ interface Props {
   onNewMatter: () => void;
   /** documents 属于哪个事项（切换事项后，新事项的材料到达前不重置勾选）。 */
   documentsFor: string | null;
-  documents: { document_version_id: string; filename: string; role?: MaterialRole | null }[];
+  documents: { document_version_id: string; filename: string; role?: MaterialRole | null; supersedes?: string | null; quarantined_at?: string | null; created_at?: string }[];
+  /** 材料变了（面板里填了当事人信息，D-224）：请上层重读本事项材料。 */
+  onDocsChanged?: () => void;
   policy: RunPolicyView | null;
   /** 从输入框带来的任务描述（作为补充要求）。 */
   initialExtra?: string;
@@ -50,10 +54,15 @@ interface Props {
 }
 
 
-export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatter, documentsFor, documents: allDocs, policy, initialExtra, onImport, onClose }: Props) {
+export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatter, documentsFor, documents: allDocs, policy, initialExtra, onImport, onClose, onDocsChanged }: Props) {
   // 只用属于当前所选事项的材料（切换事项后旧事项的材料不显示、不勾选）
   const docsReady = !!matter && documentsFor === matter.matter_id;
-  const documents = docsReady ? allDocs : [];
+  // 当事人信息的旧版本不列出（D-224：事项里只有一份当前有效；案卷文件夹里同一位置的旧版本照旧列出，回稿对比要用）
+  const documents = useMemo(() => {
+    if (!docsReady) return [];
+    const old = new Set(allDocs.map((d) => d.supersedes).filter((x): x is string => !!x));
+    return allDocs.filter((d) => !(old.has(d.document_version_id) && d.filename.startsWith(PARTIES_PREFIX)));
+  }, [docsReady, allDocs]);
   const [matterMenu, setMatterMenu] = useState(false);
   // 律师在输入框写的是问题时预填进“问题”栏（第 35 批）
   const [values, setValues] = useState<Record<string, string | string[]>>(() => startPanelInitial(card, initialExtra).values);
@@ -63,6 +72,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const day = useMemo(() => localDay(), []);
   /** 已经存过的案情（同一段文字不重复存：点了“下一步：确认”又返回时）。 */
   const savedBrief = useRef<{ matter: string; text: string; id: string } | null>(null);
+  // 当事人信息（D-224）：要写身份首部的卡显示本事项已填 / 未填；发起时自动计入可读材料
+  const parties = usePartiesInfo(card.needsParties && docsReady ? documents : null);
+  const [partiesOpen, setPartiesOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [adding, setAdding] = useState(false);
   const [docIds, setDocIds] = useState<string[]>(() => preselectDocs(card, documents));
@@ -216,6 +228,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
         }
         if (docIds.length > 0 && !docIds.includes(id)) v = { ...value, documentIds: [...docIds, id] };
       }
+      // 当事人信息（D-224）：与案情说明同一口径——勾了别的材料时一并勾上；一份都没勾时它已在全部材料里
+      const withParties = withPartiesDoc(v.documentIds, parties.doc?.document_version_id ?? null, !!card.needsParties);
+      if (withParties.length !== v.documentIds.length) v = { ...v, documentIds: withParties };
       const fresh = v === value && estimate && f && f[0] === matter && f[1] === value && f[2] === opts ? estimate : null;
       const p = fresh ?? (await prepareStart(matter, v, opts));
       // 依据未齐、去向有提醒：转到发起确认（在那里原地记录客户同意）
@@ -524,6 +539,34 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
               <textarea aria-label={card.brief.label} rows={documents.length > 0 ? 3 : 5} placeholder={card.brief.placeholder} value={brief} onChange={(e) => setBrief(e.target.value)} />
               <span className="ss-field-help muted">会存成本事项的一份材料《{briefFilename(day).replace(/\.txt$/, "")}》，后面的任务接着用；助手把它当作你的陈述，其中的事实列为待你确认。</span>
             </label>
+          )}
+          {/* 当事人信息（D-224）：事项里存一次，文书首部按它写；不强制 */}
+          {matter && card.needsParties && docsReady && (
+            <div className="ss-parties">
+              <span className="ss-parties-k">当事人信息</span>
+              <span className={parties.doc ? "" : "muted"}>
+                {!parties.doc ? "未填，文书首部会留【待填】" : parties.loading ? "载入中…" : parties.parties && partiesShort(parties.parties) ? `已填（${partiesShort(parties.parties)}）` : "已填"}
+              </span>
+              {(matter.lifecycle ?? "active") === "active" && !matter.is_sample && (
+                <button type="button" className="btn-link" disabled={parties.loading} onClick={() => setPartiesOpen(true)}>
+                  {parties.doc ? "修改" : "现在填"}
+                </button>
+              )}
+            </div>
+          )}
+          {partiesOpen && matter && (
+            <PartiesDialog
+              matter={matter}
+              info={parties}
+              onClose={() => setPartiesOpen(false)}
+              onSaved={({ id, replaced }) => {
+                setPartiesOpen(false);
+                // 新版本不按“新导入的自动勾选”勾上（一份都没勾时勾上反而把范围缩成只有它）；勾过旧版的换成新版
+                known.current.add(id);
+                setDocIds((ids) => (replaced && ids.includes(replaced) ? ids.map((x) => (x === replaced ? id : x)) : ids));
+                onDocsChanged?.();
+              }}
+            />
           )}
           {/* 本事项已有的事实：开工前就说助手手里有什么 */}
           {card.scenario === "a1.agent_task" && factCounts && factCounts.confirmed + factCounts.proposed > 0 && (

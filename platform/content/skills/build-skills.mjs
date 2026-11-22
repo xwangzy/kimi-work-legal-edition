@@ -59,6 +59,12 @@ for (const id of ids) {
   const fm = frontmatter(text, file);
   if (fm.name !== id || !/^[a-z][a-z0-9-]{1,47}$/.test(id)) throw new Error(`${file}：name 必须与目录名一致且为小写连字符`);
   if (!fm.description || [...fm.description].length > 250) throw new Error(`${file}：description 必填且不超过 250 字（现 ${[...(fm.description ?? "")].length} 字）`);
+  // 第 56 批（Skills 集成核查 P0-1）：正文不得含上游 expandSkillParameters 会替换的占位符（`$参数名`、`$ARGUMENTS`、`$0`……）——
+  // 上游按 Skill 工具 args 按位置替换，没传 args 就替换成空串（“受诉法院（``）”）。方法参数一律写成“方法参数 `name`”，
+  // 值只由内核提示词里“方法参数：name=…”一行给出（executor.ts methodPromptLine）。用例 packages/kernel/test/b56-skill-params.test.ts 按上游同一规则复核
+  const body = text.replace(/^---\n[\s\S]*?\n---\n/, "");
+  const placeholder = /\$(?:ARGUMENTS|\d|[A-Za-z_])[A-Za-z_0-9[\]]*/.exec(body);
+  if (placeholder) throw new Error(`${file}：正文含会被上游按 Skill 参数替换的占位符 ${placeholder[0]}，请改写成“方法参数 \`名称\`”`);
   const req = fm.kwl.tools_required ?? [];
   const bad = req.filter((t) => !LEGAL_MCP_TOOLS.includes(t));
   if (bad.length) throw new Error(`${file}：tools_required 含 Agent 调不到的工具：${bad.join("、")}`);

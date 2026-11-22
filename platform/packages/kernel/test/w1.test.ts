@@ -43,7 +43,7 @@ test("W1 确认卡：含当事人的检索——改写后允许（闸门核验�
     stance: "原告",
     client_name: "孙悦",
     counterparty: "甲科技有限公司",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
     model_endpoint: "standard",
   });
   assert.equal(matter.basis_complete, true);
@@ -199,8 +199,8 @@ test("W1 批准凭据：闸门侧独立核验——伪造签名、他人运行�
 test("W1 运行模式按事项策略钳制：L2 允许自动档与预授权；L3a 最高默认档、不得预授权；越级请求被拒绝", { timeout: 60_000 }, async () => {
   const { inv } = tk;
   const full = { engagement: "confirmed", personal_info: "confirmed", sensitive: "confirmed", subprocessor: "confirmed" };
-  const l2 = (await inv("matters.create", { title: "L2 事项", stance: "原告", basis: full })).matter;
-  const l3a = (await inv("matters.create", { title: "L3a 事项", stance: "原告", confidentiality: "high", basis: full })).matter;
+  const l2 = (await inv("matters.create", { title: "L2 事项", stance: "原告", basis: full, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" })).matter;
+  const l3a = (await inv("matters.create", { title: "L3a 事项", stance: "原告", confidentiality: "high", basis: full, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" })).matter;
   const p2 = (await inv("matters.get", { matter_id: l2.matter_id })).run_policy;
   const p3 = (await inv("matters.get", { matter_id: l3a.matter_id })).run_policy;
   assert.deepEqual(p2.allowed_modes, ["chat", "manual", "default", "auto"]);
@@ -223,7 +223,7 @@ test("W1 四项依据分项记录：任一待确认即不齐备（consent_status
   const doc = await importText(inv, matter.matter_id, "a.txt", "材料");
   const est = await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });
   assert.match(est.data_where.warning, /四项依据/);
-  const upd = await inv("matters.update", { matter_id: matter.matter_id, patch: { basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" } } });
+  const upd = await inv("matters.update", { matter_id: matter.matter_id, patch: { basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" } });
   assert.equal(upd.matter.basis_complete, true);
   assert.equal(upd.matter.consent_status, "agreed");
   await assert.rejects(inv("matters.update", { matter_id: matter.matter_id, patch: { basis: { engagement: "yes" } } }), /basis/);

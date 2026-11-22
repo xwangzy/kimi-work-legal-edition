@@ -1,7 +1,7 @@
 // 第 55 批：场景卡 ↔ 方法（SKILL.md）契约（审计 A 的 P1-4、P1-5）。
 //
 // ① 参数名：开始面板会作为“方法参数”传出的字段键（不标 goalOnly、键为小写字母与下划线），卡上固定参数 args，
-//    以及按勾选材料补的参数（docArgsFor），都要在对应方法 frontmatter 的 arguments 里声明——方法正文用 `$键名` 引用，
+//    以及按勾选材料补的参数（docArgsFor），都要在对应方法 frontmatter 的 arguments 里声明——方法正文用“方法参数 `键名`”引用（第 56 批前是 `$键名`），
 //    没声明的参数模型只能自己猜对应。另核一次项数不超过内核上限（方法参数至多 8 项，packages/kernel/src/api/index.ts）。
 // ② 交付物：卡片“你得到什么”（gets）与方法 outputs 的判定规则——
 //    a. 名称归一：文件名后的括注说明去掉（“证据目录.xlsx（附件）”→“证据目录.xlsx”）；“修订说明（致客户 / 致对方）.docx”
@@ -60,7 +60,8 @@ test("① 卡片会作为方法参数传出的字段键、固定参数、按材�
 test("① 本轮开始面板新加的管辖依据、财产保全已在起诉状方法声明；仲裁申请书声明财产保全", () => {
   assert.deepEqual(argumentsOf("pleading-draft"), ["court", "forum_basis", "preserve"]);
   assert.ok(argumentsOf("arbitration-application").includes("preserve"));
-  for (const k of ["court", "forum_basis", "preserve"]) assert.match(skillText("pleading-draft"), new RegExp(`\\$${k}`), `正文引用 $${k}`);
+  // 第 56 批：正文写“方法参数 `k`”（上游会把 `$k` 按 Skill 工具 args 替换，没传就成空串；见 packages/kernel/test/b56-skill-params.test.ts）
+  for (const k of ["court", "forum_basis", "preserve"]) assert.match(skillText("pleading-draft"), new RegExp(`方法参数 \`${k}\``), `正文引用方法参数 ${k}`);
 });
 
 function cardGaps(): string[] {

@@ -453,6 +453,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           policy={policy}
           {...(starting.extra ? { initialExtra: starting.extra } : {})}
           onImport={(f) => importFiles(f)}
+          onDocsChanged={() => starting.matterId && loadMatter(starting.matterId)}
           onClose={() => setStarting(null)}
         />
       )}

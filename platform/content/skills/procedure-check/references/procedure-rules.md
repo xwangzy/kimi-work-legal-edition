@@ -1,6 +1,6 @@
 # 管辖与时效核查规则详表
 
-> 用法：procedure-check 第 3 节。条号是**检索线索**，写进核查表前须经 `law.search` / `law.get_version` / `citations.verify` 核验；标“待核”的条号拿不准，核验前写法规名称与要点即可。本机法规库可能未收录民事诉讼法、民诉法解释与仲裁法及其解释，查不到时条号标“【待律师核对】”。
+> 用法：procedure-check 第 3 节。条号是**检索线索**，写进核查表前须经 `law.search` / `law.get_article` / `citations.verify` 核验；标“待核”的条号拿不准，核验前写法规名称与要点即可。本机法规库可能未收录民事诉讼法、民诉法解释与仲裁法及其解释，查不到时条号标“【待律师核对】”。
 > 方法骨架改写自 legal-agent-skills（MIT，Copyright (c) 2026 John He (Decikingship)，commit 83df6b13）`lit-analyze-jurisdiction`、`lit-analyze-limitation`；上游脚本（含按年数乘 365 推算日期的做法）未引入。许可见 `content/skills/THIRD_PARTY_LICENSES/legal-agent-skills-LICENSE`。
 
 ## 一、仲裁条款检查

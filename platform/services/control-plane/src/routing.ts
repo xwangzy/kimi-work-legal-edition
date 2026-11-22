@@ -181,6 +181,17 @@ export function validatePrices(raw: unknown): Record<string, PriceItem> {
   return out;
 }
 
+/**
+ * 按金额计费的套餐要用到的别名里，哪些还没有售价（第 56 批，D-222）。
+ * 金额额度 = 售价 × 实际用量：未缓存输入价与输出价缺一不可；缓存命中价可以不单列（按未缓存输入价计，chargeOf 同一口径）。
+ * models 为 null 表示“全部启用的别名”。停用的别名不算（网关不路由它）。
+ */
+export function unpricedAliases(r: Pick<RoutingState, "models">, items: Record<string, PriceItem>, models: readonly string[] | null): string[] {
+  const enabled = r.models.filter((m) => m.enabled).map((m) => m.alias);
+  const need = models === null ? enabled : models.filter((a) => enabled.includes(a));
+  return need.filter((a) => typeof items[a]?.input !== "number" || typeof items[a]?.output !== "number").sort();
+}
+
 /** 新价目版本（整表替换）。 */
 export function setPrices(r: RoutingState, items: unknown, t: number, by: string | null): number {
   const table: PriceTable = { version: currentPrices(r).version + 1, effective_at: new Date(t).toISOString(), by, items: validatePrices(items) };

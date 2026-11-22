@@ -205,6 +205,11 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
       return { ok: true };
     },
     "chat.send": async (p, id) => {
+      // D-225：问答不绑定事项、不查客户授权，只收一段文字——任何带材料或事项的请求一律拒收（不忽略），
+      // 涉及具体案件的材料须在事项里发起，走该事项的客户授权判定（未经有效授权不发给外部模型）
+      for (const k of ["matter_id", "document_version_ids", "documents", "attachments", "files", "material_ids", "artifact_version_ids"]) {
+        if (p?.[k] !== undefined && p?.[k] !== null) throw invalid("问答只用于一般法律问题，不带案件材料：涉及具体案件的材料请在事项里发起");
+      }
       if (!d.qa) throw new DomainError("not_found", "问答未启用", 404);
       try {
         // stream_id：界面生成的一次性编号，回答生成中的部分内容按它推送（chat.delta 广播）

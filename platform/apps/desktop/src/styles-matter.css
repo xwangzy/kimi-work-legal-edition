@@ -33,7 +33,8 @@
 .board-col button.todo-row:active { background: var(--bg-active); }
 .board-col button.todo-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 /* 系统推出的待办（等你确认、AI 已完成待你复核）：橙点 + 右侧“去处理 ›” */
-.todo-mark { flex: none; width: 7px; height: 7px; margin: 0 4px 0 5px; border-radius: 50%; background: var(--status-warning-solid); }
+/* 第 56 批：限定在事项概览里——原先是全局选择器，把任务页“助手的工作清单”里还没做的项也染成了实心橙点（橙色在全应用只表示“等你处理”） */
+.board-col .todo-mark { flex: none; width: 7px; height: 7px; margin: 0 4px 0 5px; border-radius: 50%; background: var(--status-warning-solid); }
 .board-col .todo-go { display: inline-flex; align-items: center; gap: 2px; color: var(--text-secondary); font-size: var(--fs-xs); }
 .board-col .todo-go::after { content: "›"; font-size: var(--fs-body); line-height: 1; color: var(--border-hover); transition: transform var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
 .board-col button.todo-row:hover .todo-go { color: var(--accent-text); }
@@ -113,3 +114,25 @@
 /* 概览“期限”卡：临近的期限着色（三天内红、七天内橙） */
 .w-row b.due-red { color: var(--status-danger-text); }
 .w-row b.due-orange { color: var(--status-warning-text); }
+
+/* ── 当事人信息（D-224）：阶段条下面一行；没填时一句安静的提示，填了每方一行（名称 · 已填几项）──
+   对话框：每方一组，组与组之间一条细线分区，不套描边盒子 */
+.pi-row { display: flex; align-items: baseline; gap: var(--sp-1) var(--sp-4); flex-wrap: wrap; margin: 0 0 var(--sp-4); padding: 0 0 var(--sp-3); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-body); }
+.pi-k { flex: none; color: var(--text-secondary); }
+.pi-v { flex: 1 1 auto; min-width: 0; }
+.pi-list { display: flex; flex-direction: column; gap: 2px; }
+.pi-item { display: inline-flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.pi-side { color: var(--text-secondary); font-size: var(--fs-caption); }
+.pi-name { font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pi-edit { flex: none; margin-left: auto; }
+.pi-lead { margin: 0 0 var(--sp-3); font-size: var(--fs-caption); line-height: 1.7; }
+.pi-groups { display: flex; flex-direction: column; }
+.pi-group { padding: var(--sp-3) 0 var(--sp-4); border-top: 1px solid var(--border-subtle); }
+.pi-group:first-child { border-top: 0; padding-top: 0; }
+.pi-group-head { display: flex; align-items: center; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-3); }
+.pi-group-head .select-trigger { min-width: 112px; }
+.pi-role { flex: 1 1 180px; min-width: 0; }
+.pi-remove { margin-left: auto; color: var(--text-secondary); }
+.pi-add { align-self: flex-start; margin-top: var(--sp-1); font-size: var(--fs-caption); }
+.pi-raw textarea { font: inherit; line-height: 1.7; }
+.pi-note { margin: var(--sp-3) 0 0; font-size: var(--fs-xs); }

@@ -112,7 +112,7 @@ export type LedgerFailure = { ok: false; status: number; code: string; message?:
 
 export interface LedgerClient {
   lease(body: LeaseRequestBody): Promise<({ ok: true } & LeaseGrant) | LedgerFailure>;
-  settle(body: SettleBody): Promise<{ ok: true; accepted: number; duplicates: number; closed: boolean } | LedgerFailure>;
+  settle(body: SettleBody): Promise<{ ok: true; accepted: number; duplicates: number; closed: boolean; /** 第 56 批：控制面已收回这份租约（额度收紧）。 */ revoked?: boolean } | LedgerFailure>;
 }
 
 const CODE_RE = /^[a-z0-9_]{1,48}$/;
@@ -177,7 +177,7 @@ export function httpLedger(o: { baseUrl: string; serviceSecret: string; fetchImp
       const r = await call("/v1/quota/settle", body);
       if (!r.ok) return r;
       const j = r.json ?? {};
-      return { ok: true, accepted: Number(j.accepted) || 0, duplicates: Number(j.duplicates) || 0, closed: j.closed === true };
+      return { ok: true, accepted: Number(j.accepted) || 0, duplicates: Number(j.duplicates) || 0, closed: j.closed === true, ...(j.revoked === true ? { revoked: true } : {}) };
     },
   };
 }
@@ -399,6 +399,24 @@ export class LeaseQuota implements QuotaSource {
     return p;
   }
 
+  /**
+   * 归还这个席位闲置的租约（第 56 批，真实多成员验收查出）：一份租约余量不够下一次请求时，网关会去领新的；但旧租约没用完的部分在
+   * 控制面仍算“在途”，直到 5 分钟到期才释放。额度宽裕时无所谓；接近上限、额度用完或个人额度时，这部分在途把本所（包括持有者自己）
+   * 挡在门外——实测上限 0.18 元、已用 0.035 元，全所一次请求也发不出，每 5 分钟才放行一次。
+   * 做法：领新租约前，把这个席位没有在途请求的旧租约报最终（先把它待回报的记录送完）。先从本机移除再报，报的过程中别的请求不会再从它扣；
+   * 报不成（账本不可达）也只是回到原来的行为：控制面到期后自行收回。
+   */
+  private async releaseIdle(key: string): Promise<void> {
+    const idle = [...this.leases.values()].filter((l) => l.key === key && l.holds === 0);
+    if (!idle.length) return;
+    if (idle.some((l) => this.pending.has(l.id))) await this.flush();
+    for (const l of idle) {
+      if (this.leases.get(l.id) !== l || l.holds !== 0 || this.pending.has(l.id)) continue;
+      this.leases.delete(l.id);
+      await this.o.ledger.settle({ tid: l.tid, lease_id: l.id, holder: this.o.holder, records: [], final: true }).catch(() => null);
+    }
+  }
+
   private prefetch(key: string): void {
     const list = this.usable(key);
     const latest = list.at(-1);
@@ -420,6 +438,7 @@ export class LeaseQuota implements QuotaSource {
     const recent = this.lastFailure.get(key);
     // 一份都不够：同步领取，领到后再试一次；刚失败过（1 秒内）不再打账本——账本不可达时每个请求都等超时会拖垮全所请求
     if (h === null && !(recent && this.o.now() - recent.at < 1_000)) {
+      await this.releaseIdle(key);
       await this.acquire(key, req, price);
       h = this.take(key, req, price);
       // 共用的是别的请求发起的领取（例如后台预取）、领取成功却不够本次：按本次再领一次（复核 S9A-08②）
@@ -520,6 +539,8 @@ export class LeaseQuota implements QuotaSource {
           if (r.ok) {
             this.stats.sent += batch.length;
             this.dropPending(id, batch.length);
+            // 第 56 批：控制面收回了这份租约（管理员调低上限、换了套餐）——丢掉本机余量，下一次请求按新约束重新领
+            if (r.revoked) this.leases.delete(id);
           } else if (r.code === "lease_unknown" || r.code === "lease_holder_mismatch") {
             // 只有账本明确不认这份租约（过保留期、不属本实例）才放弃（复核 S9A-06）：这些记录仍在 meter.jsonl，离线对账可补
             this.stats.dropped += this.pending.get(id)?.length ?? 0;

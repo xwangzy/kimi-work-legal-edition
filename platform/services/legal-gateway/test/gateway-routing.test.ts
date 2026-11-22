@@ -407,8 +407,14 @@ describe("网关动态路由与逐请求计量", () => {
     assert.equal(r.headers.get("retry-after"), "3");
     assert.equal(JSON.parse(r.text).error.code, "upstream_429");
     assert.deepEqual(settles().at(-1)!.record.attempts.map((a) => a.status), [429, 429]);
+    // 第 56 批（云端审计 6-A）：限流不计入熔断——连续 4 次 429 之后，这两个上游每次仍被尝试（没有被“熔断 30 秒”），限流一解除立即可用
+    const before = [ups.p5!.hits, ups.p6!.hits];
+    for (let i = 0; i < 4; i++) assert.equal((await chat("legal/rl")).status, 429);
+    assert.deepEqual([ups.p5!.hits - before[0]!, ups.p6!.hits - before[1]!], [4, 4], "每次都真的发到了上游");
+    assert.notEqual(health.report(sub.current()).p5!.state, "down", "限流不是“上游坏了”");
     ups.p5!.mode = "ok";
     ups.p6!.mode = "ok";
+    assert.equal((await chat("legal/rl")).status, 200, "限流解除后立即可用（改前：熔断打开，30 秒内 503 upstream_unavailable）");
   });
 
   test("客户端断开后读不到 usage（读满时限）：按已转发的输出字符数 / 2 + 输入估算记 estimated", async () => {

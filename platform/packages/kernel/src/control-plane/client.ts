@@ -482,7 +482,7 @@ export class ControlPlaneClient {
     const view = this.view(g.json.draft as Record<string, unknown>);
     if (!view.valid) throw new Error(`草稿未通过本机核验（${view.problem}）：不签名`);
     if (view.digest !== expectedDigest) {
-      this.d.gov.alert("drafts", "draft_changed_before_signing", draftId, "签名时控制面返回的草稿与界面上展示的不同：已拒绝签名（请重新核对草稿内容）");
+      this.d.gov.alert("drafts", "draft_changed_before_signing", draftId, "签名时服务器返回的草稿与你在界面上看到的不一致：已拒绝签名（请重新核对草稿内容）");
       throw new Error("草稿内容与界面展示的不一致：未签名（已告警）");
     }
     const checked = view.kind === "policy" ? validatePolicyDoc(view.doc) : validateConnectorDoc(view.doc);

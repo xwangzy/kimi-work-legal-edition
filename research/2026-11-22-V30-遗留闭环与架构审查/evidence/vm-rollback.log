@@ -1,0 +1,39 @@
+== 0 升级后（新版）
+账本 74 审计 43 运营访问 266 计量 149 提交 e1a59db
+设上限: {"ok":true}
+套餐目录: ['b56-vm-cny', 'b56-vm-tok', 'standard', 'trial']
+账本 74 审计 44 运营访问 272 计量 149 提交 e1a59db
+升级时的备份: /var/backups/kwl/kwl-20261122-090317.tar.gz
+== 1 只回滚代码（旧版读新状态）
+✓ cp-signer：active（mTLS，只许控制面调用，不做 HTTP 探测）
+✓ gateway：healthz 200，readyz 200
+✓ search：healthz 200，readyz 200
+回滚完成：v1.0.8-ip.4
+账本 74 审计 44 运营访问 272 计量 149 提交 177fa3f
+旧版套餐目录（新状态仍在）: ['b56-vm-cny', 'b56-vm-tok', 'standard', 'trial']
+== 2 再升级
+✓ search：healthz 200，readyz 200
+升级完成：v1.0.8-ip.4-2-ge1a59db。上一版本 177fa3ff6a79 记在 /var/lib/kwl-upgrade/previous
+账本 74 审计 44 运营访问 276 计量 149 提交 e1a59db
+== 3 回滚并恢复升级前的备份（状态回去，账与日志保留）
+保留恢复前的 gateway/meter.jsonl
+保留恢复前的 gateway/meter.ack
+保留恢复前的 cp-signer/ledger.jsonl
+保留恢复前的 obs
+恢复前的数据目录留在 /var/lib/kwl.before-restore.1795309574（确认无误后手工删除）
+
+added 14 packages in 80ms
+✓ control-plane：healthz 200，readyz 200
+✓ cp-signer：active（mTLS，只许控制面调用，不做 HTTP 探测）
+✓ gateway：healthz 200，readyz 200
+✓ search：healthz 200，readyz 200
+回滚完成：v1.0.8-ip.4
+账本 74 审计 44 运营访问 276 计量 149 提交 177fa3f
+恢复后套餐目录（升级后建的两个应不在）: ['standard', 'trial']
+审计保留: 恢复前 44 → 恢复后 44；运营访问: 276 → 280（应 ≥ 恢复前）
+== 4 最终升级到新版
+✓ search：healthz 200，readyz 200
+升级完成：v1.0.8-ip.4-2-ge1a59db。上一版本 177fa3ff6a79 记在 /var/lib/kwl-upgrade/previous
+账本 74 审计 44 运营访问 280 计量 149 提交 e1a59db
+/var/lib/kwl.before-restore.1795071916
+/var/lib/kwl.before-restore.1795309574

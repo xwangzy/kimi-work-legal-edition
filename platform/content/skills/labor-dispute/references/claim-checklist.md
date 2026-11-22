@@ -1,6 +1,6 @@
 # 劳动争议请求项：十类漏项清单与敞口公式
 
-> 用法：labor-dispute 第 3 节第 1、5 步。条号是**检索线索**，写进交付件前须经 `law.search` / `law.get_version` / `citations.verify` 核验；标“待核”的条号拿不准，核验前不得写成确定依据。
+> 用法：labor-dispute 第 3 节第 1、5 步。条号是**检索线索**，写进交付件前须经 `law.search` / `law.get_article` / `citations.verify` 核验；标“待核”的条号拿不准，核验前不得写成确定依据。
 > 方法骨架改写自 legal-agent-skills（MIT，Copyright (c) 2026 John He (Decikingship)，commit 83df6b13）`lit-labor-dispute` 与 `expert-labor-*`；上游脚本未引入。许可见 `content/skills/THIRD_PARTY_LICENSES/legal-agent-skills-LICENSE`。
 
 ## 一、十类请求项

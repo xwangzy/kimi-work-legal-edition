@@ -11,7 +11,7 @@ kwl:
   chain: contract
   tier: beta
   tools_required: [materials.list, docx.compare, riskcards.submit, xlsx.render_table]
-  tools_optional: [materials.read_excerpt, riskcards.list, citations.verify, law.get_version, docx.render_report]
+  tools_optional: [materials.read_excerpt, riskcards.list, citations.verify, law.get_article, docx.render_report]
   outputs: [变更清单.xlsx, 重审风险卡（审查工作台）, 回稿审查意见（内部稿）.docx]
   source_lineage: [v9:§S1b回稿比对, spec:历史Demo评估与融合方案#3.2-3, demo:contract@v2.4#合同全流程]
 ---
@@ -24,8 +24,8 @@ kwl:
 - **不适用**：首次审查（→ `contract-review`）；写修订说明（→ `contract-redline`）；生成修订稿（律师在工作台操作）。
 
 ## 2. 输入与前置检查
-1. 调用 `materials.list`，确定基线稿（我方最后发出的版本）与回稿（对方返回的版本）的 `document_version_id`。两份都必须是 DOCX；`$baseline`、`$current` 已指定的直接使用。
-2. 无法确定哪份是基线时（`$baseline`、`$current` 已给的不问），用提问工具一次问清（**不超过 3 问**；本轮关注 `$focus` 已给的不问），例如：哪一份是我方最后发出的版本？对方是否声明“已接受全部修订”？本轮重点关注哪些条款？
+1. 调用 `materials.list`，确定基线稿（我方最后发出的版本）与回稿（对方返回的版本）的 `document_version_id`。两份都必须是 DOCX；方法参数 `baseline`、`current` 已指定的直接使用。
+2. 无法确定哪份是基线时（方法参数 `baseline`、`current` 已给的不问），用提问工具一次问清（**不超过 3 问**；本轮关注（方法参数 `focus`） 已给的不问），例如：哪一份是我方最后发出的版本？对方是否声明“已接受全部修订”？本轮重点关注哪些条款？
 3. 基线稿不是我方最后发出的版本（例如是更早的内部稿）时，比对结果会混入我方自己的改动——在清单首部写明基线来源。
 4. 用 `riskcards.list`（document_version_id = 上一轮被审的版本，即我方据以生成上一稿的那份文件；status = accepted、modified）取得我方上一轮已提出的修改，用于采纳跟踪——事项里有多轮卡时只取上一轮的，拿不准是哪一版时与第 2 条一并问；只跟踪 `changes_document` 为 true 的卡——`lawyer_status` 为 acknowledged 的卡是律师“知悉、不改动”，不是我方提出的修改，不得据此判对方“未采纳”；读不到时跳过跟踪并说明。
 5. **本事项审查要点（v1.1）**：任务说明里有【本事项审查要点 第 n 版】的，对方改动后与某条要点不符的，出卡 `kind: deviation`、`rule_source: firm_rule`、`rule_ref` 写“要点 n：条款”；触及“不可谈”的 `nature: must`、`needs_client_decision: true`。要点没写到的改动照常定性。
@@ -39,21 +39,21 @@ kwl:
    - 段落增删导致条款编号变化的，检查全文互引是否随之失效。
    需要上下文时用 `materials.read_excerpt` 读回稿相应位置。
 4. **采纳跟踪**：把第 2 节第 4 条取得的每张卡的最终文本（modified 用律师改写文本）与回稿对照，标为：已采纳 / 部分采纳 / 未采纳（恢复原文）/ 被另行改写 / 无法判断。“未采纳”和“被另行改写”的，评估对方理由是否可接受，必要时出卡。
-5. **重审并出卡**：对实质改动、受影响条款、未采纳与另行改写的我方修改，按我方立场重审（审查要点可参照 `contract-review` 的必查点：违约金、管辖、解除、责任限制、付款与验收）。新问题用 `riskcards.submit` 提交，`document_version_id` = 回稿版本，`anchor_text` 逐字摘自**回稿**；`issue` 以【回稿新增】【静默改动】【未采纳我方修改】【定义变化影响】之一开头。法律判断的依据用 `citations.verify` 核验，核验不通过写“依据待核实”。
+5. **重审并出卡**：对实质改动、受影响条款、未采纳与另行改写的我方修改，按我方立场重审（审查要点可参照 `contract-review` 的必查点：违约金、管辖、解除、责任限制、付款与验收）。新问题用 `riskcards.submit` 提交，`document_version_id` = 回稿版本，`anchor_text` 逐字摘自**回稿**；`issue` 以【回稿新增】【静默改动】【未采纳我方修改】【定义变化影响】之一开头。法律判断的依据用 `citations.verify` 批量核验，核验不通过写“依据待核实”。
 6. **成表**：用 `xlsx.render_table` 生成《变更清单》（列见第 5 节）；律师需要时，用 `docx.render_report` 生成《回稿审查意见（内部稿）》。
 7. **回报**：在会话中写明改动总数、静默改动数（其中实质性的几处）、我方修改的采纳情况、新提交的卡数，并提醒“比对为段落级，表格单元格、页眉页脚、脚注和编号格式的改动可能未被检出，请律师抽查”。
 
 ## 4. 工具调用约定
-| 工具 | 用途 | 关键参数 | 失败时 |
-|---|---|---|---|
-| materials.list | 找到两份文件的版本 ID | 无 | 不可用：停止，请律师指明两份文件 |
-| docx.compare | 段落级整稿比对与静默改动检出 | baseline_document_version_id，current_document_version_id | 失败（非 DOCX、版本不存在）：如实告知原因；不得凭肉眼通读替代并声称“已全部比对” |
-| materials.read_excerpt | 读取改动上下文与受影响条款 | parse_version_id，区间 | 失败：该处标“上下文未读取” |
-| riskcards.list | 我方上一轮修改 | document_version_id（上一轮被审的版本），status: [accepted, modified] | 不可用：跳过采纳跟踪并说明 |
-| riskcards.submit | 提交重审发现的问题 | document_version_id = 回稿，cards[] | 锚点未定位：按回稿原文修正重交 |
-| citations.verify / law.get_version | 依据核验 | citations，as_of | 不可用：写“依据待核实” |
-| xlsx.render_table | 变更清单 | title，sheets | 不可用：见第 8 节 |
-| docx.render_report | 回稿审查意见 | title，sections | 不可用：只出清单 |
+| 工具 | 用途 | 关键参数 |
+|---|---|---|
+| materials.list | 找到两份文件的版本 ID | 无 |
+| docx.compare | 段落级整稿比对与静默改动检出 | baseline_document_version_id，current_document_version_id |
+| materials.read_excerpt | 读取改动上下文与受影响条款 | parse_version_id，区间 |
+| riskcards.list | 我方上一轮修改 | document_version_id（上一轮被审的版本），status: [accepted, modified] |
+| riskcards.submit | 提交重审发现的问题 | document_version_id = 回稿，cards[] |
+| citations.verify | 依据核验 | citations[{law, article}]（本批要引的条文一次带齐），as_of |
+| xlsx.render_table | 变更清单 | title，sheets |
+| docx.render_report | 回稿审查意见 | title，sections |
 
 ## 5. 输出规格
 **《变更清单》**（`xlsx.render_table`，title：`变更清单-<合同简称>-回稿<日期或轮次>`）
@@ -86,3 +86,5 @@ kwl:
 - `docx.compare` 不可用或文件不是 DOCX：告知律师无法做整稿比对；可在律师同意后用受限命令行 `kwl-docx compare` 做段落比对，结果在清单首部注明“未经内核比对工具生成”；两种方式都不可用时只做人工通读意见，标题写“回稿阅读意见（未做整稿比对）”，不得出现“静默改动已全部检出”之类表述。
 - `riskcards.submit` 不可用：只出变更清单，新问题列在清单“评估意见”列，在最终答复里说明这些问题未能登记为逐条处理的审查意见。
 - `xlsx.render_table` 不可用：用 `kwl-xlsx create` 生成，并注明“未经表格工具生成”。
+- `riskcards.list` 不可用：跳过采纳跟踪并说明。
+- 其余工具不可用或失败时，按工作准则第 5 条“工具不可用或失败时”一段处理。

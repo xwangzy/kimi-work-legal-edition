@@ -1,0 +1,31 @@
+[D] 套餐 每席位 1.2 元 阈值 50,80,100： [200,200]
+[D] D6 恢复到任务验收规模 admin 视图： {"used_ratio":0.0152,"remaining_ratio":0.9848,"paused":null,"boost":0,"used":0.0912,"total":6}
+[D] D6 恢复到任务验收规模 li 视图： {"used_ratio":0.0152,"remaining_ratio":0.9848,"paused":null,"boost":0,"used":null,"total":null}
+[D] D6 恢复到任务验收规模 运营告警： ["anomaly/warn/24：zhao@b56-firm.example 最近 1 小时用量异常（占本期总额度","exhausted/critical/100：第56批验收律所 本期额度已用完","threshold/info/80：第56批验收律所 本期已用 80%","threshold/info/50：第56批验收律所 本期已用 50%","anomaly/warn/17：li@b56-firm.example 最近 1 小时用量异常（占本期总额度 1","threshold/info/1：第56批验收律所 本期已用 1%"]
+[D] D6 恢复到任务验收规模 律所侧提醒字段： []
+[D] 预热 li 11.9s 留置权须债权人合法占有债务人的动产、债务人未履行到期债务，且留置动产与债权属于同
+[D] 预热 zhao 4.9s 先履行抗辩权，是指当事人互负债务且有先后履行顺序时，先履行一方未履行或履行不符合
+[D] 套餐 每席位 0.014 元 阈值 50,80,100： [200,200]
+[D] D3 套餐缩到 0.07 元（已用约 9 成） admin 视图： {"used_ratio":1.4501,"remaining_ratio":0,"paused":"allowance","boost":0,"used":0.1015,"total":0.07}
+[D] D3 套餐缩到 0.07 元（已用约 9 成） li 视图： {"used_ratio":1.4501,"remaining_ratio":0,"paused":"allowance","boost":0,"used":null,"total":null}
+[D] D3 套餐缩到 0.07 元（已用约 9 成） 运营告警： ["anomaly/warn/24：zhao@b56-firm.example 最近 1 小时用量异常（占本期总额度","exhausted/critical/100：第56批验收律所 本期额度已用完","threshold/info/80：第56批验收律所 本期已用 80%","threshold/info/50：第56批验收律所 本期已用 50%","anomaly/warn/17：li@b56-firm.example 最近 1 小时用量异常（占本期总额度 1","threshold/info/1：第56批验收律所 本期已用 1%"]
+[D] D3 套餐缩到 0.07 元（已用约 9 成） 律所侧提醒字段： []
+[D] li 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查看，稍后再问或联系律所管理员
+[D] D3 请求被拒后 admin 视图： {"used_ratio":1.4501,"remaining_ratio":0,"paused":"allowance","boost":0,"used":0.1015,"total":0.07}
+[D] D3 请求被拒后 li 视图： {"used_ratio":1.4501,"remaining_ratio":0,"paused":"allowance","boost":0,"used":null,"total":null}
+[D] D3 请求被拒后 运营告警： ["anomaly/warn/24：zhao@b56-firm.example 最近 1 小时用量异常（占本期总额度","exhausted/critical/100：第56批验收律所 本期额度已用完","threshold/info/80：第56批验收律所 本期已用 80%","threshold/info/50：第56批验收律所 本期已用 50%","anomaly/warn/17：li@b56-firm.example 最近 1 小时用量异常（占本期总额度 1","threshold/info/1：第56批验收律所 本期已用 1%"]
+[D] D3 请求被拒后 律所侧提醒字段： []
+[D] 耗尽后再问 li 0.0s 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查看，稍后再问或联系律所管理员
+[D] 耗尽后再问 zhao 0.0s 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查看，稍后再问或联系律所管理员
+[D] 耗尽后再问 admin 0.0s 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查看，稍后再问或联系律所管理员
+[D] 运营加量 300%： [200,300]
+[D] D4 加量后 admin 视图： {"used_ratio":0.3625,"remaining_ratio":0.6375,"paused":null,"boost":300,"used":0.1015,"total":0.28}
+[D] D4 加量后 li 视图： {"used_ratio":0.3625,"remaining_ratio":0.6375,"paused":null,"boost":300,"used":null,"total":null}
+[D] D4 加量后 运营告警： ["anomaly/warn/24：zhao@b56-firm.example 最近 1 小时用量异常（占本期总额度","exhausted/critical/100：第56批验收律所 本期额度已用完","threshold/info/80：第56批验收律所 本期已用 80%","threshold/info/50：第56批验收律所 本期已用 50%","anomaly/warn/17：li@b56-firm.example 最近 1 小时用量异常（占本期总额度 1","threshold/info/1：第56批验收律所 本期已用 1%"]
+[D] D4 加量后 律所侧提醒字段： []
+[D] li 问答 6.1s： 承包人行使建设工程价款优先受偿权最长不得超过十八个月，自发包人应当给付建设工程价款之日起算，依据为《最高人民法院关于审理建设工程施工合同纠纷
+[D] zhao 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查看，稍后再问或联系律所管理员
+[D] D4 恢复后 admin 视图： {"used_ratio":0.3747,"remaining_ratio":0.6253,"paused":"allowance","boost":300,"used":0.1049,"total":0.28}
+[D] D4 恢复后 li 视图： {"used_ratio":0.3747,"remaining_ratio":0.6253,"paused":"allowance","boost":300,"used":null,"total":null}
+[D] D4 恢复后 运营告警： ["anomaly/warn/24：zhao@b56-firm.example 最近 1 小时用量异常（占本期总额度","exhausted/critical/100：第56批验收律所 本期额度已用完","threshold/info/80：第56批验收律所 本期已用 80%","threshold/info/50：第56批验收律所 本期已用 50%","anomaly/warn/17：li@b56-firm.example 最近 1 小时用量异常（占本期总额度 1","threshold/info/1：第56批验收律所 本期已用 1%"]
+[D] D4 恢复后 律所侧提醒字段： []

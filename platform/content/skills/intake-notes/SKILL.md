@@ -11,7 +11,7 @@ kwl:
   chain: intake
   tier: beta
   tools_required: [materials.list, materials.read_excerpt, docx.render_report]
-  tools_optional: [xlsx.render_table, facts.submit, law.get_version, citations.verify, calc.deadline]
+  tools_optional: [xlsx.render_table, facts.submit, law.get_article, citations.verify, calc.deadline]
   outputs: [访谈纪要.docx, 材料收集清单.xlsx, 紧急期限与冲突待核清单.xlsx]
   source_lineage: [demo:meeting-notes, demo:scenes#materialsRequired, upstream:legal-agent-skills@83df6b13:lit-case-intake, spec:v9.4评审S1§6.1-11]
 ---
@@ -20,14 +20,14 @@ kwl:
 
 ## 1. 适用范围
 - **交付**：①《访谈纪要》.docx；②《材料收集清单》.xlsx；③《紧急期限与冲突待核清单》.xlsx（两张工作表：“紧急期限待核”“冲突待核主体”）。
-- **陈述来源**（第 31 批）：访谈对象是委托人或其员工的标“客户陈述”；访谈对象不是委托人（`$who` 写明是目标公司管理层、交易对方、证人等）时标“访谈对象陈述（角色）”，不写成“客户陈述”——尽调访谈的陈述要与委托人的陈述分开（同 `due-diligence` 的口径）。
+- **陈述来源**（第 31 批）：访谈对象是委托人或其员工的标“客户陈述”；访谈对象不是委托人（方法参数 `who` 写明是目标公司管理层、交易对方、证人等）时标“访谈对象陈述（角色）”，不写成“客户陈述”——尽调访谈的陈述要与委托人的陈述分开（同 `due-diligence` 的口径）。
 - **只记录、不下结论**：纪要中只记录陈述（按上一条标来源）和“待核实”，法律判断留给律师；期限算出最保守的届满日供律师核算，**不下“已过”“未过”的结论**；冲突**只列主体，不判断有无冲突**。
 - **不适用**：材料已较齐全、需要编目与时间线（→ `casefile-organize`）；时效与管辖的正式核查（→ `procedure-check`）。
 
 ## 2. 输入与前置检查
 1. 调用 `materials.list`，了解事项中已有哪些材料及识别质量（partial / unreadable 的写明未识别页数），这是材料清单“已提供”一栏的依据。
 2. 读取访谈或沟通记录（`materials.read_excerpt` 或工作区 `materials/` 快照）；没有记录时，只按案件类型出材料收集清单与冲突待核主体（来自已有材料）。
-3. 确认案件类型（`$case_type`）与我方立场（`$side`，事项口径已有的不再问）；不明时用提问工具询问律师，**一次问清，不超过 3 问**。
+3. 确认案件类型（方法参数 `case_type`）与我方立场（方法参数 `side`，事项口径已有的不再问）；不明时用提问工具询问律师，**一次问清，不超过 3 问**。
 4. 各类案件的建议收集清单、紧急期限类型见 `references/collection-lists.md`。
 
 ## 3. 步骤
@@ -44,15 +44,15 @@ kwl:
 7. **成文**：纪要用 `docx.render_report`（title：`访谈纪要-<日期>`）；材料清单用 `xlsx.render_table`（title：`材料收集清单-<事项简称>`，工作表“材料清单”）；待核清单用 `xlsx.render_table`（title：`紧急期限与冲突待核清单-<事项简称>`）。
 
 ## 4. 工具调用约定
-| 工具 | 用途 | 关键参数 | 失败时 |
-|---|---|---|---|
-| materials.list | 已有材料与识别质量 | 无 | 不可用：清单状态一栏全部写“待核对”，并说明原因 |
-| materials.read_excerpt | 读取访谈记录与已有材料 | parse_version_id，区间 | 读取失败：在纪要中列出“未能读取的材料” |
-| facts.submit | 关键陈述入事实时间线（可选） | facts[{statement, quote, …}]，状态 claimed | 不可用：跳过，纪要照常生成 |
-| law.get_version / citations.verify | 核验律师法第 39 条等引用（可选） | law，article，as_of | 不可用：条号后标“待核” |
-| calc.deadline | 紧急期限的最保守届满日（可选） | 起算事实日，期间，规则 | 不可用：届满日标“待律师计算”，写明起算事实与期间规则 |
-| docx.render_report | 访谈纪要 | title，sections | 不可用：用受限命令行 `kwl-docx create` 生成，并注明“未经文书工具生成” |
-| xlsx.render_table | 材料清单、待核清单 | title，sheets | 不可用：用受限命令行 `kwl-xlsx create` 生成，并注明“未经表格工具生成” |
+| 工具 | 用途 | 关键参数 |
+|---|---|---|
+| materials.list | 已有材料与识别质量 | 无 |
+| materials.read_excerpt | 读取访谈记录与已有材料 | parse_version_id，区间 |
+| facts.submit | 关键陈述入事实时间线（可选） | facts[{statement, quote, …}]，状态 claimed |
+| citations.verify | 核验律师法第 39 条等引用（可选） | law，article，as_of |
+| calc.deadline | 紧急期限的最保守届满日（可选） | 起算事实日，期间，规则 |
+| docx.render_report | 访谈纪要 | title，sections |
+| xlsx.render_table | 材料清单、待核清单 | title，sheets |
 
 ## 5. 输出规格
 - **访谈纪要**：标题、时间、参加人（代号原样）、上述七个部分；末尾附“紧急期限待核（摘要）”与“冲突待核主体（摘要）”各一段，详见清单。
@@ -80,3 +80,4 @@ kwl:
 ## 8. 依赖缺失时的降级
 - 无法读取访谈记录：只交付按案件类型生成的材料收集清单，以及从已有材料中能列出的冲突待核主体，并说明纪要未生成的原因。
 - `xlsx.render_table` 不可用：待核清单与材料清单用受限命令行生成；仍不可用时写入纪要末尾，并注明“未经表格工具生成”。
+- 其余工具不可用或失败时，按工作准则第 5 条“工具不可用或失败时”一段处理。

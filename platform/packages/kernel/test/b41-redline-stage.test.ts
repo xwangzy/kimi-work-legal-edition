@@ -35,7 +35,7 @@ async function startRun(marker: string, redline: string) {
   const { matter } = await tk.inv("matters.create", {
     title: `分段测试 ${marker}`,
     stance: "买方",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
     model_endpoint: "standard",
   });
   const docx = createDocx("设备买卖合同", [{ heading: "第二条 价款", paragraphs: ["2.1 价款为人民币120万元，合同签订后三日内一次付清。"] }], { mark: false });

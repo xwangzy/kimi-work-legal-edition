@@ -20,9 +20,9 @@ import { createHash, createPublicKey, generateKeyPairSync, hkdfSync, randomBytes
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { StateStore } from "./state-store.ts";
 import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
-import { availability, boostPct as quotaBoost, chargeLease, closeLease, emptyQuota, ensurePeriod, forecastExhaust, leaseQuota, memberLimitOf, migrateQuota, outstanding, pausedOf, QuotaError, quotaView, ratio, setCap as quotaSetCap, sweepLeases, totalsOf, usedOf, type QuotaCtx, type QuotaState } from "./quota.ts";
+import { availability, boostPct as quotaBoost, chargeLease, closeLease, emptyQuota, ensurePeriod, forecastExhaust, leaseQuota, memberLimitOf, migrateQuota, outstanding, pausedOf, QuotaError, quotaView, ratio, setCap as quotaSetCap, sweepLeases, totalsOf, usedOf, type QuotaCtx, type QuotaState, revokeLeases } from "./quota.ts";
 import { catalogFromConfig, microToCny, migrateCatalog, periodBill, periodBounds, planOf, PlanError, seatQuotaUnits, unitOut, validatePlan, validateSettings, type Catalog, type PlanSpec } from "./billing.ts";
-import { bootstrapRouting, chargeOf, currentPrices, deleteModel, deleteProvider, migrateRouting, priceTableOf, recordHealth, requestProbe, routingFeedBody, RoutingError, routingView, setPrices, upsertModel, upsertProvider, type RoutingState } from "./routing.ts";
+import { bootstrapRouting, chargeOf, currentPrices, deleteModel, deleteProvider, migrateRouting, priceTableOf, recordHealth, requestProbe, routingFeedBody, RoutingError, routingView, setPrices, upsertModel, upsertProvider, type RoutingState, unpricedAliases, validatePrices } from "./routing.ts";
 import { addAgg, dayOf, emptyAgg, UsageBook, usedIn, type Agg, type UsageRow } from "./usage-ledger.ts";
 import {
   accountDeviceId,
@@ -907,6 +907,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const used = [...t.seatsByUser.values()].filter((x) => !x.revoked_at).length;
         if (seats < used) throw new CpError(409, "seats_in_use", `在用席位 ${used} 个，席位数不能少于它（先由律所收回席位）`);
       }
+      // 先按旧套餐与席位把周期滚到当前（跨期是惰性的：不先滚，上一期的历史行会按新套餐、新席位记下——账单历史就错了）
+      qOf(t);
       if (plan !== undefined) t.plan = plan;
       if (seats !== undefined && seats !== t.seats) {
         t.seats = seats;
@@ -1641,16 +1643,21 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const rows = book.monthRows(month).filter((r) => r.tid === t.tid);
     const agg = emptyAgg();
     for (const r of rows) addAgg(agg, { requests: 1, tokens_in: r.usage?.input ?? 0, tokens_cached: r.usage?.cached ?? 0, tokens_out: r.usage?.output ?? 0, value_micro: r.value_micro ?? 0, cost_micro: r.cost_micro ?? 0, errors: 0, estimated: 0, unpriced: r.usage && r.value_micro === null ? 1 : 0, uncosted: r.usage && r.cost_micro === null ? 1 : 0 });
-    // 加量只有本期有记录（跨期清零）；历史月份的加量百分比取历史行
+    // 加量只有本期有记录（跨期清零）。历史月份按该期结束时记下的套餐、席位、单价与加量算（第 56 批，云端审计 1-A：原先一律按“现在”的
+    // 套餐与席位、加量恒为 0）；没有记录的更早月份（或按周计期的套餐）仍按当前值，并标 basis = current_estimate，界面写明是估算
     const cur = periodBounds("month", now()).key === month;
-    const boost = cur ? q.boosts.reduce((s2, x) => s2 + x.pct, 0) : 0;
-    return { tid: t.tid, name: t.name ?? t.tid.replace(/^ten_/, ""), plan: { id: plan.id, label: plan.label }, seats: t.seats, ...periodBill({ plan, seats: t.seats, boost_pct: boost, value_micro: agg.value_micro, cost_micro: agg.cost_micro, unpriced: agg.unpriced, uncosted: agg.uncosted, requests: agg.requests }), requests: agg.requests, tokens: agg.tokens_in + agg.tokens_out, unpriced_rows: agg.unpriced };
+    const h = cur ? undefined : q.history.find((x) => x.period === month && x.seats !== undefined);
+    const boost = cur ? q.boosts.reduce((s2, x) => s2 + x.pct, 0) : (h?.boost_pct ?? 0);
+    const billPlan: PlanSpec = h ? { ...plan, id: h.plan_id ?? plan.id, label: h.plan_label ?? plan.label, seat_price_cny: h.seat_price_cny ?? null, boost_price_factor: h.boost_price_factor ?? plan.boost_price_factor } : plan;
+    const billSeats = h?.seats ?? t.seats;
+    const basis = cur ? "current" : h ? "period_end" : "current_estimate";
+    return { tid: t.tid, name: t.name ?? t.tid.replace(/^ten_/, ""), plan: { id: billPlan.id, label: billPlan.label }, seats: billSeats, basis, ...periodBill({ plan: billPlan, seats: billSeats, boost_pct: boost, value_micro: agg.value_micro, cost_micro: agg.cost_micro, unpriced: agg.unpriced, uncosted: agg.uncosted, requests: agg.requests }), requests: agg.requests, tokens: agg.tokens_in + agg.tokens_out, unpriced_rows: agg.unpriced };
   };
   const deviceRow = (t: TenantRecord, d: DeviceRecord) => {
     const a = accountOfMember(t.tid, d.cert.memberId);
     const live = [...sessions.values()].some((x) => x.device_id === d.cert.deviceId && accounts.get(x.aid)?.tid === t.tid && sessionLive(x, now()));
     const flags: string[] = [];
-    const since = new Date(now() - 30 * DAY_MS).toISOString().slice(0, 10);
+    const since = dayOf(now() - 30 * DAY_MS);
     if (!d.revoked_at && (!d.client_seen_on || d.client_seen_on < since)) flags.push("stale");
     const newest = [...tenants.values()].flatMap((x) => [...x.devices.values()]).map((x) => x.client_version).filter((v): v is string => !!v && v !== "legacy").sort((x, y) => cmpVer(y, x))[0];
     if (!d.revoked_at && d.client_version && newest && (d.client_version === "legacy" || cmpVer(d.client_version, newest) < 0)) flags.push("outdated");
@@ -1948,8 +1955,17 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         run: (b) => {
           const prev = catalog.plans.find((x) => x.id === pl[1]);
           const next = validatePlan(pl[1]!, b, "ops", prev);
-          if (prev) Object.assign(prev, next);
-          else {
+          // 第 56 批（D-222）：按金额计费的套餐，可用模型必须先有售价——否则用这个套餐的律所每次调用都被网关以 price_unconfigured 拒绝
+          if (next.quota_unit === "cny") {
+            const miss = unpricedAliases(routing, currentPrices(routing).items, next.models);
+            if (miss.length) throw new CpError(409, "plan_models_unpriced", `按金额计费须先给这些模型定价（未缓存输入价与输出价）：${miss.join("、")}`, { aliases: miss });
+          }
+          if (prev) {
+            // 改套餐规格前，先让用它的律所按旧规格跨期（历史行记的是旧规格）
+            for (const t2 of tenants.values()) if (t2.plan === prev.id) qOf(t2);
+            Object.assign(prev, next);
+            for (const t2 of tenants.values()) if (t2.plan === prev.id) revokeLeases(t2.quota, now());
+          } else {
             if (catalog.plans.length >= 20) throw new CpError(409, "too_many_plans", "套餐过多（至多 20 个）");
             catalog.plans.push(next);
           }
@@ -2107,6 +2123,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if ("quota_limit" in b) {
             const v = b.quota_limit;
             if (v !== null && !(typeof v === "number" && Number.isFinite(v) && v > 0 && v <= 1e13 && (unit === "cny" || Number.isSafeInteger(v)))) throw new CpError(400, "quota_limit_invalid", unit === "tokens" ? "个人上限须为正整数 token，或不设（null）" : "个人上限须为正数（元），或不设（null）");
+            // 新设或调低个人上限：收回这位成员的在途租约（云端审计 4-A）
+            if (v !== null && (a.quota_limit === null || a.quota_limit === undefined || (v as number) < a.quota_limit)) revokeLeases(t.quota, now(), uidOfAccount(a));
             a.quota_limit = v as number | null;
           }
           if ("device_limit" in b) {
@@ -2163,7 +2181,23 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (method === "DELETE") return { perm: "route.manage", action: "routing.model_delete", tid: none, target: () => alias, run: (_b, who) => (deleteModel(routing, alias, now(), who.operator), { ok: true, routing: routingView(routing, routingKeyId) }) };
       return null;
     }
-    if (method === "PUT" && p === "/v1/ops/routing/prices") return { perm: "route.manage", action: "routing.prices", tid: none, target: none, run: (b, who) => ({ ok: true, version: setPrices(routing, b.items, now(), who.operator), routing: routingView(routing, routingKeyId) }) };
+    if (method === "PUT" && p === "/v1/ops/routing/prices")
+      return {
+        perm: "price.manage",
+        action: "routing.prices",
+        tid: none,
+        target: none,
+        run: (b, who) => {
+          // 第 56 批（D-222）：新价目不能让在用的金额套餐失去售价（否则这些律所的调用全部被拒）；要撤价先把套餐改回 token 单位或限定可用模型
+          const items = validatePrices(b.items);
+          for (const pl2 of catalog.plans) {
+            if (pl2.quota_unit !== "cny") continue;
+            const miss = unpricedAliases(routing, items, pl2.models);
+            if (miss.length) throw new CpError(409, "prices_required_by_plan", `套餐“${pl2.label}”按金额计费，这些模型不能没有售价：${miss.join("、")}`, { plan: pl2.id, aliases: miss });
+          }
+          return { ok: true, version: setPrices(routing, items, now(), who.operator), routing: routingView(routing, routingKeyId) };
+        },
+      };
     // ─── 用量 ───
     if (method === "GET" && p === "/v1/ops/usage/summary")
       return read("usage.summary", () => {
@@ -2393,6 +2427,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (b.plan !== undefined && typeof b.plan !== "string") throw new CpError(400, "plan_unknown", "套餐不在目录里");
           const seats = b.seats === undefined ? undefined : intIn(b.seats, 1, 10_000, "seats_invalid", "席位数");
           ops.setPlan(tid, { ...(typeof b.plan === "string" ? { plan: b.plan } : {}), ...(seats !== undefined ? { seats } : {}) });
+          // 第 56 批：套餐或席位变了，本期总额度随之变——在途租约按新约束重新领
+          revokeLeases(tenantOf(tid).quota, now());
           return { ok: true, tenant: tenantRow(tenantOf(tid)) };
         },
       };
@@ -2692,7 +2728,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       let claim: Record<string, unknown> | null = null;
       // 回给客户端的成员姓名（第 54 批真实联调）：凭成员邀请码注册时用管理员写在邀请上的姓名——新电脑把它算进入组申请的 HMAC，
       // 管理员电脑按本机邀请记录的姓名核对；回成律师注册时自己填的名字，两边一不同，正当申请就显示“在传送中被改动过，不要批准”。
-      // 与“直接输入码”的兑换接口（/v1/activation/redeem 回 r.member.name）一致。账号本身的显示名仍是律师自己填的。
+      // 与“直接输入码”的兑换接口（/v1/activation/redeem 回 r.member.name）一致。
+      // 第 56 批（真实流程验收）：凭成员邀请码注册的，账号显示名也用邀请上的姓名——原先账号留律师自己填的名字，
+      // 同一个人在管理员的成员页叫“李律师”、在用量明细和他自己的界面叫另一个名字。一个成员在本所只有一个名字：管理员批准的那个。
       let memberName = name;
       const hasCode = typeof b.code === "string" && b.code.trim() !== "";
       if (hasCode) {
@@ -2726,7 +2764,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         slug = newMemberSlug(t, email);
         via = "self";
       }
-      const a: AccountRecord = { aid: newId("acc"), email, name, status: "active", disabled_reason: null, tid: t.tid, member_slug: slug, role, pw: hashPassword(String(b.password)), pw_changed_at: iso(), created_at: iso(), created_via: via, last_login_at: iso(), failed: { count: 0, first_at: null, locked_until: null }, device_limit: null, quota_limit: null };
+      const a: AccountRecord = { aid: newId("acc"), email, name: via === "invite_code" ? memberName : name, status: "active", disabled_reason: null, tid: t.tid, member_slug: slug, role, pw: hashPassword(String(b.password)), pw_changed_at: iso(), created_at: iso(), created_via: via, last_login_at: iso(), failed: { count: 0, first_at: null, locked_until: null }, device_limit: null, quota_limit: null };
       accounts.set(a.aid, a);
       indexAccount(a);
       const kind = clientInfo(b.client).platform === "web" ? "web" : "desktop";
@@ -2764,6 +2802,26 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (a.status !== "active") throw new CpError(403, "account_disabled", "账号已停用，请联系管理员");
       if (!tenants.has(a.tid)) throw new CpError(403, "account_disabled", "账号所属律所已不存在，请联系管理员");
       const dev = await optionalDevice(req, path, raw);
+      // 第 56 批（真实流程验收查出的死路）：凭邀请码注册的账号绑在那份邀请的成员编号上；管理员拒绝了那次申请、重新发邀请后，
+      // 新邀请是另一个成员编号——获批的电脑属于“新成员”，账号还绑着“从未入组的旧成员”，登录报“这台电脑已登记为本所另一位成员”，
+      // 而同一个邮箱又不能再注册：这个人永远进不来。改绑条件（全部满足）：同一家律所；账号原来的成员从未入组（没有登记过任何设备、
+      // 没有席位）；这台已登记的电脑的成员还没有账号；角色一致。信任根不变：电脑是管理员按核对码批准的，账号只是跟到获批的成员上。
+      let rebound = false;
+      if (dev && dev.cert.memberId !== uidOfAccount(a)) {
+        const t = tenants.get(a.tid)!;
+        const oldUid = uidOfAccount(a);
+        const prefix = `usr_${t.tid.slice(4)}_`;
+        const neverJoined = ![...t.devices.values()].some((d) => d.cert.memberId === oldUid) && !t.seatsByUser.has(oldUid);
+        if (t.devices.has(dev.cert.deviceId) && dev.cert.memberId.startsWith(prefix) && neverJoined && !accountOfMember(t.tid, dev.cert.memberId) && dev.cert.role === a.role) {
+          const slug = dev.cert.memberId.slice(prefix.length);
+          accountByMember.delete(memberKey(t.tid, oldUid));
+          a.member_slug = slug;
+          const invited = [...t.activations.values()].find((x) => x.kind === "member" && x.member.slug === slug)?.member.name;
+          if (invited) a.name = invited;
+          indexAccount(a);
+          rebound = true;
+        }
+      }
       if (dev && (!tenants.get(a.tid)!.devices.has(dev.cert.deviceId) || dev.cert.memberId !== uidOfAccount(a))) throw new CpError(409, "device_mismatch", "这台电脑已登记为本所另一位成员（或另一家律所）：请用那位成员的账号登录");
       a.failed = { count: 0, first_at: null, locked_until: null };
       a.last_login_at = iso();
@@ -2771,6 +2829,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const onb = onboardingOf(a, dev, kind !== "web");
       const { token, rec } = newSession(a, kind, dev ? dev.cert.deviceId : null, b.client);
       accountMark(res, a, "account.login");
+      // 改绑的审计随本次应答一起写（send 里“先审计、再落盘、再回复”）：不在最后一道检查之前先记“ok”（云端审计 2-B）
+      if (rebound) auditCtx.get(res)!.extra = [{ tid: a.tid, actor: { kind: "account", id: a.aid }, action: "account.rebind", target: a.aid }];
       return send(res, 200, authResult(a, token, rec, onb));
     }
     if (method === "POST" && p === "/v1/auth/password-reset/request") {
@@ -2976,7 +3036,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       {
         const rec = t.devices.get(cert.deviceId)!;
         const v = clientVer && CLIENT_VERSION_RE.test(clientVer) ? clientVer : "legacy";
-        const today = iso().slice(0, 10);
+        // 第 56 批：按北京时间取日（原先按 UTC 取，北京时间 0～8 点报到会记成前一天）。全系统的“日”都是北京时间自然日（dayOf），时刻一律存 UTC ISO。
+        const today = dayOf(now());
         if (rec.client_version !== v || rec.client_seen_on !== today) Object.assign(rec, { client_version: v, client_seen_on: today });
       }
       // 席位：成员没有席位且许可内仍有余量时自动分配（G0；生产由管理员在控制台分配）
@@ -3172,6 +3233,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         l = leaseQuota(q, ctx, { sid, uid: seat.uid, holder: b.holder, need: needUnits(ctx.plan, est), want: b.want, ttl_ms: b.ttl_ms });
       } catch (e) {
         quotaCount(`lease_denied:${e instanceof QuotaError && /^[a-z_]{1,40}$/.test(e.code) ? e.code : "other"}`);
+        // 第 56 批：因全所约束被拒时留下“最近被拒的那次请求”（quota.ts last_denied，视图据此如实显示暂停）。出错的请求会整体回滚内存状态，
+        // 所以这里自己落盘并直接回 402（应答体与外层出错路径相同），不再往外抛。
+        if (e instanceof QuotaError && e.status === 402 && q.last_denied && ["quota_cap_reached", "quota_exhausted", "quota_burst"].includes(e.code)) return send(res, 402, { error: { code: e.code, message: e.message } });
         throw e;
       }
       quotaCount(l.limited_by ? `lease_limited:${l.limited_by}` : "lease_ok");
@@ -3195,7 +3259,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       sweepLeases(q, now());
       if (fresh.length) checkAlerts(t, new Set(fresh.map((r) => r.uid).filter((x): x is string => !!x)));
       quotaCount("settle_ok");
-      return send(res, 200, { ok: true, accepted: fresh.length, duplicates: rows.length - fresh.length, closed });
+      return send(res, 200, { ok: true, accepted: fresh.length, duplicates: rows.length - fresh.length, closed, ...(l?.revoked ? { revoked: true } : {}) });
     }
 
     // 以下一律设备签名
@@ -3661,6 +3725,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       }
       if ("device_limit" in b && b.device_limit !== null && !(Number.isSafeInteger(b.device_limit) && (b.device_limit as number) >= 1 && (b.device_limit as number) <= MAX_DEVICES_PER_ACCOUNT)) throw new CpError(400, "device_limit_invalid", `设备数须为 1–${MAX_DEVICES_PER_ACCOUNT}，或按套餐（null）`);
       mark("account.limits", x.aid);
+      // 第 56 批（云端审计 4-A）：新设或调低个人上限，收回这位成员的在途租约（与收紧律所上限同理）
+      if ("quota_limit" in b && b.quota_limit !== null && (x.quota_limit === null || x.quota_limit === undefined || (b.quota_limit as number) < x.quota_limit)) revokeLeases(t.quota, now(), uidOfAccount(x));
       if ("quota_limit" in b) x.quota_limit = b.quota_limit as number | null;
       if ("device_limit" in b) x.device_limit = b.device_limit as number | null;
       return send(res, 200, { ok: true, member: memberRow(x), unit });
@@ -3882,7 +3948,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   function cpMetrics() {
     {
       // 客户端版本分布（v9.3 P3；设计 §4.7 轮换签名密钥前看“旧版本活跃设备 < 1%”）：只数未吊销、30 天内报到过的设备；至多 20 个版本，其余归 other
-      const since = new Date(now() - 30 * DAY_MS).toISOString().slice(0, 10);
+      const since = dayOf(now() - 30 * DAY_MS);
       const byVersion = new Map<string, number>();
       for (const t of tenants.values())
         for (const d of t.devices.values()) {

@@ -29,7 +29,7 @@ async function startRun(marker: string) {
   const { matter } = await tk.inv("matters.create", {
     title: `时限测试 ${marker}`,
     stance: "受让方",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
     model_endpoint: "standard",
   });
   const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] });

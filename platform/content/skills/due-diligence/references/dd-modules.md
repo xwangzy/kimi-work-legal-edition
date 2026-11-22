@@ -1,6 +1,6 @@
 # 尽调模块与红旗清单
 
-> 用法：due-diligence 阶段一第 2、3 步与阶段二第 2 步。依据一栏是**检索线索**，写进交付件前须经 `law.search` / `law.get_version` / `citations.verify` 核验；标“待核”的拿不准。清单保证不漏项，不保证查得深——红旗查到原因、可还原性与后果才算做完。
+> 用法：due-diligence 阶段一第 2、3 步与阶段二第 2 步。依据一栏是**检索线索**，写进交付件前须经 `law.search` / `law.get_article` / `citations.verify` 核验；标“待核”的拿不准。清单保证不漏项，不保证查得深——红旗查到原因、可还原性与后果才算做完。
 > 方法骨架改写自 legal-agent-skills（MIT，Copyright (c) 2026 John He (Decikingship)，commit 83df6b13）`nonlit-due-diligence`、`expert-dd-transaction`；上游脚本与数据文件未引入，外部检索改为律师导入。许可见 `content/skills/THIRD_PARTY_LICENSES/legal-agent-skills-LICENSE`。
 
 ## 一、高频红旗（先查）

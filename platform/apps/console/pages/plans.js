@@ -3,11 +3,12 @@
  * 接口：GET/PUT /v1/ops/plans[/{id}]、GET/PUT /v1/ops/settings、GET /v1/ops/alerts、POST /v1/ops/alerts/{id}/ack（契约 §8；Plan 字段见主文 §4.3）。
  */
 import * as api from "../api.js";
-import { alertList, ALERT_KIND, can, needs, pageHead } from "../domain.js";
+import { alertList, ALERT_KIND, can, needs, pageHead, PERM_LABEL } from "../domain.js";
 import { add, badge, btn, clear, confirmAction, dataTable, facts, field, fmt, h, icon, load, mono, openDrawer, panel, readForm, segmented, tabBar, toast } from "../ui.js";
 
 const st = { tab: "plans", alerts: "open", aKind: "", table: { sort: "id", asc: true } };
-const PLAN_RE = /^[a-z][a-z0-9-]{1,31}$/;
+// 与服务端 billing.ts 的 PLAN_ID_RE 同一条（原先这里写 2–32 位、字母开头，服务端是 1–24 位：25 位以上的编号界面放行、服务端 404）
+const PLAN_RE = /^[a-z0-9][a-z0-9-]{0,23}$/;
 
 export function render(page, r) {
   if (r.params.tab) st.tab = r.params.tab;
@@ -31,11 +32,11 @@ function panePlans(box) {
       const plans = d.plans ?? [];
       add(
         box,
-        h("div", { class: "toolbar" }, h("p", { class: "muted small" }, "改套餐即刻影响在用这个套餐的律所（本期总额度按新的每席位额度重算）。旧套餐由“单位”折算为 token 额度的，请商务确认后再改。"), btn("新增套餐", () => editPlan(null, d, reload), { kind: "primary", icon: icon("plus"), disabled: !can("plan.manage"), title: needs("plan.manage") })),
+        h("div", { class: "toolbar" }, h("p", { class: "muted small" }, "改套餐即刻影响在用这个套餐的律所（本期总额度按新的每席位额度重算）。旧套餐由“单位”折算为 token 额度的，请商务确认后再改。"), btn("新增套餐", () => openPlan(null, d, reload), { kind: "primary", icon: icon("plus"), disabled: !can("plan.manage"), title: needs("plan.manage") })),
         dataTable({
           state: st.table,
           rows: plans,
-          onRow: (p) => editPlan(p, d, reload),
+          onRow: (p) => openPlan(p, d, reload),
           empty: "套餐目录为空",
           columns: [
             { key: "id", label: "套餐", render: (p) => h("div", { class: "cell-2" }, h("b", {}, p.label ?? p.id, p.id === d.default_plan ? badge("缺省", "accent") : null), mono(p.id), p.origin === "migrated" ? badge("由旧版计量额度换算，待商务确认", "warn") : null) },
@@ -57,10 +58,103 @@ function panePlans(box) {
   reload();
 }
 
-function editPlan(p, d, reload) {
+// 售价三项（元 / 百万 token）：按金额计费的套餐就按这三项算；成本单价仍在“模型与路由 → 价目表”
+const SALE_COLS = [
+  ["input", "输入（未命中缓存）"],
+  ["cached_input", "输入（缓存命中）"],
+  ["output", "输出"],
+];
+
+/** 先取模型与价目（看得到路由的角色才有），再开抽屉；取不到也能改套餐的其他项。 */
+async function openPlan(p, d, reload) {
+  let routing = null;
+  if (can("route.read")) {
+    try {
+      routing = await api.get("/v1/ops/routing");
+    } catch {
+      routing = null;
+    }
+  }
+  editPlan(p, d, reload, routing);
+}
+
+/**
+ * “按金额计费的单价”一节：每个启用的模型别名一行，三项售价。有 price.manage 的可以就地改（保存套餐时先生成新价目版本）。
+ * 返回 { el, show(单位), read(可用模型) → { error } | { items, changes } }。
+ */
+function saleBox(routing) {
+  const enabled = (routing?.models ?? []).filter((m) => m.enabled !== false);
+  const cur = routing?.prices?.items ?? {};
+  const editable = can("price.manage") && !!routing;
+  const inputs = {};
+  const body = !routing
+    ? h("p", { class: "muted small" }, "你的角色看不到模型与价目：按金额计费的套餐须由系统管理员或客户运营配置。")
+    : !enabled.length
+      ? h("p", { class: "muted small" }, "还没有启用的模型别名：先到“模型与路由”配好上游与别名。")
+      : h(
+          "div",
+          { class: "table-wrap" },
+          h(
+            "table",
+            { class: "tbl price-edit" },
+            h("thead", {}, h("tr", {}, h("th", {}, "模型"), SALE_COLS.map(([, l]) => h("th", { class: "num" }, l)))),
+            h(
+              "tbody",
+              {},
+              enabled.map((m) =>
+                h(
+                  "tr",
+                  {},
+                  h("td", {}, h("div", { class: "cell-2" }, mono(m.alias), m.label ? h("small", {}, m.label) : null)),
+                  SALE_COLS.map(([k, l]) => {
+                    const i = h("input", { type: "number", min: 0, step: "0.0001", inputmode: "decimal", class: "num-input", value: cur[m.alias]?.[k] ?? "", placeholder: k === "cached_input" ? "同未命中价" : "必填", disabled: !editable, "aria-label": `${m.alias} ${l}` });
+                    (inputs[m.alias] ??= {})[k] = i;
+                    return h("td", { class: "num" }, i);
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+  const el = h(
+    "fieldset",
+    { class: ["field", "plan-prices"], hidden: true },
+    h("legend", {}, "按金额计费的单价（元 / 百万 token）"),
+    h("p", { class: "muted small" }, "金额额度 = 单价 × 实际用量，三项分开算。输入里命中缓存的部分按“缓存命中”价；不填缓存命中价就按未命中价算。", editable ? "改了单价会在保存套餐时生成新的价目版本，对所有按金额计费的律所生效。" : routing ? `你的角色没有“${PERM_LABEL["price.manage"] ?? "改价目"}”权限：只能看，不能改。` : ""),
+    body,
+  );
+  return {
+    el,
+    show: (unit) => (el.hidden = unit !== "cny"),
+    read(models) {
+      if (!routing) return { error: "你的角色看不到价目，不能保存按金额计费的套餐" };
+      const need = enabled.map((m) => m.alias).filter((a) => !models.length || models.includes(a));
+      if (!need.length) return { error: "这个套餐没有可用的模型：检查“可用模型别名”" };
+      const items = Object.fromEntries(Object.entries(cur).map(([a, v]) => [a, { ...v }]));
+      const changes = [];
+      for (const m of enabled) {
+        const row = (items[m.alias] ??= { input: null, cached_input: null, output: null, cost_input: null, cost_cached_input: null, cost_output: null });
+        for (const [k, l] of SALE_COLS) {
+          const raw = inputs[m.alias][k].value.trim();
+          const v = raw === "" ? null : Number(raw);
+          if (v !== null && !(Number.isFinite(v) && v >= 0 && v <= 100000)) return { error: `${m.alias} 的“${l}”须为 0–100000 的数字` };
+          const old = cur[m.alias]?.[k] ?? null;
+          if (old !== v) changes.push(`${m.alias} ${l}：${fmt.price(old)} → ${fmt.price(v)}`);
+          row[k] = v;
+        }
+      }
+      const miss = need.filter((a) => items[a]?.input === null || items[a]?.input === undefined || items[a]?.output === null || items[a]?.output === undefined);
+      if (miss.length) return { error: `按金额计费须先定价：${miss.join("、")} 还缺“输入（未命中缓存）”或“输出”单价` };
+      if (changes.length && !editable) return { error: "你的角色不能改价目" };
+      return { items, changes };
+    },
+  };
+}
+
+function editPlan(p, d, reload, routing) {
   const isNew = !p;
   const specs = [
-    { name: "id", label: "套餐编号", value: p?.id ?? "", required: true, disabled: !isNew, placeholder: "pro-2027", hint: "小写字母开头，字母、数字、连字符，2–32 位；建好后不可改" },
+    { name: "id", label: "套餐编号", value: p?.id ?? "", required: true, disabled: !isNew, placeholder: "pro-2027", hint: "小写字母、数字、连字符，1–24 位，不以连字符开头；建好后不可改" },
     { name: "label", label: "显示名", value: p?.label ?? "", required: true, maxlength: 20 },
     { name: "note", label: "说明（可空，至多 60 字）", type: "textarea", value: p?.note ?? "", maxlength: 60 },
     { name: "quota_unit", label: "额度单位", type: "radio", options: [["tokens", "token", "上游 usage 原样：输入 + 输出"], ["cny", "金额（元）", "价目售价 × 实际用量，区分未缓存输入、缓存输入、输出"]], value: p?.quota_unit ?? "tokens" },
@@ -75,14 +169,26 @@ function editPlan(p, d, reload) {
     { name: "models", label: "可用模型别名（逗号分隔，空 = 全部）", value: (p?.models ?? []).join(", ") },
   ];
   const err = h("p", { class: "form-error", role: "alert" });
-  const form = h("form", { class: "drawer-form", novalidate: true }, specs.map(field), err, h("div", { class: "drawer-foot" }, h("span", { class: "spacer" }), h("button", { type: "button", class: "btn", onclick: () => dr.close() }, "取消"), h("button", { type: "submit", class: "btn primary", disabled: !can("plan.manage"), title: needs("plan.manage") }, isNew ? "新增套餐" : "保存套餐…")));
-  const dr = openDrawer({ title: isNew ? "新增套餐" : `套餐 ${p.label ?? p.id}`, subtitle: isNew ? null : mono(p.id), body: form });
+  const sale = saleBox(routing);
+  // 没有权限时把原因写在按钮旁（原先只有悬停提示，看上去就是一个点不动的按钮）
+  const why = needs("plan.manage");
+  const form = h(
+    "form",
+    { class: "drawer-form", novalidate: true },
+    specs.map((f) => [field(f), f.name === "seat_quota" ? sale.el : null]),
+    err,
+    h("div", { class: "drawer-foot" }, why ? h("span", { class: "muted small" }, `${why}，不能保存`) : null, h("span", { class: "spacer" }), h("button", { type: "button", class: "btn", onclick: () => dr.close() }, "取消"), h("button", { type: "submit", class: "btn primary", disabled: !can("plan.manage"), title: why }, isNew ? "新增套餐" : "保存套餐…")),
+  );
+  const dr = openDrawer({ title: isNew ? "新增套餐" : `套餐 ${p.label ?? p.id}`, subtitle: isNew ? null : mono(p.id), body: form, wide: true });
+  const unitNow = () => form.querySelector('input[name="quota_unit"]:checked')?.value ?? "tokens";
+  sale.show(unitNow());
+  form.addEventListener("change", (ev) => ev.target?.name === "quota_unit" && sale.show(unitNow()));
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     err.textContent = "";
     const v = readForm(form, specs);
     const id = isNew ? v.id : p.id;
-    if (!PLAN_RE.test(id)) return void (err.textContent = "套餐编号须为小写字母开头的 2–32 位字母、数字或连字符");
+    if (!PLAN_RE.test(id)) return void (err.textContent = "套餐编号须为 1–24 位小写字母、数字或连字符，不以连字符开头");
     if (!(v.seat_quota >= 0)) return void (err.textContent = "每席位额度须为非负数");
     if (v.quota_unit === "tokens" && !Number.isInteger(v.seat_quota)) return void (err.textContent = "token 额度须为整数");
     const th = v.alert_thresholds.split(/[,，\s]+/).filter(Boolean).map(Number);
@@ -103,21 +209,33 @@ function editPlan(p, d, reload) {
       enforce_seat_quota: v.enforce_seat_quota,
       models: models.length ? models : null,
     };
+    // 按金额计费：三项单价必须齐；改了的先生成新价目版本，再存套餐（服务端同样校验，缺价 409 plan_models_unpriced）
+    let priced = null;
+    if (body.quota_unit === "cny") {
+      if (!(v.seat_quota > 0)) return void (err.textContent = "按金额计费的每席位额度须为正数（元）");
+      priced = sale.read(models);
+      if (priced.error) return void (err.textContent = priced.error);
+    }
     const unitChange = !isNew && p.quota_unit !== body.quota_unit;
     const ok = await confirmAction({
       title: isNew ? `新增套餐 ${id}` : `保存套餐 ${id}`,
       danger: !isNew,
       consequences: isNew
-        ? ["新套餐进目录，开通或改套餐时可选；不影响现有律所。"]
+        ? ["新套餐进目录，开通或改套餐时可选；不影响现有律所。", priced?.changes.length ? "单价有改动：先生成新的价目版本（约 15 秒后网关按新价计量），对所有按金额计费的律所生效。" : null].filter(Boolean)
         : [
             "在用这个套餐的律所，本期总额度即刻按新的每席位额度重算（已用量不变，百分比随之变化）；",
+            priced?.changes.length ? "单价有改动：先生成新的价目版本（约 15 秒后网关按新价计量），对所有按金额计费的律所生效；之前的请求仍按原版本记账；" : null,
             unitChange ? "额度单位改了：这些律所的本期百分比按新单位重算，客户端显示随之变化；" : null,
             body.seat_price_cny !== p.seat_price_cny ? `席位单价 ${fmt.cny(p.seat_price_cny)} → ${fmt.cny(body.seat_price_cny)}：从本期账单起按新价；` : null,
             body.burst?.pct !== p.burst?.pct ? "5 小时窗口变化即刻生效。" : null,
           ].filter(Boolean),
+      lead: priced?.changes.length ? h("ul", { class: "diff-list" }, priced.changes.slice(0, 12).map((c) => h("li", {}, c)), priced.changes.length > 12 ? h("li", {}, `……共 ${priced.changes.length} 项`) : null) : undefined,
       typeToConfirm: !isNew && unitChange ? id : undefined,
       confirmLabel: isNew ? "新增" : "保存",
-      run: () => api.put(`/v1/ops/plans/${api.seg(id)}`, body),
+      run: async () => {
+        if (priced?.changes.length) await api.put("/v1/ops/routing/prices", { items: priced.items });
+        return api.put(`/v1/ops/plans/${api.seg(id)}`, body);
+      },
     });
     if (ok) {
       toast("已保存套餐");

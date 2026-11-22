@@ -28,7 +28,7 @@ test("estimate 含数据去向预览：待取得事项给出拦截预警，本�
   const { matter: ok } = await inv("matters.create", {
     title: "预览测试（齐备）",
     stance: "受让方",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
   });
   const doc2 = await importText(inv, ok.matter_id, "协议.txt", DEMO_CONTRACT);
   const est2 = await inv("runs.estimate", { matter_id: ok.matter_id, scenario: "s1.contract_review", document_version_ids: [doc2.document_version_id] });
@@ -74,8 +74,8 @@ test("告知函：一键生成草稿并留痕，回执口径提示更新同意�
 test("事项列表常显数据级别与依据（第 03 篇 §4.1；复核 S5-A05）：L3a、L3b 不再被标成 L2；依据按内核判定（含拒绝记录）", async () => {
   const { inv } = tk;
   const full = { engagement: "confirmed", personal_info: "confirmed", sensitive: "confirmed", subprocessor: "confirmed" };
-  const { matter: a } = await inv("matters.create", { title: "列表-高敏", stance: "原告", confidentiality: "high", basis: full });
-  const { matter: b } = await inv("matters.create", { title: "列表-当事人限制", stance: "原告", confidentiality: "strict", basis: full });
+  const { matter: a } = await inv("matters.create", { title: "列表-高敏", stance: "原告", confidentiality: "high", basis: full, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
+  const { matter: b } = await inv("matters.create", { title: "列表-当事人限制", stance: "原告", confidentiality: "strict", basis: full, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   const { matter: c } = await inv("matters.create", { title: "列表-拒绝记录", stance: "原告", consent_status: "refused" });
   const { matter: d } = await inv("matters.create", { title: "列表-拒绝云端用私有模型", stance: "原告", consent_status: "refused", model_endpoint: "private" });
   const list = (await inv("matters.list", {})).matters as any[];

@@ -17,7 +17,7 @@ test("完整说明分行：每行文字都原样出现在 preview 里；开放�
   const { matter } = await tk.inv("matters.create", {
     title: "完整说明分行测试（原告）",
     stance: "原告",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
   });
   const doc = await importText(tk.inv, matter.matter_id, "签收单.txt", "签收单：买方于 2026 年 3 月 1 日签收全部货物。");
   const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id], goal: "整理时间线" });

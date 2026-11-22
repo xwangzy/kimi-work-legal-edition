@@ -112,13 +112,56 @@ export function allocateDeliverables(lengths: readonly number[], total = REVIEW_
   return alloc;
 }
 
+/**
+ * 复核意见的四级（偏离 D-223）：复核提示要求末栏写“必须改、建议改、建议复算 或 风险提示”，原先解析时压成 must 布尔、后三级都成了“建议改”。
+ * 现在保留下来：只有“必须改”自动交回修改，其余三级登记后呈律师，由律师勾选后再改。
+ */
+export type ReviewLevel = "must" | "should" | "recheck" | "risk";
+export const REVIEW_LEVEL_LABEL: Record<ReviewLevel, string> = { must: "必须改", should: "建议改", recheck: "建议复算", risk: "风险提示" };
+
 export interface ReviewFinding {
   no: number;
   where: string;
   problem: string;
   basis: string;
   fix: string;
+  /** 恒等于 level === "must"；保留给现有调用方。 */
   must: boolean;
+  /** 四级（D-223）。可缺省：第 56 批之前的检查点与手写的意见只有 must，按 findingLevel 补成 must / should。 */
+  level?: ReviewLevel;
+}
+
+/** 意见的级别：有 level 用 level，没有的（旧检查点）按 must 落到“必须改”或“建议改”。纯函数。 */
+export function findingLevel(f: Pick<ReviewFinding, "must" | "level">): ReviewLevel {
+  return f.level ?? (f.must ? "must" : "should");
+}
+
+/**
+ * 从末栏（tail）与整条（raw）判级别（D-223）：末栏写了哪级就是哪级（“必须改”优先，沿用原判定）；
+ * 末栏认不出的，沿用原来的 must 判定——整条里有“必须改”且末栏没写“建议改”的算必须改，否则算建议改。纯函数。
+ */
+export function levelOf(tail: string, raw: string): ReviewLevel {
+  if (/必须改/.test(tail)) return "must";
+  if (/建议复算/.test(tail)) return "recheck";
+  if (/风险提示/.test(tail)) return "risk";
+  if (/建议改/.test(tail)) return "should";
+  return /必须改/.test(raw) ? "must" : "should";
+}
+
+/** 按字截断但不切开代号（〔自然人·…〕）：界面按代号还原，半截代号还原不了。纯函数。 */
+function cutKeepingTokens(s: string, n: number): string {
+  const cs = [...s];
+  if (cs.length <= n) return s;
+  let cut = cs.slice(0, n).join("");
+  const open = cut.lastIndexOf("〔");
+  if (open > cut.lastIndexOf("〕")) cut = cut.slice(0, open);
+  return `${cut}…`;
+}
+
+/** 写进“复核完成”事件、给任务页逐条显示的意见（代号形态，界面还原）：至多 15 条，各栏截断。纯函数。 */
+export type ReviewItem = { no: number; level: ReviewLevel; where: string; problem: string; fix: string };
+export function reviewItems(findings: readonly ReviewFinding[]): ReviewItem[] {
+  return findings.slice(0, 15).map((f) => ({ no: f.no, level: findingLevel(f), where: cutKeepingTokens(f.where, 120), problem: cutKeepingTokens(f.problem, 600), fix: cutKeepingTokens(f.fix, 400) }));
 }
 
 /** 复核提示里单份文字的上限（字）：材料与交付件合计控制在模型上下文的一小部分以内。 */
@@ -593,14 +636,15 @@ export function parseFindings(text: string): ReviewFinding[] {
     if (!raw) continue;
     const parts = raw.split(/[｜|]/).map((s) => s.trim());
     const tail = parts.at(-1) ?? "";
-    const must = /必须改/.test(tail) || (!/建议改/.test(tail) && /必须改/.test(raw));
+    const level = levelOf(tail, raw);
     out.push({
       no: Number(m[1]),
       where: parts.length >= 4 ? parts[0]! : "",
       problem: parts.length >= 4 ? parts[1]! : raw,
       basis: parts.length >= 4 ? parts[2]! : "",
       fix: parts.length >= 4 ? (parts[3] ?? "") : "",
-      must,
+      must: level === "must",
+      level,
     });
   }
   if (out.length > 0) return out.slice(0, 15);
@@ -614,12 +658,13 @@ export function parseFindings(text: string): ReviewFinding[] {
     const parts = raw.split(/[｜|]/).map((x) => x.trim());
     if (parts.length < 3) continue;
     const tail = parts.at(-1) ?? "";
-    out.push({ no: Number(m[1] ?? m[2]), where: parts.length >= 4 ? parts[0]! : "", problem: parts.length >= 4 ? parts[1]! : raw, basis: parts.length >= 4 ? parts[2]! : "", fix: parts.length >= 4 ? (parts[3] ?? "") : "", must: /必须改/.test(tail) || (!/建议改/.test(tail) && /必须改/.test(raw)) });
+    const level = levelOf(tail, raw);
+    out.push({ no: Number(m[1] ?? m[2]), where: parts.length >= 4 ? parts[0]! : "", problem: parts.length >= 4 ? parts[1]! : raw, basis: parts.length >= 4 ? parts[2]! : "", fix: parts.length >= 4 ? (parts[3] ?? "") : "", must: level === "must", level });
   }
   if (out.length > 0) return out.slice(0, 15);
   // 仍认不出分条、但复核人明确写了“必须改”“建议改”的：整段作为一条交回，不当作“没有意见”
   const whole = body.trim();
-  if (/必须改|建议改/.test(whole) && !/未发现实质问题|没有发现实质问题/.test(whole)) return [{ no: 1, where: "", problem: whole.slice(0, 4000), basis: "", fix: "", must: /必须改/.test(whole) }];
+  if (/必须改|建议改/.test(whole) && !/未发现实质问题|没有发现实质问题/.test(whole)) return [{ no: 1, where: "", problem: whole.slice(0, 4000), basis: "", fix: "", must: /必须改/.test(whole), level: /必须改/.test(whole) ? "must" : "should" }];
   return [];
 }
 
@@ -792,18 +837,22 @@ export function followUpSection(items: readonly FollowUpItem[]): string {
 }
 
 /** 给律师看的复核意见（Markdown，代号形态；下载时还原真名）。 */
-export function reviewNote(title: string, findings: readonly ReviewFinding[], reviewText: string, handedBack = findings.length > 0, followUpRound = 0): string {
+export function reviewNote(title: string, findings: readonly ReviewFinding[], reviewText: string, handedBack: boolean | "suggestions_only" = findings.length > 0, followUpRound = 0): string {
   // 只有真的交回修改时才写“已交回逐条处理”（V16 第 41 批真实回归：意见没认出来、修改轮被跳过，抬头仍写“已交回”）
-  const after = handedBack
-    ? "以下意见已交回起草的助手逐条处理，处理结果见任务最终答复的“独立复核处理情况”。"
-    : findings.length > 0
-      ? "以下意见没有交回起草的助手修改（原因见任务的“还差什么”），文书是复核前的版本，请律师逐条核对。"
-      : "复核没有提出需要修改的意见，文书没有交回修改。";
+  // 只有建议、没有必须改（D-223）：不自动修改，写明由律师决定是否采纳
+  const after =
+    handedBack === "suggestions_only"
+      ? "以下意见都不是“必须改”，只是建议，没有自动修改，由律师决定是否采纳：可在任务页勾选要采纳的几条，点“按勾选的意见修改”。"
+      : handedBack
+        ? "以下意见已交回起草的助手逐条处理，处理结果见任务最终答复的“独立复核处理情况”。"
+        : findings.length > 0
+          ? "以下意见没有交回起草的助手修改（原因见任务的“还差什么”），文书是复核前的版本，请律师逐条核对。"
+          : "复核没有提出需要修改的意见，文书没有交回修改。";
   // 追问后重出的版本（V18 第 43 批续四）：写明复核的是第几次追问后的那一版——既让律师分得清，也避免与上一轮内容相同的复核意见按内容去重后只挂在上一轮任务下
   const round = followUpRound > 0 ? `本次复核的是第 ${followUpRound} 次追问后重新交出的版本。` : "";
   const head = `# 独立复核意见：${title}\n\n${round}复核方式：由系统另起一次模型调用，不带起草过程的上下文，只看委托原话、事项材料与交付件；${after}复核意见同样是 AI 草稿，须律师判断。\n\n`;
   if (findings.length === 0) return `${head}${reviewText.trim() || "未发现实质问题。"}\n`;
-  const rows = findings.map((f) => `| ${f.no} | ${esc(f.where)} | ${esc(f.problem)} | ${esc(f.basis)} | ${esc(f.fix)} | ${f.must ? "必须改" : "建议改"} |`);
+  const rows = findings.map((f) => `| ${f.no} | ${esc(f.where)} | ${esc(f.problem)} | ${esc(f.basis)} | ${esc(f.fix)} | ${REVIEW_LEVEL_LABEL[findingLevel(f)]} |`);
   return `${head}| 序号 | 位置 | 问题 | 依据 | 改法 | 性质 |\n|---|---|---|---|---|---|\n${rows.join("\n")}\n`;
 }
 

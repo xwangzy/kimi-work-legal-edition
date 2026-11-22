@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { api, type CpAuditRow, type QuotaStatus } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
-import { atLabel, recordChargeText, auditActionLabel, auditActorLabel, auditDetailLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, fmtAmount, fmtCount, fmtPct, legacyNote, modelLabel, ownDenominatorText, pausedText, periodLabel, periodRange, ratioTone, remainingLine, resetLabel, usageTone, warnText } from "../lib/firm-usage.ts";
+import { atLabel, recordChargeText, auditDetailLabel, auditFetchErrorText, auditFilter, auditResultShort, auditSentence, auditTime, type AuditFilter, fmtAmount, fmtCount, fmtPct, legacyNote, modelLabel, ownDenominatorText, pausedText, periodLabel, periodRange, ratioTone, remainingLine, resetLabel, usageTone, warnText } from "../lib/firm-usage.ts";
 import { BusyLabel, ListSkeleton, LoadError } from "../components/Loading.tsx";
 
 /** 月度上限的常用档位（本期总额度的百分比）。 */
@@ -345,56 +345,109 @@ export function CpAuditPanel() {
       setMsg((e as Error).message);
     }
   };
+  // 第 56 批：默认只看“重要改动”（日常的凭据签发、摘要更新另一档“全部”）；失败或被拒绝的两档都列
+  const [filter, setFilter] = useState<AuditFilter>("important");
+  const [open, setOpen] = useState<number | null>(null);
   if (err) return <div className="banner banner-red">{err}</div>;
+  const view = rows ? auditFilter(rows, filter) : null;
   return (
-    <div className="device">
-      <p className="lead-note">本所规则、成员、电脑的每一次改动（含中软运营人员的操作）：谁、何时、做了什么。记录不能被事后篡改，不含任何案件内容。</p>
+    <div className="audit-page">
+      <p className="lead-note">本所规则、成员、电脑的每一次改动（含 Kimi Work 运营人员的操作）：谁、何时、做了什么。记录不能被事后篡改，不含任何案件内容。</p>
       {fetchError && <div className={`banner ${fetchError.startsWith("cp_audit_") ? "banner-red" : "banner-gray"}`}>{auditFetchErrorText(fetchError)}</div>}
       {withheld && <div className="banner banner-red">中软那边的记录可能没给全，请联系中软核对。</div>}
       {msg && <div className="banner">{msg}</div>}
-      <div className="inline-form">
-        <button className="btn-ghost btn-sm" disabled={busy} aria-busy={busy} onClick={load}>
-          <BusyLabel busy={busy} busyText="正在取回…">取回最新</BusyLabel>
-        </button>
-        <button className="btn-ghost btn-sm" disabled={busy || !rows?.length} onClick={() => void exportAll()}>
-          导出全部
-        </button>
+      <div className="audit-bar">
+        <div className="seg" role="tablist" aria-label="筛选操作记录">
+          {(
+            [
+              ["important", "重要改动"],
+              ["all", "全部"],
+            ] as const
+          ).map(([k, label]) => (
+            <button key={k} role="tab" aria-selected={filter === k} className={`seg-btn${filter === k ? " on" : ""}`} onClick={() => setFilter(k)}>
+              {label}
+              {view && <span className="audit-n">{view.counts[k]}</span>}
+            </button>
+          ))}
+        </div>
+        <div className="audit-bar-actions">
+          <button className="btn-ghost btn-sm" disabled={busy} aria-busy={busy} onClick={load}>
+            <BusyLabel busy={busy} busyText="正在取回…">取回最新</BusyLabel>
+          </button>
+          <button className="btn-ghost btn-sm" disabled={busy || !rows?.length} onClick={() => void exportAll()}>
+            导出全部
+          </button>
+        </div>
       </div>
-      {rows === null ? (
+      {rows === null || !view ? (
         <ListSkeleton rows={4} label="正在载入操作记录" />
       ) : rows.length === 0 ? (
         <p className="muted">本机还没有留存的记录。</p>
+      ) : view.rows.length === 0 ? (
+        <p className="muted">没有重要改动；日常的凭据签发等在“全部”里。</p>
       ) : (
-        <table className="data">
-          <thead>
-            <tr>
-              <th>时间</th>
-              <th>执行者</th>
-              <th>操作</th>
-              <th>对象</th>
-              <th>结果</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => {
-              const res = auditResultLabel(r.result);
-              return (
-                <tr key={r.seq}>
-                  <td className="nowrap audit-at">{fmtTime(r.at)}</td>
-                  <td>{auditActorLabel(r)}</td>
-                  <td>
-                    {auditActionLabel(r.action)}
-                    {r.detail && <span className="muted">（{auditDetailLabel(r.detail)}）</span>}
-                  </td>
-                  <td>{auditTargetLabel(r)}</td>
-                  <td>
-                    <span className={`tag tag-${res.tone}`}>{res.text}</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="audit-list" role="table" aria-label="操作记录">
+          <div className="audit-row audit-head" role="row">
+            <span role="columnheader">时间</span>
+            <span role="columnheader">谁</span>
+            <span role="columnheader">做了什么</span>
+            <span role="columnheader">结果</span>
+            <span aria-hidden="true" />
+          </div>
+          {view.rows.map((r) => {
+            const res = auditResultShort(r.result);
+            const s = auditSentence(r);
+            const isOpen = open === r.seq;
+            return (
+              <div key={r.seq} className={`audit-item${isOpen ? " is-open" : ""}`} role="rowgroup">
+                <div className="audit-row" role="row">
+                  <span className="audit-at" role="cell">{auditTime(r.at)}</span>
+                  <span className="audit-who" role="cell">{s.who}</span>
+                  <span className="audit-what" role="cell">
+                    {s.what}
+                    {res.why && <span className="audit-why">{res.why}</span>}
+                  </span>
+                  <span className={`audit-res audit-res-${res.tone}`} role="cell">
+                    <span className={`sdot ${res.tone === "ok" ? "sdot-ok" : res.tone === "warn" ? "sdot-warn" : "sdot-bad"}`} aria-hidden="true" />
+                    {res.text}
+                  </span>
+                  <button className="btn-link audit-more" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : r.seq)}>
+                    {isOpen ? "收起" : "详情"}
+                  </button>
+                </div>
+                {isOpen && (
+                  // 给 IT 核对用：原始操作代码、对象编号、执行设备编号、序号（与导出文件同一份记录）
+                  <dl className="audit-detail mono">
+                    <dt>操作代码</dt>
+                    <dd>{r.action}</dd>
+                    <dt>对象编号</dt>
+                    <dd>{r.target ?? "—"}</dd>
+                    <dt>{r.actor.kind === "device" ? "设备编号" : "执行者编号"}</dt>
+                    <dd>
+                      {r.actor.kind}:{r.actor.id}
+                    </dd>
+                    {r.detail && (
+                      <>
+                        <dt>数值</dt>
+                        <dd>{auditDetailLabel(r.detail) || JSON.stringify(r.detail)}</dd>
+                      </>
+                    )}
+                    {r.result !== "ok" && (
+                      <>
+                        <dt>结果代码</dt>
+                        <dd>{r.result}</dd>
+                      </>
+                    )}
+                    <dt>序号</dt>
+                    <dd>{r.seq}</dd>
+                    <dt>时间</dt>
+                    <dd>{fmtTime(r.at)}</dd>
+                  </dl>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

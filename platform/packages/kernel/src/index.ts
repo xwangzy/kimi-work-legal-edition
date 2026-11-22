@@ -51,8 +51,7 @@ import { legalToolManifests, setLegalToolLock } from "./tools/registry.ts";
 import { MatterTokenStore } from "./egress/matter-tokens.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { KernelGate } from "./egress/kernel-gate.ts";
-import { basisCompleteOf, dataLevelOf, GATE_KNOWN_ONLY_SCOPE } from "./egress/gate-host.ts";
-import { basisNoticeStale } from "./services/ai-authorization.ts";
+import { aiAuthorizedOf, dataLevelOf, GATE_KNOWN_ONLY_SCOPE } from "./egress/gate-host.ts";
 import { EgressApprovalStore } from "./services/egress-approvals.ts";
 import { screenSearchQuery } from "@zr-legal/egress-gate";
 import { createGateProvider, mockProvider, thinkingParams, thinkingControlOf } from "@zr-legal/model-broker";
@@ -1306,16 +1305,16 @@ export { ControlPlaneClient } from "./control-plane/client.ts";
  * 保密级别 → 数据级别；同意状态与模型端点 → 四项依据是否齐备；A1 开放任务的模式上限为默认档，不给预授权。
  */
 export function kapMatterPolicy(db: KernelDb, matterId: string, firm: FirmPolicyInput = firmPolicyInputOf(localDevPolicyBody(process.env))): KapMatterPolicy {
-  const m = db.get<{ confidentiality: string; consent_status: string; basis: string | null; basis_notice_version: string | null; model_endpoint: string }>(
-    `SELECT confidentiality, consent_status, basis, basis_notice_version, model_endpoint FROM matters WHERE matter_id = ?`,
+  const m = db.get<{ confidentiality: string; consent_status: string; basis: string | null; basis_source: string | null; basis_ref: string | null; basis_notice_version: string | null; model_endpoint: string }>(
+    `SELECT confidentiality, consent_status, basis, basis_source, basis_ref, basis_notice_version, model_endpoint FROM matters WHERE matter_id = ?`,
     [matterId],
   );
   // 数据级别与闸门同一口径（dataLevelOf：拒绝云端处理的记录按当事人限制 L3b——复核 S5-A15）；事项不存在按最严
   const lv = m ? dataLevelOf(m.confidentiality, m.consent_status) : "L3b";
   const dataLevel = lv === "L4" ? "L3b" : lv;
   // 四项依据（W1，收敛偏离 D-21）：记录了四项时按四项判定，旧事项按 consent_status
-  // 第 51 批（D-216）：按旧的 AI 次处理者清单记录的授权须重新确认（与闸门、内核前置检查同一口径）
-  const basisComplete = !!m && basisCompleteOf(m) && !basisNoticeStale(m) && m.model_endpoint !== "none";
+  // 第 51 批（D-216）、D-225：授权有效须有出处与当前次处理者清单版本（与闸门、内核前置检查、网关摘要同一函数）
+  const basisComplete = !!m && aiAuthorizedOf(m);
   // 律所策略的档位上限（阶段 6：控制面下发、放宽须管理员设备签名、过期回退最严模板；开发形态为本机配置项 ZR_FIRM_MAX_MODE，D-17）；
   // L3a/L3b 最高“默认”且不得预授权；自动档的预授权只取律所策略允许的范围
   const firmMax = firm.maxMode;

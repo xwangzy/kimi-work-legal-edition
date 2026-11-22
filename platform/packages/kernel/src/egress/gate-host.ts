@@ -18,7 +18,7 @@ import type { KernelDb } from "../db.ts";
 import { liveRunForClaims } from "../identity.ts";
 import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, spawnNodeChild, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
 import { errFields, relayChildStderr, slog } from "@zr-legal/safe-log";
-import { basisNoticeStale } from "../services/ai-authorization.ts";
+import { AI_SUBPROCESSORS } from "../services/ai-authorization.ts";
 
 /**
  * 独立复核请求的令牌附加 scope（V16 第 41 批）：闸门见到它，整个模型请求只替换已知名单。只有内核给自己发起的复核请求签发
@@ -79,6 +79,31 @@ export function basisCompleteOf(m: { basis?: string | null; consent_status?: str
   const b = parseBasis(m.basis);
   if (b) return BASIS_KEYS.every((k) => b[k] !== "pending");
   return m.consent_status === "agreed" || m.consent_status === "not_required";
+}
+
+/**
+ * 事项的客户授权状态（D-225；在 D-216 留痕之上收紧“有效”的口径）：
+ *  - pending   四项依据有“待确认”（或当事人拒绝云端处理且未改用律所私有端点）；
+ *  - needs_ref 四项已齐，但没有记下依据类型与出处——D-216 之前的记录、或“逐项记录”路径留下的：请律师补记一次；
+ *  - reconfirm 有出处，但记录时告知客户的 AI 次处理者清单不是当前版本（含未记版本）：按新清单重新确认；
+ *  - valid     四项齐备 + 依据类型 + 非空出处 + 次处理者清单版本为当前版本。
+ * 两种例外沿用原口径：当事人拒绝云端处理、只用律所私有端点（不记来源，basisCompleteOf 已按私有端点判定）；
+ * 没有四项 JSON 的最早期事项按 consent_status（界面建不出这种事项，只有接口与示例事项）。
+ * 闸门（模型推理、联网检索、网页抓取）、kap-host 事项运行策略、网关二次检查摘要、内核 modelBlockReason 都只经 aiAuthorizedOf 判定。
+ */
+export type AuthorizationState = "valid" | "pending" | "needs_ref" | "reconfirm";
+export function authorizationStateOf(m: { basis?: string | null; consent_status?: string | null; model_endpoint?: string | null; basis_source?: string | null; basis_ref?: string | null; basis_notice_version?: string | null }): AuthorizationState {
+  if (!basisCompleteOf(m)) return "pending";
+  if (m.consent_status === "refused") return "valid";
+  if (!parseBasis(m.basis)) return "valid";
+  if (!m.basis_source || !String(m.basis_ref ?? "").trim()) return "needs_ref";
+  if (m.basis_notice_version !== AI_SUBPROCESSORS.version) return "reconfirm";
+  return "valid";
+}
+
+/** 出站授权的唯一判定（D-225）：授权有效且端点不是“不使用模型”。四个强制点共用。 */
+export function aiAuthorizedOf(m: Parameters<typeof authorizationStateOf>[0]): boolean {
+  return authorizationStateOf(m) === "valid" && m.model_endpoint !== "none";
 }
 
 /**
@@ -150,13 +175,13 @@ export function createGateAuthorizer(d: GateAuthorizerDeps): (req: { token: stri
     const live = liveRunForClaims(d.db, claims, d.revoked);
     if (typeof live === "string") return { ok: false, status: 403, reason: live };
     if (live.matterId !== req.matterId) return { ok: false, status: 403, reason: "matter_mismatch" };
-    const m = d.db.get<{ tenant_id: string; client_name: string | null; counterparty: string | null; confidentiality: string; consent_status: string; basis: string | null; basis_notice_version: string | null; model_endpoint: string; policy_version: number; full_pseudonym: number; collab_scope: string }>(
-      `SELECT tenant_id, client_name, counterparty, confidentiality, consent_status, basis, basis_notice_version, model_endpoint, policy_version, full_pseudonym, collab_scope FROM matters WHERE matter_id = ?`,
+    const m = d.db.get<{ tenant_id: string; client_name: string | null; counterparty: string | null; confidentiality: string; consent_status: string; basis: string | null; basis_source: string | null; basis_ref: string | null; basis_notice_version: string | null; model_endpoint: string; policy_version: number; full_pseudonym: number; collab_scope: string }>(
+      `SELECT tenant_id, client_name, counterparty, confidentiality, consent_status, basis, basis_source, basis_ref, basis_notice_version, model_endpoint, policy_version, full_pseudonym, collab_scope FROM matters WHERE matter_id = ?`,
       [live.matterId],
     );
     if (!m) return { ok: false, status: 403, reason: "matter_unknown" };
-    // 第 51 批（D-216）：按旧的 AI 次处理者清单记录的授权须重新确认，与内核 modelBlockReason 同一口径（版本为空的旧事项不拦）
-    const basisComplete = basisCompleteOf(m) && !basisNoticeStale(m) && m.model_endpoint !== "none";
+    // D-225：授权有效 = 四项齐备 + 依据类型与出处 + 当前次处理者清单版本（与内核 modelBlockReason、宿主、网关摘要同一函数）
+    const basisComplete = aiAuthorizedOf(m);
     return {
       ok: true,
       ctx: {

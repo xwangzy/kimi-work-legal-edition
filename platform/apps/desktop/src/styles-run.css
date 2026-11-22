@@ -130,8 +130,48 @@ details.progress-panel > summary { cursor: pointer; }
 .goal-brief-row dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; white-space: pre-wrap; }
 .goal-brief-plain { grid-template-columns: minmax(0, 1fr); }
 .goal-brief-plain dd { color: var(--text-strong); }
+
+/* ── 任务说明是这条线的起点（第 56 批）──
+   原先：一行带折叠箭头的灰字，下面另起一条竖线，两样东西各管各的。现在：任务说明左侧是一个空心小环，与下面步骤的圆点同列；
+   细线从小环连到第一步——读起来是一条线：你要什么 → 助手做了什么 → 现在在做什么。展开时不再垫灰底盒子，键值摘要贴着这条线排。
+   只在运行中的排法里连线（任务说明后面紧跟时间线时）；结束后“结果在上、过程收起”，小环保留、不连线。 */
+.goal-brief { position: relative; }
+.goal-brief[open] { background: transparent; }
+.goal-brief > summary { padding-left: 0; }
+.goal-brief > summary:hover { background: transparent; }
+.goal-brief > summary:hover .goal-brief-label { color: var(--text-primary); }
+.goal-brief > summary:not(.pill):not(:has(.step-dot))::before, .goal-brief[open] > summary:not(.pill):not(:has(.step-dot))::before { position: relative; z-index: 1; width: 9px; height: 9px; margin: 0 17.5px 0 5.5px; box-sizing: border-box; border: 1.5px solid var(--border-hover); border-radius: var(--r-full); background: var(--bg-main); box-shadow: 0 0 0 3px var(--bg-main); transform: none; transition: border-color var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard); }
+.goal-brief > summary:hover::before { border-color: var(--text-label) !important; }
+.goal-brief[open] > summary:not(.pill):not(:has(.step-dot))::before { border-color: var(--text-label); background: var(--text-label); }
+/* 展开 / 收起的提示放到行尾：一个小箭头，展开时转向 */
+.goal-brief > summary::after { content: ""; flex: none; width: 5px; height: 5px; margin: 0 var(--sp-2) 2px var(--sp-3); border-right: 1.5px solid var(--border-hover); border-bottom: 1.5px solid var(--border-hover); transform: rotate(-45deg); transition: transform var(--motion-fast) var(--ease-standard); }
+.goal-brief[open] > summary::after { transform: rotate(45deg); }
+.goal-brief-body { padding: 0 var(--sp-4) var(--sp-2) 32px; }
+.goal-brief:has(+ .timeline)::after { content: ""; position: absolute; left: 9.5px; top: 24px; bottom: -23px; width: 1px; background: var(--border-subtle); }
+.goal-brief + .timeline { margin-top: var(--sp-2); }
+/* 第一步不再把线的上半截藏掉：线是从任务说明接下来的 */
+.goal-brief + .timeline > :first-child::before { display: block; }
 .goal-brief-row ol { margin: 0; padding-left: 1.4em; }
 @media (max-width: 760px) { .goal-brief-row { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── 复核建议（D-223）：只有建议时没有自动修改，逐条列出供律师勾选。视觉与任务说明、时间线一致：细线分隔、次要灰，不加描边盒子 ── */
+.review-sugg { margin: var(--sp-4) 0 0; padding-top: var(--sp-3); border-top: 1px solid var(--border-subtle); }
+.review-sugg-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); font-size: var(--fs-caption); }
+.review-sugg-title { font-weight: 500; color: var(--text-label); }
+.review-sugg-hint { color: var(--text-secondary); }
+.review-sugg-list { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; }
+.review-sugg-item { position: relative; padding: var(--sp-2) 0 var(--sp-2) 0; }
+.review-sugg-item + .review-sugg-item { border-top: 1px solid var(--border-subtle); }
+.review-sugg-item > label { display: flex; align-items: flex-start; gap: var(--sp-3); cursor: pointer; }
+.review-sugg-item input[type="checkbox"] { flex: none; margin-top: 4px; }
+.review-sugg-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--fs-caption); line-height: 1.7; }
+.review-sugg-line { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.review-sugg-where { color: var(--text-secondary); overflow-wrap: anywhere; }
+.review-sugg-problem { color: var(--text-primary); overflow-wrap: anywhere; }
+.review-sugg-fix { color: var(--text-label); overflow-wrap: anywhere; }
+.review-sugg-level { flex: none; }
+.review-sugg-must { color: var(--status-danger-text); border-color: transparent; background: var(--risk-high-bg); }
+.review-sugg-actions { display: flex; justify-content: flex-end; margin-top: var(--sp-2); }
 
 @media (prefers-reduced-motion: reduce) {
   .timeline > .step, .run-panel { animation: none; }

@@ -41,3 +41,8 @@
 .ss-more svg { width: 14px; height: 14px; transition: transform var(--motion-fast) var(--ease-standard); }
 .ss-more.open svg { transform: rotate(90deg); }
 .ss-more .muted { font-weight: 400; }
+
+/* 当事人信息（D-224）：要写身份首部的卡在“案情与材料”里一行，与“本事项已有的事实”同一种安静写法 */
+.ss-parties { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-caption); line-height: 1.6; }
+.ss-parties-k { color: var(--text-secondary); }
+.ss-parties .btn-link { font-size: inherit; }

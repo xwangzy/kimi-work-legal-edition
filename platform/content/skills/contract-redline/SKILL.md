@@ -19,7 +19,7 @@ kwl:
 # 修订说明与谈判要点
 
 ## 1. 适用范围
-- **交付**（按 `$audience` 选择，未指定时三份都出）：
+- **交付**（按方法参数 `audience` 选择，未指定时三份都出）：
   - 《修订说明（致客户）》：逐项说明改了什么、为什么改、对客户的意义、需要客户决定的事项。
   - 《修订说明（致对方）》：只写修改内容与简要理由，语气中性，不暴露我方评估与底线。
   - 《谈判要点（内部）》：每项的我方立场、可退让方案、对方可能的回应与应对；可另出《谈判要点表》.xlsx。
@@ -37,19 +37,19 @@ kwl:
 1. **确定最终文本**：accepted 的卡以 `suggestion` 为最终文本；modified 的卡以 `lawyer_text` 为最终文本（律师改写优先，不得用原建议覆盖）；rejected 与 proposed 的卡不进入任何说明。`lawyer_status` 为 acknowledged（`changes_document` 为 false）的卡表示律师“知悉、不改动”：不写成修改项，需要时在谈判要点里作为“已知悉的风险”列出。
 2. **检查可写入性**：`anchor_status` 不是 located 的卡，在说明中标“该处需律师在修订稿中手工修改”，避免读者以为修订稿已包含。
 3. **排序归并**：按条款顺序排列；同一条款的多张卡合并成一项说明。
-4. **写致客户说明**：每项写“原条款要点 → 修改后 → 为什么（对客户的风险或利益）→ 是否需要客户决定”；法律理由引用条文的，用 `citations.verify` 核验（as_of = 分析截止日），核验不通过的写“依据待核实”，或改为不引条号的说理。
+4. **写致客户说明**：每项写“原条款要点 → 修改后 → 为什么（对客户的风险或利益）→ 是否需要客户决定”；法律理由引用条文的，用 `citations.verify` 批量核验（as_of = 分析截止日），核验不通过的写“依据待核实”，或改为不引条号的说理。
 5. **写致对方说明**：每项写“修改内容 + 一句中性理由”（如“为明确验收标准，避免履行争议”）。删掉严重度、风险判断、客户决定事项、备选方案和任何“对我方不利”之类的表述。
 6. **写谈判要点**：每项列我方立场、理由、对方可能的回应、可退让方案（来源见第 2 节第 5 条）、退让的交换条件；底线一栏：卡里有 `bottom_line` 的写“建议：<内容>（待客户决定）”，没有的写“底线待客户决定”——都不替客户定底线。优先级与工作台的性质同一口径：must → 必争、should → 力争、negotiable → 可让。
 7. **成文**：分别用 `docx.render_report` 生成三份文书；律师需要表格时，用 `xlsx.render_table` 生成《谈判要点表》。完成后在会话中提示：“修订稿请在审查工作台点‘生成修订稿’；本说明与修订稿须一并复核后由律师发送。”
 
 ## 4. 工具调用约定
-| 工具 | 用途 | 关键参数 | 失败时 |
-|---|---|---|---|
-| riskcards.list | 读取已处理的卡 | document_version_id（本次针对的版本），status: [accepted, modified] | 不可用：停止，告知律师无法读取处理结果，不凭记忆或正文重写 |
-| materials.list / materials.read_excerpt | 读条款上下文 | parse_version_id，区间 | 失败：只用卡内文本，说明中注明“未核对上下文” |
-| citations.verify | 核验说理中引用的条文 | citations[{law, article}]，as_of | 不可用：去掉条号或标“依据待核实” |
-| docx.render_report | 生成说明与要点 | title，sections | 不可用：见第 8 节 |
-| xlsx.render_table | 谈判要点表 | title，sheets | 不可用：只出 Word 版 |
+| 工具 | 用途 | 关键参数 |
+|---|---|---|
+| riskcards.list | 读取已处理的卡 | document_version_id（本次针对的版本），status: [accepted, modified] |
+| materials.list / materials.read_excerpt | 读条款上下文 | parse_version_id，区间 |
+| citations.verify | 核验说理中引用的条文 | citations[{law, article}]（本批要引的条文一次带齐），as_of |
+| docx.render_report | 生成说明与要点 | title，sections |
+| xlsx.render_table | 谈判要点表 | title，sheets |
 
 ## 5. 输出规格
 **《修订说明（致客户）》**（title：`修订说明（致客户）-<合同简称>`）
@@ -92,4 +92,4 @@ kwl:
 ## 8. 依赖缺失时的降级
 - `riskcards.list` 不可用：停止，告知律师“无法读取工作台处理结果”，不根据对话记忆或旧文件重写说明。
 - 没有任何 accepted / modified 的卡：告知律师先在审查工作台处理风险卡，本次不生成说明。
-- `docx.render_report` 不可用：用受限命令行 `kwl-docx create` 生成，并在文件开头注明“未经文书工具生成，格式待整理”。
+- 其余工具不可用或失败时，按工作准则第 5 条“工具不可用或失败时”一段处理。

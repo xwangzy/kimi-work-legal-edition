@@ -8,7 +8,8 @@ import { nav } from "../App.tsx";
 import { fmtRelative, RUN_STATUS_LABELS, runName } from "../lib/labels.ts";
 import { dueText, dueTone, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 import type { ReminderItem } from "../api.ts";
-import { MatterTodos, PendingChecks, StageStrip } from "../components/MatterOverview.tsx";
+import { MatterTodos, PartiesInfoRow, PendingChecks, StageStrip } from "../components/MatterOverview.tsx";
+import type { PartiesDocRow } from "../components/PartiesInfo.tsx";
 import { ReviewRulesWidget, TemplateMethods } from "../components/MatterSetup.tsx";
 import { matterLine } from "../lib/scenarios.ts";
 import type { PendingCheck } from "../api.ts";
@@ -34,7 +35,7 @@ function Widget({ title, children }: { title: string; children: React.ReactNode 
   );
 }
 
-export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter; runs: any[]; onChanged?: () => void; onGo?: (target: PendingCheck["target"]) => void }) {
+export function MatterBoard({ matter, runs, docs, onChanged, onGo }: { matter: Matter; runs: any[]; /** 本事项材料（当事人信息那一行用，D-224）；不给时不显示 */ docs?: PartiesDocRow[]; onChanged?: () => void; onGo?: (target: PendingCheck["target"]) => void }) {
   const [egress, setEgress] = useState<{ sent: number; blocked: number; unknown: number }>({ sent: 0, blocked: 0, unknown: 0 });
   // 期限卡同时列本事项的期限提醒（复核 Q1-18：“填期限”打开的是提醒表单，填完回来卡片要能看到）
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
@@ -58,6 +59,8 @@ export function MatterBoard({ matter, runs, onChanged, onGo }: { matter: Matter;
     <>
     {/* 阶段条与事件时点（v9.4 第 20 批 S-08、C1 §3.2）：当前阶段由律师点选 */}
     <StageStrip matter={matter} readOnly={readOnly || !onChanged} onChanged={onChanged ?? (() => {})} />
+    {/* 当事人信息（D-224）：存一次，起诉状、律师函等文书的首部自动带入 */}
+    {docs && <PartiesInfoRow matter={matter} docs={docs} readOnly={readOnly || !onChanged} onChanged={onChanged ?? (() => {})} />}
     {/* 事项类型的常用方法（v9.4 第 22 批，C1 #20） */}
     <TemplateMethods matter={matter} readOnly={readOnly} />
     {/* 固定两栏（第 27 批，评审 U2-29）：左边“等你处理”（待核 + 待办，与首页同名）与最近 AI 记录；右边期限、审查要点 */}

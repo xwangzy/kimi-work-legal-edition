@@ -36,7 +36,8 @@ export function runsOf(w) {
 
 /** 经开发桥调用产品接口（与界面同一条路；令牌是开发桥启动时写下的）。 */
 export async function inv(w, method, params = {}) {
-  const tok = readFileSync(join(PLATFORM, "apps/desktop/dev/.bridge-token"), "utf8").trim();
+  // 栈清单里可带 token（多成员栈各自起的开发桥用自己的令牌）；没有就读开发桥写下的那份
+  const tok = w.token ?? readFileSync(join(PLATFORM, "apps/desktop/dev/.bridge-token"), "utf8").trim();
   const r = await fetch(`http://127.0.0.1:${w.bridge}/invoke`, { method: "POST", headers: { "content-type": "application/json", origin: `http://127.0.0.1:${w.web}`, "x-kwl-token": tok }, body: JSON.stringify({ method, params }) });
   const j = await r.json();
   if (j.error) throw new Error(JSON.stringify(j.error));

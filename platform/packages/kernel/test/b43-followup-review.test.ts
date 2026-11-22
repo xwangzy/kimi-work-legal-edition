@@ -76,7 +76,7 @@ test("追问重出文书的做独立复核：方法沿追问链取，复核人�
     return done("render_1") ? { content: "已起草《设备买卖合同》。" } : render("render_1", 120);
   };
   try {
-    const { matter } = await tk.inv("matters.create", { title: "追问复核", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, model_endpoint: "standard" });
+    const { matter } = await tk.inv("matters.create", { title: "追问复核", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条", model_endpoint: "standard" });
     const doc = await importBytes(tk.inv, matter.matter_id, "交易条款清单.txt", Buffer.from("设备：压装设备一台。价款：人民币120万元，验收合格后10日内一次付清。", "utf8"), "text/plain");
     const start = async (goal: string, extra: Record<string, unknown>) => {
       const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });

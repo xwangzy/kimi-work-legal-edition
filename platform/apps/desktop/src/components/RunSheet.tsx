@@ -12,6 +12,7 @@ import type { ComposerValue } from "./Composer.tsx";
 import { SCENARIO_LABELS } from "../lib/labels.ts";
 import { Modal } from "./Modal.tsx";
 import { AuthorizationRecord, basisAfterConfirm, confirmNeeds, initialRecord, needsReconfirm, recordReady, type AuthRecord } from "./Consent.tsx";
+import { detailReady, detailSource } from "../lib/authorization.ts";
 import type { AiAuthorization, MatterBasis, SendSummaryView } from "../api.ts";
 import { AI_NOTICE_DECLINED, ensureAiNotice } from "../lib/ai-notice.ts";
 import { BusyLabel } from "./Loading.tsx";
@@ -41,7 +42,7 @@ export interface PendingStart {
     points: number;
     points_display: string;
     assumptions: string[];
-    data_where?: { preview?: string; preview_rows?: { label: string; text: string }[]; bullets?: string[]; bullet_kinds?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "policy" | "suspects" | "account" | "quota" | null; reconfirm?: boolean; busy_run_id?: string; send_summary?: SendSummaryView; start_hint?: StartHint };
+    data_where?: { preview?: string; preview_rows?: { label: string; text: string }[]; bullets?: string[]; bullet_kinds?: string[]; warning?: string | null; start_blocked?: boolean; block_kind?: "exit_mode" | "busy" | "consent" | "policy" | "suspects" | "account" | "quota" | null; reconfirm?: boolean; needs_ref?: boolean; busy_run_id?: string; send_summary?: SendSummaryView; start_hint?: StartHint };
   };
 }
 
@@ -133,9 +134,12 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
       .catch(() => setDefaults(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [consentBlocked]);
-  const reconfirm = !!estimate.data_where?.reconfirm || needsReconfirm(matter, defaults?.subprocessors?.version);
+  // D-225：早期记录缺少出处（内核 needs_ref / basis_state）同样走重新确认卡，文案说明“请补记一次”
+  const needsRef = !!estimate.data_where?.needs_ref || matter.basis_state === "needs_ref";
+  const reconfirm = needsRef || !!estimate.data_where?.reconfirm || needsReconfirm(matter, defaults?.subprocessors?.version);
   const [detail, setDetail] = useState<MatterBasis | null>(null);
-  const canRecord = detail ? true : recordReady(record, need.sensitive);
+  // 逐项记录同样须写出处（D-225）
+  const canRecord = detail ? detailReady(record.ref) : recordReady(record, need.sensitive);
   const [localOnlyBusy, setLocalOnlyBusy] = useState(false);
   /** 客户要求不上云：记录后本事项只在这台电脑上处理（不用云端 AI、不联网），关闭确认卡。 */
   const markLocalOnly = async () => {
@@ -158,7 +162,8 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
     try {
       // 告知在记录之前：律师先知道数据去哪，再记录客户授权（第 51 批）
       if (!(await ensureAiNotice(api.aiNotice, api.ackAiNotice))) throw new Error(AI_NOTICE_DECLINED);
-      await api.updateMatter(matter.matter_id, { basis, ...(detail ? {} : { basis_source: record.kind, basis_ref: record.ref.trim() }) });
+      // 两条路径都带依据类型与出处（D-225：逐项记录不再只交四项）；内核按当前次处理者清单记版本、追加授权记录
+      await api.updateMatter(matter.matter_id, { basis, basis_source: detail ? detailSource(record, matter) : record.kind, basis_ref: record.ref.trim() });
       notifyDataChanged();
       const fresh = await prepareStart({ ...matter, basis }, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}), ...(cur.docNames ? { docNames: cur.docNames } : {}) });
       setCur(fresh);
@@ -281,6 +286,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
             }}
             sensitive={need.sensitive}
             reconfirm={reconfirm}
+            needsRef={needsRef}
             processors={defaults?.subprocessors ?? null}
             detail={detail}
             onDetail={setDetail}

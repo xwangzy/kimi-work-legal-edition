@@ -142,15 +142,23 @@ test("API 路由：上游密钥只收控制台加密的密文（公钥编号须�
 });
 
 test("金额套餐：未定价 → 领租约 503；定价后按“未缓存输入 / 缓存输入 / 输出”三档计售价与成本；明细、汇总、账单、CSV（防公式注入）都从同一份账本出", async () => {
-  // 先把价目清掉再建金额套餐
+  // 第 56 批（D-222）：没有售价时金额套餐建不出来（改前能建，用它的律所每次调用 503）
   assert.equal((await ops("op_1001", "PUT", "/v1/ops/routing/prices", { items: {} })).status, 200);
-  const plan = await ops("op_1001", "PUT", "/v1/ops/plans/cny-std", { label: "金额标准", quota_unit: "cny", seat_quota: 200, period: "month", seat_price_cny: 399, alert_thresholds: [50, 80, 100] });
+  const cnyStd = { label: "金额标准", quota_unit: "cny", seat_quota: 200, period: "month", seat_price_cny: 399, alert_thresholds: [50, 80, 100] };
+  const early = await ops("op_1001", "PUT", "/v1/ops/plans/cny-std", cnyStd);
+  assert.deepEqual([early.status, early.json.error.code], [409, "plan_models_unpriced"], early.text);
+  const K3 = { input: 4, cached_input: 1, output: 16, cost_input: 2, cost_cached_input: 0.5, cost_output: 8 };
+  assert.equal((await ops("op_1001", "PUT", "/v1/ops/routing/prices", { items: { "legal/k3": K3, "legal/k2.6": { input: 2, output: 8 } } })).status, 200);
+  const plan = await ops("op_1001", "PUT", "/v1/ops/plans/cny-std", cnyStd);
   assert.equal(plan.status, 200, plan.text);
   const f = await opsFirm("ten_cnyfirm", "boss@cnyfirm.cn", "cny-std");
-  const lease = () => service("/v1/quota/lease", { tid: f.tid, sid: f.sid, holder: "gw-cny", need_estimate: { alias: "legal/k3", input: 100_000, output: 8192 } });
-  const l0 = await lease();
+  const lease = (alias = "legal/k3") => service("/v1/quota/lease", { tid: f.tid, sid: f.sid, holder: "gw-cny", need_estimate: { alias, input: 100_000, output: 8192 } });
+  // 仍可能未定价的一种情形：金额套餐不限模型，之后新启用了一个还没定价的别名——领租约失败关闭（503），不按 0 元放行
+  const add = await ops("op_1001", "PUT", `/v1/ops/routing/models/${encodeURIComponent("legal/k9")}`, { label: "新模型", enabled: true, targets: [{ provider: "maas", model: "kimi-k3.1-pro", priority: 1 }] });
+  assert.equal(add.status, 200, add.text);
+  const l0 = await lease("legal/k9");
   assert.deepEqual([l0.status, l0.json.error.code], [503, "price_unconfigured"]);
-  assert.equal((await ops("op_1001", "PUT", "/v1/ops/routing/prices", { items: { "legal/k3": { input: 4, cached_input: 1, output: 16, cost_input: 2, cost_cached_input: 0.5, cost_output: 8 } } })).status, 200);
+  assert.equal((await ops("op_1001", "DELETE", `/v1/ops/routing/models/${encodeURIComponent("legal/k9")}`)).status, 200);
   const l1 = await lease();
   assert.equal(l1.status, 200, JSON.stringify(l1.json));
   assert.equal(l1.json.unit, "cny");

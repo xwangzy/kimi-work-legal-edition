@@ -76,50 +76,11 @@ export function MembersAdmin() {
   const invitations: any[] = data?.invitations ?? [];
   return (
     <div className="device">
+      {/* 第 56 批：没有申请时不占一张空卡；有申请时排在最前（管理员来这页最急的事） */}
+      {requests.length > 0 && (
       <div className="panel">
-        <div className="section-title">邀请同事</div>
-        <p className="muted">对方在新装的 Kimi Work 里输入邀请码；你在下面核对他屏幕上的数字后批准，他就能开始使用。</p>
-        <form
-          className="settings-choice"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void invite();
-          }}
-        >
-          <label className="field">
-            <span>姓名</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：张律师" maxLength={40} />
-          </label>
-          <label className="field">
-            <span>角色</span>
-            <Select aria-label="角色" value={role} onChange={setRole} options={ROLES.map(([k, l]) => ({ value: k, label: l }))} />
-          </label>
-          <button type="submit" className="btn-primary" disabled={!name.trim() || busy}>
-            {busy ? "正在生成…" : "生成邀请码"}
-          </button>
-        </form>
-        {issued && (
-          <div className="card" role="status">
-            <div>
-              给 {issued.name} 的邀请码（只显示这一次）：
-            </div>
-            <div className="members-code">{issued.code}</div>
-            <div className="card-actions">
-              <button className="btn-ghost btn-sm" onClick={() => void navigator.clipboard?.writeText(issued.code).then(() => setMsg("已复制"))}>
-                复制
-              </button>
-            </div>
-            <p className="muted">{fmtTime(issued.expires_at)} 前有效，只能用一次。请发给对方：他在自己的电脑上安装 Kimi Work 后输入这个码，然后会打电话把屏幕上的入组核对码读给你，你在“等你批准”里核对后批准。</p>
-          </div>
-        )}
-        {msg && <p className="muted">{msg}</p>}
-      </div>
-
-      <div className="panel">
-        <div className="section-title">等你批准{requests.length > 0 ? `（${requests.length}）` : ""}</div>
-        {requests.length === 0 ? (
-          <p className="muted">没有等待批准的同事。</p>
-        ) : (
+        <div className="section-title">等你批准（{requests.length}）</div>
+        {(
           <table className="members-table">
             <thead>
               <tr>
@@ -163,6 +124,46 @@ export function MembersAdmin() {
           </table>
         )}
         {requests.length > 0 && <p className="muted">批准前，请先电话或当面联系对方，请他读出自己屏幕上的入组核对码，与这里逐位对照。号码对不上？不要批准，点“拒绝”，并联系 Kimi Work 客服。</p>}
+      </div>
+      )}
+
+      <div className="panel">
+        <div className="section-title">邀请同事</div>
+        <p className="muted">对方在新装的 Kimi Work 里输入邀请码；你在下面核对他屏幕上的数字后批准，他就能开始使用。</p>
+        <form
+          className="settings-choice"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void invite();
+          }}
+        >
+          <label className="field">
+            <span>姓名</span>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：张律师" maxLength={40} />
+          </label>
+          <label className="field">
+            <span>角色</span>
+            <Select aria-label="角色" value={role} onChange={setRole} options={ROLES.map(([k, l]) => ({ value: k, label: l }))} />
+          </label>
+          <button type="submit" className="btn-primary" disabled={!name.trim() || busy}>
+            {busy ? "正在生成…" : "生成邀请码"}
+          </button>
+        </form>
+        {issued && (
+          <div className="card" role="status">
+            <div>
+              给 {issued.name} 的邀请码（只显示这一次）：
+            </div>
+            <div className="members-code">{issued.code}</div>
+            <div className="card-actions">
+              <button className="btn-ghost btn-sm" onClick={() => void navigator.clipboard?.writeText(issued.code).then(() => setMsg("已复制"))}>
+                复制
+              </button>
+            </div>
+            <p className="muted">{fmtTime(issued.expires_at)} 前有效，只能用一次。请发给对方：他在自己的电脑上安装 Kimi Work 后输入这个码，然后会打电话把屏幕上的入组核对码读给你，你在“等你批准”里核对后批准。</p>
+          </div>
+        )}
+        {msg && <p className="muted">{msg}</p>}
       </div>
 
       <MemberRoster />

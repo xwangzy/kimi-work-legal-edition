@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "../api.ts";
+import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
+import { AuthorizationTrail } from "../components/AuthorizationTrail.tsx";
 import { Icon } from "../components/Icons.tsx";
 import { downloadPlan } from "../lib/download.ts";
 import { SafePreview } from "../components/SafePreview.tsx";
@@ -108,6 +109,20 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
       .finally(() => setFileDoing(null));
   };
   useEffect(reload, [reload]);
+  // D-225：签发页右栏“系统已核对”下显示本案客户授权一行（只读，点开看历史）；取不到不影响签发页其余部分
+  const [authzMatter, setAuthzMatter] = useState<Matter | null>(null);
+  const matterIdOfData: string | undefined = data?.matter_id;
+  useEffect(() => {
+    if (!matterIdOfData) return;
+    let live = true;
+    api
+      .getMatter(matterIdOfData)
+      .then((r) => live && setAuthzMatter(r.matter))
+      .catch(() => live && setAuthzMatter(null));
+    return () => {
+      live = false;
+    };
+  }, [matterIdOfData]);
   useEffect(() => {
     if (!data?.matter_id) return;
     api
@@ -377,6 +392,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                   </li>
                 ))}
               </ul>
+              {authzMatter && <AuthorizationTrail matter={authzMatter} />}
               {/* 页级读不清（§9 第 9 项默认做法）：只列出、不要求勾选；律师据此决定是否核对原件 */}
               {(data.partial_pages ?? []).some((x: any) => x.total > 0) && (
                 <div className="banner banner-gray" role="note">

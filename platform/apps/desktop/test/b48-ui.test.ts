@@ -40,7 +40,8 @@ test("开始前确认：只有 block_kind=consent 才出补记卡（L3b、不使
   assert.match(sheet, /const consentBlocked = blocked && estimate\.data_where\?\.block_kind === "consent";/);
   assert.doesNotMatch(sheet, /\?\? "consent"\) === "consent"/, "缺省不再按“去记录同意”处理");
   // 第 51 批（D-216）：补记改为逐案记录依据类型与出处（不再是一句“已取得客户同意”）
-  assert.match(sheet, /basis_source: record\.kind, basis_ref: record\.ref\.trim\(\)/);
+  // D-225：逐项记录路径同样带依据类型与出处
+  assert.match(sheet, /basis_source: detail \? detailSource\(record, matter\) : record\.kind, basis_ref: record\.ref\.trim\(\)/);
   const nm = src("components/NewMatter.tsx");
   // 新建事项不再记录客户授权（第一次用 AI 时逐案记录），也不读律师的默认设置替事项记成“已取得”
   assert.doesNotMatch(nm, /<AuthorizationField |api\s*\.aiAuthorization\(\)|basis_source/);
@@ -81,7 +82,8 @@ test("三页：成果按任务卡片、提交复核悬停出现；数据去向�
   const rm = src("pages/Reminders.tsx");
   assert.match(rm, /function agendaSummary\(/);
   // 第 49 批：远近只用倒计时文字颜色（不再有左侧色条 rm-tone-*），新到的就地标在日程行上
-  assert.match(rm, /className=\{`rm-count rm-count-\$\{tone\}`\}/);
+  // 第 56 批：倒计时改为紧跟标题的胶囊（3 天内红、7 天内橙、其余中性灰）
+  assert.match(rm, /className=\{`rm-pill rm-pill-\$\{pill\.tone\}`\}/);
   assert.doesNotMatch(rm, /rm-tone-/);
 });
 

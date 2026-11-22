@@ -38,6 +38,7 @@ import "../styles-run.css";
 import { goalPreview, goalRows } from "../lib/goal-brief.ts";
 import { OutlineConfirm } from "../components/OutlineConfirm.tsx";
 import { confirmAndAnswer, outlineAnswer, outlineQuestion, type OutlineView } from "../lib/outline.ts";
+import { pendingReviewSuggestions, REVIEW_APPLY_HEAD, REVIEW_LEVEL_LABEL, reviewApplyText } from "../lib/review-suggestions.ts";
 
 /** 页面标题：场景卡名；律师自己描述的任务用描述前 30 字，悬停看全文（Z3 #21、V-g；第 26 批 runName）。 */
 function runTitle(run: any): string {
@@ -150,6 +151,9 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   /** 追问时补勾的材料（上一轮没勾的）与勾选列表是否展开。 */
   const [followAdd, setFollowAdd] = useState<string[]>([]);
   const [followAddOpen, setFollowAddOpen] = useState(false);
+  /** 复核建议（D-223）：律师勾选的意见序号；点“按勾选的意见修改”后追问带 review_apply（追问框文字仍以那句开头时）。 */
+  const [reviewPick, setReviewPick] = useState<number[]>([]);
+  const [reviewApply, setReviewApply] = useState(false);
   // 追问框在页面最底部：展开补充材料的列表、出现确认行时都在它下面、落在可视区之外——滚到底，免得律师点了之后看不到变化
   const followWrapRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -287,9 +291,11 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const [factText, setFactText] = useState("");
   // 结果区的一句话结论（V18 A1）：取最新一份答复摘要的正文，不再依赖右栏选中的是哪一份
   const [replyText, setReplyText] = useState("");
+  // 未自动处理的复核意见（D-223）：只有建议时的全部建议，或没落实、没改完的必须改
+  const pendingReview = useMemo(() => pendingReviewSuggestions(events), [events]);
   const texts = useMemo(
-    () => [preview?.text ?? "", replyText, factText, liveText, ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => `${a.title ?? ""}\n${a.filename ?? ""}`), ...(risk?.top.map((t) => t.issue) ?? []), ...(outline?.items.flatMap((x) => [x.claim, x.counter ?? "", ...x.basis.map((b) => b.note ?? ""), ...x.facts.map((f) => f.statement)]) ?? [])].join("\n"),
-    [preview, replyText, factText, liveText, progress, approvals, questions, events, artifacts, risk, outline],
+    () => [preview?.text ?? "", replyText, factText, liveText, ...(pendingReview?.items.flatMap((x) => [x.where, x.problem, x.fix]) ?? []), ...progressTexts(progress), ...approvals.flatMap((a) => [a.title, a.preview.plan ?? "", a.preview.detail ?? ""]), ...questions.flatMap((q) => q.questions.flatMap((x) => [x.question, ...x.options.map((o) => o.label)])), ...events.map((e) => String(e.payload?.description ?? "")), ...artifacts.map((a) => `${a.title ?? ""}\n${a.filename ?? ""}`), ...(risk?.top.map((t) => t.issue) ?? []), ...(outline?.items.flatMap((x) => [x.claim, x.counter ?? "", ...x.basis.map((b) => b.note ?? ""), ...x.facts.map((f) => f.statement)]) ?? [])].join("\n"),
+    [preview, replyText, factText, liveText, pendingReview, progress, approvals, questions, events, artifacts, risk, outline],
   );
   useEffect(() => {
     if (!texts.includes("〔")) return;
@@ -512,8 +518,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
 
   /** 追问：在同一 Agent 会话上开新一轮（上下文连续；新一轮有自己的记录、确认与成果）。先估价、显示一行确认，再发起。 */
   const prevMode: RunMode = (run?.input_snapshot?.run_options?.mode as RunMode | undefined) ?? "default";
-  const prepareFollowUp = async () => {
-    const text = followText.trim();
+  const prepareFollowUp = async (preset?: string) => {
+    const text = (preset ?? followText).trim();
     if (!text) return;
     setBusy(true);
     setErr("");
@@ -545,8 +551,12 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
         plan_first: false,
         followup_of: runId,
         ...(raise ? { mode: "default" as RunMode, mode_raise_confirmed: true } : {}),
+        // 按勾选的复核意见修改（D-223）：这一轮内核不再独立复核、不再自动修改；律师把那段指示整个改掉了就按普通追问
+        ...(reviewApply && text.startsWith(REVIEW_APPLY_HEAD) ? { review_apply: true } : {}),
       });
       setFollowText("");
+      setReviewApply(false);
+      setReviewPick([]);
       setFollowConfirm(null);
       setFollowAdd([]);
       setFollowAddOpen(false);
@@ -934,6 +944,58 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
       ))}
     </div>
   );
+  // 复核建议（D-223）：只有建议时没有自动修改；必须改没落实或没改完的同样列出。逐条勾选后复用追问链路发出修改指示
+  // （带 review_apply：这一轮不再另做复核与自动修改）。只有能追问的人（本人、事项未归档）看得到
+  const canFollowUp = run?.scenario === "a1.agent_task" && !!run?.is_mine && (matter?.lifecycle ?? "active") === "active" && (status === "succeeded" || status === "partial");
+  const reviewHead = pendingReview
+    ? pendingReview.mode === "suggestions"
+      ? `复核建议 ${pendingReview.items.length} 条（未自动修改）`
+      : pendingReview.mode === "open"
+        ? `必须改的复核意见 ${pendingReview.items.length} 条没有落实`
+        : `复核意见 ${pendingReview.items.length} 条没有改完`
+    : "";
+  const applyReview = () => {
+    if (!pendingReview) return;
+    const picked = pendingReview.items.filter((x) => reviewPick.includes(x.no));
+    if (picked.length === 0) return;
+    const text = reviewApplyText(picked, (t) => restoredPlain(t, tokenMap));
+    setFollowText(text);
+    setReviewApply(true);
+    void prepareFollowUp(text);
+  };
+  const reviewEl = doneLayout && canFollowUp && pendingReview && (
+    <section className="review-sugg" aria-label="复核建议">
+      <div className="review-sugg-head">
+        <span className="review-sugg-title">{reviewHead}</span>
+        <span className="review-sugg-hint">由你决定是否采纳，勾选后按意见修改</span>
+      </div>
+      <ul className="review-sugg-list">
+        {pendingReview.items.map((x) => {
+          const on = reviewPick.includes(x.no);
+          return (
+            <li key={x.no} className={`review-sugg-item${on ? " on" : ""}`}>
+              <label>
+                <input type="checkbox" aria-label={`采纳第 ${x.no} 条复核意见`} checked={on} disabled={busy} onChange={() => setReviewPick((ns) => (on ? ns.filter((n) => n !== x.no) : [...ns, x.no]))} />
+                <span className="review-sugg-body">
+                  <span className="review-sugg-line">
+                    <span className={`phase review-sugg-level review-sugg-${x.level}`}>{REVIEW_LEVEL_LABEL[x.level]}</span>
+                    {x.where && <span className="review-sugg-where">{renderTokens(x.where, tokenMap)}</span>}
+                  </span>
+                  <span className="review-sugg-problem">{renderTokens(x.problem, tokenMap)}</span>
+                  {x.fix && <span className="review-sugg-fix">改法：{renderTokens(x.fix, tokenMap)}</span>}
+                </span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="review-sugg-actions">
+        <button className="btn-ghost btn-sm" disabled={busy || reviewPick.length === 0} onClick={applyReview}>
+          按勾选的意见修改{reviewPick.length > 0 ? `（${reviewPick.length} 条）` : ""}
+        </button>
+      </div>
+    </section>
+  );
 
   return (
     // 第 27 批（评审 U3-11）：执行页也有 <main> 地标（读屏“跳到正文”；原来是唯一没有的主页面）
@@ -1033,6 +1095,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 )}
               </section>
             )}
+            {reviewEl}
             {err && <div className="banner banner-red">{err}</div>}
             <div className="done-process">
               <button className="done-process-toggle" aria-expanded={processOpen} onClick={() => setProcessOpen((v) => !v)}>

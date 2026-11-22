@@ -82,7 +82,7 @@ test("T17-1 只有控制面签名的放宽策略：拒绝并告警；生效策�
   assert.deepEqual(st.policy.relaxations, []);
   assert.ok((await alertCodes()).includes("policy/relaxation_unsigned"), JSON.stringify(st.alerts));
   assert.ok(rejectedAudit().some((o) => o.startsWith("policy:relaxation_unsigned")), "告警进本机签名审计链");
-  const { matter } = await tk.inv("matters.create", { title: "演练事项", stance: "原告", confidentiality: "high", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "confirmed", subprocessor: "confirmed" } });
+  const { matter } = await tk.inv("matters.create", { title: "演练事项", stance: "原告", confidentiality: "high", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "confirmed", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   const pol = (await tk.inv("matters.get", { matter_id: matter.matter_id })).run_policy;
   assert.ok(!pol.allowed_modes.includes("auto"));
   assert.ok(!tk.kernel.gate.fetchAllowlist.includes("exfil-example.cn"));

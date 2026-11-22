@@ -11,7 +11,7 @@ kwl:
   chain: contract
   tier: beta
   tools_required: [materials.list, materials.read_excerpt, rules.propose]
-  tools_optional: [law.search, law.get_version, citations.verify]
+  tools_optional: [law.search, law.get_article, citations.verify]
   outputs: [审查要点草稿（待你审定）]
   source_lineage: [spec:v9.4第22批（评审C1§1#22 从范本生成审查规则）, skill:contract-review@1.4.0（偏离规则卡与 rule_ref 写法）]
 ---
@@ -22,10 +22,9 @@ kwl:
 - **交付**：一份审查要点草稿（经 `rules.propose` 存进本事项，律师在事项概览“审查要点”里逐条看、改、删，点“启用”后才生效）；会话里一段说明：用了哪些文件、每条要点出自哪份文件哪一条、哪些地方范本之间不一致。
 - **做什么**：把范本里分散的“我方一般怎么写、最多让到哪里、什么不能接受”整理成逐条要点，供以后审合同（`contract-review`）、回稿重审（`redraft-review`）、起草合同（`contract-draft`）时对照。
 - **不做什么**：不审查某一份具体合同（那是 `contract-review`）；不替律师或客户定底线——范本没有逐字写明不能接受的，不写 `red_line`；不把法律强制性规定写成要点（那些按法律判断，不靠要点）；不联网查询。
-- **试用**：未经本所质量验收；草稿必须律师审定。
 
 ## 2. 输入与前置检查
-1. `materials.list`：找出范本类文件——本所或客户的标准合同、采购 / 销售标准、合同管理制度里的审查标准、谈判底线说明、往来定稿（已签版本）。`$basis` 是律师说明的范本类型或范围（如“客户的采购标准”“我们的服务合同范本”），按它挑文件；识别不全的写明未读页数，未读内容不整理。
+1. `materials.list`：找出范本类文件——本所或客户的标准合同、采购 / 销售标准、合同管理制度里的审查标准、谈判底线说明、往来定稿（已签版本）。方法参数 `basis` 是律师说明的范本类型或范围（如“客户的采购标准”“我们的服务合同范本”），按它挑文件；识别不全的写明未读页数，未读内容不整理。
 2. 没有范本类文件时停下，告诉律师需要放进哪类文件，**不凭经验编要点**。
 3. 范本不止一份且彼此不一致（例如两份定稿付款期限不同）的，用提问工具一次问清（不超过 3 问）：以哪一份为准？还是都列出、由律师选？
 
@@ -42,11 +41,11 @@ kwl:
 5. **回报**：会话里说明用了哪些文件、共几条、哪几条有不一致或待律师补底线，提醒律师到事项概览“审查要点”审定后启用。
 
 ## 4. 工具调用约定
-| 工具 | 用途 | 关键参数 | 失败时 |
-|---|---|---|---|
-| materials.list | 找范本类文件 | 无 | 不可用：停止，告知无法确认材料 |
-| materials.read_excerpt | 读范本原文 | parse_version_id | 某段失败：说明里写“未读取”，不整理该段 |
-| rules.propose | 提交审查要点草稿 | title，rules[{topic, standard, fallback?, red_line?, red_line_quote?}] | 校验报错按提示改（字数、条数）；返回 red_lines_dropped 的，那几条的不可谈没有写入：范本确有原句的照抄后重交，没有的在说明里列为“待律师补底线”；事项草稿已满时请律师先处理旧草稿 |
+| 工具 | 用途 | 关键参数 |
+|---|---|---|
+| materials.list | 找范本类文件 | 无 |
+| materials.read_excerpt | 读范本原文 | parse_version_id |
+| rules.propose | 提交审查要点草稿 | title，rules[{topic, standard, fallback?, red_line?, red_line_quote?}] |
 
 ## 5. 输出规格
 - `rules.propose` 的草稿：`title` 写“××标准（草稿）”；`rules` 按合同条款顺序，每条 `topic` 不超过 40 字，`standard` / `fallback` / `red_line` 各不超过 300 字，`standard` 末尾括注出处“（范本《××》第 n 条）”。
@@ -68,3 +67,5 @@ kwl:
 ## 8. 依赖缺失时的降级
 - `rules.propose` 不可用：把要点按“条款 / 我方标准 / 可退让 / 不可谈 / 出处”写成 Markdown 表格放进工作区，并说明须律师在“审查要点”里手工录入后才生效。
 - 只有部分范本可读：只整理可读部分，说明里列出未读的文件与页。
+- `rules.propose` 返回校验错误的按提示改（字数、条数）；返回 red_lines_dropped 的，那几条的不可谈没有写入：范本确有原句的照抄后重交，没有的在说明里列为“待律师补底线”；事项草稿已满时请律师先处理旧草稿。
+- 其余工具不可用或失败时，按工作准则第 5 条“工具不可用或失败时”一段处理。

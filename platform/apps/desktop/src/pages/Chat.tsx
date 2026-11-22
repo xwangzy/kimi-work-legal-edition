@@ -19,6 +19,9 @@ import { fmtWait } from "../lib/waiting.ts";
 import { ensureAiNotice } from "../lib/ai-notice.ts";
 import { KimiPulse, LoadError } from "../components/Loading.tsx";
 
+/** 问答输入框下的常驻提示（D-225）：问答用于一般法律问题；具体案件在事项里发起（事项里才有该案的客户授权与令牌化规则）。 */
+export const CHAT_SCOPE_NOTE = "这里用于一般法律问题；涉及具体案件的材料与当事人，请在事项里发起。";
+
 export function ChatPage({ conversationId }: { conversationId?: string | undefined }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   /**
@@ -326,6 +329,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
             <span className="send-hint muted" aria-hidden="true">回车发送 · Shift + 回车换行</span>
             <button className="send" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送" title="发送（回车）"><Icon.send /></button>
           </div>
+          {/* D-225：问答不绑定事项、不查客户授权——常驻说明适用范围，案件材料与当事人请在事项里发起 */}
+          <p className="chat-scope-note">{CHAT_SCOPE_NOTE}</p>
         </div>
       </main>
     </div>

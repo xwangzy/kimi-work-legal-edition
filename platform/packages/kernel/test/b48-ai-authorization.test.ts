@@ -48,12 +48,12 @@ test("默认设置：缺省关闭；按委托合同条款记录须有出处（�
   assert.equal(rows.length, 2);
 });
 
-test("记录方式：委托/保密授权未确认时不记；非法值拒绝；逐项编辑（不带 basis_source）清为 NULL；律师确认记 confirmed", async () => {
+test("记录方式：委托/保密授权未确认时不记；非法值拒绝；逐项编辑（不带 basis_source）清为 NULL；律师确认记 confirmed（D-225 起逐项记录同样须写出处）", async () => {
   const { inv } = tk;
   await assert.rejects(inv("matters.create", { title: "非法", stance: "原告", basis: FULL, basis_source: "client_said_ok" }), /basis_source/);
-  const { matter: pending } = await inv("matters.create", { title: "待确认", stance: "原告", basis: PENDING, basis_source: "confirmed" });
+  const { matter: pending } = await inv("matters.create", { title: "待确认", stance: "原告", basis: PENDING, basis_source: "confirmed", basis_ref: "委托合同第 9 条" });
   assert.equal(pending.basis_source, null, "委托/保密授权未确认时记录方式无意义");
-  const upd = await inv("matters.update", { matter_id: pending.matter_id, patch: { basis: FULL, basis_source: "confirmed" } });
+  const upd = await inv("matters.update", { matter_id: pending.matter_id, patch: { basis: FULL, basis_source: "confirmed", basis_ref: "委托合同第 9 条" } });
   assert.equal(upd.matter.basis_source, "confirmed");
   assert.equal(upd.matter.basis_complete, true);
   const manual = await inv("matters.update", { matter_id: pending.matter_id, patch: { basis: FULL } });
@@ -92,22 +92,22 @@ test("阻断分类：依据待确认 = consent；当事人限制（L3b）、不�
 
 test("记录方式与当事人拒绝一致（复核第 48 批 #2）：记为拒绝即清空；清除拒绝不带回旧来源；只改端点把某项改回待确认也清空", async () => {
   const { inv } = tk;
-  const { matter } = await inv("matters.create", { title: "拒绝一致", stance: "原告", basis: FULL, basis_source: "confirmed" });
+  const { matter } = await inv("matters.create", { title: "拒绝一致", stance: "原告", basis: FULL, basis_source: "confirmed", basis_ref: "委托合同第 9 条" });
   assert.equal(matter.basis_source, "confirmed");
   const refused = await inv("matters.update", { matter_id: matter.matter_id, patch: { consent_status: "refused" } });
   assert.equal(refused.matter.consent_status, "refused");
   assert.equal(refused.matter.basis_source, null);
   // 同时给四项与来源、又记为拒绝：来源仍为空
-  const both = await inv("matters.update", { matter_id: matter.matter_id, patch: { basis: FULL, basis_source: "confirmed", consent_status: "refused" } });
+  const both = await inv("matters.update", { matter_id: matter.matter_id, patch: { basis: FULL, basis_source: "confirmed", basis_ref: "委托合同第 9 条", consent_status: "refused" } });
   assert.equal(both.matter.basis_source, null);
   // 清除拒绝：不带来源即为空（须重新记录）；带了按规则重核
   const cleared = await inv("matters.update", { matter_id: matter.matter_id, patch: { consent_status: "pending" } });
   assert.equal(cleared.matter.consent_status, "agreed");
   assert.equal(cleared.matter.basis_source, null);
-  const reconfirmed = await inv("matters.update", { matter_id: matter.matter_id, patch: { basis: FULL, basis_source: "confirmed" } });
+  const reconfirmed = await inv("matters.update", { matter_id: matter.matter_id, patch: { basis: FULL, basis_source: "confirmed", basis_ref: "委托合同第 9 条" } });
   assert.equal(reconfirmed.matter.basis_source, "confirmed");
   // 次处理者“不适用”（不使用模型）后改回标准端点：该项自动改回待确认，来源清空
-  const { matter: none } = await inv("matters.create", { title: "端点", stance: "原告", model_endpoint: "none", basis: { ...FULL, subprocessor: "not_applicable" }, basis_source: "confirmed" });
+  const { matter: none } = await inv("matters.create", { title: "端点", stance: "原告", model_endpoint: "none", basis: { ...FULL, subprocessor: "not_applicable" }, basis_source: "confirmed", basis_ref: "委托合同第 9 条" });
   assert.equal(none.basis_source, "confirmed");
   const reopened = await inv("matters.update", { matter_id: none.matter_id, patch: { model_endpoint: "standard" } });
   assert.equal(reopened.matter.basis.subprocessor, "pending");

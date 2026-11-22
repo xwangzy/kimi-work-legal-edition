@@ -54,7 +54,7 @@ test("按委托合同条款：无出处且无常用出处被拒；给出处被�
   assert.equal(audits.length, 1);
 });
 
-test("常用出处：开关开且有 default_ref 时不给出处也可（用常用出处）；开关关时不预填；空串存 NULL；超长、空参数被拒；改动入审计", async () => {
+test("常用出处（D-225 起内核不再自动套用，只在界面预填）：开关开且有 default_ref 时不给出处同样被拒；开关关时不预填；空串存 NULL；超长、空参数被拒；改动入审计", async () => {
   const { inv } = tk;
   await assert.rejects(inv("ai_authorization.set", {}), /engagement_terms 或 default_ref/);
   await assert.rejects(inv("ai_authorization.set", { default_ref: "条".repeat(201) }), /200/);
@@ -65,11 +65,10 @@ test("常用出处：开关开且有 default_ref 时不给出处也可（用常�
   assert.equal(refOnly.engagement_terms, false);
   assert.equal(refOnly.default_ref, "本所标准委托合同 第 9 条");
   await assert.rejects(inv("matters.create", { title: "开关关", stance: "原告", basis: FULL, basis_source: "engagement_terms" }), /请写明授权依据的出处/);
-  // 打开开关（只给开关不动常用出处）：不给出处即用常用出处；给了出处以本次为准
+  // 打开开关（只给开关不动常用出处）：D-225 起内核不替律师套用常用出处——不给出处仍被拒；给了出处以本次为准
   const on = await inv("ai_authorization.set", { engagement_terms: true });
   assert.equal(on.default_ref, "本所标准委托合同 第 9 条");
-  const { matter } = await inv("matters.create", { title: "预填", stance: "原告", basis: FULL, basis_source: "engagement_terms" });
-  assert.deepEqual(evidenceOf(matter), ["engagement_terms", "本所标准委托合同 第 9 条", AI_SUBPROCESSORS.version]);
+  await assert.rejects(inv("matters.create", { title: "预填", stance: "原告", basis: FULL, basis_source: "engagement_terms" }), /请写明授权依据的出处/);
   const { matter: own } = await inv("matters.create", { title: "本次出处", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: REF });
   assert.equal(own.basis_ref, REF);
   // 常用出处清空（空串）存 NULL：再不给出处即被拒
@@ -82,7 +81,7 @@ test("常用出处：开关开且有 default_ref 时不给出处也可（用常�
   await inv("ai_authorization.set", { engagement_terms: false });
 });
 
-test("客户单独书面同意须有出处；出处超过 200 字被拒；旧值 confirmed 出处可空、版本照写；只给出处不给类型被拒", async () => {
+test("客户单独书面同意须有出处；出处超过 200 字被拒；逐项记录 confirmed 同样须有出处（D-225）、版本照写；只给出处不给类型被拒", async () => {
   const { inv } = tk;
   await assert.rejects(inv("matters.create", { title: "书面同意", stance: "原告", basis: FULL, basis_source: "separate_consent" }), /请写明客户书面同意的出处，例如日期与方式/);
   const { matter: sc } = await inv("matters.create", { title: "书面同意", stance: "原告", basis: FULL, basis_source: "separate_consent", basis_ref: "2026-11-18 客户邮件书面同意" });
@@ -92,8 +91,9 @@ test("客户单独书面同意须有出处；出处超过 200 字被拒；旧值
   const ok200 = await inv("matters.update", { matter_id: sc.matter_id, patch: { basis: FULL, basis_source: "engagement_terms", basis_ref: "字".repeat(200) } });
   assert.equal(ok200.matter.basis_ref.length, 200);
   await assert.rejects(inv("matters.create", { title: "非法", stance: "原告", basis: FULL, basis_source: "lawyer_said_ok" }), /basis_source 须为 engagement_terms \/ separate_consent \/ confirmed/);
-  const { matter: legacy } = await inv("matters.create", { title: "旧值", stance: "原告", basis: FULL, basis_source: "confirmed" });
-  assert.deepEqual(evidenceOf(legacy), ["confirmed", null, AI_SUBPROCESSORS.version]);
+  await assert.rejects(inv("matters.create", { title: "旧值", stance: "原告", basis: FULL, basis_source: "confirmed" }), /逐项记录同样须写明授权依据的出处/);
+  const { matter: legacy } = await inv("matters.create", { title: "旧值", stance: "原告", basis: FULL, basis_source: "confirmed", basis_ref: "委托合同 第 9 条" });
+  assert.deepEqual(evidenceOf(legacy), ["confirmed", "委托合同 第 9 条", AI_SUBPROCESSORS.version]);
   // 只记录授权依据（不改四项）：按现有四项核；只给出处不给类型被拒
   const rec = await inv("matters.update", { matter_id: legacy.matter_id, patch: { basis_source: "separate_consent", basis_ref: "2026-11-19 客户回函" } });
   assert.deepEqual(evidenceOf(rec.matter), ["separate_consent", "2026-11-19 客户回函", AI_SUBPROCESSORS.version]);
@@ -127,7 +127,7 @@ test("来源清为 NULL 的路径同时清空出处与版本：当事人拒绝�
   assert.deepEqual(evidenceOf(reopened.matter), [null, null, null]);
 });
 
-test("次处理者清单变更须重新确认：旧版本 → 估价 consent + reconfirm、发起被拒、宿主不放行；版本为空的旧事项不拦；按新清单重新记录即放开", { timeout: 60_000 }, async () => {
+test("次处理者清单变更须重新确认：旧版本 → 估价 consent + reconfirm、发起被拒、宿主不放行；版本为空同样须重新确认（D-225）；按新清单重新记录即放开", { timeout: 60_000 }, async () => {
   const { inv } = tk;
   const { matter } = await inv("matters.create", { title: "清单变更", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: REF });
   const doc = await importText(inv, matter.matter_id, "a.txt", "材料");
@@ -150,12 +150,12 @@ test("次处理者清单变更须重新确认：旧版本 → 估价 consent + r
     (e: { detail?: { block_kind?: string; reconfirm?: boolean } }) => e.detail?.block_kind === "consent" && e.detail?.reconfirm === true,
   );
 
-  // 版本为空（第 51 批之前记录的事项）：不拦
+  // 版本为空（有出处但没记清单版本）：D-225 起同样须按当前清单重新确认（不再静默放行）
   tk.kernel.db.run(`UPDATE matters SET basis_notice_version = NULL WHERE matter_id = ?`, [matter.matter_id]);
   const legacy = await est();
-  assert.notEqual(legacy.data_where.block_kind, "consent");
-  assert.equal(legacy.data_where.reconfirm, undefined);
-  assert.equal(kapMatterPolicy(tk.kernel.db, matter.matter_id).basisComplete, true);
+  assert.equal(legacy.data_where.block_kind, "consent");
+  assert.equal(legacy.data_where.reconfirm, true);
+  assert.equal(kapMatterPolicy(tk.kernel.db, matter.matter_id).basisComplete, false);
 
   // 按新清单重新记录（只记依据、不改四项）：版本写成当前、放开
   tk.kernel.db.run(`UPDATE matters SET basis_notice_version = 'sp-2025-01' WHERE matter_id = ?`, [matter.matter_id]);

@@ -3,7 +3,15 @@
 // 质量回归一律全新发起：不要拿失败后“重新运行”的成果评质量（那是另一条代码路径）。
 import { appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { EVAL, chromium, runsFile, stackOf } from "./lib.mjs";
+import { pathToFileURL } from "node:url";
+import { EVAL, PLATFORM, chromium, runsFile, stackOf } from "./lib.mjs";
+
+// 开始面板字段按当前源码生成（第 55 批起字段经常改，driver.js 里写死的旧表只作兜底）：{ verb, f: { 键: [标签, 类型, 是否收在“更多选项”] } }
+const { SCENARIOS } = await import(pathToFileURL(join(PLATFORM, "apps/desktop/src/lib/scenarios.ts")).href);
+const specOf = (id) => {
+  const s = SCENARIOS.find((x) => x.id === id);
+  return s ? { verb: s.verb, f: Object.fromEntries(s.fields.map((f) => [f.key, [f.label, f.kind, !!f.more]])) } : undefined;
+};
 
 const [sn, ...tags] = process.argv.slice(2);
 const w = stackOf(sn);
@@ -28,7 +36,7 @@ for (const tag of tags) {
       } catch (e) {
         return ["ERR", String((e && e.message) || e), (document.querySelector("[role=dialog]")?.innerText || document.querySelector("main")?.innerText || "").slice(-300)];
       }
-    }, c);
+    }, { ...c, spec: specOf(c.id) });
     if (r[0] === "ERR" || !r[2]) console.log(tag, "发起失败", JSON.stringify(r).slice(0, 500));
     else {
       appendFileSync(runsFile(w), `${tag} ${r[2]} ${r[1]}\n`);

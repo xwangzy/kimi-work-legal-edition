@@ -1,0 +1,18 @@
+[C] admin 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] li 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] zhao 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] C1 admin 额度视图： {"unit":"cny","firm":"0.0311/0.1 (31.1%)","cap_pct":null,"paused":null,"own":{"used":0.0311,"ratio":1.5534,"req":4},"by_member":["王主任:0.0311(4次)"],"notice":null}
+[C] C1 li 额度视图： {"unit":"cny","firm":"null/null (31.1%)","cap_pct":null,"paused":null,"own":{"used":0,"ratio":0,"req":0},"by_member":"（看不到）","notice":null}
+[C] C1 运营告警： []
+[C] C 非法上限 0： validation quota.set_cap: validation 月度上限须为 1–100 的整数百分比，或不设上限
+[C] C 非法上限 101： validation quota.set_cap: validation 月度上限须为 1–100 的整数百分比，或不设上限
+[C] C 非法上限 50.5： validation quota.set_cap: validation 月度上限须为 1–100 的整数百分比，或不设上限
+[C] C 非法上限 abc： validation quota.set_cap: validation 月度上限须为 1–100 的整数百分比，或不设上限
+[C] C 非法上限 -1： validation quota.set_cap: validation 月度上限须为 1–100 的整数百分比，或不设上限
+[C] C 设上限 60： {"cap_pct":60}
+[C] C2 admin 额度视图： {"unit":"cny","firm":"0.0311/0.1 (31.1%)","cap_pct":null,"paused":null,"own":{"used":0.0311,"ratio":1.5534,"req":4},"by_member":["王主任:0.0311(4次)"],"notice":null}
+[C] li 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] zhao 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] li 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] C3 admin 额度视图： {"unit":"cny","firm":"0.0311/0.1 (31.1%)","cap_pct":null,"paused":null,"own":{"used":0.0311,"ratio":1.5534,"req":4},"by_member":["王主任:0.0311(4次)"],"notice":null}
+[C] C3 运营告警： []

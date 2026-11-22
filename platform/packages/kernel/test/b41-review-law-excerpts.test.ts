@@ -90,7 +90,7 @@ test("整条链路：复核请求里有文书所引条文的原文；复核人�
     return { content: "已起草《设备买卖合同》。" };
   };
   try {
-    const { matter } = await tk.inv("matters.create", { title: "法条原文 B41LAW", stance: "申请人", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, model_endpoint: "standard" });
+    const { matter } = await tk.inv("matters.create", { title: "法条原文 B41LAW", stance: "申请人", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条", model_endpoint: "standard" });
     const doc = await importBytes(tk.inv, matter.matter_id, "合同.txt", Buffer.from("第十二条 争议提交仲裁委员会仲裁。", "utf8"), "text/plain");
     const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });
     const run = await tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b41-law-${Date.now()}`, goal: "B41LAW 起草设备买卖合同，争议走仲裁", skill: "contract-draft", document_version_ids: [doc.document_version_id], mode: "default", plan_first: false });

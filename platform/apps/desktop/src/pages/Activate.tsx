@@ -326,6 +326,8 @@ function RegisterForm(p: { email: string; setEmail: (v: string) => void; err: st
       <label className="field">
         <span>姓名</span>
         <input className="auth-input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={40} placeholder="同事和客户看到的名字" />
+        {/* 第 56 批：凭邀请码（36 位）加入的，本所里显示的是管理员写在邀请上的姓名 */}
+        {hasCode && code.replace(/[^0-9A-Z]/g, "").length > 20 && <span className="muted">凭邀请码加入时，在本所显示的是管理员写在邀请上的姓名。</span>}
       </label>
       {!hasCode && (
         <label className="field">

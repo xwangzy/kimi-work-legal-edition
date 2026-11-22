@@ -67,7 +67,9 @@ test("页面结构：不再有“新到的提醒（n）”块与左侧色条；�
   assert.match(page, /<span className="sr-only">新到的提醒：<\/span>/);
   assert.match(page, /import "\.\.\/styles-reminders\.css";/);
   assert.doesNotMatch(css, /border-left/, "不再用左侧色条");
-  assert.doesNotMatch(css, /\.rm-count-red \{[^}]*background/, "倒计时不再叠胶囊底色");
+  // 第 56 批（设计定稿）：倒计时改回胶囊，颜色只给 7 天内的；7 天以外是中性灰底
+  assert.match(css, /\.rm-pill-red \{[^}]*background: var\(--status-danger-bg\)/);
+  assert.match(css, /\.rm-pill-neutral \{[^}]*background: var\(--bg-muted\)/);
   // 操作平时用 clip-path 裁掉（visibility: hidden 的按钮键盘 Tab 不到；降透明度门禁不许），悬停或聚焦时出现
   assert.match(css, /\.rm-actions \{[^}]*clip-path: inset\(0 0 0 100%\)/);
   assert.match(css, /\.rm-row:hover \.rm-actions, \.rm-row:focus-within \.rm-actions \{ clip-path: none; pointer-events: auto; \}/);

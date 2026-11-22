@@ -2,7 +2,8 @@
  * 第 54 批（Windows 安装包连 116 演示云端真实联调）：凭成员邀请码注册时，回给客户端的成员姓名用管理员写在邀请上的姓名。
  * 新电脑把这个姓名算进入组申请的 HMAC（邀请码本机秘密段），管理员电脑按本机邀请记录的姓名核对；原来回的是律师注册时自己填的名字，
  * 两边一不同（邀请写“王五”、律师填“王五律师”），正当申请就显示“在传送中被改动过，不要批准”，且没有办法批准。
- * 与“直接输入码”的兑换接口（/v1/activation/redeem）一致；账号显示名仍是律师自己填的；开通码（创始）不受影响。
+ * 与“直接输入码”的兑换接口（/v1/activation/redeem）一致；开通码（创始）不受影响。
+ * 第 56 批：账号显示名也改用邀请上的姓名（原先留律师自己填的，同一个人在成员页与用量页两个名字）。
  */
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -85,9 +86,44 @@ test("凭邀请码注册：律师填的名字与邀请上的不同，回给客�
   assert.equal(reg.json.onboarding.state, "needs_device_join");
   assert.equal(reg.json.onboarding.member.name, "王五");
   assert.equal(reg.json.onboarding.claim.member.name, "王五");
-  assert.equal(cp.ops.account("wangwu@example.cn")!.name, "王五律师");
+  assert.equal(cp.ops.account("wangwu@example.cn")!.name, "王五", "第 56 批：账号显示名也用邀请上的姓名（一个成员在本所只有一个名字）");
   // 名字相同时不变
   const inv2 = await f.dev.call("POST", "/v1/invitations", { member_slug: "zhaoliu", name: "赵六", role: "assistant" }, f.session);
   const reg2 = await post("/v1/auth/register", { email: "zhaoliu@example.cn", password: PW, name: "赵六", code: inv2.json.code });
   assert.equal(reg2.json.onboarding.member.name, "赵六");
+});
+
+test("第 56 批：被拒后重新受邀——账号原来绑的成员从未入组、获批的电脑属于还没有账号的新成员时，登录即改绑；已入组成员的账号不能借此换到别人的电脑上", async () => {
+  const f = await signupFounder("founder-b56@example.cn", "五十六号改绑律所");
+  const slugOf = (tid: string, s: string) => `usr_${tid.slice(4)}_${s}`;
+  // 第一份邀请：注册了账号，但入组申请被拒（从未登记设备、没有席位）
+  const inv1 = await f.dev.call("POST", "/v1/invitations", { member_slug: "zhao-a", name: "赵律师", role: "lawyer" }, f.session);
+  const reg = await post("/v1/auth/register", { email: "zhao-b56@example.cn", password: PW, name: "赵律师", code: inv1.json.code });
+  assert.equal(reg.status, 200, JSON.stringify(reg.json));
+  assert.equal(cp.ops.account("zhao-b56@example.cn")!.member_slug, "zhao-a");
+  // 第二份邀请：管理员批准了这台电脑（律所根签的证书，成员编号是新邀请的），设备登记成功
+  await f.dev.call("POST", "/v1/invitations", { member_slug: "zhao-b", name: "赵律师（重发）", role: "lawyer" }, f.session);
+  const d2 = device(f.tid, f.root.privateKeyPem, slugOf(f.tid, "zhao-b"), `dev_${f.tid.slice(4)}_zhao-b`, "lawyer");
+  const r2 = await d2.register();
+  assert.equal(r2.status, 200, JSON.stringify(r2.json));
+  // 在这台电脑上用原账号登录：改前 409 device_mismatch（且同一邮箱不能再注册——死路）
+  const login = await d2.call("POST", "/v1/auth/login", { email: "zhao-b56@example.cn", password: PW, client: { version: "0.3.0", platform: "win32" } });
+  assert.equal(login.status, 200, JSON.stringify(login.json));
+  const a = cp.ops.account("zhao-b56@example.cn")!;
+  assert.equal(a.member_slug, "zhao-b", "账号跟到获批的成员上");
+  assert.equal(a.name, "赵律师（重发）", "显示名随新邀请");
+  // 改绑后会话可用：带会话登记设备、取额度视图都按新成员
+  assert.equal((await d2.register(login.json.session_token)).status, 200);
+  // 已入组成员（有登记过的设备）的账号，不能在另一位无账号成员的电脑上登录后“换身份”
+  await f.dev.call("POST", "/v1/invitations", { member_slug: "free-c", name: "空位", role: "lawyer" }, f.session);
+  const d3 = device(f.tid, f.root.privateKeyPem, slugOf(f.tid, "free-c"), `dev_${f.tid.slice(4)}_free-c`, "lawyer");
+  assert.equal((await d3.register()).status, 200);
+  const hop = await d3.call("POST", "/v1/auth/login", { email: "zhao-b56@example.cn", password: PW, client: { version: "0.3.0", platform: "win32" } });
+  assert.deepEqual([hop.status, hop.json.error.code], [409, "device_mismatch"], "已入组的账号不改绑");
+  assert.equal(cp.ops.account("zhao-b56@example.cn")!.member_slug, "zhao-b");
+  // 角色不一致不改绑：新建一个从未入组的助理账号，去登律师的电脑
+  const inv4 = await f.dev.call("POST", "/v1/invitations", { member_slug: "asst-d", name: "助理丁", role: "assistant" }, f.session);
+  assert.equal((await post("/v1/auth/register", { email: "asst-b56@example.cn", password: PW, name: "助理丁", code: inv4.json.code })).status, 200);
+  const wrongRole = await d3.call("POST", "/v1/auth/login", { email: "asst-b56@example.cn", password: PW, client: { version: "0.3.0", platform: "win32" } });
+  assert.deepEqual([wrongRole.status, wrongRole.json.error.code], [409, "device_mismatch"], "角色不同不改绑");
 });

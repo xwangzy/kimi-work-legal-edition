@@ -210,6 +210,14 @@ const ACTIONS: Readonly<Record<string, string>> = {
   "accounts.policy": "账号登录要求",
   "license.renew": "续订",
   "license.terminate": "终止订阅",
+  "notify_token.issue": "签发期限提醒凭据",
+  "relay_token.issue": "签发同步凭据",
+  "invitation.revoke": "撤回邀请",
+  "join.approve": "批准入组申请",
+  "join.reject": "拒绝入组申请",
+  "account.read": "查看账号",
+  "tenant.read": "查看本所信息",
+  "tenant.usage": "查看本所用量",
 };
 
 export function auditActionLabel(a: string): string {
@@ -272,7 +280,22 @@ const RESULT_CODES: Readonly<Record<string, string>> = {
   state_persist_failed: "写盘失败",
   audit_unavailable: "记录写入失败",
   invalid_request: "请求不合法",
+  session_member_mismatch: "登录的账号与这台电脑的成员不符",
+  device_mismatch: "登录的账号与这台电脑不符",
+  rate_limited: "操作太频繁",
+  not_found: "对象不存在",
 };
+
+/**
+ * 结果（第 56 批）：结果列只写“成功 / 被拒绝 / 未生效”；原因认得的写成人话放在句子下面，不认得的不显示（原始代码在详情里）。纯函数。
+ */
+export function auditResultShort(result: string): { text: string; why: string | null; tone: "ok" | "warn" | "bad" } {
+  if (result === "ok") return { text: "成功", why: null, tone: "ok" };
+  const i = result.indexOf(":");
+  const kind = i >= 0 ? result.slice(0, i) : result;
+  const code = i >= 0 ? result.slice(i + 1) : "";
+  return { text: kind === "rolled_back" ? "未生效" : "被拒绝", why: RESULT_CODES[code] ?? null, tone: kind === "rolled_back" ? "warn" : "bad" };
+}
 
 export function auditResultLabel(result: string): { text: string; tone: "ok" | "warn" | "bad" } {
   if (result === "ok") return { text: "成功", tone: "ok" };
@@ -280,6 +303,116 @@ export function auditResultLabel(result: string): { text: string; tone: "ok" | "
   const why = RESULT_CODES[code] ?? code;
   if (kind === "rolled_back") return { text: `未生效（${why}）`, tone: "warn" };
   return { text: `被拒绝（${why}）`, tone: "bad" };
+}
+
+// ─── 第 56 批：操作记录写成“一句话”（谁 · 做了什么 · 结果），界面上不出现任何内部编号；编号只在“详情”里给 IT 核对 ───
+
+/** 日常的、量大的操作：签发各类使用凭据、更新事项匿名摘要、登录与退出。“重要改动”一档不列（失败的照列）。 */
+const ROUTINE_ACTIONS = new Set(["seat_token.issue", "support_token.issue", "notify_token.issue", "relay_token.issue", "anon_summary.update", "account.login", "account.logout"]);
+
+export type AuditRowLike = Pick<CpAuditRow, "actor" | "actor_name" | "action" | "target" | "target_name" | "result" | "detail"> & Partial<Pick<CpAuditRow, "actor_is_me" | "target_kind" | "target_is_me" | "target_ordinal">>;
+
+/** 时间：“11 月 22 日 08:02”（北京时间；不是今年的加年份）。 */
+export function auditTime(iso: string, now = Date.now()): string {
+  const d = bj(iso);
+  if (!d) return "—";
+  const y = d.getUTCFullYear() === new Date(now + BJ).getUTCFullYear() ? "" : `${d.getUTCFullYear()} 年 `;
+  return `${y}${d.getUTCMonth() + 1} 月 ${d.getUTCDate()} 日 ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+/** “谁”：本所成员写姓名（解析不到写“本所成员”）；开通时的根钥匙写“本所（开通时）”；运营写“Kimi Work 运营人员”（不显示工号）；申请人；其余“系统”。 */
+export function auditWho(r: Pick<AuditRowLike, "actor" | "actor_name">): string {
+  switch (r.actor.kind) {
+    case "device":
+    case "account":
+      return r.actor_name || "本所成员";
+    case "root":
+      return "本所（开通时）";
+    case "ops":
+      return "Kimi Work 运营人员";
+    case "claimant":
+      return "申请加入的人";
+    default:
+      return "系统";
+  }
+}
+
+/**
+ * 一条记录 → 一句话。纯函数。
+ * important：属于“重要改动”一档（成员、电脑、席位、策略、额度、套餐、订阅与运营人员的一切操作；日常的凭据签发、摘要更新、登录退出不算）。
+ * 不认识的操作写“做了一项操作”，原始代码在详情里。
+ */
+export function auditSentence(r: AuditRowLike): { who: string; what: string; important: boolean; known: boolean } {
+  const d = r.detail ?? {};
+  const name = r.target_name || null;
+  const device = (): string => {
+    const ord = r.target_ordinal && r.target_ordinal.of > 1 ? `第 ${r.target_ordinal.n} 台电脑` : "电脑";
+    return name ? `${name}的${ord}` : "一台电脑";
+  };
+  const seat = name ? `${name}的席位` : "一个席位";
+  const account = name ? `${name}的账号` : "一个成员账号";
+  const person = name ?? "一位成员";
+  const sameAsActor = !!r.actor_name && r.actor_name === name;
+  const S: Record<string, () => string> = {
+    "tenant.create": () => (d.seats ? `开通本所（${d.seats} 个席位）` : "开通本所"),
+    "tenant.enroll_root": () => "登记了本所的管理钥匙",
+    "tenant.read": () => "查看了本所的开通信息",
+    "tenant.usage": () => "查看了本所的用量",
+    "activation.issue": () => "发出开通码",
+    "activation.revoke": () => "作废了一个开通码",
+    "activation.redeem": () => "用开通码激活了本所",
+    "device.register": () => (sameAsActor || !name ? (r.target_ordinal && r.target_ordinal.of > 1 ? `登记了第 ${r.target_ordinal.n} 台电脑` : "登记了一台电脑") : `登记了${device()}`),
+    "device.revoke": () => `停用了${device()}`,
+    "account.device_unbind": () => `解绑了${device()}`,
+    "seat.assign": () => (sameAsActor ? "领取了一个席位" : name ? `给${name}分配了席位` : "分配了一个席位"),
+    "seat.revoke": () => `收回了${seat}`,
+    "seat_token.issue": () => "领取了日常使用凭据",
+    "support_token.issue": () => "领取了上传诊断信息的凭据",
+    "notify_token.issue": () => "领取了期限提醒的凭据",
+    "relay_token.issue": () => "领取了同事之间同步的凭据",
+    "anon_summary.update": () => "更新了一个事项的匿名摘要（不含案件内容）",
+    "invitation.create": () => "发出了一份入所邀请",
+    "invitation.revoke": () => "撤回了一份入所邀请",
+    "join.request": () => "申请加入本所",
+    "join.withdraw": () => "撤回了入所申请",
+    "join.approve": () => "批准了一份入所申请",
+    "join.reject": () => "拒绝了一份入所申请",
+    "account.create": () => `建立了${account}`,
+    "account.register": () => "注册了账号",
+    "account.read": () => `查看了${account}`,
+    "account.disable": () => `停用了${account}`,
+    "account.enable": () => `恢复了${account}`,
+    "account.limits": () => `调整了${person}的个人上限或电脑数`,
+    "account.reset_code": () => `给${person}发出了密码重置码`,
+    "account.sessions_revoke": () => `让${person}在所有地方退出登录`,
+    "account.session_revoke": () => "让一处登录退出",
+    "account.login": () => "登录了账号",
+    "account.logout": () => "退出了登录",
+    "account.password_change": () => "修改了密码",
+    "account.password_reset": () => "重置了密码",
+    "account.password_setup": () => "设置了密码",
+    "accounts.policy": () => (d.required === undefined ? "调整了账号登录要求" : d.required ? "要求成员必须登录账号才能使用" : "不再强制成员登录账号"),
+    "quota.cap_set": () => (d.uncapped ? "取消了本所用量上限" : d.cap_pct !== undefined ? `把本所用量上限设为 ${d.cap_pct}%` : "调整了本所用量上限"),
+    "quota.boost": () => (d.pct !== undefined ? `给本所本期加量 ${d.pct}%` : "给本所加量"),
+    "quota.grant": () => "给本所加量",
+    "plan.change": () => (d.seats !== undefined ? `把本所席位调整为 ${d.seats} 个` : "调整了本所套餐"),
+    "license.renew": () => (d.days !== undefined ? `给本所续订 ${d.days} 天` : "给本所续订"),
+    "license.terminate": () => "终止了本所订阅",
+    "draft.create": () => "起草了律所策略或系统接入的改动",
+    "draft.sign": () => "签名同意了律所策略或系统接入的改动",
+    "draft.publish": () => "发布了律所策略或系统接入的改动",
+    "connector.remove": () => "撤下了一项律所系统接入",
+  };
+  const f = S[r.action];
+  return { who: auditWho(r), what: f ? f() : "做了一项操作", important: r.actor.kind === "ops" || !ROUTINE_ACTIONS.has(r.action), known: !!f };
+}
+
+export type AuditFilter = "important" | "all";
+/** 筛选：“重要改动”（默认）与“全部”；失败或被拒绝的无论哪档都列。返回两档的数量。纯函数。 */
+export function auditFilter<T extends AuditRowLike>(rows: readonly T[], f: AuditFilter): { rows: T[]; counts: Record<AuditFilter, number> } {
+  const keep = (r: T) => r.result !== "ok" || auditSentence(r).important;
+  const imp = rows.filter(keep);
+  return { rows: f === "all" ? [...rows] : imp, counts: { important: imp.length, all: rows.length } };
 }
 
 /** 取回失败的原因 → 管理员看得懂的说明。 */

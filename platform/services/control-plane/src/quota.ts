@@ -34,6 +34,8 @@ export interface LeaseRecord {
   used: number;
   closed_at: string | null;
   unreconciled: boolean;
+  /** 第 56 批：额度收紧（改上限、换套餐、改套餐规模）时被控制面收回；网关下次回报时得知，丢掉本机的这份租约。 */
+  revoked?: boolean;
 }
 
 export interface QuotaHistoryRow {
@@ -43,6 +45,16 @@ export interface QuotaHistoryRow {
   unit: QuotaUnit | null;
   used: number | null;
   total: number | null;
+  /**
+   * 第 56 批（云端审计 1-A）：该期结束时的计费要素。原先历史月份的账单按“现在”的套餐、席位算，加量费恒为 0——
+   * 11 月加过量、12 月换了套餐，再查 11 月账单就全不对。跨期时记下来，历史账单按它算；更早的历史行没有这些字段，账单标“按当前套餐估算”。
+   */
+  boost_pct?: number;
+  plan_id?: string;
+  plan_label?: string;
+  seats?: number;
+  seat_price_cny?: number | null;
+  boost_price_factor?: number;
 }
 
 export interface QuotaState {
@@ -59,6 +71,12 @@ export interface QuotaState {
   leases: Record<string, LeaseRecord>;
   /** 本期已发过的提醒（键：期:对象:阈值），跨期清空。 */
   alerts_sent: string[];
+  /**
+   * 最近一次因全所约束（上限、额度、频率窗口）领不到租约的那次请求（第 56 批）：视图据此如实显示“已暂停”。
+   * 预占按“这次请求最多会用多少”算，所以还没到 100% 时请求就已经发不出了——原先视图要等已用 ≥ 上限才写暂停，
+   * 律师看到的是“未暂停、却一直取不到回答”。约束放宽（改上限、加量、跨期、在途释放）后余量够那次请求了，暂停自动消失。
+   */
+  last_denied?: { by: "cap" | "allowance" | "burst"; need: number; at: string } | null;
 }
 
 export class QuotaError extends Error {
@@ -74,7 +92,14 @@ export class QuotaError extends Error {
 export const LEASE_TTL_MS = 5 * 60_000;
 export const LEASE_MAX_TTL_MS = 30 * 60_000;
 export const LEASE_GRACE_MS = 30 * 60_000;
+/**
+ * 已关闭租约的保留期。未对账的（到期被控制面自行收回、网关还没报最终）留 7 天等迟到的回报；
+ * 已对账的（网关报过最终，或被收回）留 1 天即可——它们只为“迟到回报记到哪份租约上”服务，过了保留期的回报照样入账本。
+ * 第 56 批（云端审计 3-A）：租约全在整体快照里，每个请求都要全量序列化；本批网关会主动归还闲置租约，已关闭租约条数随之增加，
+ * 一律留 7 天会让快照按周累积。
+ */
 export const LEASE_KEEP_MS = 7 * 24 * 3600_000;
+export const LEASE_KEEP_RECONCILED_MS = 24 * 3600_000;
 /** 单次租约上限（tokens：2,000 万；cny：2,000 元 = 20 亿微元）。 */
 export const LEASE_MAX_UNITS: Record<QuotaUnit, number> = { tokens: 20_000_000, cny: 2_000_000_000 };
 export const MAX_OPEN_LEASES = 256;
@@ -146,12 +171,14 @@ export function ensurePeriod(q: QuotaState, ctx: QuotaCtx): void {
   const unit = ctx.plan.quota_unit;
   const legacyUnits = q.legacy && q.legacy.period_key === q.period_key ? q.legacy.used_ratio * tot : 0;
   const used = usedIn(unit, old) + legacyUnits;
-  q.history = [...q.history, { period: q.period_key, used_ratio: ratio(used, tot), legacy: legacyUnits > 0, unit, used: unitOut(unit, Math.round(used)), total: unitOut(unit, tot) }].slice(-12);
+  const billing = { boost_pct: q.boosts.reduce((s2, x) => s2 + x.pct, 0), plan_id: ctx.plan.id, plan_label: ctx.plan.label, seats: ctx.seats, seat_price_cny: ctx.plan.seat_price_cny, boost_price_factor: ctx.plan.boost_price_factor };
+  q.history = [...q.history, { period: q.period_key, used_ratio: ratio(used, tot), legacy: legacyUnits > 0, unit, used: unitOut(unit, Math.round(used)), total: unitOut(unit, tot), ...billing }].slice(-12);
   q.period_key = b.key;
   q.period_from = b.fromDay;
   q.period_to = b.toDay;
   q.boosts = [];
   q.alerts_sent = [];
+  q.last_denied = null;
   if (q.legacy && q.legacy.period_key !== b.key) q.legacy = null;
 }
 
@@ -183,7 +210,7 @@ export function sweepLeases(q: QuotaState, t: number): void {
       l.closed_at = new Date(t).toISOString();
       l.unreconciled = true;
     }
-    if (l.closed_at && Date.parse(l.closed_at) + LEASE_KEEP_MS <= t) delete q.leases[id];
+    if (l.closed_at && Date.parse(l.closed_at) + (l.unreconciled ? LEASE_KEEP_MS : LEASE_KEEP_RECONCILED_MS) <= t) delete q.leases[id];
   }
 }
 
@@ -230,8 +257,10 @@ export function leaseQuota(q: QuotaState, ctx: QuotaCtx, input: { sid: unknown; 
   const { avail, by } = availability(q, ctx, input.sid, input.uid);
   if (avail < need) {
     const [code, msg] = LIMIT_ERR[by];
+    if (by !== "seat") q.last_denied = { by, need, at: new Date(ctx.t).toISOString() };
     throw new QuotaError(402, code, msg);
   }
+  q.last_denied = null;
   const want = typeof input.want === "number" && Number.isSafeInteger(input.want) && input.want > 0 ? input.want : need * 4;
   // 每次至多发可发放的 1/4（不少于 need）：多个网关实例时，一个实例不会一次领走全部余量
   const units = Math.min(LEASE_MAX_UNITS[unit], avail, Math.max(need, Math.min(want, Math.ceil(avail / 4))));
@@ -265,13 +294,36 @@ export function boostPct(q: QuotaState, ctx: QuotaCtx, pct: unknown, by: string 
   return Math.ceil((allowanceOf(ctx) * pct) / 100);
 }
 
+/**
+ * 收回本所全部在途租约（第 56 批，真实验收查出）：租约是按当时的余量发的；之后管理员调低上限、运营换小套餐，已发出去的租约仍能用到
+ * 用完或 5 分钟到期——实测“额度已用完（124%）”时，手里有旧租约的成员照样取到了回答。收紧后立即收回：未用部分即刻释放，
+ * 网关下次回报这份租约时得知已收回（settle 应答 revoked），丢掉本机余量，下一次请求按新的约束重新领。已在途的那一次请求照常入账。
+ */
+export function revokeLeases(q: QuotaState, t: number, uid?: string): number {
+  let n = 0;
+  for (const l of Object.values(q.leases)) {
+    if (l.closed_at) continue;
+    // 只收回某位成员的（调低他的个人上限时）
+    if (uid !== undefined && l.uid !== uid) continue;
+    l.closed_at = new Date(t).toISOString();
+    l.unreconciled = false;
+    l.revoked = true;
+    n += 1;
+  }
+  return n;
+}
+
 export function setCap(q: QuotaState, ctx: QuotaCtx, capPct: unknown, by: string | null): void {
   ensurePeriod(q, ctx);
   if (capPct !== null && !(typeof capPct === "number" && Number.isSafeInteger(capPct) && capPct >= 1 && capPct <= 100)) throw new QuotaError(400, "cap_invalid", "上限须为 1–100 的整数百分比，或不设上限");
+  // 调低或新设上限：收回在途租约（取消或调高是放宽，不必收回）
+  if (capPct !== null && (q.cap_pct === null || (capPct as number) < q.cap_pct)) revokeLeases(q, ctx.t);
   q.cap_pct = capPct as number | null;
   q.cap_set_at = new Date(ctx.t).toISOString();
   q.cap_set_by = by;
 }
+
+export const LAST_DENIED_TTL_MS = 10 * 60_000;
 
 export function pausedOf(q: QuotaState, ctx: QuotaCtx): LimitedBy | null {
   const tot = totalsOf(q, ctx);
@@ -279,6 +331,14 @@ export function pausedOf(q: QuotaState, ctx: QuotaCtx): LimitedBy | null {
   if (tot.cap !== null && used >= tot.cap) return "cap";
   if (used >= tot.total) return "allowance";
   if (ctx.plan.burst && windowUsed(ctx, null) >= Math.floor((tot.total * ctx.plan.burst.pct) / 100)) return "burst";
+  // 余量已不够最近被拒的那次请求：如实写暂停（见 QuotaState.last_denied）
+  const d = q.last_denied;
+  // 只在被拒后 10 分钟内有效：客户端会按视图里的“已暂停”先行拦下新任务（launch-check），一次异常大的请求被拒不能把全所一直拦在外面
+  if (d && q.period_key === periodBounds(ctx.plan.period, ctx.t).key && ctx.t - Date.parse(d.at) < LAST_DENIED_TTL_MS) {
+    const out = outstanding(q);
+    const left = d.by === "cap" ? (tot.cap ?? Number.POSITIVE_INFINITY) - used - out : d.by === "allowance" ? tot.total - used - out : ctx.plan.burst ? Math.floor((tot.total * ctx.plan.burst.pct) / 100) - windowUsed(ctx, null) - out : Number.POSITIVE_INFINITY;
+    if (left < d.need) return d.by;
+  }
   return null;
 }
 

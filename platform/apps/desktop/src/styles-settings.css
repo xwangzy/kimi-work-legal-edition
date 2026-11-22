@@ -27,14 +27,84 @@
 .seg-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .seg-lg .seg-btn { height: 30px; }
 
-/* 备份与安全：两块状态结论更轻（左侧一条状态色，不是整块描边）；各节之间留白一致 */
-.set-backup .device { display: flex; flex-direction: column; gap: var(--sp-4); }
-.set-backup .status-tiles { gap: var(--sp-4); }
-.set-backup .status-tile { padding: var(--sp-4) var(--sp-5); gap: 6px; }
-.set-backup .status-tile-title { font-size: var(--fs-md); }
-.set-backup .panel.device-section > p { margin: 0 0 var(--sp-3); color: var(--text-label); }
-.set-backup .panel.device-section .section-h { margin-bottom: var(--sp-2); }
-.set-backup .quiet-details { margin-top: var(--sp-3); font-size: var(--fs-caption); }
+/* ── 第 56 批：状态点（全应用设置页同一套：绿=正常、橙=待处理、红=有问题、灰=未知/未检测） ── */
+.sdot { flex: none; display: inline-block; width: 8px; height: 8px; border-radius: var(--r-full); background: var(--status-neutral-solid); }
+.sdot-ok { background: var(--status-success-solid); }
+.sdot-warn { background: var(--status-warning-solid); }
+.sdot-bad { background: var(--status-danger-solid); }
+.sdot-idle { background: var(--border-strong); }
+
+/* ── 第 56 批：备份与安全——页首一条状态 + 纵向三步（轨道：左侧 1px 细线 + 节点）+ “遇到问题时”列表行 ── */
+.bk-page { display: flex; flex-direction: column; gap: var(--sp-7); }
+.bk { display: flex; flex-direction: column; }
+.bk-status { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); padding-bottom: var(--sp-3); }
+.bk-status-text { min-width: 0; }
+.bk-status-h { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xl); font-weight: 600; color: var(--text-primary); line-height: 1.4; }
+.bk-status-h .sdot { width: 10px; height: 10px; }
+.bk-status-why { margin: var(--sp-1) 0 0 18px; font-size: var(--fs-body); color: var(--text-label); line-height: 1.6; }
+.bk-status > .btn-primary { flex: none; }
+.bk-safe { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-6); padding-left: 1px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.bk-safe .sdot { width: 6px; height: 6px; margin: 0 2px; }
+
+.bk-track { list-style: none; margin: 0; padding: var(--sp-5) 0 0; border-top: 1px solid var(--border-subtle); }
+.bk-step { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--sp-4); padding-bottom: var(--sp-5); }
+.bk-step:last-child { padding-bottom: 0; }
+/* 轨道细线：从本节点下方连到下一个节点 */
+.bk-step:not(:last-child)::before { content: ""; position: absolute; left: 11.5px; top: 28px; bottom: 4px; width: 1px; background: var(--border-default); }
+.bk-step.bk-done:not(:last-child)::before { background: var(--border-hover); }
+.bk-node { position: relative; z-index: 1; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-full); border: 1.5px solid var(--border-default); background: var(--bg-main); font-size: var(--fs-meta); font-weight: 600; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.bk-node svg { width: 13px; height: 13px; stroke-width: 2.6; }
+.bk-done .bk-node { border-color: transparent; background: var(--status-success-bg); color: var(--status-success-text); }
+.bk-now .bk-node { border-color: var(--text-primary); background: var(--text-primary); color: var(--bg-main); }
+.bk-step-body { min-width: 0; padding-top: 1px; }
+.bk-step-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px var(--sp-3); min-height: 24px; }
+.bk-step-title { font-size: var(--fs-md); font-weight: 500; color: var(--text-primary); }
+.bk-todo .bk-step-title { color: var(--text-secondary); font-weight: 400; }
+.bk-step-sum { font-size: var(--fs-caption); color: var(--text-secondary); }
+.bk-step-sum-warn { color: var(--status-warning-text); }
+.bk-step-toggle { margin-left: auto; font-size: var(--fs-caption); }
+.bk-step-detail { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); margin-top: var(--sp-2); max-width: 640px; }
+.bk-step-detail > p { margin: 0; font-size: var(--fs-body); color: var(--text-label); line-height: 1.7; }
+.bk-step-detail > p.bk-note, .bk-note { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.7; }
+.bk-path { align-self: stretch; margin: 0; }
+.bk-path > span { font-size: var(--fs-caption); color: var(--text-label); }
+.bk-actions { display: flex; gap: var(--sp-2); }
+.bk-verify { align-self: stretch; margin: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.bk-verify .field { margin: 0; }
+.bk-msg { margin: 0 0 var(--sp-3); font-size: var(--fs-body); color: var(--text-strong); }
+.bk .recovery-print { margin: 0 0 var(--sp-6); }
+.bk .wait-block, .bk > .wait { margin-bottom: var(--sp-4); }
+
+/* “遇到问题时”：小标题 + 列表行（说明 | 右侧按钮），结果在行下展开 */
+.help-sec { display: flex; flex-direction: column; }
+.help-sec-h { margin: 0 0 var(--sp-1); font-size: var(--fs-caption); font-weight: 500; color: var(--text-secondary); }
+.help-sec-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-1); }
+.help-sec-head .help-sec-h { margin: 0; }
+.help-row { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4) 0; border-top: 1px solid var(--border-subtle); }
+.help-row:last-child { border-bottom: 1px solid var(--border-subtle); }
+.help-row-main { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); }
+.help-row-text { min-width: 0; }
+.help-row-title { font-size: var(--fs-body); font-weight: 500; color: var(--text-primary); }
+.help-row-desc { margin: 2px 0 0; font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.6; }
+.help-row-desc b { font-weight: 500; color: var(--text-label); }
+.help-row-actions { flex: none; display: flex; align-items: center; gap: var(--sp-3); }
+.help-row-msg { font-size: var(--fs-caption); color: var(--text-label); }
+.help-row .quiet-details { margin: 0; font-size: var(--fs-caption); }
+.help-row .support-upload:empty { display: none; }
+.help-env { margin-top: var(--sp-3); font-size: var(--fs-caption); }
+
+/* 检测结果：一句结论（状态点）+ 逐项一行 */
+.cc-result { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-sm); background: var(--bg-subtle); }
+.cc-conclusion { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); color: var(--text-primary); }
+.cc-conclusion.is-error { color: var(--status-danger-text); }
+.cc-rows { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 8px minmax(0, max-content) minmax(0, 1fr) auto auto; column-gap: var(--sp-3); row-gap: 6px; align-items: center; font-size: var(--fs-caption); }
+.cc-rows > li { display: contents; }
+.cc-rows .sdot { width: 6px; height: 6px; }
+.cc-name { color: var(--text-strong); white-space: nowrap; }
+.cc-label { color: var(--text-secondary); white-space: nowrap; }
+.cc-label.is-bad { color: var(--status-danger-text); }
+.cc-addr, .cc-ms { font-size: var(--fs-meta); color: var(--text-secondary); text-align: right; }
+.cc-at { font-size: var(--fs-meta); color: var(--text-secondary); }
 
 /* ── 套餐与用量：去掉“卡片套卡片”（外层面板与重复的页签标题），本所额度与我的用量并排（原来两张卡叠在左半边，右半边空着） ── */
 .set-usage .usage-page.panel { border: 0; padding: 0; background: transparent; }
@@ -70,3 +140,58 @@
 .pd-note { font-size: var(--fs-caption); }
 /* 账号与团队：我的电脑、登录记录两张小卡与正文同宽，右侧的操作或说明靠右 */
 .set-account .panel.device-section > .section-h { margin-bottom: var(--sp-1); }
+
+/* ── 第 56 批：管理 · 操作记录——“一句话”记录（时间 | 谁 | 做了什么 | 结果 | 详情），轨道分段筛选，详情给 IT ── */
+.audit-page { display: flex; flex-direction: column; gap: var(--sp-4); max-width: 1040px; }
+.audit-page > .lead-note { margin: 0; }
+.audit-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.audit-bar-actions { display: flex; gap: var(--sp-2); }
+.audit-n { margin-left: 6px; font-size: var(--fs-meta); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.audit-list { border-top: 1px solid var(--border-subtle); }
+.audit-row { display: grid; grid-template-columns: 136px minmax(96px, 160px) minmax(0, 1fr) 132px 40px; align-items: center; gap: var(--sp-4); min-height: 48px; padding: var(--sp-2) var(--sp-2); font-size: var(--fs-body); }
+.audit-item { border-bottom: 1px solid var(--border-subtle); }
+.audit-item:hover, .audit-item.is-open { background: var(--bg-hover-soft); }
+.audit-head { min-height: 36px; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-caption); color: var(--text-secondary); }
+.audit-at { font-size: var(--fs-caption); color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.audit-who { min-width: 0; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audit-what { min-width: 0; color: var(--text-primary); }
+.audit-res { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--text-label); }
+.audit-res .sdot { width: 6px; height: 6px; }
+.audit-res-warn { color: var(--status-warning-text); }
+.audit-res-bad { color: var(--status-danger-text); }
+.audit-more { justify-self: end; font-size: var(--fs-caption); color: var(--text-secondary); }
+.audit-detail { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 4px var(--sp-3); margin: 0; padding: 0 var(--sp-2) var(--sp-3) calc(136px + var(--sp-4) + var(--sp-2)); font-size: var(--fs-meta); color: var(--text-secondary); }
+.audit-detail dt { color: var(--text-secondary); }
+.audit-detail dd { margin: 0; color: var(--text-label); word-break: break-all; }
+@media (max-width: 900px) {
+  .audit-row { grid-template-columns: 112px minmax(0, 1fr) 40px; }
+  .audit-row > :nth-child(2), .audit-row > :nth-child(4) { display: none; }
+  .audit-detail { padding-left: var(--sp-2); }
+}
+
+/* ── 第 56 批：管理 · 技术支持——运行状态（检查项列表）/ 联系支持前 / 给 IT 的技术信息；细线分节，不是三张卡 ── */
+.sup-page { display: flex; flex-direction: column; gap: var(--sp-7); max-width: 860px; }
+.sup-sum { margin-left: 2px; font-weight: 400; }
+.sup-checks { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border-subtle); }
+.sup-check { padding: var(--sp-3) 0; border-bottom: 1px solid var(--border-subtle); }
+.sup-check-main { display: grid; grid-template-columns: 16px 168px minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3); }
+.sup-check-main > .sdot, .sup-check-main > .kwl-pulse { justify-self: center; }
+.sup-check-name { font-size: var(--fs-body); font-weight: 500; color: var(--text-primary); white-space: nowrap; }
+.sup-check-desc { min-width: 0; font-size: var(--fs-caption); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sup-check-state { font-size: var(--fs-caption); color: var(--text-label); white-space: nowrap; }
+.sup-ok { color: var(--status-success-text); }
+.sup-warn { color: var(--status-warning-text); }
+.sup-bad { color: var(--status-danger-text); }
+.sup-idle { color: var(--text-secondary); }
+.sup-check.is-absent .sup-check-name { color: var(--text-secondary); font-weight: 400; }
+.sup-fix { margin: 6px 0 0 calc(16px + var(--sp-3)); font-size: var(--fs-caption); color: var(--text-label); line-height: 1.6; }
+.sup-diag { margin-top: var(--sp-3); font-size: var(--fs-caption); }
+.sup-diag .cc-result { margin: var(--sp-2) 0; }
+.sup-on { display: inline-flex; align-items: center; gap: 5px; margin-left: var(--sp-2); font-size: var(--fs-caption); font-weight: 400; color: var(--status-success-text); }
+.sup-on .sdot { width: 6px; height: 6px; }
+.sup-ver { margin-left: var(--sp-3); font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.sup-ident { display: flex; flex-wrap: wrap; gap: 2px var(--sp-4); margin: 6px 0 0; font-size: var(--fs-meta); color: var(--text-secondary); }
+.sup-it > .quiet-details { margin: 0; padding: var(--sp-3) 0; border-top: 1px solid var(--border-subtle); font-size: var(--fs-caption); }
+.sup-it > .quiet-details:last-child { border-bottom: 1px solid var(--border-subtle); }
+.sup-page .section-title { margin-top: var(--sp-4); }
+.audit-why { display: block; margin-top: 2px; font-size: var(--fs-caption); color: var(--status-danger-text); }

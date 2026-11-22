@@ -1,0 +1,27 @@
+[D] 套餐 每席位 1.2 元 阈值 1,2,100： [200,200]
+[D] li 问答 20.0s： 有限责任公司股东可查阅、复制公司章程、股东名册、股东会会议记录、董事会会议决议、监事会会议决议和财务会计报告，并可依法定程序查阅会计账簿、会
+[D] D1 跨过 1% admin 视图： {"used_ratio":0.0115,"remaining_ratio":0.9885,"paused":null,"boost":0,"used":0.0689,"total":6}
+[D] D1 跨过 1% li 视图： {"used_ratio":0.0115,"remaining_ratio":0.9885,"paused":null,"boost":0,"used":null,"total":null}
+[D] D1 跨过 1% 运营告警： ["threshold/info/1：第56批验收律所 本期已用 1%"]
+[D] D1 跨过 1% 律所侧提醒字段： []
+[D] 套餐 每席位 0.04 元 阈值 50,80,100： [200,200]
+[D] D2 套餐缩到 0.20 元（约 3 成已用） admin 视图： {"used_ratio":0.3444,"remaining_ratio":0.6556,"paused":null,"boost":0,"used":0.0689,"total":0.2}
+[D] D2 套餐缩到 0.20 元（约 3 成已用） li 视图： {"used_ratio":0.3444,"remaining_ratio":0.6556,"paused":null,"boost":0,"used":null,"total":null}
+[D] D2 套餐缩到 0.20 元（约 3 成已用） 运营告警： ["threshold/info/1：第56批验收律所 本期已用 1%"]
+[D] D2 套餐缩到 0.20 元（约 3 成已用） 律所侧提醒字段： []
+[D] li 问答 19.8s： 表见代理以行为人无代理权（含超越代理权、代理权终止）为前提，须存在足以使相对人相信其有代理权的权利外观，且相对人善意、无过失地基于该外观实施
+[D] zhao 问答 12.3s： 一般保证中，保证人原则上享有先诉抗辩权，通常须主合同纠纷经审判或仲裁、并对债务人财产依法强制执行仍不能履行后才担责，法定例外除外（《中华人民
+[D] D2 之后 admin 视图： {"used_ratio":0.3947,"remaining_ratio":0.6053,"paused":null,"boost":0,"used":0.0789,"total":0.2}
+[D] D2 之后 li 视图： {"used_ratio":0.3947,"remaining_ratio":0.6053,"paused":null,"boost":0,"used":null,"total":null}
+[D] D2 之后 运营告警： ["anomaly/warn/17：li@b56-firm.example 最近 1 小时用量异常（占本期总额度 1","threshold/info/1：第56批验收律所 本期已用 1%"]
+[D] D2 之后 律所侧提醒字段： []
+[D] 套餐 每席位 0.014 元 阈值 50,80,100： [200,200]
+[D] D3 套餐缩到 0.07 元（已用约 9 成） admin 视图： {"used_ratio":1.2446,"remaining_ratio":0,"paused":"allowance","boost":0,"used":0.0871,"total":0.07}
+[D] D3 套餐缩到 0.07 元（已用约 9 成） li 视图： {"used_ratio":1.2446,"remaining_ratio":0,"paused":"allowance","boost":0,"used":null,"total":null}
+[D] D3 套餐缩到 0.07 元（已用约 9 成） 运营告警： ["anomaly/warn/24：zhao@b56-firm.example 最近 1 小时用量异常（占本期总额度","exhausted/critical/100：第56批验收律所 本期额度已用完","threshold/info/80：第56批验收律所 本期已用 80%","threshold/info/50：第56批验收律所 本期已用 50%","anomaly/warn/17：li@b56-firm.example 最近 1 小时用量异常（占本期总额度 1","threshold/info/1：第56批验收律所 本期已用 1%"]
+[D] D3 套餐缩到 0.07 元（已用约 9 成） 律所侧提醒字段： []
+[D] li 问答 7.1s： 承包人行使建设工程价款优先受偿权的最长期限为十八个月，自发包人应当给付建设工程价款之日起算，依据为《最高人民法院关于审理建设工程施工合同纠纷
+[D] D3 请求被拒后 admin 视图： {"used_ratio":1.2446,"remaining_ratio":0,"paused":"allowance","boost":0,"used":0.0871,"total":0.07}
+[D] D3 请求被拒后 li 视图： {"used_ratio":1.2446,"remaining_ratio":0,"paused":"allowance","boost":0,"used":null,"total":null}
+[D] D3 请求被拒后 运营告警： ["anomaly/warn/24：zhao@b56-firm.example 最近 1 小时用量异常（占本期总额度","exhausted/critical/100：第56批验收律所 本期额度已用完","threshold/info/80：第56批验收律所 本期已用 80%","threshold/info/50：第56批验收律所 本期已用 50%","anomaly/warn/17：li@b56-firm.example 最近 1 小时用量异常（占本期总额度 1","threshold/info/1：第56批验收律所 本期已用 1%"]
+[D] D3 请求被拒后 律所侧提醒字段： []

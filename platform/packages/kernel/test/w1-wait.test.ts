@@ -30,7 +30,7 @@ test("W1 等待律师的时间不计入工作时限：提问后 12 秒才作答�
   const { matter } = await inv("matters.create", {
     title: "等待测试",
     stance: "原告",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
     model_endpoint: "standard",
   });
   const M = "W1WAIT";

@@ -91,7 +91,7 @@ test("案卷整理：助手提交了事实、只交《案卷总目录》，系�
   const { matter } = await tk.inv("matters.create", {
     title: "承揽款纠纷",
     stance: "原告",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
     model_endpoint: "standard",
   });
   const text = "加工合同约定加工费 50 万元。2026 年 1 月 5 日，原告将验收单送达被告。2026 年 2 月 1 日，被告支付加工费 30 万元。";
@@ -137,7 +137,7 @@ test("助手自己交了《事实时间线》的不再重复生成", { timeout: 
   const { matter } = await tk.inv("matters.create", {
     title: "承揽款纠纷二",
     stance: "原告",
-    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" },
+    basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条",
     model_endpoint: "standard",
   });
   const doc = await importBytes(tk.inv, matter.matter_id, "往来.txt", Buffer.from("2026 年 3 月 1 日，原告交付第一批货物。", "utf8"), "text/plain");

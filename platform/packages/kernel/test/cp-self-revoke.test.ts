@@ -29,7 +29,7 @@ test("本设备被吊销：凭控制面签名的通知进入退出模式，清�
   tk = await makeKernel({ ...cloud.env, ZR_MODEL_PROVIDER: "upstream", ZR_KERNEL_TCP: "off" }, FIRM);
   const { inv } = tk;
   assert.equal((await inv("control_plane.sync")).report.ok, true);
-  const { matter } = await inv("matters.create", { title: "吊销演练", stance: "原告", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" } });
+  const { matter } = await inv("matters.create", { title: "吊销演练", stance: "原告", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
   // 吊销前本人在这台电脑上有写作偏好（v9.4 第 24 批 D-144：吊销后启动提示清除）
   await inv("writing_prefs.set", { signature: "某某律师事务所 李律师" });
   assert.equal((await inv("members.personal_status")).prompt_clear, false, "没被停用时不提示");

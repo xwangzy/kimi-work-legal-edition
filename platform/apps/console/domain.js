@@ -25,6 +25,7 @@ export const can = (perm) => !ctx.perms || ctx.perms.has(perm);
 /** 任一权限即可（导航入口） */
 export const canAny = (perms) => !perms?.length || perms.some(can);
 export const PERM_LABEL = {
+  "price.manage": "改价目",
   "tenant.read": "查看客户",
   "tenant.manage": "管理客户",
   "tenant.terminate": "终止客户",
@@ -48,7 +49,7 @@ export const PERM_LABEL = {
 export const needs = (perm) => (can(perm) ? undefined : `你的角色没有“${PERM_LABEL[perm] ?? perm}”权限`);
 /** 平台角色（GET /v1/ops/roles 未就绪时的兜底，与契约 §2.2 同表） */
 export const PLATFORM_ROLES = [
-  { id: "sysadmin", label: "系统管理员", description: "人员与权限、系统设置、模型路由、清除数据", perms: ["staff.manage", "settings.manage", "route.manage", "tenant.purge", "tenant.read", "account.read", "usage.read", "billing.read", "route.read", "system.read"] },
+  { id: "sysadmin", label: "系统管理员", description: "人员与权限、系统设置、模型路由、清除数据", perms: ["staff.manage", "settings.manage", "route.manage", "price.manage", "plan.manage", "tenant.purge", "tenant.read", "account.read", "usage.read", "billing.read", "route.read", "system.read"] },
   { id: "operator", label: "客户运营", description: "开通与管理律所、额度、套餐、账号、设备", perms: ["tenant.manage", "tenant.terminate", "quota.manage", "quota.cap", "plan.manage", "account.manage", "account.support", "device.revoke", "tenant.read", "account.read", "usage.read", "billing.read", "route.read"] },
   { id: "issuer", label: "开通专员", description: "签发开通码（与客户运营互斥）", perms: ["activation.issue", "tenant.read", "account.read"] },
   { id: "finance", label: "财务", description: "查看客户、用量与账单", perms: ["tenant.read", "usage.read", "billing.read"] },

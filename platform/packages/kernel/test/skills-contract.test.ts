@@ -79,6 +79,8 @@ function argsFor(tool: string, skill: string): Record<string, unknown> {
       return { text: "依据《民法典》第五百八十五条", as_of: "2026-10-01" };
     case "law.get_version":
       return { law: "民法典", as_of: "2026-10-01" };
+    case "law.get_article": // 第 56 批：法规研究、顾问答复改为一步取原文（版本已按 as_of 选好），不再必需 law.get_version
+      return { law: "民法典", article: 585, as_of: "2026-10-01" };
     case "law.search":
       return { query: "违约金" };
     case "riskcards.submit":

@@ -1,0 +1,17 @@
+[C] C 设上限 1： {"cap_pct":1}
+[C] C2 admin 额度视图： {"unit":"cny","firm":"0.0467/6 (0.8%)","cap_pct":1,"paused":null,"boost":0,"own":{"used":0.0354,"ratio":0.0295,"req":5},"by_member":["王主任:0.0354(5次)","李四（自填）:0.0072(1次)","赵律师:0.0041(1次)"],"notice":null}
+[C] li 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] zhao 问答 0.0s： 未能取得回答：本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查
+[C] C3 admin 额度视图： {"unit":"cny","firm":"0.0467/6 (0.8%)","cap_pct":1,"paused":"cap","boost":0,"own":{"used":0.0354,"ratio":0.0295,"req":5},"by_member":["王主任:0.0354(5次)","李四（自填）:0.0072(1次)","赵律师:0.0041(1次)"],"notice":null}
+[C] C3 运营告警： []
+[C] V admin 额度视图： {"unit":"cny","firm":"0.0467/6 (0.8%)","cap_pct":1,"paused":"cap","boost":0,"own":{"used":0.0354,"ratio":0.0295,"req":5},"by_member":["王主任:0.0354(5次)","李四（自填）:0.0072(1次)","赵律师:0.0041(1次)"],"notice":null}
+[C] V li 额度视图： {"unit":"cny","firm":"null/null (0.8%)","cap_pct":1,"paused":"cap","boost":0,"own":{"used":0.0072,"ratio":0.006,"req":1},"by_member":"（看不到）","notice":null}
+[C] V zhao 额度视图： {"unit":"cny","firm":"null/null (0.8%)","cap_pct":1,"paused":"cap","boost":0,"own":{"used":0.0041,"ratio":0.0034,"req":1},"by_member":"（看不到）","notice":null}
+[C] V 运营告警： []
+launch_check n/a not_found
+[C] C 设上限 null： {"cap_pct":null}
+[C] C2 admin 额度视图： {"unit":"cny","firm":"0.0467/6 (0.8%)","cap_pct":null,"paused":null,"boost":0,"own":{"used":0.0354,"ratio":0.0295,"req":5},"by_member":["王主任:0.0354(5次)","李四（自填）:0.0072(1次)","赵律师:0.0041(1次)"],"notice":null}
+[C] li 问答 10.7s： 劳动争议申请仲裁的时效期间一般为一年，自当事人知道或者应当知道其权利被侵害之日起计算（《中华
+[C] zhao 问答 6.7s： 一般仍可有效适用：《中华人民共和国民法典》第五百六十六条第二款规定，合同因违约解除的，解除权
+[C] C3 admin 额度视图： {"unit":"cny","firm":"0.0574/6 (1.0%)","cap_pct":null,"paused":null,"boost":0,"own":{"used":0.0354,"ratio":0.0295,"req":5},"by_member":["王主任:0.0354(5次)","李四（自填）:0.0131(2次)","赵律师:0.0089(2次)"],"notice":null}
+[C] C3 运营告警： []

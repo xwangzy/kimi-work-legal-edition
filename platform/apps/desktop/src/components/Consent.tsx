@@ -37,7 +37,10 @@ export function AuthorizationRecord({
   onDetail,
   endpoint,
   basis,
+  needsRef = false,
 }: {
+  /** 早期记录缺少出处（D-225）：重新确认卡说明“请补记一次”。 */
+  needsRef?: boolean;
   matterTitle: string;
   clientName?: string | null;
   value: AuthRecord;
@@ -58,14 +61,31 @@ export function AuthorizationRecord({
   return (
     <section className="authz-record" aria-labelledby="authz-record-h">
       <div className="authz-record-head">
-        <h3 id="authz-record-h">{reconfirm ? "AI 次处理者有变化，请重新确认本案授权" : "记录本案的客户授权"}</h3>
+        <h3 id="authz-record-h">{needsRef ? "请补记本案授权的出处" : reconfirm ? "AI 次处理者有变化，请重新确认本案授权" : "记录本案的客户授权"}</h3>
         <p>
-          {reconfirm ? "原来记录的授权依据告知的是旧的次处理者清单。核实客户的授权覆盖下面的新清单后，重新确认一次。" : "这是本事项第一次用 AI。"}
+          {needsRef
+            ? "这是早期记录，缺少出处，请补记一次。"
+            : reconfirm
+              ? "原来记录的授权依据告知的是旧的次处理者清单。核实客户的授权覆盖下面的新清单后，重新确认一次。"
+              : "这是本事项第一次用 AI。"}
           请记下客户授权的依据——它是你核实过的事实记录，不代替客户本人的授权；记录随事项保存、写进事项日志。
         </p>
       </div>
       {detail ? (
-        <BasisEditor basis={detail} endpoint={endpoint} onChange={onDetail} />
+        <>
+          <BasisEditor basis={detail} endpoint={endpoint} onChange={onDetail} />
+          {/* D-225：逐项记录同样要写出处（不填不能确认），并按当前次处理者清单记版本 */}
+          <label className="authz-ref">
+            <span>出处</span>
+            <input
+              value={value.ref}
+              maxLength={BASIS_REF_MAX}
+              placeholder="委托合同名称或编号、条款号；或客户书面同意的日期与方式"
+              onChange={(e) => onChange({ ...value, ref: e.target.value })}
+              aria-label="授权依据的出处"
+            />
+          </label>
+        </>
       ) : (
         <>
           <div className="authz-kinds" role="radiogroup" aria-label="授权依据">

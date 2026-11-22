@@ -256,3 +256,116 @@ export function agendaEntries<
 export function countTone(dueDate: string, now = Date.now()): "red" | "orange" | "plain" | "past" {
   return daysUntil(dueDate, now) < 0 ? "past" : dueTone(dueDate, now);
 }
+
+// ─── 第 56 批“日程”：分组（已过期 / 本周 / 本月 / 以后）、日历叶、标题去重、倒计时胶囊、提醒安排人话、小月历 ───
+
+export type AgendaGroupKey = "past" | "week" | "month" | "later";
+const AGENDA_LABELS: Record<AgendaGroupKey, string> = { past: "已过期", week: "本周", month: "本月", later: "以后" };
+
+/**
+ * 日程分组：已过期（从最近过期的排起）/ 本周（今天起 7 天内）/ 本月（本月内、7 天以后）/ 以后。北京时间按日计；空组不返回。纯函数。
+ * “本周”按“今天起 7 天”滚动算，不按日历周：周日看日程时，后天的开庭仍在“本周”里，不会掉进“本月”。
+ */
+export function agendaGroups<T extends { due_date: string; cloud_state?: string }>(list: readonly T[], now = Date.now()): { key: AgendaGroupKey; label: string; items: T[] }[] {
+  const today = bjToday(now);
+  const keyOf = (r: T): AgendaGroupKey => {
+    const d = daysUntil(r.due_date, now);
+    if (d < 0) return "past";
+    if (d <= 7) return "week";
+    return r.due_date.slice(0, 7) === today.slice(0, 7) ? "month" : "later";
+  };
+  const live = list.filter((r) => r.cloud_state !== "cancelled");
+  return (["past", "week", "month", "later"] as const)
+    .map((key) => ({ key, label: AGENDA_LABELS[key], items: live.filter((r) => keyOf(r) === key).sort((a, b) => (key === "past" ? b.due_date.localeCompare(a.due_date) : a.due_date.localeCompare(b.due_date))) }))
+    .filter((g) => g.items.length > 0);
+}
+
+/** 日历叶三行：上“11月”（不是今年写“2027 · 1月”）、中大号日“24”、下“周二”。纯函数。 */
+export function leafParts(dueDate: string, now = Date.now()): { top: string; day: string; week: string } {
+  const [y, m, d] = dueDate.split("-").map(Number) as [number, number, number];
+  if (!y || !m || !d) return { top: "", day: dueDate, week: "" };
+  const sameYear = bjToday(now).slice(0, 4) === String(y);
+  return { top: sameYear ? `${m}月` : `${y} · ${m}月`, day: String(d), week: WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]! };
+}
+
+/**
+ * 一条期限的标题：期限类型 + 备注合成一句，备注已经以类型开头时不重复类型。
+ * “开庭：朝阳法院第 12 法庭” → “开庭 · 朝阳法院第 12 法庭”；“举证期限届满” → “举证期限届满”；“上诉期届满”（以“上诉”开头）→ 原样。纯函数。
+ */
+export function entryTitle(kind: string, note: string): string {
+  const label = reminderKindLabel(kind);
+  const n = (note ?? "").trim();
+  if (!n) return label;
+  const sep = /^[\s：:·、,，\-—]+/;
+  if (n.startsWith(label)) {
+    const rest = n.slice(label.length);
+    if (!rest.trim()) return label;
+    return sep.test(rest) ? `${label} · ${rest.replace(sep, "")}` : n;
+  }
+  const stem = label.replace(/期限$/, "");
+  if (stem.length >= 2 && n.startsWith(stem)) return n;
+  return `${label} · ${n}`;
+}
+
+/** 倒计时胶囊：今天写“今天”、过期写“已过 n 天”；3 天内红、7 天内橙、其余中性灰。纯函数。 */
+export function countPill(dueDate: string, now = Date.now()): { text: string; tone: "red" | "orange" | "neutral" | "past" } {
+  const d = daysUntil(dueDate, now);
+  if (d < 0) return { text: `已过 ${-d} 天`, tone: "past" };
+  if (d === 0) return { text: "今天", tone: "red" };
+  return { text: d === 1 ? "明天" : `还有 ${d} 天`, tone: d <= 3 ? "red" : d <= 7 ? "orange" : "neutral" };
+}
+
+/**
+ * 提醒安排写成人话：“提前 3 天 9:00 提醒”“当天 9:00 提醒”；已经提醒过的写“已提醒”；
+ * 设提醒时已经过了“提前 N 天几点”、内核立即提醒的写“已提醒（设置时已不足 3 天）”。纯函数。
+ */
+export function scheduleHuman(r: { due_date: string; days_before: number; remind_time: string; remind_at: string; fired?: boolean }, now = Date.now()): string {
+  const planned = plannedRemindAt(r.due_date, r.days_before, r.remind_time);
+  const time = r.remind_time.replace(/^0(\d)/, "$1");
+  if (Date.parse(r.remind_at) > Date.parse(planned)) return r.days_before > 0 ? `已提醒（设置时已不足 ${r.days_before} 天）` : "已提醒（设置时已过提醒时间）";
+  if (r.fired || Date.parse(r.remind_at) <= now) return "已提醒";
+  return r.days_before === 0 ? `当天 ${time} 提醒` : `提前 ${r.days_before} 天 ${time} 提醒`;
+}
+
+export interface MonthCell {
+  date: string;
+  day: number;
+}
+/**
+ * 小月历的一个月（周一开头，6 行以内）：每格是这个月的日子，月前月后补 null。纯函数。
+ * month 从 1 起；跨年由 monthsFrom 处理。
+ */
+export function monthGrid(year: number, month: number): { key: string; label: string; weeks: (MonthCell | null)[][] } {
+  const first = new Date(Date.UTC(year, month - 1, 1)).getUTCDay(); // 0 = 周日
+  const lead = (first + 6) % 7; // 周一开头前面补几格
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const cells: (MonthCell | null)[] = Array.from({ length: lead }, () => null);
+  for (let d = 1; d <= days; d++) cells.push({ date: `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`, day: d });
+  while (cells.length % 7) cells.push(null);
+  const weeks: (MonthCell | null)[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  return { key: `${year}-${String(month).padStart(2, "0")}`, label: `${year} 年 ${month} 月`, weeks };
+}
+
+/** 本月与下月（按北京时间的今天；12 月的下月是次年 1 月）。纯函数。 */
+export function monthsFrom(today: string, count = 2): { year: number; month: number }[] {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  return Array.from({ length: count }, (_, i) => {
+    const k = m - 1 + i;
+    return { year: y + Math.floor(k / 12), month: (k % 12) + 1 };
+  });
+}
+
+/** 月历上每天的点：取那天最近的一档——3 天内红、7 天内橙、其余灰蓝，已过的灰。纯函数。 */
+export function dayMarks(list: readonly { due_date: string; cloud_state?: string }[], now = Date.now()): Map<string, "red" | "orange" | "plain" | "past"> {
+  const rank = { red: 3, orange: 2, plain: 1, past: 0 } as const;
+  const out = new Map<string, "red" | "orange" | "plain" | "past">();
+  for (const r of list) {
+    if (r.cloud_state === "cancelled") continue;
+    const t = countTone(r.due_date, now);
+    const cur = out.get(r.due_date);
+    if (!cur || rank[t] > rank[cur]) out.set(r.due_date, t);
+  }
+  return out;
+}

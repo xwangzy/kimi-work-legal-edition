@@ -23,6 +23,8 @@ import type { BlobStore } from "../blobs.ts";
 import type { KernelDb } from "../db.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { restoreArtifactBytes } from "./export-restore.ts";
+import { authorizationStateOf } from "../egress/gate-host.ts";
+import { authorizationHistory } from "./ai-authorization.ts";
 import { defaultNature } from "./review-cards.ts";
 
 export const ARCHIVE_FORMAT = "kwl-matter-archive/1";
@@ -43,6 +45,16 @@ export interface ArchiveDeps {
 export interface ArchiveManifest {
   format: typeof ARCHIVE_FORMAT;
   matter: Record<string, unknown>;
+  /** 客户授权记录（D-225）：当前值 + 历史（明文，新的在前；记录人为成员编号，时间为审计时间）。 */
+  authorization: {
+    state: string;
+    consent_status: string | null;
+    basis: unknown;
+    basis_source: string | null;
+    basis_ref: string | null;
+    basis_notice_version: string | null;
+    history: { basis_source: string; basis_ref: string; basis_notice_version: string; basis: unknown; recorded_by: string; recorded_by_name: string | null; recorded_at: string }[];
+  };
   exported_at: string;
   exported_by: string;
   device_id: string;
@@ -301,6 +313,23 @@ export function buildMatterArchive(d: ArchiveDeps, matterId: string, opts: { by:
       retention_until: m.retention_until ?? null,
       legal_hold: m.legal_hold === 1,
       created_at: m.created_at,
+    },
+    authorization: {
+      state: authorizationStateOf(m),
+      consent_status: m.consent_status ?? null,
+      basis: parseJson(m.basis, null),
+      basis_source: m.basis_source ?? null,
+      basis_ref: m.basis_ref ?? null,
+      basis_notice_version: m.basis_notice_version ?? null,
+      history: authorizationHistory(d.db, matterId).map((h) => ({
+        basis_source: h.basis_source,
+        basis_ref: h.basis_ref,
+        basis_notice_version: h.basis_notice_version,
+        basis: h.basis,
+        recorded_by: h.recorded_by_id,
+        recorded_by_name: d.db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE user_id = ?`, [h.recorded_by_id])?.display_name ?? null,
+        recorded_at: h.recorded_at,
+      })),
     },
     exported_at: new Date().toISOString(),
     exported_by: opts.by,

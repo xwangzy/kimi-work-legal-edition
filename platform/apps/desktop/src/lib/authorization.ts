@@ -28,9 +28,11 @@ export function confirmNeeds(b: MatterBasis | undefined): { general: boolean; se
 }
 
 /** 事项里“客户授权”一句话（事项头、事项列表共用）。第 51 批：带上依据出处（截短；完整出处在悬停与事项日志里）。 */
-export function authorizationLine(m: { consent_status?: string; basis_complete?: boolean; basis_source?: string | null; basis_ref?: string | null; basis_reconfirm?: boolean; data_level?: string }): string {
+export function authorizationLine(m: { consent_status?: string; basis_complete?: boolean; basis_source?: string | null; basis_ref?: string | null; basis_reconfirm?: boolean; basis_state?: string; data_level?: string }): string {
   if (m.consent_status === "refused" || m.data_level === "L3b") return "客户要求不上云";
   if (!m.basis_complete) return "尚未记录客户授权";
+  // D-225：四项已齐但没有出处的早期记录（或逐项记录留下的）——下次用 AI 时补记一次
+  if (m.basis_state === "needs_ref") return "待补记 · 早期记录缺少出处";
   // 次处理者清单更新后，按旧清单记录的授权须重新确认（内核 basis_reconfirm；下次用 AI 时在开始前确认里处理）
   if (m.basis_reconfirm) return "须重新确认 · AI 次处理者有变化";
   const ref = m.basis_ref ? `（${shortRef(m.basis_ref)}）` : "";
@@ -79,6 +81,83 @@ export function recordReady(r: AuthRecord, needSensitive: boolean): boolean {
 /** 本事项的授权是否因次处理者清单更新而须重新确认（旧记录没有版本的不算）。纯函数。 */
 export function needsReconfirm(m: { basis_notice_version?: string | null }, current: string | null | undefined): boolean {
   return !!m.basis_notice_version && !!current && m.basis_notice_version !== current;
+}
+
+/* ── D-225：逐项记录同样要出处；授权记录可回溯（事项页、签发页一行只读 + 历史；设置里各事项总览） ── */
+
+/** 记录方式的说法（历史与总览用）。 */
+export const BASIS_SOURCE_LABELS: Record<string, string> = { engagement_terms: "委托合同中的 AI 条款", separate_consent: "客户单独书面同意", confirmed: "逐项记录" };
+
+/** 逐项记录能不能提交：同样须写出处（不超长）。纯函数。 */
+export function detailReady(ref: string): boolean {
+  const t = ref.trim();
+  return t.length > 0 && t.length <= BASIS_REF_MAX;
+}
+
+/** 逐项记录时记的依据类型：律师选过的类型优先，其次沿用本事项原来的类型，否则记为逐项记录。纯函数。 */
+export function detailSource(r: AuthRecord, matter: { basis_source?: string | null }): "engagement_terms" | "separate_consent" | "confirmed" {
+  if (r.kind) return r.kind;
+  return matter.basis_source === "engagement_terms" || matter.basis_source === "separate_consent" ? matter.basis_source : "confirmed";
+}
+
+/** “11 月 22 日”（本地日期；读不出返回空串）。 */
+export function monthDay(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+}
+
+/** 事项页与签发页的一行只读：“客户授权：委托合同第 12 条 · 11 月 22 日 王主任记录”。没有记录时给状态说法。纯函数。 */
+export function authorizationRecordLine(m: { consent_status?: string; basis_complete?: boolean; basis_state?: string; basis_ref?: string | null; basis_recorded_at?: string | null; basis_recorded_by?: string | null; data_level?: string }): string {
+  const st = authorizationStatus(m);
+  if (st.key !== "valid") return `客户授权：${st.label}`;
+  const when = monthDay(m.basis_recorded_at);
+  const who = m.basis_recorded_by ? `${m.basis_recorded_by}记录` : when ? "记录" : "";
+  return `客户授权：${m.basis_ref ?? ""}${when || who ? ` · ${[when, who].filter(Boolean).join(" ")}` : ""}`;
+}
+
+/** 授权状态（总览表与一行只读共用）：有效 / 待补记 / 次处理者清单已更新待重新确认 / 尚未记录 / 客户要求不上云。纯函数。 */
+export function authorizationStatus(m: { consent_status?: string; basis_complete?: boolean; basis_state?: string; data_level?: string }): { key: "valid" | "needs_ref" | "reconfirm" | "pending" | "local_only"; label: string } {
+  if (m.consent_status === "refused" || m.data_level === "L3b") return { key: "local_only", label: "客户要求不上云" };
+  if (m.basis_state === "needs_ref") return { key: "needs_ref", label: "待补记" };
+  if (m.basis_state === "reconfirm") return { key: "reconfirm", label: "次处理者清单已更新，待重新确认" };
+  if (m.basis_state === "valid" || (m.basis_state === undefined && m.basis_complete)) return { key: "valid", label: "有效" };
+  return { key: "pending", label: "尚未记录" };
+}
+
+/** 各事项授权记录的一行（设置 → 数据去向）。 */
+export interface AuthorizationRow {
+  matter_id: string;
+  title: string;
+  basis: string;
+  ref: string;
+  recorded_at: string;
+  recorded_by: string;
+  status: string;
+}
+
+/** 由事项列表得到总览行（只用 matters.list 已返回的字段）。纯函数。 */
+export function authorizationRows(list: readonly { matter_id: string; title: string; consent_status?: string; basis_complete?: boolean; basis_state?: string; basis_source?: string | null; basis_ref?: string | null; basis_recorded_at?: string | null; basis_recorded_by?: string | null; data_level?: string; is_sample?: boolean }[]): AuthorizationRow[] {
+  return list
+    .filter((m) => !m.is_sample)
+    .map((m) => ({
+      matter_id: m.matter_id,
+      title: m.title,
+      basis: m.basis_source ? (BASIS_SOURCE_LABELS[m.basis_source] ?? "") : "",
+      ref: m.basis_ref ?? "",
+      recorded_at: m.basis_recorded_at ?? "",
+      recorded_by: m.basis_recorded_by ?? "",
+      status: authorizationStatus(m).label,
+    }));
+}
+
+/** 总览导出为 CSV（UTF-8 带 BOM，表格软件直接打开不乱码；字段按 RFC 4180 加引号）。纯函数。 */
+export function authorizationCsv(rows: readonly AuthorizationRow[]): string {
+  // 以 = + - @ 开头的单元格前加单引号，表格软件不当公式执行
+  const q = (s: string) => `"${(/^[=+\-@]/.test(s) ? `'${s}` : s).replace(/"/g, '""')}"`;
+  const head = ["事项", "依据", "出处", "记录时间", "记录人", "状态"];
+  const lines = [head.map(q).join(","), ...rows.map((r) => [r.title, r.basis, r.ref, r.recorded_at, r.recorded_by, r.status].map(q).join(","))];
+  return `﻿${lines.join("\r\n")}\r\n`;
 }
 
 /** 出处截短到 24 字（列表与事项头用）。 */

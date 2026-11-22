@@ -17,7 +17,7 @@ const TEXT = "甲方代表陈建国，电话 13911112222。陈建国与李华共
 test("L2：估价附发送摘要（计数、公司名称保留、疑似姓名）；发送视图不含真值；预跑不写回令牌表；不拦发起", { timeout: 120_000 }, async () => {
   const tk = await makeKernel({}, "send-preview-l2");
   try {
-    const { matter } = await tk.inv("matters.create", { title: "补充协议审查", stance: "原告", basis: FULL });
+    const { matter } = await tk.inv("matters.create", { title: "补充协议审查", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
     await tk.inv("matters.parties.upsert", { matter_id: matter.matter_id, name: "陈建国", kind: "person" });
     await tk.inv("matters.parties.upsert", { matter_id: matter.matter_id, name: "滨江置业有限公司", kind: "org" });
     const doc = await importText(tk.inv, matter.matter_id, "补充协议.txt", TEXT);
@@ -53,7 +53,7 @@ test("L2：估价附发送摘要（计数、公司名称保留、疑似姓名）
 test("L3a：有未核对的疑似姓名时估价与发起都被拦下；判定后放行，名字进入当事人名单并在发送稿中成为代号；删除事项清除判定", { timeout: 120_000 }, async () => {
   const tk = await makeKernel({ ZR_FIRM_L3A_STANDARD_MODEL: "allow" }, "send-preview-l3a");
   try {
-    const { matter } = await tk.inv("matters.create", { title: "敏感借贷纠纷", stance: "原告", confidentiality: "high", basis: FULL });
+    const { matter } = await tk.inv("matters.create", { title: "敏感借贷纠纷", stance: "原告", confidentiality: "high", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
     await tk.inv("matters.parties.upsert", { matter_id: matter.matter_id, name: "陈建国", kind: "person" });
     await tk.inv("matters.parties.upsert", { matter_id: matter.matter_id, name: "滨江置业有限公司", kind: "org" });
     const doc = await importText(tk.inv, matter.matter_id, "借条.txt", TEXT);
@@ -94,7 +94,7 @@ test("L3a：有未核对的疑似姓名时估价与发起都被拦下；判定�
 test("复核 S5A-02：L3a 核对覆盖实际发送的全部内容——40 万字之后出现的疑似姓名同样拦下发起", { timeout: 180_000 }, async () => {
   const tk = await makeKernel({ ZR_FIRM_L3A_STANDARD_MODEL: "allow" }, "send-preview-long");
   try {
-    const { matter } = await tk.inv("matters.create", { title: "长卷宗", stance: "原告", confidentiality: "high", basis: FULL });
+    const { matter } = await tk.inv("matters.create", { title: "长卷宗", stance: "原告", confidentiality: "high", basis: FULL, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条" });
     const filler = "第一条 本合同的签订、履行与解释适用中华人民共和国法律。\n".repeat(16_000);
     assert.ok(filler.length > 400_000);
     const doc = await importText(tk.inv, matter.matter_id, "长卷宗.txt", `${filler}据告郑秀英称当晚并未离开。`);

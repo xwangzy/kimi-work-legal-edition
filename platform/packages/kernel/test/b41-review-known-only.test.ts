@@ -43,7 +43,7 @@ test("复核人看到的文书：材料里的真名仍是代号，助手写的�
     return { content: "已起草《设备买卖合同》。" };
   };
   try {
-    const { matter } = await tk.inv("matters.create", { title: "复核只换已知姓名 B41KNOWN", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, model_endpoint: "standard" });
+    const { matter } = await tk.inv("matters.create", { title: "复核只换已知姓名 B41KNOWN", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条", model_endpoint: "standard" });
     const doc = await importBytes(tk.inv, matter.matter_id, "交易条款清单.txt", Buffer.from("设备：压装设备一台。买方联系人：庞知远，男，电话另附。价款：人民币120万元。", "utf8"), "text/plain");
     const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });
     const run = await tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b41-known-${Date.now()}`, goal: "B41KNOWN 起草设备买卖合同，价款120万元，对方经办人沈墨言另行联系", skill: "contract-draft", document_version_ids: [doc.document_version_id], mode: "default", plan_first: false });
@@ -82,7 +82,7 @@ test("交回修改那一轮：复核意见里引用的“曾根据”不再被�
     return { content: "已起草《设备买卖合同》。" };
   };
   try {
-    const { matter } = await tk.inv("matters.create", { title: "修改轮只换已知姓名 B41FIX", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, model_endpoint: "standard" });
+    const { matter } = await tk.inv("matters.create", { title: "修改轮只换已知姓名 B41FIX", stance: "买方", basis: { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" }, basis_source: "engagement_terms", basis_ref: "委托合同第 9 条", model_endpoint: "standard" });
     const doc = await importBytes(tk.inv, matter.matter_id, "交易条款清单.txt", Buffer.from("设备：压装设备一台。买方联系人：庞知远。价款：人民币120万元。", "utf8"), "text/plain");
     const est = await tk.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [doc.document_version_id] });
     const run = await tk.inv("runs.start", { matter_id: matter.matter_id, estimate_id: est.estimate_id, idempotency_key: `b41-fix-${Date.now()}`, goal: "B41FIX 起草设备买卖合同，价款120万元", skill: "contract-draft", document_version_ids: [doc.document_version_id], mode: "default", plan_first: false });
