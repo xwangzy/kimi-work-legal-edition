@@ -1,7 +1,8 @@
 /**
  * 法规库包构建流水线（方案 v5.0 第 4 篇 §9、第 5 篇 §2）：
  * sources/*.json（人工采集形态种子）→ 签名只读 SQLite 包（dist/lawdb.sqlite + lawdb.manifest.json）。
- * 现状（2026-11-20）：36 部按官方发布文本采集并与第二官方来源比对；《律师法》2017 版第三十八条仍为演示种子，2026 修正本第四十一条依据修改决定推定（逐字全文待采集）；
+ * 现状（2026-11-22，V32）：41 部按官方发布文本采集并与第二官方来源比对（含数据出境三部规章、个人信息出境认证办法；《律师法》两版已换成国家法律法规数据库官方 Word 全文），
+ * 另有法规目录 1 部（《网络数据安全管理条例》，只登记名称、施行日与总条数，不收正文）；
  * 不自动化抓取国家法律法规数据库；商业源未签约前不得入库。
  * 另构建测试夹具包 test-fixtures/lawdb-renumber-demo.sqlite（随包种子 + 夹具里演绎的《律师法》“2026 修正本”（68 条、演绎文本）与 38→41 条号迁移，
  * 只用于测试改号拦截机制；v9.4 第 19 批 S-07）——安装包与内容分发只取 dist/，夹具不随包。
@@ -77,4 +78,4 @@ console.log(`[build:lawdb] 包版本: ${manifest.package_version} · ${st.laws_c
 console.log(`[build:lawdb] 内容表行数: ${JSON.stringify(summary)}`);
 console.log(`[build:lawdb] 节假日表: ${holidaysDoc.years.map((y) => y.year).join("、")} 年`);
 console.log(`[build:lawdb] 测试夹具（不随包）: ${fixtureFile} · 条号迁移 ${fixture.summary.renumbering ?? "?"} 组`);
-console.log(`[build:lawdb] 注意：官方采集版本未采集公报期号；《律师法》2017 版第三十八条为演示数据，2026 修正本第四十一条依据修改决定推定（逐字全文待采集）；测试夹具里的《律师法》“2026 修正本”是演绎文本`);
+console.log(`[build:lawdb] 注意：官方采集版本多数未采集公报期号（V32 入库的规章已登记公报期号、未采集页码）；法规目录一档只登记条数与施行日、不收正文；测试夹具里的《律师法》“2026 修正本”是演绎文本`);
