@@ -1,0 +1,26 @@
+[
+ {
+  "file": "研究备忘录-检验期限、质保期与对账确认.docx",
+  "kind": "agent_report",
+  "saved": true,
+  "bytes": 15011,
+  "sha256": "c5bb1adecec806b50b444ec7dabb96bf8c7a073c91f907c032258008e8af0ba9",
+  "zip_entries": 8,
+  "paragraphs": 168,
+  "ins": 0,
+  "del": 0,
+  "comments": 0,
+  "authors": [],
+  "text_chars": 9979,
+  "has_token_residue": false
+ },
+ {
+  "file": "来源目录-检验期限、质保期与对账确认.xlsx",
+  "kind": "agent_table",
+  "saved": true,
+  "bytes": 6658,
+  "sha256": "b6434fcb43f0cd0b1a57d06f74938cfe5ecac94516d87b6a75690014064a3a97",
+  "zip_entries": 6,
+  "sheets": 1
+ }
+]

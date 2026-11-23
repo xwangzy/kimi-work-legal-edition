@@ -1,0 +1,35 @@
+[
+ {
+  "file": "律师函.docx",
+  "kind": "agent_report",
+  "saved": true,
+  "bytes": 5953,
+  "sha256": "a9e650a20efafb7040edca3595161fca746e79acf7cbc1fab64024d794605ab2",
+  "zip_entries": 8,
+  "paragraphs": 21,
+  "ins": 0,
+  "del": 0,
+  "comments": 0,
+  "authors": [],
+  "text_chars": 1489,
+  "has_token_residue": false
+ },
+ {
+  "file": "依据与发送前核对-禾丰设备款催收.xlsx",
+  "kind": "agent_table",
+  "saved": true,
+  "bytes": 10965,
+  "sha256": "431239d649c05957d9e6e8237ebd3ad2bfd155b52757c9e41ac275c6d1d06883",
+  "zip_entries": 8,
+  "sheets": 3
+ },
+ {
+  "file": "金额测算-禾丰验收款-截至2026-11-09.xlsx",
+  "kind": "agent_table",
+  "saved": true,
+  "bytes": 12255,
+  "sha256": "3eee34745aeb4217281eb9c6f1c2d0ac7165bfcf314b6019cf646723b2f66d6b",
+  "zip_entries": 11,
+  "sheets": 6
+ }
+]

@@ -1,0 +1,90 @@
+[
+ {
+  "file": "审查意见书（内部稿）-冷链智能分拣系统采购与实施合同.docx",
+  "kind": "agent_report",
+  "saved": true,
+  "bytes": 22007,
+  "sha256": "838cf3e4b462e70b115b023024ea696b77b18526c9365ec97f3f78917473a427",
+  "zip_entries": 8,
+  "paragraphs": 374,
+  "ins": 0,
+  "del": 0,
+  "comments": 0,
+  "authors": [],
+  "text_chars": 15485,
+  "has_token_residue": false
+ },
+ {
+  "file": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（修改对照表）.docx",
+  "kind": "agent_report",
+  "saved": true,
+  "bytes": 18023,
+  "sha256": "61816aa2913c3cdb9e001f19a21adeb6e6b8e42461c85ca4d00af7b1d64b16fe",
+  "zip_entries": 8,
+  "paragraphs": 310,
+  "ins": 0,
+  "del": 0,
+  "comments": 0,
+  "authors": [],
+  "text_chars": 11881,
+  "has_token_residue": false
+ },
+ {
+  "file": "问题清单-冷链智能分拣系统采购与实施合同.xlsx",
+  "kind": "agent_table",
+  "saved": true,
+  "bytes": 21189,
+  "sha256": "96fafd27816b8e6645ac2065580f53effcea6b112bd6055b70d9559bf2d04db2",
+  "zip_entries": 7,
+  "sheets": 2
+ },
+ {
+  "file": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（清洁稿）.docx",
+  "kind": "revision_clean",
+  "saved": true,
+  "bytes": 18870,
+  "sha256": "51b52fd9e5d8372f91efbaad6c4ca92821d15382a7dae5e20a3116cac5f10e0e",
+  "zip_entries": 12,
+  "paragraphs": 216,
+  "ins": 0,
+  "del": 0,
+  "comments": 0,
+  "authors": [],
+  "text_chars": 8810,
+  "has_token_residue": false
+ },
+ {
+  "file": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（修订稿·对外版）.docx",
+  "kind": "revision_draft",
+  "saved": true,
+  "bytes": 21882,
+  "sha256": "653aeb1f67115b45b146ed010c99427ac0c30e2ce9c262785ee0e6ff42df7cd5",
+  "zip_entries": 12,
+  "paragraphs": 216,
+  "ins": 62,
+  "del": 58,
+  "comments": 0,
+  "authors": [
+   "第59批验收律所"
+  ],
+  "text_chars": 10603,
+  "has_token_residue": false
+ },
+ {
+  "file": "冷链智能分拣系统采购与实施合同（棠溪智能提供稿）（修订稿）.docx",
+  "kind": "revision_draft",
+  "saved": true,
+  "bytes": 26826,
+  "sha256": "42fd1a691fe6bbd5e35f0a7afd15bd2d77673822c0713b7b70326a886d222ca2",
+  "zip_entries": 12,
+  "paragraphs": 216,
+  "ins": 62,
+  "del": 58,
+  "comments": 60,
+  "authors": [
+   "Kimi Work 法律助手（AI 建议，待律师确认）"
+  ],
+  "text_chars": 10603,
+  "has_token_residue": false
+ }
+]
