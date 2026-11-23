@@ -22,6 +22,13 @@
  *   --dir 只产出未打包目录（release/win-unpacked 或 release/mac-arm64），便于检查内容。
  *   --dev-build 开发 / 内部测试包：允许不带 electron/release.json（安装包只有本机能力）。不加此项时，用正式代码签名（--sign env）
  *           且随包生产内容公钥的构建视为正式构建，缺 release.json 直接失败（第 46 批，主文 §5-6）
+ *   --prebuilt-content 不在本机构建内容包（法规库、方法模板、工具清单、Agent 配置），直接用 content/<类>/dist 里现成的——
+ *           Windows CI 用 Mac 上以生产内容签名密钥签好的内容包（scripts/pack-signed-content.mjs 打包、预发布按摘要分发），
+ *           私钥不上传 CI（第 60 批 H2）。须同时给 KWL_CONTENT_SIGNING_PUB_FILE。
+ *   --unsigned-release 过渡开关（第 60 批）：正式发布（release.json 未标 test_build、随包生产内容公钥）在**还没有** Windows OV/EV 证书与
+ *           Apple Developer ID 时，允许 --sign none 出包；其余正式门禁照旧（不得带开发内容公钥）。打包日志与 SHA256SUMS 签名清单都写明
+ *           “未经操作系统代码签名”。证书到位后去掉此开关、改 --sign env。
+ *   生产内容签名：设 KWL_CONTENT_SIGNING_KEY_FILE（私钥，离线保管）时内容包用它签名；未设 KWL_CONTENT_SIGNING_PUB_FILE 时由私钥文件导出公钥。
  *   --trial 试用构建（偏离 D-160，apps/desktop/electron/trial-mode.cjs）：安装包内置本机法律模型网关与封装的中软 MaaS 密钥，
  *           不接云端控制面；与 release.json 互斥。密钥从 KWL_TRIAL_KEY_FILE 指向的文件读取（只含密钥一行，不入库），
  *           上游 KWL_TRIAL_BASE（缺省 https://maas.jointpilot.com/v1）、型号 KWL_TRIAL_MODEL（缺省 kimi-k3.1-pro）、
@@ -53,6 +60,8 @@ const skipBuild = argv.includes("--skip-build");
 const dirOnly = argv.includes("--dir");
 const trialBuild = argv.includes("--trial");
 const devBuild = argv.includes("--dev-build");
+const prebuiltContent = argv.includes("--prebuilt-content");
+const unsignedRelease = argv.includes("--unsigned-release");
 const [platform] = target.split("-");
 const log = (m) => console.log(`[package-desktop] ${m}`);
 // node 直接以本进程的可执行文件运行（不经 shell）；只有 npm/npx 在 Windows 上是 .cmd，须经 shell——此时逐个参数加引号，
@@ -90,8 +99,24 @@ if (trialBuild) {
 }
 
 // ── 1. 内容与制品 ───────────────────────────────────────────────────────
+// 安装包里的 JS 制品一律压缩（第 60 批安全加固 H1；build-kernel / build-runtime 读 KWL_MINIFY）。--no-minify 只用于排错包
+const minify = !argv.includes("--no-minify");
+if (minify) process.env.KWL_MINIFY = "1";
+else log("提示：--no-minify——制品不压缩，只用于排错，不得对外分发");
+// 生产内容签名（第 60 批 H2）：给了私钥文件而没给公钥文件时，由私钥文件导出公钥（build-kernel 只读公钥文件、随包内置）
+if (process.env.KWL_CONTENT_SIGNING_KEY_FILE && !process.env.KWL_CONTENT_SIGNING_PUB_FILE) {
+  const { releaseContentSigningKey } = await import("./lib/dev-content-keys.mjs");
+  const k = releaseContentSigningKey(root);
+  mkdirSync(join(root, ".cache"), { recursive: true });
+  const pubOut = join(root, ".cache/release-content-signing.pub.json");
+  writeFileSync(pubOut, JSON.stringify({ _comment: "生产内容签名公钥（由 KWL_CONTENT_SIGNING_KEY_FILE 导出；随包内置）", publicKeyPem: k.publicKeyPem }, null, 2));
+  process.env.KWL_CONTENT_SIGNING_PUB_FILE = pubOut;
+  log("生产内容签名：内容包用 KWL_CONTENT_SIGNING_KEY_FILE 签名，随包公钥由其导出");
+}
+if (prebuiltContent && !process.env.KWL_CONTENT_SIGNING_PUB_FILE) throw new Error("--prebuilt-content 须同时给 KWL_CONTENT_SIGNING_PUB_FILE（现成内容包的签名公钥）");
 if (!skipBuild) {
-  for (const s of ["build:lawdb", "build:agent-profile", "build:tool-manifest", "build:skills"]) run("npm", ["run", s]);
+  if (prebuiltContent) log("--prebuilt-content：不在本机构建内容包，用 content/<类>/dist 里现成的（内核构建按 KWL_CONTENT_SIGNING_PUB_FILE 核对签名者）");
+  else for (const s of ["build:lawdb", "build:agent-profile", "build:tool-manifest", "build:skills"]) run("npm", ["run", s]);
   run("npm", ["run", "build", "-w", "@zr-legal/desktop"]);
 }
 if (!existsSync(join(desktop, "dist/index.html"))) throw new Error("缺少前端产物 apps/desktop/dist：先去掉 --skip-build 构建");
@@ -154,6 +179,7 @@ await build({
   sourcemap: false,
   logLevel: "warning",
   legalComments: "none",
+  ...(minify ? { minify: true, keepNames: true } : {}),
   // 试用构建：本次的解封密钥写进主进程制品（trial-mode.cjs 的 __KWL_TRIAL_SEAL__）
   ...(trial ? { define: { __KWL_TRIAL_SEAL__: JSON.stringify((trial.sealKey = randomBytes(32)).toString("base64")) } } : {}),
 });
@@ -258,6 +284,47 @@ if (trial) {
   if (upstream.length) log(`上游预编译原生包里出现与本机同名的用户目录（${upstream.length} 个文件，上游构建机路径，按锁文件核验过，不是本次构建带入）：${upstream.slice(0, 2).join("、")}`);
   log("安装包内容未发现构建机用户目录路径");
 }
+// 第 60 批安全加固（审计 11 文第 4 项）：通用秘密扫描——暂存目录与随包运行时全部文件，查私钥 PEM（带正文）、sk- 形态的模型 API Key、
+// GitHub 令牌、AWS 访问密钥。命中即中止（安装包里不得有任何服务端秘密）；JWT 形态只提示（第三方库文档里常有示例）
+{
+  const hits = [];
+  const jwt = [];
+  const scanSecrets = (d) => {
+    if (!existsSync(d)) return;
+    for (const ent of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, ent.name);
+      if (ent.isSymbolicLink()) continue;
+      if (ent.isDirectory()) scanSecrets(p);
+      else {
+        const r = secretHits(readFileSync(p));
+        if (r.fatal.length) hits.push(`${p.slice(desktop.length + 1)}（${r.fatal.join("、")}）`);
+        if (r.jwt) jwt.push(p.slice(desktop.length + 1));
+      }
+    }
+  };
+  for (const d of [stage, join(desktop, "runtime")]) scanSecrets(d);
+  if (hits.length) throw new Error(`安装包内容疑似含秘密（${hits.length} 个文件）：${hits.slice(0, 5).join("；")}——先查明来源并排除再打包`);
+  if (jwt.length) log(`提示：${jwt.length} 个文件含 JWT 形态的字符串（多为第三方库示例），例如 ${jwt.slice(0, 2).join("、")}`);
+  log("安装包内容未发现私钥、API Key 或访问令牌");
+}
+
+/**
+ * 通用秘密形态（第 60 批）。纯函数（用例从源码取出单测）：fatal 为命中的形态名，jwt 表示含 JWT 形态字符串。
+ * 先按字节找标记再对候选文件跑正则，大文件（随包 Node、OCR 模型）也很快。
+ */
+function secretHits(buf) {
+  const markers = ["PRIVATE KEY-----", "sk-", "AKIA", "ghp_", "gho_", "ghs_", "ghu_", "ghr_", "github_pat_", "eyJ"];
+  if (!markers.some((m) => buf.includes(m))) return { fatal: [], jwt: false };
+  const t = buf.toString("latin1");
+  const fatal = [];
+  // 正文允许真换行或 JS/JSON 字符串里的 \n 转义（私钥常以 JSON 字符串形态夹带在制品里）
+  if (/-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----(?:\\[rn]|\s)*(?:[A-Za-z0-9+/=\r\n]|\\[rn]){64,}/.test(t)) fatal.push("私钥 PEM");
+  if (/(?<![A-Za-z0-9_-])sk-[A-Za-z0-9][A-Za-z0-9_-]{31,}(?![A-Za-z0-9_-])/.test(t)) fatal.push("sk- 形态的 API Key");
+  if (/(?<![A-Za-z0-9_])(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{60,})/.test(t)) fatal.push("GitHub 令牌");
+  if (/(?<![A-Z0-9])AKIA[0-9A-Z]{16}(?![A-Z0-9])/.test(t)) fatal.push("AWS 访问密钥");
+  const jwtHit = /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{16,}/.test(t);
+  return { fatal, jwt: jwtHit };
+}
 
 /**
  * 第 54 批（Windows 运行器实测）：@napi-rs/canvas-<平台> 是上游在 GitHub 运行器上预编译、按锁文件（package-lock / win-runtime.lock.json）
@@ -291,8 +358,9 @@ function releaseMissingFailure(o) {
   if (rel && rel.test_build !== true) {
     if (pubDev) throw new Error("正式发布（release.json 未标 test_build）不得随包开发内容签名公钥：请用 KWL_CONTENT_SIGNING_PUB_FILE 给出生产公钥并重新构建内核");
     if (devExtra.length) throw new Error(`正式发布（release.json 未标 test_build）的 content_keys 第 ${devExtra.join("、")} 把是开发公钥`);
-    if (sign === "dev" || sign === "none") throw new Error(`正式发布（release.json 未标 test_build）不得用 --sign ${sign}：须用正式代码签名证书（--sign env）`);
-  }
+    if (sign === "dev" || (sign === "none" && !unsignedRelease)) throw new Error(`正式发布（release.json 未标 test_build）不得用 --sign ${sign}：须用正式代码签名证书（--sign env）${sign === "none" ? "；证书到位前的过渡出包须显式加 --unsigned-release" : ""}`);
+    if (sign === "none") log("注意：--unsigned-release——正式发布内容信任（生产内容签名公钥、无开发公钥），但安装包未经操作系统代码签名（Windows SmartScreen 会提示、macOS 须“仍要打开”）；对外分发须附 SHA256SUMS 及其签名");
+  } else if (unsignedRelease) throw new Error("--unsigned-release 只用于正式发布（release.json 未标 test_build）");
   if (pubDev) log("提示：随包的是开发内容签名公钥——本安装包只能用于测试");
   // 第 46 批（主文 §5-6）：正式构建（非试用、非测试包）必须带 release.json——缺了打出来的安装包要求控制面却没有地址，律师登录只会看到
   // “连不上中软服务”。测试包的判据：--dev-build、--sign dev|none，或随包开发内容公钥（CI 与本机开发打包都是这种）

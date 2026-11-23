@@ -3,9 +3,10 @@
  * 客户端安装前按随包公钥核验它（apps/desktop/electron/update-verify.cjs）——更新源被攻破也装不进未经中软发布密钥签发的程序。
  *
  * 密钥：正式发布的私钥只在发布机的硬件模块/云签名服务里，经 KWL_RELEASE_SIGNING_KEY 指向 PKCS#8 PEM（或由签名服务替换本脚本的签名步骤）；
- * 缺省使用 .cache/dev-release-key/（首次运行生成，**仅供测试**，不入库）。
+ * 只做测试时加 --dev-key 用 .cache/dev-release-key/（首次运行生成，**仅供测试**，不入库）；第 60 批起没给密钥又没加 --dev-key 即失败。
  * 用法：node scripts/sign-update.mjs [--release apps/desktop/release] [--channel latest]
  *       node scripts/sign-update.mjs --print-public-key   # 输出 release.json 的 update_keys 值
+ *       未设 KWL_RELEASE_SIGNING_KEY 时须加 --dev-key 才会用开发密钥（第 60 批：原先静默改用）
  */
 import { generateKeyPairSync, createPrivateKey, createPublicKey, createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -21,6 +22,11 @@ const arg = (n, d) => (argv.includes(n) ? argv[argv.indexOf(n) + 1] : d);
 
 function loadKey() {
   if (process.env.KWL_RELEASE_SIGNING_KEY) return createPrivateKey(readFileSync(process.env.KWL_RELEASE_SIGNING_KEY));
+  // 第 60 批（审计 11 文第 5 项）：不再静默改用开发发布密钥——没给 KWL_RELEASE_SIGNING_KEY 时须显式 --dev-key（只用于测试）
+  if (!argv.includes("--dev-key")) {
+    console.error("[sign-update] 须用 KWL_RELEASE_SIGNING_KEY 指向发布签名私钥；只做测试时显式加 --dev-key（用 .cache/dev-release-key 的开发密钥，不得用于对外发布）");
+    process.exit(2);
+  }
   const dir = join(root, ".cache/dev-release-key");
   const f = join(dir, "release-signing-dev.pem");
   if (!existsSync(f)) {

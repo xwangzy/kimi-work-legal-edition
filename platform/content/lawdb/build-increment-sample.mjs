@@ -18,6 +18,12 @@ const root = join(here, "..", "..");
 const baseFile = join(here, "dist", "lawdb.sqlite");
 if (!existsSync(baseFile)) throw new Error("先运行 npm run build:lawdb 构建基础包");
 
+// 第 60 批 H2：生产内容签名（KWL_CONTENT_SIGNING_KEY_FILE）时不构建本样例——它是演示增量（非真实采集），
+// 用生产密钥签了就会被正式安装包信任；样例只供用例测改号拦截，开发密钥签即可
+if (process.env.KWL_CONTENT_SIGNING_KEY_FILE) {
+  console.log("[build:lawdb] 生产内容签名：跳过演示增量样例（dist/incr 不随包，也不得用生产密钥签名）");
+  process.exit(0);
+}
 const key = ensureContentSigningKey(join(root, "content", "keys"));
 const baseManifest = JSON.parse(readFileSync(manifestPathFor(baseFile), "utf8"));
 

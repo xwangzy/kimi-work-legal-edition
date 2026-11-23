@@ -7,6 +7,10 @@
 #   → 套餐与用量页 → 防火墙封住云端地址演练断网（检测连接与问答都应如实报错）→ 解封恢复 → 关闭 → 静默卸载并核对清理
 #   → 证据（截图、日志、导出的成果）作为构件上传，安装包回传到同一预发布。
 # 不做的事：不注入模拟数据、不用 --trial、不在安装包里放任何密钥；律师账号密码在运行器上随机生成、只进屏蔽过的环境变量。
+# 第 60 批（域名云端、正式包）：release.json 未标 test_build 时按正式发布构建——内容包用 Mac 上以生产内容签名密钥签好的
+#   kwl-signed-content.tar.gz（同一预发布，按 content_bundle_sha256 核对；私钥不进 CI），--prebuilt-content --unsigned-release
+#   （还没有代码签名证书的过渡出包，见 scripts/package-desktop.mjs）。断网演练按云端域名解析出的 IP 封锁。
+#   加固：第三方 Action 固定到提交 SHA；checkout 不留存凭据；输入一律经事件文件或 env 传入、不内插进脚本；本所识别码也屏蔽。
 name: windows-e2e
 
 on:
@@ -27,6 +31,9 @@ on:
       firm_code:
         description: "管理员电脑“设置 → 账号与团队 → 本所识别码”（用于入组后逐位比对）"
         required: true
+      content_bundle_sha256:
+        description: "正式包必填：预发布里 kwl-signed-content.tar.gz（生产签名内容包）的 sha256；测试包（release.json 标 test_build）留空"
+        default: ""
       approval_wait_min:
         description: "等管理员批准的分钟数"
         default: "45"
@@ -60,16 +67,19 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # 不把 GITHUB_TOKEN 留在 .git/config 里（后续步骤运行 npm 依赖与被测程序）
+          persist-credentials: false
       - name: 导出来源核对
         run: node scripts/verify-source.mjs
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 26.8.1
           cache: npm
           cache-dependency-path: package-lock.json
       - name: 下载缓存（OCR 模型与 Windows 随包运行时；取出后仍按脚本里的摘要逐个核验）
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             content/ocr-models
@@ -82,27 +92,50 @@ jobs:
         run: |
           # 邀请码从事件文件读，不在脚本里直接展开输入表达式：GitHub 会先把展开后的脚本原文打进日志，
           # 那时屏蔽还没生效（第 59 批运行 45043549304 的作业日志里有一行明文；码是一次性的、已用掉）
-          $invite = (Get-Content -Raw $env:GITHUB_EVENT_PATH | ConvertFrom-Json).inputs.invite_code
+          $ev = (Get-Content -Raw $env:GITHUB_EVENT_PATH | ConvertFrom-Json).inputs
+          $invite = $ev.invite_code
           Write-Output "::add-mask::$invite"
           Write-Output "::add-mask::$($invite -replace '\s', '')"
+          # 本所识别码（第 60 批：审计建议一并屏蔽）
+          if ($ev.firm_code) { Write-Output "::add-mask::$($ev.firm_code)"; Write-Output "::add-mask::$($ev.firm_code -replace '\s', '')" }
           $pw = "Kwl" + [guid]::NewGuid().ToString("N").Substring(0, 16) + "Aa9"
           Write-Output "::add-mask::$pw"
           "KWL_PASSWORD=$pw" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "KWL_EMAIL=b54-win-${{ github.run_id }}@kwl-e2e.example" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "KWL_EMAIL=kwl-win-${{ github.run_id }}@kwl-e2e.example" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           New-Item -ItemType Directory -Force -Path $env:KWL_E2E_OUT | Out-Null
       - name: 发行配置（从预发布取 release.json 并核对摘要）
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag }}
           WANT: ${{ inputs.release_json_sha256 }}
+          WANT_CONTENT: ${{ inputs.content_bundle_sha256 }}
         run: |
           gh release download "$TAG" -p release.json -D apps/desktop/electron --clobber
           got=$(sha256sum apps/desktop/electron/release.json | cut -d' ' -f1)
           [ "$got" = "$WANT" ] || { echo "release.json 摘要不符：$got"; exit 1; }
-          node -e 'const j=require("./apps/desktop/electron/release.json");const r=require("./apps/desktop/electron/release-config.cjs").loadReleaseConfig("apps/desktop/electron/release.json");if(r.problems.length){console.error(r.problems.join("\n"));process.exit(1)}if(j.test_build!==true){console.error("须标 test_build");process.exit(1)}const h=new URL(j.control_plane_base).hostname;require("fs").appendFileSync(process.env.GITHUB_ENV,`KWL_CLOUD_HOST=${h}\n`);console.log("release.json 校验通过，云端",h)'
-      - name: 构建 EXE（Windows 原生；随包 Node 按锁文件核验；不签名，同上一批对外安装包）
+          node -e 'const j=require("./apps/desktop/electron/release.json");const r=require("./apps/desktop/electron/release-config.cjs").loadReleaseConfig("apps/desktop/electron/release.json");if(r.problems.length){console.error(r.problems.join("\n"));process.exit(1)}const h=new URL(j.control_plane_base).hostname;const fs=require("fs");fs.appendFileSync(process.env.GITHUB_ENV,`KWL_CLOUD_HOST=${h}\nKWL_RELEASE_MODE=${j.test_build===true?"test":"release"}\n`);console.log("release.json 校验通过，云端",h,j.test_build===true?"（测试包）":"（正式发布）")'
+          if grep -q '^KWL_RELEASE_MODE=release' "$GITHUB_ENV"; then
+            # 正式发布：内容包用生产内容签名密钥签好的那份（Mac 上 scripts/pack-signed-content.mjs 产出；私钥不进 CI）
+            [ -n "$WANT_CONTENT" ] || { echo "正式发布须给 content_bundle_sha256（生产签名内容包）"; exit 1; }
+            # 下到仓库内的相对路径：GNU tar 会把 D:\… 这类盘符路径当成远程主机
+            gh release download "$TAG" -p kwl-signed-content.tar.gz -D .kwl-dl --clobber
+            gotc=$(sha256sum .kwl-dl/kwl-signed-content.tar.gz | cut -d' ' -f1)
+            [ "$gotc" = "$WANT_CONTENT" ] || { echo "kwl-signed-content.tar.gz 摘要不符：$gotc"; exit 1; }
+            tar -xzf .kwl-dl/kwl-signed-content.tar.gz -C .
+            node -e 'const fs=require("fs"),c=require("crypto");const ix=JSON.parse(fs.readFileSync("signed-content.json","utf8"));let n=0;for(const[f,h]of Object.entries(ix.files)){if(c.createHash("sha256").update(fs.readFileSync(f)).digest("hex")!==h){console.error("内容包文件摘要不符："+f);process.exit(1)}n++}console.log(`生产签名内容包：${n} 个文件摘要一致，签名者 ${ix.signer_key_id}`)'
+            echo "KWL_CONTENT_SIGNING_PUB_FILE=$PWD/content-signing.pub.json" >> "$GITHUB_ENV"
+            echo "KWL_PKG_FLAGS=--prebuilt-content --unsigned-release" >> "$GITHUB_ENV"
+          fi
+      - name: 云端地址解析（断网演练按 IP 封锁；防火墙规则不认域名）
+        shell: pwsh
+        run: |
+          $ips = @([System.Net.Dns]::GetHostAddresses($env:KWL_CLOUD_HOST) | ForEach-Object { $_.IPAddressToString })
+          if (-not $ips.Count) { throw "解析不到云端地址 $env:KWL_CLOUD_HOST" }
+          Write-Output "云端 $env:KWL_CLOUD_HOST → $($ips -join ', ')"
+          "KWL_CLOUD_IPS=$($ips -join ',')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: 构建 EXE（Windows 原生；随包 Node 按锁文件核验；正式发布用生产签名内容包；尚无代码签名证书）
         timeout-minutes: 40
-        run: node scripts/package-desktop.mjs --target win32-x64 --sign none
+        run: node scripts/package-desktop.mjs --target win32-x64 --sign none $KWL_PKG_FLAGS
       - name: 静默安装并核对卸载登记与快捷方式
         shell: pwsh
         run: |
@@ -146,7 +179,7 @@ jobs:
         run: node scripts/e2e/ui.mjs register
       # 作业日志要等作业结束才能下载：入组核对码与“等待批准”截图立即作为构件传出，管理员在自己电脑上与之逐位比对后再批准
       - name: 传出入组核对码（供管理员比对）
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: enroll-check-code
           path: |
@@ -156,7 +189,8 @@ jobs:
       - name: 等管理员批准并逐位比对本所识别码
         env:
           KWL_FIRM_CODE: ${{ inputs.firm_code }}
-        run: node scripts/e2e/ui.mjs await-approval "${{ inputs.approval_wait_min }}"
+          WAIT_MIN: ${{ inputs.approval_wait_min }}
+        run: node scripts/e2e/ui.mjs await-approval "$WAIT_MIN"
       # 第 54 批真实走查：作业被取消时后面的上传步骤可能来不及跑；收尾步骤只在装上了程序（KWL_APP 已设）时运行，否则取消后会各空等数分钟——批准后立即留现场截图与本机日志（只含登记过的事件码与类型化字段）并上传
       - name: 批准后现场（截图与本机日志）
         if: always() && env.KWL_APP != ''
@@ -172,7 +206,7 @@ jobs:
           exit 0
       - name: 上传批准后现场
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-e2e-evidence-early
           path: C:\kwl-e2e\out
@@ -200,7 +234,7 @@ jobs:
           $before = Get-NetFirewallProfile | Select-Object Name, Enabled
           $before | Format-Table | Out-String | Write-Output
           Set-NetFirewallProfile -Profile Domain, Public, Private -Enabled True
-          New-NetFirewallRule -DisplayName "kwl-e2e-block-cloud" -Direction Outbound -RemoteAddress $env:KWL_CLOUD_HOST -Action Block | Out-Null
+          New-NetFirewallRule -DisplayName "kwl-e2e-block-cloud" -Direction Outbound -RemoteAddress ($env:KWL_CLOUD_IPS -split ',') -Action Block | Out-Null
           $t = Test-NetConnection $env:KWL_CLOUD_HOST -Port 8443 -WarningAction SilentlyContinue
           Write-Output "封锁后 TCP 8443 可达：$($t.TcpTestSucceeded)"
           node scripts/e2e/ui.mjs diagnose expect-fail
@@ -264,18 +298,19 @@ jobs:
         if: success() && inputs.publish_exe
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
         run: |
           f=$(ls apps/desktop/release/KimiWorkLegal-Setup-*.exe | head -1)
           sha256sum "$f" | sed 's#apps/desktop/release/##' > apps/desktop/release/SHA256-windows.txt
-          gh release upload "${{ inputs.release_tag }}" "$f" apps/desktop/release/SHA256-windows.txt --clobber
-      - uses: actions/upload-artifact@v4
+          gh release upload "$TAG" "$f" apps/desktop/release/SHA256-windows.txt --clobber
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: windows-e2e-evidence
           path: |
             C:\kwl-e2e\out
           retention-days: 14
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: windows-installer

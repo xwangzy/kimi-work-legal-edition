@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openLawdb } from "@zr-legal/lawdb";
 import { contentSummary, createPackageDb, ensureContentSigningKey, insertLaw, insertRegistry, loadJson, signAndWriteManifest } from "./lib/build-util.mjs";
+import { releaseContentSigningKey } from "../../scripts/lib/dev-content-keys.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -21,7 +22,8 @@ const distDir = join(here, "dist");
 const outFile = join(distDir, "lawdb.sqlite");
 const fixtureFile = join(here, "test-fixtures", "lawdb-renumber-demo.sqlite");
 
-const key = ensureContentSigningKey(join(root, "content", "keys"));
+// 第 60 批 H2：设 KWL_CONTENT_SIGNING_KEY_FILE 时用生产内容签名密钥（scripts/lib/dev-content-keys.mjs releaseContentSigningKey）
+const key = releaseContentSigningKey(root) ?? ensureContentSigningKey(join(root, "content", "keys"));
 const registry = loadJson(join(here, "sources", "source_registry.json"));
 const lawsDoc = loadJson(join(here, "sources", "laws.json"));
 // 节假日表随法规库签名分发（v9.4 第 21 批）：每年一行，签名覆盖

@@ -45,7 +45,9 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
 const ESM_BANNER = { js: "import { createRequire as __kwlRtCreateRequire } from 'node:module'; const require = __kwlRtCreateRequire(import.meta.url);" };
-const common = { bundle: true, platform: "node", format: "esm", target: "node26", sourcemap: false, logLevel: "warning", banner: ESM_BANNER };
+// 安装包制品压缩（第 60 批安全加固 H1，同 build-kernel.mjs）：package-desktop 设 KWL_MINIFY=1；随包运行时清单的摘要按压缩后的文件计算
+const MINIFY = process.env.KWL_MINIFY === "1" ? { minify: true, keepNames: true, legalComments: "eof" } : {};
+const common = { bundle: true, platform: "node", format: "esm", target: "node26", sourcemap: false, logLevel: "warning", banner: ESM_BANNER, ...MINIFY };
 
 // ── W 执行域 ─────────────────────────────────────────────────────────────
 const wDir = join(out, "w");
@@ -196,6 +198,7 @@ await build({
   sourcemap: false,
   logLevel: "warning",
   external: PARSE_EXTERNALS,
+  ...MINIFY,
 });
 const parseSeen = new Set();
 for (const dep of ["pdfjs-dist", "@hyzyla/pdfium", "@napi-rs/canvas", "onnxruntime-node", "ppu-paddle-ocr", "ppu-ocv"]) {

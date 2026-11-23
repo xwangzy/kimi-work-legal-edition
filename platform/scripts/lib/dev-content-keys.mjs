@@ -4,7 +4,7 @@
  * ∪ 本机 `content/keys/content-signing-dev.pub.json`。登记表随代码提交、只增不删：别的开发机或旧开发密钥签的内容，
  * 换一台构建机也认得出来（原先只认构建机本机那一把）。构建、打包按此拒收正式发布；内核按随包写下的同一份清单报 dev，正式安装包里拒载。
  */
-import { createHash, createPublicKey } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -54,4 +54,23 @@ export function registerDevFingerprint(platformRoot, publicKeyPem, note) {
   writeFileSync(tmp, `${JSON.stringify(t, null, 2)}\n`);
   renameSync(tmp, file);
   return true;
+}
+
+/**
+ * 生产内容签名私钥（第 60 批安全加固 H2）。设环境变量 KWL_CONTENT_SIGNING_KEY_FILE（JSON：publicKeyPem + privateKeyPem，与开发密钥同格式）时，
+ * 法规库、方法模板、工具清单、Agent 配置四类内容一律改用它签名；正式安装包只认这把公钥（开发公钥在正式包里拒载，packages/kernel/src/config.ts）。
+ * 私钥文件不入库、不进安装包、不上传 CI（Windows 构建用 Mac 上签好的内容包，见 scripts/pack-signed-content.mjs），应离线或在硬件模块保管。
+ * 拒用：公私钥不配对、不是 Ed25519、公钥指纹在开发公钥登记表里（防止把开发密钥当生产密钥用）。未设置时返回 null（开发形态照旧用开发密钥）。
+ */
+export function releaseContentSigningKey(platformRoot, env = process.env) {
+  const f = env.KWL_CONTENT_SIGNING_KEY_FILE;
+  if (!f) return null;
+  const raw = JSON.parse(readFileSync(f, "utf8"));
+  if (typeof raw.privateKeyPem !== "string" || typeof raw.publicKeyPem !== "string") throw new Error("KWL_CONTENT_SIGNING_KEY_FILE 须含 publicKeyPem 与 privateKeyPem");
+  const priv = createPrivateKey(raw.privateKeyPem);
+  if (priv.asymmetricKeyType !== "ed25519") throw new Error("KWL_CONTENT_SIGNING_KEY_FILE 须为 Ed25519 密钥");
+  const derived = createPublicKey(priv).export({ type: "spki", format: "pem" }).toString();
+  if (keyFp(derived) !== keyFp(raw.publicKeyPem)) throw new Error("KWL_CONTENT_SIGNING_KEY_FILE 的公钥与私钥不配对");
+  if (raw.dev === true || knownDevFingerprints(platformRoot).has(keyFp(raw.publicKeyPem))) throw new Error("KWL_CONTENT_SIGNING_KEY_FILE 指向的是开发密钥（标记或公钥指纹在开发公钥登记表里）");
+  return { publicKeyPem: raw.publicKeyPem, privateKeyPem: raw.privateKeyPem };
 }

@@ -7,13 +7,15 @@
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { releaseContentSigningKey } from "../../scripts/lib/dev-content-keys.mjs";
 import { sha256B64, signBytes } from "@zr-legal/keys";
 import { signerKeyId } from "@zr-legal/lawdb";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 const keyFile = join(root, "content", "keys", "content-signing-dev.json");
-const key = JSON.parse(readFileSync(keyFile, "utf8"));
+// 第 60 批 H2：设 KWL_CONTENT_SIGNING_KEY_FILE 时用生产内容签名密钥
+const key = releaseContentSigningKey(root) ?? JSON.parse(readFileSync(keyFile, "utf8"));
 
 const src = join(here, "legal-agent.md");
 const content = readFileSync(src);

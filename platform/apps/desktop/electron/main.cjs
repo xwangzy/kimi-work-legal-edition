@@ -5,7 +5,8 @@
  * v5：内核以 utilityProcess 内嵌运行（esbuild 单文件制品，目标 Node 24）；
  * renderer 经 preload 暴露的最小 IPC 调用内核 API（§15.2），本机事实都在内核。
  */
-const { app, BrowserWindow, ipcMain, utilityProcess, safeStorage, session, dialog, protocol } = require("electron");
+const { app, BrowserWindow, ipcMain, utilityProcess, safeStorage, session, dialog, protocol, Menu } = require("electron");
+const { devToolsAllowed, appMenuTemplate } = require("./release-hardening.cjs");
 const path = require("node:path");
 const { createUrlPolicy } = require("./url-policy.cjs");
 const { APP_INDEX_URL, handleAppProtocol, registerAppScheme } = require("./app-protocol.cjs");
@@ -991,6 +992,8 @@ function createWindow() {
       nodeIntegration: false,
       nodeIntegrationInWorker: false,
       spellcheck: false,
+      // 正式包不允许开发者工具（第 60 批 H4，release-hardening.cjs）；测试/演示包与开发形态保留
+      devTools: devToolsAllowed({ isPackaged: app.isPackaged, testBuild: releaseConfig()?.testBuild === true }),
     },
   });
 
@@ -1177,6 +1180,11 @@ app.whenReady().then(() => {
     });
   }
   wireIpc();
+  // 安装包换精简菜单（第 60 批 H4）：不含“切换开发者工具”“强制重新载入”；Windows 不显示菜单栏
+  if (app.isPackaged) {
+    const tpl = appMenuTemplate(process.platform, app.getName());
+    Menu.setApplicationMenu(tpl ? Menu.buildFromTemplate(tpl) : null);
+  }
   const win = createWindow();
   if (smoke.out) {
     void runSmoke(win);

@@ -73,6 +73,11 @@ const NATIVE_EXTERNALS = [
   "ppu-ocv",
 ];
 
+// 安装包制品压缩（第 60 批安全加固 H1）：package-desktop 打包时设 KWL_MINIFY=1——去空白与注释、局部标识符改短名，提高静态阅读成本；
+// 保留函数与类名（keepNames：错误名、日志与 instanceof 之外按名字判断的代码不受影响）、第三方许可声明移到文件末尾（legalComments eof）。
+// 开发形态与用例不压缩，便于排错。字符串常量（提示词等）压缩后仍可读——真正的保护边界在服务端，见研究记录 V34。
+const MINIFY = process.env.KWL_MINIFY === "1" ? { minify: true, keepNames: true, legalComments: "eof" } : {};
+
 const options = {
   entryPoints: [`${root}packages/kernel/src/electron-entry.ts`],
   outfile: `${root}apps/desktop/electron/kernel.bundle.cjs`,
@@ -83,6 +88,7 @@ const options = {
   sourcemap: false,
   external: NATIVE_EXTERNALS,
   logLevel: "info",
+  ...MINIFY,
 };
 
 // 隔离解析进程（§8.1：每批次一个；制品旁独立入口）
@@ -96,6 +102,7 @@ const parseWorkerOptions = {
   sourcemap: false,
   external: NATIVE_EXTERNALS,
   logLevel: "info",
+  ...MINIFY,
 };
 
 // 出站闸门制品（v9 第 04 篇 §1.1：独立进程、唯一出口；产品形态为独立签名二进制，G0 桌面以 ESM bundle 由内核 fork）
@@ -111,6 +118,7 @@ const gateOptions = {
   external: [...NATIVE_EXTERNALS],
   banner: { js: "import { createRequire as __kwlCreateRequire } from 'node:module'; const require = __kwlCreateRequire(import.meta.url);" },
   logLevel: "info",
+  ...MINIFY,
 };
 
 // 所内节点（apps/firm-node）不再随桌面端构建（V18 第 43 批）：制品从未被主进程或安装包使用；源码与用例保留，要用时单独构建。
