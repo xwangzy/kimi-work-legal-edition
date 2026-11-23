@@ -49,6 +49,26 @@ const ROUTE = /^\/m\/([A-Za-z0-9_.-]{1,128})\/(v1\/chat\/completions|v1\/models|
 /** 无事项问答（第 04 篇 §5.3：用户输入同样经出站闸门）：/q/<会话>/v1/chat/completions。 */
 const QA_ROUTE = /^\/q\/([A-Za-z0-9_.-]{1,128})\/v1\/chat\/completions$/;
 
+/**
+ * 授权被拒时给律师看的说明（第 60 批：域名云端验收演练“设备被吊销”时，问答只说“任务已结束、已取消或凭据已过期：请重新运行任务”，
+ * 重新运行并不会生效）。内核处于退出模式时授权器回的是退出原因码（packages/kernel/src/control-plane/governance.ts exitMode），
+ * 按原因码说清楚、指明找谁；其余（任务已结束、已取消、令牌过期）维持原说法。纯函数，用例直接调用。
+ */
+export function gateRefusalText(reason: string): string {
+  switch (reason) {
+    case "device_revoked":
+      return "这台电脑已被律所停用，AI 请求已拒绝发出：重新运行不会生效，请联系本所管理员";
+    case "license_expired":
+      return "本所的使用许可已到期，AI 请求已拒绝发出：请联系本所管理员续期";
+    case "license_missing":
+      return "这台电脑还没有取得本所的使用许可，AI 请求已拒绝发出：请联网后重新打开程序，仍不行请联系本所管理员";
+    case "control_plane_unconfigured":
+      return "这个安装包没有配置云端服务，AI 请求已拒绝发出：请联系律所 IT 换用正式安装包";
+    default:
+      return "这次 AI 请求没有获准发出（任务已结束、已取消或凭据已过期）：请重新运行任务";
+  }
+}
+
 class GateError extends Error {
   readonly status: number;
   readonly reason: string;
@@ -369,7 +389,7 @@ export class EgressGateServer {
     const token = bearer(req);
     if (!token) throw new GateError(401, "token_missing", "这次 AI 请求没有带上本任务的凭据，已拒绝发出：请重新运行任务");
     const r = await this.o.authority.authorize({ token, matterId, purpose });
-    if (!r.ok) throw new GateError(r.status, r.reason, "这次 AI 请求没有获准发出（任务已结束、已取消或凭据已过期）：请重新运行任务");
+    if (!r.ok) throw new GateError(r.status, r.reason, gateRefusalText(r.reason));
     if (r.ctx.matterId !== matterId) throw new GateError(403, "matter_mismatch", "这次 AI 请求与所属事项不符，已拒绝发出");
     return r.ctx;
   }
