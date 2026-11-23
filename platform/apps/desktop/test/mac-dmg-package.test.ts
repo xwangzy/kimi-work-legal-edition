@@ -91,7 +91,9 @@ test("electron-builder.yml：mac 段出 arm64 DMG、hardened runtime、不重签
   assert.match(win, /signExts: \["!node\.exe", "!kwl-egress\.exe", "!kwl-host\.exe", "!kwl-parse\.exe"\]/);
   const ent = readFileSync(file("build/entitlements.mac.plist"), "utf8");
   const keys = [...ent.matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1]).sort();
-  assert.deepEqual(keys, ["com.apple.security.cs.allow-jit", "com.apple.security.cs.allow-unsigned-executable-memory", "com.apple.security.cs.disable-library-validation"]);
+  // 第 60 批：去掉 allow-unsigned-executable-memory（@electron/osx-sign 缺省只开 allow-jit；以安装包真实任务验证）
+  assert.deepEqual(keys, ["com.apple.security.cs.allow-jit", "com.apple.security.cs.disable-library-validation"]);
+  assert.ok(!keys.includes("com.apple.security.cs.allow-unsigned-executable-memory"));
 });
 
 /** 独立的 ICNS 解析：[类型, PNG] */
