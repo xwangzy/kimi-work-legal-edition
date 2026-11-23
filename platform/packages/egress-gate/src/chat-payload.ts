@@ -43,6 +43,8 @@ export interface ChatPayloadReport {
    */
   suspects: { high: number; medium: number };
   suspectValues: { value: string; confidence: "high" | "medium" }[];
+  /** 请求方原给的输出上限（max_tokens / max_completion_tokens 较大者；没给为 null；不是对话请求时不设）。闸门已按 MAX_OUTPUT_TOKENS_CEILING 封顶。 */
+  outputTokensRequested?: number | null;
 }
 
 const MEDIA_TYPES = new Set(["image_url", "input_image", "image", "video_url", "input_video", "video", "file", "input_file", "input_audio", "audio", "document"]);
@@ -53,6 +55,31 @@ const TOP_STRUCTURAL = new Set([
   "model", "stream", "stream_options", "temperature", "top_p", "top_k", "n", "seed", "max_tokens", "max_completion_tokens", "parallel_tool_calls",
   "service_tier", "logprobs", "top_logprobs", "presence_penalty", "frequency_penalty", "prompt_cache_key", "reasoning_effort", "tool_choice", "function_call", "thinking",
 ]);
+/**
+ * 单次模型请求的输出上限（第 60 批）：域名云端 Windows 验收里，一次智能体请求失控连写 131,072 个 token（写满模型上限、28.6 分钟），
+ * 把审合同 40 分钟工作时限吃掉大半、任务以超时结束、一份成果都没交出。智能体引擎对 OpenAI 兼容上游不显式限定输出，上游按模型最大值走。
+ * 闸门重拼请求体时统一封顶：已给的 max_tokens / max_completion_tokens 超过上限即压到上限，都没给就补上限。
+ * 取值与内核模型通道的缺省一致（packages/model-broker/src/config.ts ZR_MODEL_K3_MAX_TOKENS 缺省 32,000）；
+ * 第 59 批 139 次真实调用单次最大输出 15,169 个 token（含推理），留有两倍余量。失控时最多约 7 分钟就被截断，由引擎按“输出被截断”续写或收尾。
+ */
+export const MAX_OUTPUT_TOKENS_CEILING = 32_000;
+
+/** 按上限封顶输出 token（就地改 body；返回请求方原给的值，没给为 null）。纯函数，用例直接调用。 */
+export function capOutputTokens(body: Record<string, unknown>, ceiling = MAX_OUTPUT_TOKENS_CEILING): number | null {
+  let requested: number | null = null;
+  let present = false;
+  for (const k of ["max_tokens", "max_completion_tokens"]) {
+    const v = body[k];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      present = true;
+      requested = requested === null ? v : Math.max(requested, v);
+      if (v > ceiling) body[k] = ceiling;
+    }
+  }
+  if (!present) body.max_tokens = ceiling;
+  return requested;
+}
+
 /** 消息对象的结构字段。 */
 const MESSAGE_STRUCTURAL = new Set(["role", "tool_call_id", "partial", "prefix"]);
 /** 内容块对象的结构字段（`redacted_thinking` 的 data 为上游加密数据，原样）。`citations` 含原文片段，照常令牌化（终核 S4-24）。 */
@@ -296,6 +323,8 @@ export function processChatPayload(input: unknown, tokenizer: MatterTokenizer, o
       body[k] = md;
     } else body[k] = deep(x);
   }
+  // 输出上限（第 60 批）：模型请求统一封顶，防一次失控生成吃掉整个任务的工作时限
+  if (Array.isArray(body.messages) || body.system !== undefined) report.outputTokensRequested = capOutputTokens(body);
   report.body = body;
   report.suspectValues = [...seen].map(([value, confidence]) => ({ value, confidence }));
   return report;
