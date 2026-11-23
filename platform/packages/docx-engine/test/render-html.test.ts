@@ -60,3 +60,10 @@ test("ZIP 条目实际比声明的小（写入器缺陷或损坏，复核 R2B-30
   xlsx.writeUInt32LE(xlsx.readUInt32LE(cd + 24) + 100, cd + 24); // 声明比实际大 100 字节
   assert.match(renderXlsxHtml(xlsx).html, /乙/);
 });
+
+test("XLSX 预览：日期格按 yyyy-mm-dd 显示，不显示序列号（第 59 批 116 复验：金额测算表“暂计截止日”预览成 46335）", () => {
+  const r = renderXlsxHtml(createXlsx([{ name: "汇总", rows: [["项目", "日期", "金额"], ["暂计截止日", 46335, 66970]], dates: ["B2"] }]));
+  assert.match(r.html, /<td>2026-11-09<\/td>/);
+  assert.doesNotMatch(r.html, /46335/);
+  assert.match(r.html, /<td>66970<\/td>/, "不是日期格的数照原样");
+});

@@ -182,8 +182,8 @@ function colIndex(ref: string): number {
   return n - 1;
 }
 
-/** 预览只解压共享字符串、工作簿与各表（复核 B13-O01 余项：原先解压全部条目，含 xl/media 下的图片）。 */
-const PREVIEW_PARTS = (n: string) => n === "xl/sharedStrings.xml" || n === "xl/workbook.xml" || /^xl\/worksheets\/sheet\d+\.xml$/.test(n);
+/** 预览只解压共享字符串、工作簿、样式与各表（复核 B13-O01 余项：原先解压全部条目，含 xl/media 下的图片；第 59 批加样式：日期格要按格式显示）。 */
+const PREVIEW_PARTS = (n: string) => n === "xl/sharedStrings.xml" || n === "xl/workbook.xml" || n === "xl/styles.xml" || /^xl\/worksheets\/sheet\d+\.xml$/.test(n);
 
 export function renderXlsxHtml(xlsx: Buffer): { html: string; sheets: number; truncated: boolean } {
   const files = readZipSelected(xlsx, PREVIEW_PARTS);
@@ -191,6 +191,7 @@ export function renderXlsxHtml(xlsx: Buffer): { html: string; sheets: number; tr
   const sst = files.get("xl/sharedStrings.xml")?.toString("utf8");
   if (sst) for (const si of sst.matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push([...si[1]!.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => unescapeXml(t[1]!)).join(""));
   const wb = files.get("xl/workbook.xml")?.toString("utf8") ?? "";
+  const ds = dateStyles(files.get("xl/styles.xml")?.toString("utf8") ?? "", wb);
   const names = [...wb.matchAll(/<sheet\b[^>]*name="([^"]*)"/g)].map((m) => unescapeXml(m[1]!));
   const sheetFiles = [...files.keys()].filter((k) => /^xl\/worksheets\/sheet\d+\.xml$/.test(k)).sort((a, b) => Number(/(\d+)\.xml$/.exec(a)![1]) - Number(/(\d+)\.xml$/.exec(b)![1]));
   let truncated = sheetFiles.length > PREVIEW_LIMITS.maxSheets;
@@ -211,7 +212,12 @@ export function renderXlsxHtml(xlsx: Buffer): { html: string; sheets: number; tr
         let v = "";
         if (t === "s") v = shared[Number(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? -1)] ?? "";
         else if (t === "inlineStr") v = [...inner.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((x) => unescapeXml(x[1]!)).join("");
-        else v = unescapeXml(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? "");
+        else {
+          v = unescapeXml(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? "");
+          // 日期格按日期显示（第 59 批 116 复验：金额测算表的“暂计截止日”在预览里显示成序列号 46335，下载后 Excel 里是 2026-11-09）
+          const d = v && (t === undefined || t === "n") ? cellDate(v, /\bs="(\d+)"/.exec(attrs)?.[1], ds) : null;
+          if (d) v = d;
+        }
         while (cells.length < ci) cells.push("");
         cells[ci] = v;
       }
@@ -283,6 +289,28 @@ function excelDate(serial: number, kind: Exclude<FmtKind, null>): string | null 
   return kind === "datetime" && serial % 1 !== 0 ? `${iso.slice(0, 10)} ${iso.slice(11, 16)}` : iso.slice(0, 10);
 }
 
+/** 单元格样式序号 → 日期类别，与工作簿是否用 1904 日期系统（预览与文本提取共用）。 */
+function dateStyles(styles: string, wb: string): { xfKind: FmtKind[]; date1904: boolean } {
+  // cellXfs 的第 i 个 xf 的 numFmtId → 类别（内置编号查表；自定义格式按 customFmtKind 判定，自定义优先）
+  const customKind = new Map<number, FmtKind>();
+  for (const m of styles.matchAll(/<numFmt\b[^>]*numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) customKind.set(Number(m[1]), customFmtKind(unescapeXml(m[2]!)));
+  const xfKind: FmtKind[] = [];
+  const cellXfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles)?.[1] ?? "";
+  for (const m of cellXfs.matchAll(/<xf\b([^>]*)/g)) {
+    const id = Number(/numFmtId="(\d+)"/.exec(m[1]!)?.[1] ?? 0);
+    xfKind.push(customKind.has(id) ? customKind.get(id)! : builtinKind(id));
+  }
+  // 1904 日期系统（Mac 旧工作簿）：序列号比 1900 系统小 1462 天
+  return { xfKind, date1904: /<workbookPr\b[^>]*\bdate1904="(1|true)"/.test(wb) };
+}
+
+/** 数值单元格按样式转成日期 / 时间；不是日期格或转不了返回 null。 */
+function cellDate(v: string, styleIndex: string | undefined, ds: { xfKind: FmtKind[]; date1904: boolean }): string | null {
+  const kind = styleIndex !== undefined ? (ds.xfKind[Number(styleIndex)] ?? null) : null;
+  if (!kind) return null;
+  return excelDate(Number(v) + (ds.date1904 && kind !== "time" && kind !== "elapsed" ? 1462 : 0), kind);
+}
+
 /**
  * XLSX → 纯文字（第 13 批：材料导入，评审 Z1——选择对话框允许 xlsx，解析却不支持）：每个表以“【表名】”开头，
  * 每行单元格以制表符分隔；只取值（不算公式），共享字符串与内联字符串都认。上限：50 个表、每表 20,000 行、每行 200 列、总计 200 万字，
@@ -295,16 +323,6 @@ export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; trunca
   const shared: string[] = [];
   const sst = files.get("xl/sharedStrings.xml")?.toString("utf8");
   if (sst) for (const si of sst.matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push([...si[1]!.matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map((t) => unescapeXml(t[1]!)).join(""));
-  // 日期样式：cellXfs 的第 i 个 xf 的 numFmtId → 类别（内置编号查表；自定义格式按 customFmtKind 判定，自定义优先）
-  const styles = files.get("xl/styles.xml")?.toString("utf8") ?? "";
-  const customKind = new Map<number, FmtKind>();
-  for (const m of styles.matchAll(/<numFmt\b[^>]*numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) customKind.set(Number(m[1]), customFmtKind(unescapeXml(m[2]!)));
-  const xfKind: FmtKind[] = [];
-  const cellXfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles)?.[1] ?? "";
-  for (const m of cellXfs.matchAll(/<xf\b([^>]*)/g)) {
-    const id = Number(/numFmtId="(\d+)"/.exec(m[1]!)?.[1] ?? 0);
-    xfKind.push(customKind.has(id) ? customKind.get(id)! : builtinKind(id));
-  }
   // 表名 → 表文件（经 rels 对应）
   const rels = files.get("xl/_rels/workbook.xml.rels")?.toString("utf8") ?? "";
   const target = new Map<string, string>();
@@ -314,8 +332,7 @@ export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; trunca
     if (id && t) target.set(id, t.startsWith("/") ? t.slice(1) : `xl/${t.replace(/^\.\//, "")}`);
   }
   const wb = files.get("xl/workbook.xml")?.toString("utf8") ?? "";
-  // 1904 日期系统（Mac 旧工作簿）：序列号比 1900 系统小 1462 天
-  const date1904 = /<workbookPr\b[^>]*\bdate1904="(1|true)"/.test(wb);
+  const ds = dateStyles(files.get("xl/styles.xml")?.toString("utf8") ?? "", wb);
   const sheets = [...wb.matchAll(/<sheet\b([^>]*)\/?>/g)].map((m, i) => {
     const name = unescapeXml(/\bname="([^"]*)"/.exec(m[1]!)?.[1] ?? `表${i + 1}`);
     const rid = /\br:id="([^"]*)"/.exec(m[1]!)?.[1];
@@ -358,9 +375,8 @@ export function xlsxToText(xlsx: Buffer): { text: string; sheets: number; trunca
         else {
           v = unescapeXml(/<v>([\s\S]*?)<\/v>/.exec(inner)?.[1] ?? "");
           const si = /\bs="(\d+)"/.exec(attrs)?.[1];
-          const kind = si !== undefined ? (xfKind[Number(si)] ?? null) : null;
-          if (v && (t === undefined || t === "n") && kind) {
-            const d = excelDate(Number(v) + (date1904 && kind !== "time" && kind !== "elapsed" ? 1462 : 0), kind);
+          if (v && (t === undefined || t === "n") && si !== undefined && ds.xfKind[Number(si)]) {
+            const d = cellDate(v, si, ds);
             if (d) v = d;
             else datesRaw = true;
           }

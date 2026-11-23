@@ -121,8 +121,9 @@ async function register() {
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').first().fill(pw);
   await page.locator('input[placeholder="同事和客户看到的名字"]').fill(name);
+  // “我有开通码或邀请码”：凭码注册才勾；开放注册不带码时保持不勾（第 59 批）
   const cb = page.locator("label.auth-check input[type=checkbox]");
-  if (!(await cb.isChecked())) await cb.check();
+  if (Boolean(code) !== (await cb.isChecked())) await cb.setChecked(Boolean(code));
   if (code) await page.locator("input.activate-code").fill(code);
   await shot("01-注册表单");
   await btnExact("注册并继续").click();
@@ -543,14 +544,18 @@ async function exportAll() {
     log("已点“下载”，等系统保存对话框存到：", basename(target));
     // 对话框缺省位置（Windows“文档”、macOS“文稿”，应用给的缺省文件名）也认，再复制进证据目录：macOS 没有辅助功能权限时由人点“存储”；
     // Windows 由 win-save-dialog.ps1 直接按“保存”（第 54 批：往新式文件对话框的文件名框 WM_SETTEXT 不生效，文件仍存到缺省位置）
-    const macDefault = process.platform === "darwin" || process.platform === "win32" ? join(homedir(), "Documents", basename(target)) : null;
-    const macBefore = macDefault && existsSync(macDefault) ? statSync(macDefault).mtimeMs : 0;
+    // 也认“下载”：macOS 上由人点“存储”时，“文稿”里已有同名文件（律师自己的）就请他改存到“下载”，不覆盖别人的文件（第 59 批）
+    const defaults = process.platform === "darwin" || process.platform === "win32" ? ["Documents", "Downloads"].map((d) => join(homedir(), d, basename(target))) : [];
+    const befores = defaults.map((p) => (existsSync(p) ? statSync(p).mtimeMs : 0));
     const fresh = (p, b) => existsSync(p) && statSync(p).mtimeMs !== b && statSync(p).size > 0;
-    const ok = await until(async () => fresh(target, before) || (macDefault && fresh(macDefault, macBefore)), 300000, 1000, `保存 ${a.filename}`).catch((e) => (log(String(e)), false));
-    if (ok && macDefault && !fresh(target, before)) {
+    const freshDefault = () => defaults.find((p, i) => fresh(p, befores[i])) ?? null;
+    const waitMin = Number(process.env.KWL_SAVE_WAIT_MIN || 5);
+    const ok = await until(async () => fresh(target, before) || Boolean(freshDefault()), waitMin * 60000, 1000, `保存 ${a.filename}`).catch((e) => (log(String(e)), false));
+    if (ok && !fresh(target, before)) {
       await sleep(1500);
-      copyFileSync(macDefault, target);
-      log("已存到对话框缺省位置（文档 / 文稿），复制进证据目录：", basename(target));
+      const got = freshDefault();
+      copyFileSync(got, target);
+      log("已存到对话框缺省位置（文档 / 文稿 / 下载），复制进证据目录：", basename(target), "←", got);
     }
     if (!ok) {
       results.push({ file: a.filename, saved: false });

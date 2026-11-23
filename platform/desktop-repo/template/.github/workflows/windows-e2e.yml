@@ -80,7 +80,11 @@ jobs:
       - name: 屏蔽一次性输入
         shell: pwsh
         run: |
-          Write-Output "::add-mask::${{ inputs.invite_code }}"
+          # 邀请码从事件文件读，不在脚本里直接展开输入表达式：GitHub 会先把展开后的脚本原文打进日志，
+          # 那时屏蔽还没生效（第 59 批运行 45043549304 的作业日志里有一行明文；码是一次性的、已用掉）
+          $invite = (Get-Content -Raw $env:GITHUB_EVENT_PATH | ConvertFrom-Json).inputs.invite_code
+          Write-Output "::add-mask::$invite"
+          Write-Output "::add-mask::$($invite -replace '\s', '')"
           $pw = "Kwl" + [guid]::NewGuid().ToString("N").Substring(0, 16) + "Aa9"
           Write-Output "::add-mask::$pw"
           "KWL_PASSWORD=$pw" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
