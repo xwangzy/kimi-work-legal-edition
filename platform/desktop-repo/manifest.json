@@ -56,6 +56,7 @@
     "scripts/lib/dev-content-keys.mjs",
     "scripts/lib/source-scan.mjs",
     "scripts/lib/source-scan.d.mts",
+    "scripts/lib/third-party-notices.mjs",
     "scripts/stubs"
   ],
   "optional": [
