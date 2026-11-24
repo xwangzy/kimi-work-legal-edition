@@ -205,7 +205,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         if (text.includes("〔") && data.matter_id) setTokenMap(await restoreTokens(data.matter_id, text));
       })
       // Office 渲染失败不再当成“不能预览”（第 62 批）：记下原因，界面给重试
-      .catch((e) => setPreview({ text: "", office, error: String(e?.message ?? "") || "内核未返回原因" }));
+      .catch((e) => setPreview({ text: "", office, error: String(e?.message ?? "") || "没有给出具体原因" }));
   }, [data?.artifact_version_id, previewNonce]);
 
   const items: string[] = data?.lawyer_checklist?.items ?? [];

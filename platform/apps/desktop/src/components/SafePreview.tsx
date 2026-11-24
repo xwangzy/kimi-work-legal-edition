@@ -45,7 +45,7 @@ export function SafePreview({ filename, text, tokenMap, office, cites }: { filen
 export function PreviewError({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="safe-preview sp-error" role="alert">
-      <p>预览没有生成：{message || "内核未返回原因"}</p>
+      <p>预览没有生成：{message || "没有给出具体原因"}</p>
       <p className="muted">文件本身不受影响，仍可下载；重试一次通常就能显示。</p>
       <button type="button" className="btn" onClick={onRetry}>
         重新生成预览
