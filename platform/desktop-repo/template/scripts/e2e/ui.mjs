@@ -6,7 +6,8 @@
  * 用法：node scripts/e2e/ui.mjs <阶段> [参数]
  *   环境：KWL_CDP_PORT（缺省 9222）、KWL_E2E_OUT（证据目录，缺省 ./e2e-out）、PW_CORE（playwright-core 所在目录，可选）
  *   ready                              等主窗口加载，打印当前页面
- *   register                           注册（KWL_EMAIL / KWL_PASSWORD / KWL_NAME，凭码时加 KWL_CODE）；凭邀请码的会停在“等待批准”，打印入组核对码
+ *   register                           注册（KWL_EMAIL / KWL_PASSWORD / KWL_NAME，凭码时加 KWL_CODE；云端要求手机验证时加 KWL_PHONE 与 KWL_SMS_RELAY）；
+ *                                      凭成员邀请码的会停在“等待批准”，打印入组核对码
  *   login                              登录（KWL_EMAIL / KWL_PASSWORD）
  *   await-approval [分钟]              等管理员批准；出现“本所识别码”后与 KWL_FIRM_CODE 逐位比对，一致才点“一致，打开”
  *   diagnose [expect-ok|expect-fail]   设置里的“检测连接”（connection.diagnose），打印各服务结论
@@ -175,6 +176,34 @@ async function ready() {
   log("地址：", page.url());
 }
 
+/** 等人把收到的短信验证码转交过来（最多 15 分钟）：只认发码之后写入/上传的那一份。 */
+async function waitSmsCode(sinceMs) {
+  const relay = process.env.KWL_SMS_RELAY ?? "";
+  log("等待转交短信验证码：", relay.replace(/:[^:]*$/, ":…"));
+  return until(
+    async () => {
+      if (relay.startsWith("file:")) {
+        const f = relay.slice(5);
+        if (existsSync(f) && statSync(f).mtimeMs >= sinceMs - 1000) return (readFileSync(f, "utf8").match(/\b(\d{4,8})\b/) ?? [])[1] ?? null;
+        return null;
+      }
+      if (relay.startsWith("gh-release:")) {
+        const [, repo, tag, name] = relay.split(":");
+        const h = { authorization: `Bearer ${process.env.GITHUB_TOKEN}`, accept: "application/vnd.github+json", "user-agent": "kwl-e2e" };
+        const rel = await (await fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers: h })).json();
+        const a = (rel.assets ?? []).find((x) => x.name === name && Date.parse(x.created_at) >= sinceMs - 60000);
+        if (!a) return null;
+        const body = await (await fetch(a.url, { headers: { ...h, accept: "application/octet-stream" } })).text();
+        return (body.match(/\b(\d{4,8})\b/) ?? [])[1] ?? null;
+      }
+      throw new Error("KWL_SMS_RELAY 须为 file:<路径> 或 gh-release:<owner/repo>:<tag>:<文件名>");
+    },
+    15 * 60000,
+    5000,
+    "短信验证码转交",
+  );
+}
+
 async function register() {
   const { KWL_EMAIL: email, KWL_PASSWORD: pw, KWL_NAME: name, KWL_CODE: code } = process.env;
   // KWL_CODE 可不给：云端 registration=open 时自助注册（自动开试用律所，本人为律所管理员；第 59 批 116 云端改为开放注册）
@@ -184,10 +213,33 @@ async function register() {
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').first().fill(pw);
   await page.locator('input[placeholder="同事和客户看到的名字"]').fill(name);
-  // “我有开通码或邀请码”：凭码注册才勾；开放注册不带码时保持不勾（第 59 批）
+  // “我有开通码或邀请码”：凭码注册才勾；开放注册不带码时保持不勾（第 59 批）。第 62 批：云端要求邀请码时没有这个勾选框、码框直接显示
   const cb = page.locator("label.auth-check input[type=checkbox]");
-  if (Boolean(code) !== (await cb.isChecked())) await cb.setChecked(Boolean(code));
+  if (await cb.count()) {
+    if (Boolean(code) !== (await cb.isChecked())) await cb.setChecked(Boolean(code));
+  }
   if (code) await page.locator("input.activate-code").fill(code);
+  // 第 62 批：手机号 + 短信验证码（云端要求时界面才有这一栏）。验证码由收到短信的人转交：
+  // KWL_SMS_RELAY=file:<路径>（本机：人把验证码写进这个文件）或 gh-release:<owner/repo>:<tag>:<文件名>（CI：人把验证码作为预发布附件上传，凭 GITHUB_TOKEN 读取）
+  const phoneInput = page.locator('input[type="tel"]');
+  if (await phoneInput.count()) {
+    const phone = process.env.KWL_PHONE;
+    if (!phone) throw new Error("云端要求手机号验证：请给 KWL_PHONE 与 KWL_SMS_RELAY");
+    await phoneInput.fill(phone);
+    const sendAt = Date.now();
+    await page.locator("button").filter({ hasText: /^\s*获取验证码\s*$/ }).first().click();
+    const hint = await until(async () => {
+      const t = await text();
+      const m = t.match(/验证码已发送到\s*\S+|测试环境：验证码是\s*\d+|验证码没有发出[^\n]*|发送太频繁[^\n]*/);
+      return m ? m[0] : null;
+    }, 30000, 500, "短信发送结果");
+    log("短信：", hint.replace(/\d{4,}/g, "<码>"));
+    if (/没有发出|太频繁/.test(hint)) throw new Error(`短信没有发出：${hint}`);
+    let sms = (hint.match(/测试环境：验证码是\s*(\d+)/) ?? [])[1] ?? "";
+    if (!sms) sms = await waitSmsCode(sendAt);
+    await page.locator('input[autocomplete="one-time-code"]').fill(sms);
+    log("已填入转交的短信验证码");
+  }
   await shot("01-注册表单");
   await btnExact("注册并继续").click();
   const outcome = await until(
