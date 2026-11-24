@@ -1,7 +1,9 @@
 /**
  * 设备：跨律所设备表（版本、最近报到、状态、标记的异常），吊销。
- * 接口：GET /v1/ops/devices?tid&status&flag；吊销 POST /v1/ops/tenants/{tid}/devices/{dev}/revoke（device.revoke）。
+ * 接口：GET /v1/ops/devices?tid&status；吊销 POST /v1/ops/tenants/{tid}/devices/{dev}/revoke（device.revoke）。
  * 异常标记由控制面给（stale = 最近报到超过 30 天、outdated = 客户端版本过旧、suspended = 暂停后仍有请求），本页不另算。
+ * 第 62 批：异常标记只留一组带数量的筛选胶囊（原先胶囊与分段选择重复两套）；标记在本页按已读到的设备筛，数量不随筛选变 0；
+ *   版本分布挪到表格下方（表格是本页重心）。
  */
 import * as api from "../api.js";
 import { DEVICE_FLAG, deviceTable, pageHead, tenantOptions } from "../domain.js";
@@ -13,17 +15,17 @@ export function render(page, r) {
   if (r.params.tid !== undefined) st.tid = r.params.tid;
   if (r.params.flag !== undefined) st.flag = r.params.flag;
   const tools = h("div", { class: "toolbar" });
-  const summary = h("div");
+  const chips = h("div", { class: "flag-sum", role: "group", "aria-label": "异常标记" });
   const box = h("div");
-  page.append(pageHead("设备", "律所根签发的设备证书；同一账号第 2～9 台为 dev_<律所>_<成员>_D<n>"), tools, summary, box);
+  const versionsBox = h("div");
+  page.append(pageHead("设备", "律所根签发的设备证书；同一账号第 2～9 台为 dev_<律所>_<成员>_D<n>"), tools, chips, box, versionsBox);
   let rows = [];
   let seq = 0;
   const fetchRows = async () => {
     const my = ++seq;
     clear(box, loadingBlock("正在读取设备…"));
-    clear(summary);
     try {
-      const res = await api.get("/v1/ops/devices", { tid: st.tid, status: st.status, flag: st.flag });
+      const res = await api.get("/v1/ops/devices", { tid: st.tid, status: st.status });
       if (my !== seq) return;
       rows = res.devices ?? [];
       draw();
@@ -32,28 +34,17 @@ export function render(page, r) {
     }
   };
   const draw = () => {
-    const list = rows.filter((d) => matches(st.q, d.device_id, d.email, d.uid, d.tenant_name, d.client_version));
-    const versions = {};
-    for (const d of rows) if (!d.revoked_at) versions[d.client_version ?? "未知"] = (versions[d.client_version ?? "未知"] ?? 0) + 1;
+    const list = rows.filter((d) => (!st.flag || (d.flags ?? []).includes(st.flag)) && matches(st.q, d.device_id, d.email, d.uid, d.tenant_name, d.client_version));
     const flagCount = Object.fromEntries(Object.keys(DEVICE_FLAG).map((f) => [f, rows.filter((d) => (d.flags ?? []).includes(f)).length]));
     clear(
-      summary,
-      h(
-        "div",
-        { class: "grid-2" },
-        panel(
-          "标记的异常",
-          h(
-            "div",
-            { class: "flag-sum" },
-            Object.entries(DEVICE_FLAG).map(([f, [label, tone]]) => h("button", { type: "button", class: ["flag-chip", st.flag === f && "active"], onclick: () => ((st.flag = st.flag === f ? "" : f), drawTools(), fetchRows()) }, badge(String(flagCount[f]), flagCount[f] ? tone : "neutral"), label)),
-          ),
-          { sub: "点一项只看这一类" },
-        ),
-        panel("客户端版本（在用设备）", hbars(Object.entries(versions).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([v, n]) => ({ label: v, value: n })), { format: (v) => `${v} 台`, empty: "没有在用设备" })),
-      ),
+      chips,
+      h("button", { type: "button", class: ["flag-chip", !st.flag && "active"], "aria-pressed": !st.flag ? "true" : "false", onclick: () => ((st.flag = ""), draw()) }, badge(String(rows.length), "neutral"), "全部"),
+      Object.entries(DEVICE_FLAG).map(([f, [label, tone]]) => h("button", { type: "button", class: ["flag-chip", st.flag === f && "active"], "aria-pressed": st.flag === f ? "true" : "false", onclick: () => ((st.flag = st.flag === f ? "" : f), draw()) }, badge(String(flagCount[f]), flagCount[f] ? tone : "neutral"), label)),
     );
     clear(box, deviceTable(list, { state: st.table, after: fetchRows, empty: rows.length ? "没有符合条件的设备" : "还没有设备" }));
+    const versions = {};
+    for (const d of rows) if (!d.revoked_at) versions[d.client_version ?? "未知"] = (versions[d.client_version ?? "未知"] ?? 0) + 1;
+    clear(versionsBox, rows.length ? panel("客户端版本（在用设备）", hbars(Object.entries(versions).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([v, n]) => ({ label: v, value: n })), { format: (v) => `${v} 台`, empty: "没有在用设备" }), { sub: "前 6 个版本" }) : null);
   };
   const tSel = selectEl([["", "全部律所"]], st.tid, (v) => ((st.tid = v), fetchRows()), { "aria-label": "律所" });
   tenantOptions().then((opts) => {
@@ -61,12 +52,7 @@ export function render(page, r) {
     tSel.value = st.tid;
   });
   const segs = h("span", { class: "toolbar-group" });
-  const drawTools = () =>
-    clear(
-      segs,
-      segmented([{ id: "active", label: "在用" }, { id: "revoked", label: "已吊销" }, { id: "", label: "全部" }], st.status, (v) => ((st.status = v), drawTools(), fetchRows()), "状态"),
-      segmented([{ id: "", label: "全部标记" }, ...Object.entries(DEVICE_FLAG).map(([id, [label]]) => ({ id, label }))], st.flag, (v) => ((st.flag = v), drawTools(), fetchRows()), "异常标记"),
-    );
+  const drawTools = () => clear(segs, segmented([{ id: "active", label: "在用" }, { id: "revoked", label: "已吊销" }, { id: "", label: "全部" }], st.status, (v) => ((st.status = v), drawTools(), fetchRows()), "状态"));
   drawTools();
   tools.append(segs, tSel, searchInput({ placeholder: "设备编号、邮箱、版本", value: st.q, onInput: (v) => ((st.q = v), draw()) }));
   fetchRows();

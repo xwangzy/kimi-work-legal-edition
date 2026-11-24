@@ -5,8 +5,8 @@
 import * as api from "../api.js";
 import { ctx, OUTCOME, outcomeBadge, pageHead, sourceBadge, tenantOptions, USAGE_SOURCE } from "../domain.js";
 import {
-  badge, bjDay, btn, clear, dataTable, emptyBlock, errorBlock, facts, field, fmt, h, hbars, icon, load, loadingBlock, mono, openDrawer, panel,
-  readForm, segmented, toast, trendChart,
+  badge, bjDay, btn, clear, dataTable, emptyBlock, errorBlock, facts, field, fmt, h, hbars, icon, load, loadingBlock, mono, note, openDrawer, panel,
+  readForm, segmented, stat, tabBar, toast, trendChart,
 } from "../ui.js";
 
 const monthStart = () => `${bjDay().slice(0, 7)}-01`;
@@ -28,10 +28,10 @@ export function render(page, r) {
   for (const k of ["from", "to", "tid", "aid", "group", "alias", "outcome", "request_id", "view"]) if (r.params[k] !== undefined) st[k] = r.params[k];
   if (r.params.request_id) st.view = "records";
   const filters = h("div");
-  const viewSeg = h("span");
+  const viewSeg = h("div");
   const box = h("div", { class: "stack" });
-  page.append(pageHead("用量", "逐请求一条账：控制面按请求编号去重、按价目版本重算费用；额度与账单都从这一份账出", viewSeg), filters, box);
-  const drawSeg = () => clear(viewSeg, segmented([{ id: "summary", label: "分布" }, { id: "records", label: "逐请求明细" }], st.view, (v) => ((st.view = v), drawSeg(), drawFilters(), run()), "视图"));
+  page.append(pageHead("用量", "逐请求一条账：按请求编号去重、按价目版本重算费用；额度与账单都从这一份账出"), viewSeg, filters, box);
+  const drawSeg = () => clear(viewSeg, tabBar([{ id: "summary", label: "分布" }, { id: "records", label: "逐请求明细" }], st.view, (v) => ((st.view = v), drawSeg(), drawFilters(), run())));
   const specs = () => [
     { name: "from", label: "起", type: "date", value: st.from },
     { name: "to", label: "止", type: "date", value: st.to },
@@ -105,10 +105,20 @@ function drawSummary(body, s, ov) {
   const chart = !rows.length
     ? emptyBlock("这段时间没有用量")
     : st.group === "day"
-      ? trendChart({ labels: rows.map((r) => r.label ?? r.key), series: [{ name: "Token", values: rows.map(tokensOf), kind: "bar" }, { name: "错误", values: rows.map((r) => Number(r.errors) || 0), kind: "line", cls: "s-danger" }], format: (v) => fmt.tokens(v), tick: (l) => String(l).slice(5), height: 200 })
+      ? trendChart({ labels: rows.map((r) => r.label ?? r.key), series: [{ name: "输入", values: rows.map((r) => Number(r.tokens_in) || 0), kind: "bar", stack: true }, { name: "输出", values: rows.map((r) => Number(r.tokens_out) || 0), kind: "bar", stack: true, cls: "s2" }], format: (v) => fmt.tokens(v), tick: (l) => String(l).slice(5), height: 220 })
       : hbars([...rows].sort((a, b) => tokensOf(b) - tokensOf(a)).slice(0, 12).map((r) => ({ label: r.label ?? r.key, value: tokensOf(r), note: `${fmt.int(r.requests)} 次 · ${fmt.cny(r.value_cny)}`, title: r.key })), { format: (v) => `${fmt.tokens(v)} token` });
   const recon = ov?.totals ?? null;
+  const errRate = Number(t.requests) > 0 ? Number(t.errors) / Number(t.requests) : null;
   body.append(
+    h(
+      "div",
+      { class: "kpis" },
+      stat("请求", fmt.int(t.requests), errRate === null ? "所选范围" : `错误 ${fmt.int(t.errors)}（${fmt.pct(errRate)}）`, { tone: errRate !== null && errRate >= 0.05 ? "warn" : undefined }),
+      stat("Token", fmt.tokens(tokensOf(t)), `输入 ${fmt.tokens(t.tokens_in)} · 输出 ${fmt.tokens(t.tokens_out)}`, { title: `${fmt.int(tokensOf(t))} token` }),
+      stat("用量价值", fmt.cny(t.value_cny), "价目售价 × 实际用量"),
+      stat("成本", fmt.cny(t.cost_cny), "上游成本价 × 实际用量"),
+      stat("估算 / 未定价", `${fmt.int(t.estimated)} / ${fmt.int(t.unpriced)}`, "行", { tone: Number(t.estimated) > 0 || Number(t.unpriced) > 0 ? "warn" : undefined }),
+    ),
     h(
       "div",
       { class: "grid-2-1" },
@@ -124,12 +134,12 @@ function drawSummary(body, s, ov) {
             ["所选范围错误请求", fmt.int(t.errors)],
             ["所选范围估算行", fmt.int(t.estimated)],
           ]),
-          h("p", { class: "muted small" }, "上游出错的请求不扣客户额度、成本记 0，但上游可能仍计费：与上游回执对账时单列。待对账租约见各律所详情的“用量”。"),
+          note("上游出错的请求不扣客户额度、成本记 0，但上游可能仍计费：与上游回执对账时单列。待对账租约见各律所详情的“用量”。"),
           h("div", { class: "btn-row" }, btn("看上游出错的请求", () => ((st.view = "records"), (st.outcome = "upstream_error"), ctx.reload()), { size: "sm" })),
         ),
       ),
     ),
-    dataTable({
+    panel(`按${{ day: "日", model: "模型", tenant: "律所", account: "账号" }[st.group]}明细`, dataTable({
       state: st.sTable,
       rows,
       empty: "这段时间没有用量",
@@ -146,7 +156,7 @@ function drawSummary(body, s, ov) {
         { key: "unpriced", label: "未定价", num: true, render: (r) => (Number(r.unpriced) > 0 ? h("span", { class: "tone-text-warn" }, fmt.int(r.unpriced)) : "0") },
       ],
       footer: rows.length ? { key: "合计", requests: fmt.int(t.requests), tokens_in: fmt.tokens(t.tokens_in), tokens_cached: fmt.tokens(t.tokens_cached), tokens_out: fmt.tokens(t.tokens_out), value_cny: fmt.cny(t.value_cny), cost_cny: fmt.cny(t.cost_cny), errors: fmt.int(t.errors), estimated: fmt.int(t.estimated), unpriced: fmt.int(t.unpriced) } : null,
-    }),
+    }), { flush: true }),
   );
 }
 
@@ -170,7 +180,7 @@ function runRecords(box) {
       b.disabled = false;
     }
   }, { icon: icon("download") });
-  clear(box, h("div", { class: "toolbar" }, h("p", { class: "muted small" }, "按时间倒序；点一行看完整账本行（含切换记录）。"), exportBtn), list);
+  clear(box, h("div", { class: "toolbar" }, note("按时间倒序；点一行看完整账本行（含切换记录）。估算行左侧橙色标记。"), exportBtn), list);
   const fetchPage = async (append) => {
     if (!append) clear(list, loadingBlock("正在读取明细…"));
     try {

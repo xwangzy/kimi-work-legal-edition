@@ -261,3 +261,23 @@ export async function logout() {
 export const T = (tid) => `/v1/ops/tenants/${seg(tid)}`;
 export const A = (aid) => `/v1/ops/accounts/${seg(aid)}`;
 export const M = (aid) => `/v1/firm/members/${seg(aid)}`;
+
+// ─── 第 62 批：注册管理、模型与价目（后端由另两位同事在做） ───────────────────────────
+// 页面只经这里调用；路径按契约（platform/docs/contract-b62-registration.md、contract-b62-pricing.md）接。
+// 契约到之前控制面没有这些路径：404 → ApiError code "not_ready"，页面显示“接口未就绪”，不造任何替代数据。
+/** 注册管理：注册策略、邀请码、短信服务配置 */
+export const registration = {
+  policy: () => get("/v1/ops/registration/policy"),
+  savePolicy: (body) => put("/v1/ops/registration/policy", body),
+  invites: (params) => get("/v1/ops/registration/invites", params),
+  createInvite: (body) => post("/v1/ops/registration/invites", body),
+  revokeInvite: (id) => post(`/v1/ops/registration/invites/${seg(id)}/revoke`),
+  sms: () => get("/v1/ops/registration/sms"),
+  saveSms: (body) => put("/v1/ops/registration/sms", body),
+  testSms: (body) => post("/v1/ops/registration/sms/test", body),
+};
+/** 模型与价目：成本价、销售价与毛利 */
+export const pricing = {
+  catalog: () => get("/v1/ops/pricing"),
+  save: (body) => put("/v1/ops/pricing", body),
+};

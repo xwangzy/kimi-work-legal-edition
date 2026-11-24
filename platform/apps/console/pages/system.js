@@ -11,7 +11,7 @@ const st = { q: "", log: { sort: "at", asc: false } };
 
 export function render(page) {
   const box = h("div", { class: "stack" });
-  page.append(pageHead("系统", "部署、身份与安全策略、平台访问记录（只读）"), box);
+  page.append(pageHead("系统", "部署信息、身份与安全策略、平台访问记录（只读）"), box);
   load(
     box,
     async () => {
@@ -71,7 +71,7 @@ function draw(box, s, mail, set) {
               ["注册方式", { open: badge("开放自助注册", "warn"), code: badge("凭码注册", "ok"), closed: badge("关闭", "neutral") }[set.registration] ?? "—"],
               ["客户端最低版本", mono(set.clients?.min_version ?? set.min_client_version ?? "不限")],
             ]),
-        { sub: "改动在“套餐与额度 → 注册设置”", actions: can("staff.manage") ? btn("人员与权限", () => go("ops/staff"), { size: "sm" }) : null },
+        { sub: "改动在“注册管理 → 注册策略”", actions: h("div", { class: "btn-row" }, btn("注册策略", () => go("ops/registration/policy"), { size: "sm" }), can("staff.manage") ? btn("人员与权限", () => go("ops/staff"), { size: "sm" }) : null) },
       ),
       panel(
         "邮件通道",
@@ -84,8 +84,9 @@ function draw(box, s, mail, set) {
     h(
       "div",
       { class: "grid-2" },
-      h("div", { class: "stack" }, panel("客户端版本分布", hbars(versions.map(([v, n]) => ({ label: v, value: n })), { format: (v) => `${fmt.int(v)} 台`, empty: "还没有设备报到" })), s.quota_counters ? panel("额度计数", hbars(Object.entries(s.quota_counters).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, n]) => ({ label: k, value: n })), { format: (v) => fmt.int(v), empty: "还没有计数" }), { sub: "进程启动以来的租约与回报次数" }) : null),
+      panel("客户端版本分布", hbars(versions.map(([v, n]) => ({ label: v, value: n })), { format: (v) => `${fmt.int(v)} 台`, empty: "还没有设备报到" })),
+      s.quota_counters ? panel("额度计数", hbars(Object.entries(s.quota_counters).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, n]) => ({ label: k, value: n })), { format: (v) => fmt.int(v), empty: "还没有计数" }), { sub: "进程启动以来的租约与回报次数" }) : null,
     ),
-    panel("平台访问记录", logBox, { sub: "最近 100 条；先记审计再执行", actions: searchInput({ placeholder: "筛选动作、人员、律所", value: st.q, onInput: (v) => ((st.q = v), drawLog()) }) }),
+    panel("平台访问记录", logBox, { flush: true, sub: "最近 100 条；先记审计再执行", actions: searchInput({ placeholder: "筛选动作、人员、律所", value: st.q, onInput: (v) => ((st.q = v), drawLog()) }) }),
   );
 }

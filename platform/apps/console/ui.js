@@ -97,6 +97,16 @@ export const fmt = {
     if (!isNum(v)) return "—";
     return `¥${Number(v).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d })}`;
   },
+  /** 指标条主指标用的金额：10 万以上写“万 / 亿”（两位小数），精确值放 title；null = 未定价 */
+  cnyCompact(v) {
+    if (v === null) return "未定价";
+    if (!isNum(v)) return "—";
+    const n = Number(v);
+    const a = Math.abs(n);
+    if (a >= 1e8) return `¥${(n / 1e8).toFixed(2)} 亿`;
+    if (a >= 1e5) return `¥${(n / 1e4).toFixed(2)} 万`;
+    return fmt.cny(n);
+  },
   /** 单价（元 / 百万 token） */
   price: (v) => (v === null ? "未定价" : isNum(v) ? `¥${Number(v).toLocaleString("zh-CN", { maximumFractionDigits: 4 })}` : "—"),
   /** 比例 → 百分比：<0.1% 不写 0；10% 以下一位小数 */
@@ -240,12 +250,14 @@ export function errorBlock(e, retry) {
       h("p", {}, ((m) => (/管理员/.test(m) ? `${m}。` : `${m}。需要的话请找系统管理员调整角色。`))(String(e.message || "你的角色没有这项权限").replace(/[。.]+$/, ""))),
     );
   const title = notReady ? "接口未就绪" : e?.code === "network" ? "连不上控制面" : "读取失败";
+  const mark = notReady ? h("span", { class: "state-icon", "aria-hidden": "true" }, icon("clock")) : null;
   const detail = notReady
     ? `控制面还没有提供 ${e.method ?? "GET"} ${e.pathOnly ?? ""}（HTTP 404）。服务端接口就绪后点“重试”；本页不显示任何替代数据。`
     : errText(e);
   return h(
     "div",
     { class: ["state", notReady ? "state-notready" : "state-error"], role: "alert" },
+    mark,
     h("b", {}, title),
     h("p", {}, detail),
     retry ? btn("重试", retry, { size: "sm" }) : null,
@@ -652,48 +664,71 @@ const niceMax = (v) => {
   return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * e;
 };
 /**
- * 趋势图：若干柱 + 若干折线共用 y 轴。
- * @param {{labels:string[], series:{name:string, values:(number|null)[], kind:"bar"|"line", cls?:string}[], format:(v:number)=>string, height?:number, tick?:(label:string)=>string}} o
+ * 趋势图：若干柱 + 若干折线共用 y 轴。柱的 stack: true 时叠放（输入 / 输出），否则并排。
+ * 悬停一列出自绘提示框（日期 + 各系列数值），不靠浏览器原生 title 的延迟提示；整图另有 aria-label。
+ * @param {{labels:string[], series:{name:string, values:(number|null)[], kind:"bar"|"line", cls?:string, stack?:boolean}[], format:(v:number)=>string, height?:number, tick?:(label:string)=>string, aria?:string, empty?:string}} o
  */
 export function trendChart(o) {
   const height = o.height ?? 180;
   if (!o.series.some((s) => s.values.some((v) => Number.isFinite(v) && v !== 0))) return emptyBlock(o.empty ?? "这段时间没有用量", `${o.labels[0] ?? ""} 至 ${o.labels.at(-1) ?? ""} 全为 0`);
-  const legend = h("div", { class: "legend" }, o.series.map((s, i) => h("span", { class: "legend-item" }, h("span", { class: `swatch ${s.cls ?? `s${i + 1}`} ${s.kind}` }), s.name)));
+  const clsOf = (s) => s.cls ?? `s${o.series.indexOf(s) + 1}`;
+  const legend = h("div", { class: "legend" }, o.series.map((s) => h("span", { class: "legend-item" }, h("span", { class: `swatch ${clsOf(s)} ${s.kind}` }), s.name)));
   const chart = responsive((W) => {
-    const padL = 56;
+    const padL = 52;
     const padR = 8;
     const padT = 8;
     const padB = 22;
     const n = o.labels.length;
-    const all = o.series.flatMap((s) => s.values.filter((v) => Number.isFinite(v)));
+    const bars = o.series.filter((s) => s.kind === "bar");
+    const stacked = bars.length > 1 && bars.every((s) => s.stack);
+    const sumAt = (i) => bars.reduce((t, s) => t + (Number.isFinite(s.values[i]) ? Math.max(0, s.values[i]) : 0), 0);
+    const all = [
+      ...o.series.filter((s) => !(stacked && s.kind === "bar")).flatMap((s) => s.values.filter((v) => Number.isFinite(v))),
+      ...(stacked ? o.labels.map((_, i) => sumAt(i)) : []),
+    ];
     const max = niceMax(Math.max(0, ...all));
     const iw = Math.max(10, W - padL - padR);
     const ih = height - padT - padB;
     const x0 = (i) => padL + (iw * i) / Math.max(1, n);
     const bw = iw / Math.max(1, n);
     const y = (v) => padT + ih - (ih * Math.max(0, v)) / max;
-    const root = svg("svg", { width: W, height, viewBox: `0 0 ${W} ${height}`, role: "img", "aria-label": o.aria ?? o.series.map((s) => s.name).join("、") });
+    const root = svg("svg", { width: W, height, viewBox: `0 0 ${W} ${height}`, role: "img", "aria-label": o.aria ?? `${o.series.map((s) => s.name).join("、")}：${o.labels[0] ?? ""} 至 ${o.labels.at(-1) ?? ""}` });
     const seen = new Set();
     for (const f of [0, 0.5, 1]) {
       const gy = padT + ih - ih * f;
-      root.append(svg("line", { class: "grid", x1: padL, x2: W - padR, y1: gy, y2: gy }));
+      root.append(svg("line", { class: f === 0 ? "grid base" : "grid", x1: padL, x2: W - padR, y1: gy, y2: gy }));
       const label = o.format(max * f);
-      if (!seen.has(label)) root.append(svg("text", { class: "axis", x: padL - 6, y: gy + 4, "text-anchor": "end" }, label));
+      if (!seen.has(label)) root.append(svg("text", { class: "axis", x: padL - 8, y: gy + 4, "text-anchor": "end" }, label));
       seen.add(label);
     }
-    const bars = o.series.filter((s) => s.kind === "bar");
-    const gap = Math.min(4, bw * 0.2);
-    bars.forEach((s, si) => {
-      const w = Math.max(1, (bw - gap) / bars.length);
-      s.values.forEach((v, i) => {
-        if (!Number.isFinite(v) || v <= 0) return;
-        const yy = y(v);
-        root.append(svg("rect", { class: `bar ${s.cls ?? `s${o.series.indexOf(s) + 1}`}`, x: x0(i) + gap / 2 + si * w, y: yy, width: Math.max(1, w - (bars.length > 1 ? 1 : 0)), height: Math.max(1, padT + ih - yy), rx: Math.min(2, w / 3) }));
+    const gap = Math.max(1, Math.min(6, bw * 0.28));
+    if (stacked) {
+      const w = Math.max(1, bw - gap);
+      o.labels.forEach((_, i) => {
+        let acc = 0;
+        bars.forEach((s, si) => {
+          const v = Number.isFinite(s.values[i]) ? Math.max(0, s.values[i]) : 0;
+          if (v <= 0) return;
+          const top = y(acc + v);
+          const bottom = y(acc);
+          acc += v;
+          const last = bars.slice(si + 1).every((b) => !(Number(b.values[i]) > 0));
+          root.append(svg("rect", { class: `bar ${clsOf(s)}`, x: x0(i) + gap / 2, y: top, width: w, height: Math.max(1, bottom - top), rx: last ? Math.min(2, w / 3) : 0 }));
+        });
       });
-    });
+    } else {
+      bars.forEach((s, si) => {
+        const w = Math.max(1, (bw - gap) / bars.length);
+        s.values.forEach((v, i) => {
+          if (!Number.isFinite(v) || v <= 0) return;
+          const yy = y(v);
+          root.append(svg("rect", { class: `bar ${clsOf(s)}`, x: x0(i) + gap / 2 + si * w, y: yy, width: Math.max(1, w - (bars.length > 1 ? 1 : 0)), height: Math.max(1, padT + ih - yy), rx: Math.min(2, w / 3) }));
+        });
+      });
+    }
     for (const s of o.series.filter((x) => x.kind === "line")) {
       const pts = s.values.map((v, i) => (Number.isFinite(v) ? `${(x0(i) + bw / 2).toFixed(1)},${y(v).toFixed(1)}` : null)).filter(Boolean);
-      if (pts.length > 1) root.append(svg("polyline", { class: `line ${s.cls ?? `s${o.series.indexOf(s) + 1}`}`, points: pts.join(" ") }));
+      if (pts.length > 1) root.append(svg("polyline", { class: `line ${clsOf(s)}`, points: pts.join(" ") }));
       if (pts.length === 1) {
         const [cx, cy] = pts[0].split(",");
         root.append(svg("circle", { class: `line-dot ${s.cls ?? ""}`, cx, cy, r: 2.5 }));
@@ -705,12 +740,35 @@ export function trendChart(o) {
       if (i !== n - 1 && n - 1 - i < every && i % every === 0 && i !== 0) return;
       root.append(svg("text", { class: "axis", x: x0(i) + bw / 2, y: height - 6, "text-anchor": "middle" }, o.tick ? o.tick(l) : l));
     });
-    // 悬停：每列一个透明热区，原生 <title> 提示
-    o.labels.forEach((l, i) => {
-      const tip = [l, ...o.series.map((s) => `${s.name}：${Number.isFinite(s.values[i]) ? o.format(s.values[i]) : "—"}`)].join("\n");
-      root.append(svg("rect", { class: "hot", x: x0(i), y: padT, width: bw, height: ih }, svg("title", {}, tip)));
+    // 悬停：每列一个透明热区；提示框在图内绝对定位（--l 左偏移，CSP 下只写自定义属性）
+    const tip = h("div", { class: "chart-tip", hidden: true, "aria-hidden": "true" });
+    const tipW = 200;
+    let on = null;
+    const show = (i, hot) => {
+      on?.classList.remove("on");
+      on = hot;
+      hot.classList.add("on");
+      const rows = o.series.map((s) => h("div", {}, h("span", { class: `swatch ${clsOf(s)} ${s.kind}` }), h("span", {}, s.name), h("b", { class: "num" }, Number.isFinite(s.values[i]) ? o.format(s.values[i]) : "—")));
+      if (stacked) rows.push(h("div", {}, h("span", {}), h("span", {}, "合计"), h("b", { class: "num" }, o.format(sumAt(i)))));
+      clear(tip, h("b", {}, o.labels[i]), rows);
+      const cx = x0(i) + bw / 2;
+      const left = cx + 12 + tipW > W ? Math.max(0, cx - 12 - tipW) : cx + 12;
+      cssVars(tip, { "--l": `${Math.round(left)}px` });
+      tip.hidden = false;
+    };
+    o.labels.forEach((_, i) => {
+      const hot = svg("rect", { class: "hot", x: x0(i), y: padT, width: bw, height: ih });
+      hot.addEventListener("mouseenter", () => show(i, hot));
+      root.append(hot);
     });
-    return root;
+    root.addEventListener("mouseleave", () => {
+      tip.hidden = true;
+      on?.classList.remove("on");
+      on = null;
+    });
+    const frag = document.createDocumentFragment();
+    frag.append(root, tip);
+    return frag;
   });
   return h("div", { class: "trend" }, chart, legend);
 }
@@ -796,6 +854,12 @@ const ICONS = {
   download: ["M12 4v11", "M7 10l5 5 5-5", "M5 20h14"],
   back: ["M15 6l-6 6 6 6"],
   file: ["M6 3h8l4 4v14H6z", "M14 3v4h4"],
+  bell: ["M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z", "M10 20.5a2 2 0 0 0 4 0"],
+  info: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 11v5", "M12 7.5v.5"],
+  clock: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z", "M12 7v5l3 2"],
+  tag: ["M3 12V4h8l10 10-8 8z", "M7.5 8.5h.01"],
+  register: ["M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M2 21c1.2-3.6 3.8-5.5 7-5.5 1.3 0 2.5.3 3.5.9", "M18 14v6", "M15 17h6"],
+  external: ["M14 4h6v6", "M20 4l-9 9", "M18 14v6H4V6h6"],
 };
 export function icon(name, cls = "icon") {
   return svg("svg", { class: cls, viewBox: "0 0 24 24", width: 16, height: 16, "aria-hidden": "true" }, (ICONS[name] ?? []).map((d) => svg("path", { d })));
@@ -809,12 +873,67 @@ export function facts(pairs) {
     pairs.filter(Boolean).map(([k, v, title]) => [h("dt", {}, k), h("dd", { title }, v === null || v === undefined || v === "" ? "—" : v)]),
   );
 }
+/**
+ * 指标格（放在 .kpis 指标条里）：o.hero = 主指标（大一号）；o.onClick = 整格可点（跳到明细）；o.extra = 数字下的小件（如毛利条）。
+ */
 export function stat(label, value, sub, o = {}) {
-  return h("div", { class: ["stat", o.tone && `tone-${o.tone}`], title: o.title }, h("div", { class: "stat-label" }, label), h("div", { class: "stat-value num" }, value), sub ? h("div", { class: "stat-sub" }, sub) : null);
+  const kids = [h("div", { class: "stat-label" }, label, o.badge ?? null), h("div", { class: "stat-value num" }, value), sub ? h("div", { class: "stat-sub" }, sub) : null, o.extra ? h("div", { class: "stat-bar" }, o.extra) : null];
+  const cls = ["stat", o.tone && `tone-${o.tone}`, o.hero && "hero", o.onClick && "clickable"];
+  return o.onClick ? h("button", { type: "button", class: cls, title: o.title, onclick: o.onClick }, kids) : h("div", { class: cls, title: o.title }, kids);
 }
+/** 卡片：o.flush = 表格贴边（标题栏下一条分隔线，表头与卡片同宽）；o.tone = warn 时描边变橙 */
 export function panel(title, body, o = {}) {
-  return h("section", { class: ["panel", o.class] }, title ? h("header", { class: "panel-head" }, h("h3", {}, title), o.sub ? h("span", { class: "panel-sub" }, o.sub) : null, o.actions ? h("div", { class: "panel-actions" }, o.actions) : null) : null, body);
+  return h(
+    "section",
+    { class: ["panel", o.flush && "flush", o.tone && `tone-${o.tone}`, o.class], "aria-label": typeof title === "string" ? title : undefined },
+    title ? h("header", { class: "panel-head" }, h("h3", {}, title), o.sub ? h("span", { class: "panel-sub" }, o.sub) : null, o.actions ? h("div", { class: "panel-actions" }, o.actions) : null) : null,
+    body,
+  );
 }
+/** 说明行：解释性文字收成一行次级色（信息图标），不与数据抢视线 */
+export const note = (...text) => h("p", { class: "note" }, icon("info"), h("span", {}, ...text));
+/** 页头下的元信息行（周期、版本、更新人……）：点号分隔，空项跳过 */
+export const metaLine = (...items) => h("div", { class: "meta-line" }, items.flat().filter((x) => x !== null && x !== undefined && x !== false && x !== "").map((x) => (x instanceof Node ? x : h("span", {}, x))));
+/**
+ * 信号：页首集中出现的异常与待办。items: {label, count, tone: danger|warn|info, hint?, onClick?}；count 为 0 时退成灰色（“正常”）。
+ * count 为 null 表示读不到（不显示成 0）。
+ */
+export function signals(items) {
+  const list = items.filter(Boolean);
+  return h(
+    "div",
+    { class: "signals", role: "list" },
+    list.map((it) => {
+      const zero = it.count === 0;
+      const tone = it.count === null || it.count === undefined ? "unknown" : zero ? "zero" : it.tone ?? "info";
+      const kids = [
+        h("span", { class: "signal-top" }, h("span", { class: "signal-count num" }, it.count === null || it.count === undefined ? "—" : fmt.int(it.count)), h("span", { class: `dot tone-${zero ? "ok" : it.tone ?? "info"}`, "aria-hidden": "true" })),
+        h("span", { class: "signal-label" }, it.label),
+        h("span", { class: "signal-hint" }, zero ? it.zeroHint ?? "正常" : it.hint ?? ""),
+      ];
+      const aria = `${it.label}：${it.count ?? "未知"}`;
+      return it.onClick
+        ? h("button", { type: "button", role: "listitem", class: ["signal", `tone-${tone}`], onclick: it.onClick, "aria-label": aria, title: it.title }, kids)
+        : h("div", { role: "listitem", class: ["signal", `tone-${tone}`], "aria-label": aria, title: it.title }, kids);
+    }),
+  );
+}
+/** 危险操作区：rows = [{title, desc, action}]；集中放在详情页最后，红色描边 */
+export function dangerZone(title, rows) {
+  const list = rows.filter(Boolean);
+  if (!list.length) return null;
+  return h("section", { class: "danger-zone", "aria-label": title }, h("h3", {}, icon("alert"), title), list.map((r) => h("div", { class: "dz-row" }, h("div", { class: "dz-text" }, h("b", {}, r.title), r.desc ? h("small", {}, r.desc) : null), r.action)));
+}
+/** 设置行：左边是名称与说明，右边是控件 */
+export const settingRow = (label, desc, ...control) => h("div", { class: "setting-row" }, h("div", { class: "setting-label" }, h("b", {}, label), desc ? h("small", {}, desc) : null), h("div", { class: "setting-control" }, ...control));
+/** 毛利条：rate = 毛利 ÷ 售价（0–1；负数画红） */
+export function marginBar(rate) {
+  if (!isNum(rate)) return h("span", { class: "margin-bar", "aria-hidden": "true" });
+  const r = Number(rate);
+  return h("span", { class: ["margin-bar", r < 0 && "neg"], "aria-hidden": "true", title: `毛利率 ${fmt.pct(r)}` }, cssVars(h("span"), { "--w": `${clamp01(Math.abs(r)) * 100}%` }));
+}
+/** 可折叠的次要信息（角色说明、只在客户端做的事） */
+export const fold = (title, sub, body, open = false) => h("details", { class: "fold", open }, h("summary", {}, icon("chevron"), title, sub ? h("small", {}, sub) : null), h("div", { class: "fold-body" }, body));
 
 // ─── 第 46 批：环形水位、额度卡（百分比四件套） ───────────────
 /** 环形进度：ratio 0–1；tone 随阈值（≥80% 注意，≥100% 或暂停 = 满） */

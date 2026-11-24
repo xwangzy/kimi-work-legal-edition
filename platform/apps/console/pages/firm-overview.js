@@ -5,7 +5,7 @@
  */
 import * as api from "../api.js";
 import { alertList, ctx, go, pageHead, roleText, tenantBadge } from "../domain.js";
-import { badge, btn, clear, clientOnlyList, confirmAction, facts, fmt, h, load, panel, periodBars, quotaCard, stat, toast } from "../ui.js";
+import { btn, clear, clientOnlyList, confirmAction, facts, fmt, h, icon, load, metaLine, panel, periodBars, quotaCard, stat, toast } from "../ui.js";
 
 export const CLIENT_ONLY = [
   ["批准入组", "新成员或换电脑的成员提交申请后，在管理员电脑上核对校验码并批准"],
@@ -32,7 +32,7 @@ function draw(head, box, d, reload) {
   const plan = d.plan ?? {};
   const c = d.counts ?? {};
   const seats = d.seats ?? {};
-  clear(head, pageHead(h("span", { class: "title-row" }, f.name ?? "本所", tenantBadge(f.status)), [plan.label ? `${plan.label}套餐` : null, `你是${roleText(ctx.firmRole)}`, readOnly() ? "只读" : null].filter(Boolean).join(" · ")));
+  clear(head, pageHead(h("span", { class: "title-row" }, f.name ?? "本所", tenantBadge(f.status)), metaLine(plan.label ? `${plan.label}套餐` : null, `你是${roleText(ctx.firmRole)}`, readOnly() ? "只读" : null, f.expires_at ? `${fmt.date(f.expires_at)} 到期` : null)));
   const capPct = q.cap_pct ?? q.monthly_cap_pct ?? null;
   const editCap = async () => {
     const r = await confirmAction({
@@ -46,8 +46,10 @@ function draw(head, box, d, reload) {
     });
     if (r) (toast("已保存月度上限"), reload());
   };
+  const pending = Number(c.pending_joins) || 0;
   clear(
     box,
+    pending > 0 ? h("div", { class: "banner info" }, icon("info"), h("span", { class: "spacer" }, `有 ${pending} 个入组申请等你批准：请在管理员电脑的“设置 → 管理”里核对校验码后批准。`), btn("查看申请", () => go("firm/members"), { size: "sm" })) : null,
     h(
       "div",
       { class: "grid-2-1" },
@@ -77,7 +79,7 @@ function draw(head, box, d, reload) {
     ),
     h(
       "div",
-      { class: "grid-2" },
+      { class: "grid-3" },
       panel("告警", alertList(d.alerts ?? [], { compact: true }), { sub: "本所未确认的告警" }),
       panel(
         "订阅",
@@ -92,12 +94,8 @@ function draw(head, box, d, reload) {
           ["强制用账号登录", f.accounts_required === false ? "否" : "是"],
         ]),
       ),
-    ),
-    h(
-      "div",
-      { class: "grid-2" },
       panel("历史周期", periodBars(q.history ?? []), { sub: "每期已用比例" }),
-      panel("在管理员电脑上完成", h("div", { class: "stack-sm" }, h("p", { class: "muted small" }, "下面这些依赖律所密钥或管理员电脑的签名，网页只能查看状态，请在管理员电脑的“设置 → 管理”里完成。"), clientOnlyList(CLIENT_ONLY), Number(c.pending_joins) > 0 ? btn(`查看待批准的 ${c.pending_joins} 个申请`, () => go("firm/members"), { size: "sm" }) : null)),
     ),
+    panel("在管理员电脑上完成", h("div", { class: "stack-sm" }, h("p", { class: "muted small" }, "下面这些依赖律所密钥或管理员电脑的签名，网页只能查看状态，请在管理员电脑的“设置 → 管理”里完成。"), clientOnlyList(CLIENT_ONLY), pending > 0 ? btn(`查看待批准的 ${pending} 个申请`, () => go("firm/members"), { size: "sm" }) : null)),
   );
 }

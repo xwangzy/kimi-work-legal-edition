@@ -1,8 +1,14 @@
 /**
  * 统一云端控制台（第 46 批，D-192/D-193；原第 37/44 批运营控制台、第 40 批额度台）：一个登录页 + 按身份出现的三个分区——
- *   我的      所有账号：概览（个人用量与本所额度水位、我的电脑、安全提示）、账号与安全、我的电脑（平台人员只有“账号与安全”）
+ *   我的      成员账号：概览（个人用量与本所额度水位、我的电脑、安全提示）、我的电脑、账号与安全；
+ *             平台人员的“账号与安全”收在侧栏底部的本人卡片里（第 62 批：侧栏只留运营工作，不再单列一个只有一项的分区）
  *   本所      律所 admin / partner：概览、成员、电脑、用量、账单；只能在客户端做的事写明“在管理员电脑上完成”
- *   平台运营  中软平台人员，按角色权限出现子页：总览、客户、账号、设备、模型与路由、用量、套餐与额度、计费、人员与权限、系统
+ *   平台运营  中软平台人员，按角色权限出现子页，第 62 批按工作分四组：
+ *               工作台  总览、告警
+ *               客户    客户、账号、设备、注册管理（注册策略 / 邀请码 / 短信服务）
+ *               经营    套餐、模型与价目、计费、用量
+ *               平台    模型与路由、人员与权限、系统
+ *             旧地址照认：#/ops/plans?tab=settings → 注册管理 · 注册策略；?tab=alerts → 告警；#/ops/routing?tab=prices → 模型与价目
  *
  * - 同源静态页、原生 ES 模块、外置 CSS；部署只拷 dist/（scripts/build-console.mjs 拼好，含 tokens.css）；
  * - 会话令牌只由 api.js 放在标签页存储里，关标签页即失效；本页没有自己的后端、不存业务状态；
@@ -32,16 +38,22 @@ import * as plans from "./pages/plans.js";
 import * as billing from "./pages/billing.js";
 import * as staff from "./pages/staff.js";
 import * as system from "./pages/system.js";
+import * as alerts from "./pages/alerts.js";
+import * as registration from "./pages/registration.js";
+import * as pricing from "./pages/pricing.js";
 
-/** 导航：member = 只对成员账号；perms = 平台人员有其一即可 */
+/**
+ * 导航：member = 只对成员账号；perms = 平台人员有其一即可；group = 平台运营里的分组标题；
+ * children = 一级菜单下的子页（#/ops/<页>/<子页>，侧栏在当前页时展开）。
+ */
 export const NAV = [
   {
     id: "me",
     label: "我的",
     items: [
       { id: "overview", label: "概览", icon: "home", mod: meOverview, member: true },
-      { id: "security", label: "账号与安全", icon: "shield", mod: meSecurity },
       { id: "devices", label: "我的电脑", icon: "laptop", mod: meDevices, member: true },
+      { id: "security", label: "账号与安全", icon: "shield", mod: meSecurity },
     ],
   },
   {
@@ -59,19 +71,36 @@ export const NAV = [
     id: "ops",
     label: "平台运营",
     items: [
-      { id: "overview", label: "总览", icon: "overview", mod: overview, perms: ["tenant.read"] },
-      { id: "tenants", label: "客户", icon: "tenants", mod: tenants, perms: ["tenant.read"] },
-      { id: "accounts", label: "账号", icon: "accounts", mod: accounts, perms: ["account.read", "account.support"] },
+      { id: "overview", label: "总览", icon: "overview", mod: overview, perms: ["tenant.read"], group: "工作台" },
+      { id: "alerts", label: "告警", icon: "bell", mod: alerts, perms: ["tenant.read"], group: "工作台" },
+      { id: "tenants", label: "客户", icon: "tenants", mod: tenants, perms: ["tenant.read"], group: "客户" },
+      { id: "accounts", label: "账号", icon: "accounts", mod: accounts, perms: ["account.read", "account.support"], group: "客户" },
       // GET /v1/ops/devices 控制面按“查看账号”（account.read）鉴权：只有“查看客户”的财务看得到菜单却永远 403
-      { id: "devices", label: "设备", icon: "devices", mod: devices, perms: ["account.read"] },
-      { id: "routing", label: "模型与路由", icon: "routing", mod: routing, perms: ["route.read", "route.manage"] },
-      { id: "usage", label: "用量", icon: "usage", mod: usage, perms: ["usage.read"] },
-      { id: "plans", label: "套餐与额度", icon: "plans", mod: plans, perms: ["tenant.read", "plan.manage", "settings.manage"] },
-      { id: "billing", label: "计费", icon: "billing", mod: billing, perms: ["billing.read"] },
-      { id: "staff", label: "人员与权限", icon: "staff", mod: staff, perms: ["staff.manage"] },
-      { id: "system", label: "系统", icon: "system", mod: system, perms: ["system.read"] },
+      { id: "devices", label: "设备", icon: "devices", mod: devices, perms: ["account.read"], group: "客户" },
+      {
+        id: "registration",
+        label: "注册管理",
+        icon: "register",
+        mod: registration,
+        perms: ["tenant.read", "settings.manage"],
+        group: "客户",
+        children: registration.SUBPAGES,
+      },
+      { id: "plans", label: "套餐", icon: "plans", mod: plans, perms: ["tenant.read", "plan.manage", "settings.manage"], group: "经营" },
+      { id: "pricing", label: "模型与价目", icon: "tag", mod: pricing, perms: ["route.read", "price.manage", "billing.read"], group: "经营" },
+      { id: "billing", label: "计费", icon: "billing", mod: billing, perms: ["billing.read"], group: "经营" },
+      { id: "usage", label: "用量", icon: "usage", mod: usage, perms: ["usage.read"], group: "经营" },
+      { id: "routing", label: "模型与路由", icon: "routing", mod: routing, perms: ["route.read", "route.manage"], group: "平台" },
+      { id: "staff", label: "人员与权限", icon: "staff", mod: staff, perms: ["staff.manage"], group: "平台" },
+      { id: "system", label: "系统", icon: "system", mod: system, perms: ["system.read"], group: "平台" },
     ],
   },
+];
+/** 旧地址（页内分页签挪成了独立页）：[分区/页, 查询参数名, 值] → 新地址 */
+const MOVED = [
+  ["ops/plans", "tab", "settings", "ops/registration/policy"],
+  ["ops/plans", "tab", "alerts", "ops/alerts"],
+  ["ops/routing", "tab", "prices", "ops/pricing"],
 ];
 
 const ls = {
@@ -212,30 +241,47 @@ function showApp() {
   buildNav();
   buildUser();
   buildSearch();
+  // 侧栏“告警”角标：进来就读一次未确认数（总览与告警页之后会再刷新它）；读不到不显示
+  if (ctx.kind === "staff" && canAny(["tenant.read"])) api.get("/v1/ops/alerts", { status: "open", limit: 100 }).then((d) => ctx.setNavBadge("alerts", (d.alerts ?? []).length), () => {});
   applyTheme();
   const want = location.hash.replace(/^#\/?/, "");
   if (!want || want === "setup") location.hash = `#/${landing()}`;
   else route();
 }
 
+/** 侧栏里出现的分区：平台人员的“我的”只有“账号与安全”，收在底部本人卡片里，不单列 */
+const sectionInNav = (s) => sectionVisible(s) && !(s === "me" && ctx.kind === "staff");
 function buildNav() {
   const nav = $("#nav");
   clear(nav);
+  const link = (s, it) => {
+    const page = `${s.id}/${it.id}`;
+    const kids = it.children?.length ? it.children : null;
+    const a = h(
+      "a",
+      { href: `#/${page}${kids ? `/${kids[0][0]}` : ""}`, class: ["nav-item", kids && "parent"], dataset: { page } },
+      icon(it.icon, "nav-icon"),
+      h("span", { class: "nav-label" }, it.label),
+      h("span", { class: "nav-badge", dataset: { badge: page }, hidden: true }),
+      kids ? icon("chevron", "nav-caret") : null,
+    );
+    if (!kids) return a;
+    return [a, h("div", { class: "nav-sub", dataset: { sub: page }, hidden: true }, kids.map(([id, label]) => h("a", { href: `#/${page}/${id}`, class: "nav-subitem", dataset: { page: `${page}/${id}` } }, label)))];
+  };
   for (const s of NAV) {
-    if (!sectionVisible(s.id)) continue;
+    if (!sectionInNav(s.id)) continue;
     const items = s.items.filter((it) => itemVisible(s.id, it));
     if (!items.length) continue;
-    nav.append(
-      h(
-        "div",
-        { class: "nav-section" },
-        h("div", { class: "nav-heading" }, s.label),
-        items.map((it) => h("a", { href: `#/${s.id}/${it.id}`, class: "nav-item", dataset: { page: `${s.id}/${it.id}` } }, icon(it.icon, "nav-icon"), h("span", { class: "nav-label" }, it.label), h("span", { class: "nav-badge", dataset: { badge: `${s.id}/${it.id}` }, hidden: true }))),
-      ),
-    );
+    if (s.id === "ops") {
+      // 平台运营按工作分组：分组标题代替分区标题
+      const groups = [...new Set(items.map((it) => it.group ?? ""))];
+      for (const g of groups) nav.append(h("div", { class: "nav-section", "aria-label": g || s.label }, h("div", { class: "nav-heading" }, g || s.label), items.filter((it) => (it.group ?? "") === g).map((it) => link(s, it))));
+      continue;
+    }
+    nav.append(h("div", { class: "nav-section", "aria-label": s.label }, h("div", { class: "nav-heading" }, s.label), items.map((it) => link(s, it))));
   }
 }
-/** 侧栏数字角标；不带分区的 id 归平台运营（旧页面 overview.js 调 setNavBadge("overview", n)） */
+/** 侧栏数字角标；不带分区的 id 归平台运营（总览与告警页调 setNavBadge("alerts", 未确认告警数)） */
 ctx.setNavBadge = (id, n) => {
   const el = document.querySelector(`[data-badge="${String(id).includes("/") ? id : `ops/${id}`}"]`);
   if (!el) return;
@@ -254,7 +300,7 @@ function buildUser() {
     $("#sidebar-foot"),
     h(
       "a",
-      { class: "user", href: "#/me/security", title: "账号与安全" },
+      { class: "user", href: "#/me/security", title: "账号与安全", "aria-label": `账号与安全：${a.name || a.email || ""}` },
       h("span", { class: "avatar", "aria-hidden": "true" }, initials),
       h("span", { class: "user-text" }, h("b", {}, a.name || a.email || "—"), h("small", {}, sub || a.email || "")),
     ),
@@ -341,17 +387,27 @@ let renderSeq = 0;
 function route() {
   if ($("#app").hidden || !ctx.me) return;
   const r = parseHash(location.hash);
+  const moved = MOVED.find(([pg, k, v]) => pg === `${r.section}/${r.page}` && r.params[k] === v);
+  if (moved) return void location.replace(`#/${moved[3]}`);
   const sec = NAV.find((s) => s.id === r.section);
   const item = sec?.items.find((it) => it.id === r.page);
   if (!item) return void (location.hash = `#/${landing()}`);
+  // 有子页的一级菜单：没写子页（或子页不认识）就落到第一个子页
+  const sub = item.children?.length ? item.children.find(([id]) => id === r.arg) : null;
+  if (item.children?.length && !sub) return void location.replace(`#/${r.section}/${r.page}/${item.children[0][0]}`);
   const key = `${r.section}/${r.page}`;
-  for (const a of document.querySelectorAll(".nav-item")) {
-    const on = a.dataset.page === key;
+  const subKey = sub ? `${key}/${sub[0]}` : null;
+  for (const a of document.querySelectorAll(".nav-item, .nav-subitem")) {
+    const parent = a.classList.contains("parent");
+    const on = parent ? false : a.dataset.page === (a.classList.contains("nav-subitem") ? subKey : key);
     a.classList.toggle("active", on);
+    if (parent) a.classList.toggle("open", a.dataset.page === key);
     if (on) a.setAttribute("aria-current", "page");
     else a.removeAttribute("aria-current");
   }
-  clear($("#crumbs"), h("span", { class: "crumb-sec" }, sec.label), icon("chevron", "crumb-sep"), h("b", {}, item.label));
+  for (const box of document.querySelectorAll(".nav-sub")) box.hidden = box.dataset.sub !== key;
+  $("#sidebar-foot .user")?.classList.toggle("active", key === "me/security" && ctx.kind === "staff");
+  clear($("#crumbs"), h("span", { class: "crumb-sec" }, sec.label), icon("chevron", "crumb-sep"), sub ? [h("span", { class: "crumb-sec" }, item.label), icon("chevron", "crumb-sep"), h("b", {}, sub[1])] : h("b", {}, item.label));
   $("#app").classList.remove("nav-open");
   closeDrawer();
   const main = $("#content");
