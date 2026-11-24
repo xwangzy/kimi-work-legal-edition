@@ -101,9 +101,53 @@ export function accountErrorText(code: string, fallback?: string): string {
     case "registration_closed":
       return "暂不开放自助注册，请联系中软开通";
     case "code_required":
-      return "请输入律所发给你的开通码或邀请码";
+      return "现在只能凭邀请码注册：请填写邀请码（或律所发给你的开通码）";
     case "code_invalid":
-      return "开通码、邀请码或验证码不正确或已失效";
+      return "邀请码、开通码或验证码不正确或已失效，请核对后重新输入";
+    // ─── 第 62 批：注册邀请码与短信验证码 ───
+    case "invite_exhausted":
+      return "这个邀请码已用完，请向发码人重新获取";
+    case "invite_expired":
+      return "这个邀请码已过期，请向发码人重新获取";
+    case "invite_disabled":
+      return "这个邀请码已停用，请向发码人重新获取";
+    case "phone_invalid":
+      return "手机号格式不对：请填写 11 位中国大陆手机号";
+    case "phone_required":
+      return "请填写手机号并获取短信验证码";
+    case "phone_taken":
+      return "这个手机号已注册，请直接登录（忘记密码可用手机号找回）";
+    case "sms_code_required":
+      return "请填写短信验证码";
+    case "sms_code_invalid":
+      return fallback ?? "验证码不正确，请核对后重新输入";
+    case "sms_code_expired":
+      return "验证码已过期或已使用，请重新获取";
+    case "sms_code_attempts":
+      return "验证码输错次数过多，请重新获取";
+    case "sms_too_frequent":
+      return fallback ?? "验证码已发送，请稍后再重新获取";
+    case "sms_daily_limit":
+      return "这个手机号今天获取验证码的次数已达上限，请明天再试";
+    case "sms_ip_limit":
+    case "sms_daily_total_limit":
+    case "sms_provider_throttled":
+      return "获取验证码过于频繁，请稍后再试";
+    case "sms_phone_rejected":
+      return "这个手机号收不到验证码，请换一个手机号";
+    case "sms_timeout":
+    case "sms_network_error":
+      return "短信发送超时，请稍后重试";
+    case "sms_disabled":
+    case "sms_not_configured":
+      return "短信验证暂不可用，请联系中软客服";
+    case "sms_auth_failed":
+    case "sms_ip_blocked":
+    case "sms_balance_insufficient":
+    case "sms_sign_invalid":
+    case "sms_template_invalid":
+    case "sms_provider_error":
+      return "短信服务暂时不可用，请稍后重试；仍不行请联系中软客服";
     case "email_invalid":
       return "邮箱格式不对";
     case "email_taken":
@@ -146,30 +190,37 @@ export function clientOutdatedText(minVersion?: string | null): string {
   return v ? `客户端版本过旧，请升级到 ${v} 或以上` : "客户端版本过旧，请升级到最新版本";
 }
 
+/** 第 62 批：短信频控类（429）与短信服务类（502，云端或短信平台的问题）的代码。 */
+const SMS_THROTTLE_CODES: ReadonlySet<string> = new Set(["sms_too_frequent", "sms_daily_limit", "sms_ip_limit", "sms_daily_total_limit", "sms_provider_throttled"]);
+const SMS_SERVICE_CODES: ReadonlySet<string> = new Set(["sms_disabled", "sms_not_configured", "sms_auth_failed", "sms_ip_blocked", "sms_balance_insufficient", "sms_sign_invalid", "sms_template_invalid", "sms_provider_error", "sms_timeout", "sms_network_error"]);
+
 /**
  * 账号接口失败 → HTTP 状态、错误类别与律师话（第 46 批：待激活模式 onboarding.accountCall 与正常模式 account.* 共用这一处，口径不再分叉）。
  * 控制面原话只在密码规则、锁定剩余时间这类场合采用；client_outdated 用控制面给出的最低版本号。原始代码只进 detail.reason 与日志。
  */
-export function accountFailure(code: string, cpMessage?: string | null, extra?: { min_version?: string | null }): { status: number; fault: "validation" | "rate_limited" | "provider_unavailable"; text: string; reason: string } {
+export function accountFailure(code: string, cpMessage?: string | null, extra?: { min_version?: string | null; retry_after_s?: number | null }): { status: number; fault: "validation" | "rate_limited" | "provider_unavailable"; text: string; reason: string } {
   const c = /^[a-z0-9_]{1,60}$/.test(code) ? code : "error";
   const status =
     c === "auth_invalid" || c.startsWith("session_")
       ? 401
       : c === "account_locked"
         ? 423
-        : c === "rate_limited"
+        : c === "rate_limited" || SMS_THROTTLE_CODES.has(c)
           ? 429
-          : c === "email_taken" || c === "member_taken"
+          : c === "email_taken" || c === "member_taken" || c === "phone_taken" || c === "invite_exhausted"
             ? 409
-            : c === "account_disabled" || c === "registration_closed" || c === "code_required" || c === "staff_client_forbidden"
+            : c === "account_disabled" || c === "registration_closed" || c === "code_required" || c === "staff_client_forbidden" || c === "invite_disabled"
               ? 403
               : c === "client_outdated"
                 ? 426
-                : c.startsWith("cp_") || c === "gate_unavailable"
+                : c.startsWith("cp_") || c === "gate_unavailable" || SMS_SERVICE_CODES.has(c)
                   ? 502
                   : 400;
   const useCp = typeof cpMessage === "string" && cpMessage !== "" && (c === "password_weak" || c === "account_locked");
-  const text = c === "client_outdated" ? clientOutdatedText(extra?.min_version ?? null) : accountErrorText(c, useCp ? cpMessage! : undefined);
+  // 第 62 批：重发间隔按云端给的秒数说；验证码不对时说还能试几次（云端原话只在这两处采用）
+  const wait = Number.isSafeInteger(extra?.retry_after_s) && (extra!.retry_after_s as number) > 0 ? (extra!.retry_after_s as number) : null;
+  const smsText = c === "sms_too_frequent" && wait ? `验证码已发送，请 ${wait} 秒后再重新获取` : c === "sms_code_invalid" && typeof cpMessage === "string" && /^验证码不正确（还可再试 \d 次）$/.test(cpMessage) ? cpMessage : undefined;
+  const text = c === "client_outdated" ? clientOutdatedText(extra?.min_version ?? null) : accountErrorText(c, useCp ? cpMessage! : smsText);
   return { status, fault: status === 502 ? "provider_unavailable" : status === 429 ? "rate_limited" : "validation", text, reason: c };
 }
 

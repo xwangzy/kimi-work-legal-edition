@@ -37,6 +37,20 @@ export interface AccountRecord {
   failed: { count: number; first_at: string | null; locked_until: string | null };
   device_limit: number | null;
   quota_limit: number | null;
+  /**
+   * 第 62 批：验证过的手机号（与账号一对一）。存储也打码：mac = HMAC（查找与唯一性）、masked = 138****8000（视图）、
+   * sealed = AES-256-GCM 密文（密钥由胡椒派生；视图与日志都不解开）。之前的账号没有（照常用邮箱登录）。
+   */
+  phone?: AccountPhone | null;
+  /** 第 62 批：凭哪个注册邀请码注册（inv_…；运营的使用记录据此关联）。 */
+  invite_id?: string | null;
+}
+
+export interface AccountPhone {
+  mac: string;
+  masked: string;
+  sealed: string;
+  verified_at: string;
 }
 
 export interface SessionRecord {
@@ -208,7 +222,7 @@ export function clientInfo(v: unknown): { version: string | null; platform: stri
 
 /** 对外的账号视图（不含哈希与失败计数细节）。 */
 export function accountView(a: AccountRecord, extra: { org?: { slug: string; name: string } } = {}) {
-  return { aid: a.aid, email: a.email, name: a.name, role: a.role, status: a.status, tid: a.tid, member_slug: a.member_slug, has_password: a.pw !== null, created_at: a.created_at, last_login_at: a.last_login_at, ...(extra.org ? { org: extra.org } : {}) };
+  return { aid: a.aid, email: a.email, name: a.name, role: a.role, status: a.status, tid: a.tid, member_slug: a.member_slug, has_password: a.pw !== null, created_at: a.created_at, last_login_at: a.last_login_at, phone: a.phone?.masked ?? null, ...(extra.org ? { org: extra.org } : {}) };
 }
 
 export function sessionView(s: SessionRecord, currentSid: string | null) {

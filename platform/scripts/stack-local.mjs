@@ -111,6 +111,8 @@ const cfgs = {
     code_pepper_file: sec("cp-code-pepper.key"),
     // 平台运营接口（/v1/ops/*）按平台人员账号会话 + 角色鉴权、不限来源（D-218 取消运维网段），回环与 --tls 两种形态都开；ops 段只给“系统”页的部署标识
     ops: { deployment: "dev" },
+    // 第 62 批：本机栈允许短信 dry-run（运营在控制台打开后验证码随应答返回、不发短信）；生产入口缺省不允许
+    sms: { allow_dry_run: true },
     console: { origins: [consoleOrigin], bootstrap_admin: ADMIN },
     routing: { bootstrap: { provider: { id: "maas", label: "中软 MaaS", vendor: "csi-maas", base_url: upstream }, models: { "legal/k3": model, "legal/k2.6": model } }, public_key_file: pub("routing-public.txt") },
   },

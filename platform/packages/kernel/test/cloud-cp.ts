@@ -7,7 +7,7 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { issueSeatToken } from "@zr-legal/seat-token";
 import { publicKeyMap, signDeviceRequest } from "@zr-legal/firm-trust";
-import { createControlPlane, devControlPlaneKeys, GatewayFeedSubscriber, type ControlPlane } from "@zr-legal/control-plane";
+import { createControlPlane, devControlPlaneKeys, GatewayFeedSubscriber, type ControlPlane, type ControlPlaneOptions } from "@zr-legal/control-plane";
 import { createLegalGateway, DEFAULT_ROUTES, httpLedger, LeaseQuota, memoryMeter, MockProvider, type MeterRecord } from "@zr-legal/legal-gateway";
 import { createSearchService, MockSearchProvider, type SearchMeterRecord } from "@zr-legal/search-service";
 import { createSupportApi, type SupportAccessRecord } from "@zr-legal/support-api";
@@ -47,19 +47,34 @@ export interface CloudCp {
    * 模拟控制面不可达（复核 S6-B32）：不可达期间直接断开连接；端口始终由控制面占着（不关闭再重新监听，避免被同时运行的其他测试占用）。
    */
   setControlPlaneAvailable(on: boolean): void;
+  /**
+   * 第 62 批：模拟旧云端（升级包还没部署、新客户端先发出去）——/v1/meta 只回第 61 批及以前的三个字段，/v1/auth/sms/send 为 404。
+   */
+  setLegacyCloud(on: boolean): void;
   close(): Promise<void>;
 }
 
-export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm"; seats?: number }): Promise<CloudCp> {
+export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm"; seats?: number; cp?: Partial<ControlPlaneOptions> }): Promise<CloudCp> {
   const keys = devControlPlaneKeys();
   const serviceSecret = `svc-${Math.random().toString(36).slice(2)}`;
-  const cp = createControlPlane({ keys, serviceSecret });
+  const cp = createControlPlane({ ...(o.cp ?? {}), keys, serviceSecret });
   let available = true;
+  let legacy = false;
   const handlers = cp.server.listeners("request") as ((req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => void)[];
   cp.server.removeAllListeners("request");
   cp.server.on("request", (req, res) => {
     if (!available) {
       req.socket.destroy();
+      return;
+    }
+    if (legacy && req.method === "GET" && req.url === "/v1/meta") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ api: "kwl-cp/2", min_client_version: null, registration: "open" }));
+      return;
+    }
+    if (legacy && req.url === "/v1/auth/sms/send") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { code: "not_found", message: "没有这条路由" } }));
       return;
     }
     for (const h of handlers) h(req, res);
@@ -140,6 +155,9 @@ export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm
     setControlPlaneAvailable(on) {
       available = on;
       if (!on) cp.server.closeAllConnections();
+    },
+    setLegacyCloud(on) {
+      legacy = on;
     },
     async deviceCall(tid, device, method, path, body) {
       const raw = body === undefined ? "" : JSON.stringify(body);

@@ -12,24 +12,28 @@ import type { OpsPermission } from "@zr-legal/ops-auth";
  * （只有客户运营有）：一个人配不完一个按金额计费的套餐。价目是计费口径、不是上游路由，单列一项权限，系统管理员与客户运营都有；
  * 系统管理员另给 `plan.manage`（部署后往往只有这一个引导账号，套餐目录是平台配置，不涉“开通租户 ⟂ 发开通码”的职责分离）。
  */
-export const CP_EXTRA_PERMISSIONS = ["account.read", "usage.read", "billing.read", "route.read", "system.read", "staff.manage", "settings.manage", "account.support", "price.manage"] as const;
+/**
+ * 第 62 批：`registration.read`（看注册策略、注册邀请码、短信发送记录）与 `registration.manage`（改注册策略、生成与停用注册邀请码、
+ * 看与导出完整的码）。短信通道配置（AppKey 等）仍是系统设置，要 `settings.manage`。
+ */
+export const CP_EXTRA_PERMISSIONS = ["account.read", "usage.read", "billing.read", "route.read", "system.read", "staff.manage", "settings.manage", "account.support", "price.manage", "registration.read", "registration.manage"] as const;
 export type CpPermission = OpsPermission | (typeof CP_EXTRA_PERMISSIONS)[number];
 
-export const READ_PERMISSIONS: readonly CpPermission[] = ["tenant.read", "account.read", "usage.read", "billing.read", "route.read", "system.read"];
+export const READ_PERMISSIONS: readonly CpPermission[] = ["tenant.read", "account.read", "usage.read", "billing.read", "route.read", "system.read", "registration.read"];
 
 export const PLATFORM_ROLES = ["sysadmin", "operator", "issuer", "finance", "support", "viewer"] as const;
 export type PlatformRole = (typeof PLATFORM_ROLES)[number];
 
 export const ROLE_TABLE: Readonly<Record<PlatformRole, { label: string; note: string; perms: readonly CpPermission[] }>> = {
-  sysadmin: { label: "系统管理员", note: "人员与权限、系统设置、模型与路由、套餐与价目、整体删除；可看全部", perms: ["staff.manage", "settings.manage", "route.manage", "price.manage", "plan.manage", "tenant.purge", ...READ_PERMISSIONS] },
+  sysadmin: { label: "系统管理员", note: "人员与权限、系统设置（含短信通道）、注册管理、模型与路由、套餐与价目、整体删除；可看全部", perms: ["staff.manage", "settings.manage", "registration.manage", "route.manage", "price.manage", "plan.manage", "tenant.purge", ...READ_PERMISSIONS] },
   operator: {
     label: "客户运营",
-    note: "律所开通与续订、套餐、价目与额度、账号与设备；不能发创始开通码",
-    perms: ["tenant.manage", "tenant.terminate", "quota.manage", "quota.cap", "plan.manage", "price.manage", "account.manage", "account.support", "device.revoke", "tenant.read", "account.read", "usage.read", "billing.read", "route.read"],
+    note: "律所开通与续订、注册管理与注册邀请码、套餐、价目与额度、账号与设备；不能发创始开通码",
+    perms: ["tenant.manage", "tenant.terminate", "quota.manage", "quota.cap", "plan.manage", "price.manage", "registration.manage", "account.manage", "account.support", "device.revoke", "tenant.read", "account.read", "usage.read", "billing.read", "route.read", "registration.read"],
   },
   issuer: { label: "开通专员", note: "发与作废创始开通码；看律所与账号", perms: ["activation.issue", "tenant.read", "account.read"] },
   finance: { label: "财务", note: "看律所、用量与账单", perms: ["tenant.read", "usage.read", "billing.read"] },
-  support: { label: "客服", note: "帮律师解锁、发重置码、强制下线；看律所、账号与用量", perms: ["account.support", "tenant.read", "account.read", "usage.read"] },
+  support: { label: "客服", note: "帮律师解锁、发重置码、强制下线；看律所、账号、用量与注册记录", perms: ["account.support", "tenant.read", "account.read", "usage.read", "registration.read"] },
   viewer: { label: "只读", note: "看全部，不能改", perms: [...READ_PERMISSIONS] },
 };
 

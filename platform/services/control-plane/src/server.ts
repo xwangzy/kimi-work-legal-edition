@@ -16,7 +16,7 @@
  * 只开最小集——开通租户（一律要求开通码）、发与作废开通码、续订、终止、加量、代设上限、吊销设备与席位、租户概要；
  * 写操作照常进律所可见的运营审计流水，执行者为**运营编号**（不再是笼统的 "ops"）；每个运营请求另记内部访问审计。
  */
-import { createHash, createPublicKey, generateKeyPairSync, hkdfSync, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from "node:crypto";
+import { createHash, createHmac, createPublicKey, generateKeyPairSync, hkdfSync, randomBytes, timingSafeEqual, verify as cryptoVerify, type KeyObject } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { StateStore } from "./state-store.ts";
 import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
@@ -57,6 +57,8 @@ import {
   type SessionRecord,
 } from "./accounts.ts";
 import { canonicalJson, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
+import { maskPhone, migrateSms, newSmsCode, normalizePhone, RegError, sealText, SMS_FAIL, SMS_PURPOSES, smsCreds, smsMissing, smsMode, smsView, submailBalance, submailSendCode, validateSmsPatch, type SmsFailCode, type SmsPurpose, type SmsSettings, type SubmailOptions } from "./sms.ts";
+import { batchView, createInviteBatch, INVITE_REJECT, INVITE_STATUSES, inviteCodeText, inviteStatus, inviteView, normalizeInviteCode, RegistrationBook, type InviteCode, type InviteStatus, type SmsCodeRecord } from "./registration.ts";
 import { DANGER_PERMISSIONS, permsOf, rolesProblem, rolesView, type CpPermission, type PlatformRole } from "./rbac.ts";
 import { compareVersion, isStaffId, REAUTH_MS, SEMVER_RE, STAFF_SESSION_ABS_MS, STAFF_SESSION_IDLE_MS, staffView, type StaffRecord } from "./staff.ts";
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -306,6 +308,11 @@ export interface ControlPlaneOptions {
   serverVersion?: string;
   /** 部署信息（“系统”页显示）；roster 已不用于控制面（第 46 批），保留字段只为兼容旧调用。 */
   opsInfo?: { deployment: string; roster?: () => unknown };
+  /**
+   * 短信通道（第 62 批）：allowDryRun = 部署允许 dry-run（进程内调用缺省允许；生产入口 cloud-serve 只在配置显式允许且部署标识不是生产时允许）；
+   * fetchImpl / base / timeoutMs 只给用例与联调（换赛邮云地址或注入假的上游）。
+   */
+  sms?: { allowDryRun?: boolean } & Pick<SubmailOptions, "fetchImpl" | "base" | "timeoutMs">;
 }
 
 /** 控制面运营访问审计（中软内部，不进律所可见的流水）：只有运营编号、密钥编号、动作、租户与目标编号、结果。 */
@@ -429,6 +436,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const accountByMember = new Map<string, string>();
   const sessions = new Map<string, SessionRecord>();
   const codes = new Map<string, OneTimeCode>();
+  // 第 62 批：手机号（HMAC）→ 账号；短信通道设置；注册管理（验证码记录、发送记录、注册邀请码、操作记录）
+  const accountByPhone = new Map<string, string>();
+  let sms: SmsSettings = migrateSms(undefined);
+  const reg = new RegistrationBook();
   // 第 46 批：平台人员（与账号共用会话表、一次性码表；邮箱跨两表唯一）、客户端最低版本
   const staff = new Map<string, StaffRecord>();
   const staffByEmail = new Map<string, string>();
@@ -458,6 +469,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const memberKey = (tid: string, uid: string) => `${tid}\u0000${uid}`;
   const indexAccount = (a: AccountRecord) => {
     accountByEmail.set(a.email, a.aid);
+    if (a.phone) accountByPhone.set(a.phone.mac, a.aid);
     accountByMember.set(memberKey(a.tid, `usr_${a.tid.slice(4)}_${a.member_slug}`), a.aid);
   };
   const accountOfMember = (tid: string, uid: string): AccountRecord | undefined => {
@@ -520,6 +532,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 旧版读 st.mfa.totp 不会崩（旧版按它自己的 staff_mfa 策略处理）。读回时丢弃（applySnapshot）。
       staff: [...staff.values()].map((x) => ({ ...x, mfa: { totp: null, pending: null, recovery: [] } })),
       clients,
+      sms,
+      registration: reg.dump(),
     });
   const snapshot = (state = stateOnly()): string => JSON.stringify({ ...(JSON.parse(state) as object), nonces: [...nonces] });
   /** 由快照重建内存状态（启动读回与失败回滚共用）；null = 空状态。 */
@@ -532,6 +546,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     codes.clear();
     staff.clear();
     staffByEmail.clear();
+    accountByPhone.clear();
+    sms = migrateSms(undefined);
+    reg.clear();
     clients = { ...clientsDefault };
     catalog = structuredClone(catalogDefault);
     routing = bootstrapRouting(now(), routingBootstrap);
@@ -539,7 +556,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     feedVersion = 1;
     if (withNonces) nonces.clear();
     if (raw === null) return;
-    const st = JSON.parse(raw) as { v: number; feedVersion: number; nonces?: [string, number][]; tenants: any[]; accounts?: AccountRecord[]; sessions?: SessionRecord[]; codes?: OneTimeCode[]; catalog?: Catalog; routing?: RoutingState; alerts?: AlertRecord[]; staff?: StaffRecord[]; clients?: { min_version: string | null } };
+    const st = JSON.parse(raw) as { v: number; feedVersion: number; nonces?: [string, number][]; tenants: any[]; accounts?: AccountRecord[]; sessions?: SessionRecord[]; codes?: OneTimeCode[]; catalog?: Catalog; routing?: RoutingState; alerts?: AlertRecord[]; staff?: StaffRecord[]; clients?: { min_version: string | null }; sms?: unknown; registration?: unknown };
+    // 第 62 批之前的状态没有短信设置与注册管理：短信关闭、没有注册邀请码（注册设置里的 phone_required 读回为 false）
+    sms = migrateSms(st.sms);
+    reg.load(st.registration);
     // 第 44 批之前的状态没有这些：套餐从配置导入、路由按配置初始化、账号为空
     catalog = migrateCatalog(st.catalog, structuredClone(catalogDefault));
     routing = migrateRouting(st.routing, now(), routingBootstrap);
@@ -807,6 +827,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   if (codePepper.byteLength !== 32) throw new Error("开通码胡椒须为 32 字节");
   // 账号一次性码（设置密码、重置、邮件验证码）的 HMAC 密钥：由胡椒派生（与开通码 HMAC 分开用途）
   const accountPepper = Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-account-code/1", 32));
+  // 第 62 批：手机号 HMAC、短信验证码 HMAC、控制面自持密文（短信 AppKey、手机号、注册邀请码明文）的密钥，各自由胡椒派生、用途分开
+  const phonePepper = Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-phone/1", 32));
+  const smsPepper = Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-sms-code/1", 32));
+  const sealKey = Buffer.from(hkdfSync("sha256", codePepper, Buffer.alloc(0), "kwl-cp-seal/1", 32));
+  const phoneMacOf = (phone: string): string => createHmac("sha256", phonePepper).update(`kwl-phone/1\n${phone}`).digest("hex");
+  const smsCodeMac = (c: Pick<SmsCodeRecord, "purpose" | "phone_mac" | "id">, code: string): string => createHmac("sha256", smsPepper).update(`kwl-sms-code/1\n${c.purpose}\n${c.phone_mac}\n${c.id}\n${code}`).digest("hex");
+  /** 部署是否允许短信 dry-run（生产入口只在配置显式允许且部署标识不是生产时允许）。 */
+  const smsAllowDryRun = o.sms?.allowDryRun ?? true;
+  const smsOpts: SubmailOptions = { now, ...(o.sms?.fetchImpl ? { fetchImpl: o.sms.fetchImpl } : {}), ...(o.sms?.base ? { base: o.sms.base } : {}), ...(o.sms?.timeoutMs ? { timeoutMs: o.sms.timeoutMs } : {}) };
   /** 律所标识 = 租户编号去掉 ten_ 前缀（与内核 identity.ts 的 ten_<律所标识> 对应）；不合规的租户不能发开通码。 */
   const firmSlugOf = (tid: string): string | null => (/^ten_[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(tid) ? tid.slice(4) : null);
   const newRecordId = (prefix: string) => `${prefix}_${randomBytes(12).toString("base64url")}`;
@@ -1154,7 +1183,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           // 被拒记录同样按“租户 + 执行者 + 动作 + 分钟”限量（复核 RA10B-08：运营接口走网络后，被拒请求不能撑大律所的流水）
           if (entry && tenants.has(tid) && rejectedAllowed(entry)) {
             try {
-              auditLog.append({ ...entry, result: `rejected:${e instanceof CpError || e instanceof QuotaError || e instanceof RoutingError || e instanceof PlanError ? e.code : "error"}` }, iso());
+              auditLog.append({ ...entry, result: `rejected:${e instanceof CpError || e instanceof QuotaError || e instanceof RoutingError || e instanceof PlanError || e instanceof RegError ? e.code : "error"}` }, iso());
             } catch {
               // 审计写不进去：操作本身已失败
             }
@@ -1398,6 +1427,87 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return true;
     }
     return ++w.n <= max;
+  };
+  // ─── 第 62 批：短信验证码（注册、找回密码）与注册策略 ───
+  /** 每个来源地址每小时发了几条（只在内存：重启清零，按小时窗口；与 authAllowed 同样按 TCP 来源）。 */
+  const smsIpWindow = new Map<string, { hour: number; n: number }>();
+  const smsIpCount = (src: string): number => {
+    const w = smsIpWindow.get(src);
+    return w && w.hour === Math.floor(now() / 3600_000) ? w.n : 0;
+  };
+  const smsIpNote = (src: string): void => {
+    const hour = Math.floor(now() / 3600_000);
+    if (smsIpWindow.size > 50_000) for (const [k, w] of smsIpWindow) if (w.hour !== hour) smsIpWindow.delete(k);
+    const w = smsIpWindow.get(src);
+    if (!w || w.hour !== hour) smsIpWindow.set(src, { hour, n: 1 });
+    else w.n += 1;
+  };
+  const smsFail = (code: SmsFailCode): CpError => new CpError(SMS_FAIL[code].status, code, SMS_FAIL[code].message);
+  /** 发送前的频控（同号重发间隔、同号每日上限、来源每小时上限、全平台每日上限）：不通过即抛 429，通过不改任何状态。 */
+  const smsBudget = (phoneMac: string, src: string | null): void => {
+    const t0 = now();
+    reg.sweepCodes(t0);
+    const today = dayOf(t0);
+    const all = [...reg.smsCodes.values()];
+    const mine = all.filter((c) => c.phone_mac === phoneMac);
+    const last = mine.reduce((m, c) => Math.max(m, Date.parse(c.created_at)), 0);
+    const wait = last ? Math.ceil((last + sms.resend_seconds * 1000 - t0) / 1000) : 0;
+    if (wait > 0) throw new CpError(429, "sms_too_frequent", `验证码已发送，请 ${wait} 秒后再重新获取`, { retry_after_s: wait });
+    if (mine.filter((c) => dayOf(Date.parse(c.created_at)) === today).length >= sms.daily_limit_per_phone) throw new CpError(429, "sms_daily_limit", "这个手机号今天获取验证码的次数已达上限，请明天再试");
+    if (src !== null && smsIpCount(src) >= sms.ip_hourly_limit) throw new CpError(429, "sms_ip_limit", "获取验证码过于频繁，请一小时后再试");
+    if (all.filter((c) => dayOf(Date.parse(c.created_at)) === today).length >= sms.daily_total_limit) throw new CpError(429, "sms_daily_total_limit", "今天的验证码发送量已达上限，请明天再试或联系中软客服");
+  };
+  /** 记一条验证码（同号同用途更早的码作废）；test 记录只占额度，HMAC 取随机值、核对不到。 */
+  const issueSmsCode = (purpose: SmsCodeRecord["purpose"], phoneMac: string, code: string | null): SmsCodeRecord => {
+    for (const c of reg.smsCodes.values()) if (c.phone_mac === phoneMac && c.purpose === purpose && !c.used_at) c.superseded = true;
+    const at = now();
+    const rec: SmsCodeRecord = { id: newId("smc"), purpose, phone_mac: phoneMac, mac: "", created_at: iso(at), expires_at: iso(at + sms.ttl_minutes * 60_000), attempts: 0, used_at: code === null ? iso(at) : null, superseded: false };
+    rec.mac = code === null ? randomBytes(32).toString("hex") : smsCodeMac(rec, code);
+    reg.smsCodes.set(rec.id, rec);
+    return rec;
+  };
+  /**
+   * 核对并作废短信验证码（一次性；HMAC 恒定时间比较）。不对：本码失败次数 + 1 并落盘（请求随后失败，回滚不撤这一笔）；
+   * 次数用完、过期、已用过或被新码取代的都不再接受。
+   */
+  const consumeSmsCode = (purpose: SmsPurpose, phone: string, input: unknown): void => {
+    const pm = phoneMacOf(phone);
+    const t0 = now();
+    const mine = [...reg.smsCodes.values()].filter((c) => c.purpose === purpose && c.phone_mac === pm && !c.used_at && !c.superseded);
+    const live = mine.filter((c) => Date.parse(c.expires_at) > t0 && c.attempts < sms.max_attempts);
+    if (!live.length) {
+      if (mine.some((c) => Date.parse(c.expires_at) > t0 && c.attempts >= sms.max_attempts)) throw new CpError(400, "sms_code_attempts", "验证码输错次数过多，请重新获取");
+      throw new CpError(400, "sms_code_expired", "验证码已过期或已使用，请重新获取");
+    }
+    const code = typeof input === "string" ? input.replace(/\s+/g, "") : "";
+    const hit = /^\d{4,8}$/.test(code) ? live.find((c) => sameHexStr(c.mac, smsCodeMac(c, code))) : undefined;
+    if (!hit) {
+      for (const c of live) c.attempts += 1;
+      persistNow();
+      const left = Math.max(0, sms.max_attempts - Math.max(...live.map((c) => c.attempts)));
+      if (left === 0) throw new CpError(400, "sms_code_attempts", "验证码输错次数过多，请重新获取");
+      throw new CpError(400, "sms_code_invalid", `验证码不正确（还可再试 ${left} 次）`, { attempts_left: left });
+    }
+    hit.used_at = iso();
+  };
+  /** 注册策略（/v1/meta 对外公布，客户端据此决定显示哪些字段；旧云端没有这一段，客户端按旧流程走）。 */
+  const registrationPolicy = () => {
+    const set = catalog.settings;
+    const reg0 = smsMode(sms, smsAllowDryRun, "register");
+    const reset0 = smsMode(sms, smsAllowDryRun, "reset");
+    return {
+      mode: set.registration,
+      invite_required: set.registration === "code",
+      require_phone: set.phone_required === true,
+      sms_available: reg0.ok,
+      phone_reset: reset0.ok,
+      sms: { code_length: sms.code_length, resend_seconds: sms.resend_seconds, ttl_minutes: sms.ttl_minutes },
+    };
+  };
+  /** 打开“注册必须验证手机号”时（由关到开），短信通道须可用（否则谁都注册不了）。 */
+  const assertPhonePolicy = (next: { phone_required?: boolean }, prev: { phone_required?: boolean }): void => {
+    if (next.phone_required === true && prev.phone_required !== true && !smsMode(sms, smsAllowDryRun, "register").ok)
+      throw new CpError(409, "sms_required_for_policy", "“注册必须验证手机号”要求短信通道可用：请先在短信设置里启用并配好凭据、签名与注册模板；或先关闭这一项再停用短信");
   };
   const uidOfAccount = (a: AccountRecord) => `usr_${a.tid.slice(4)}_${a.member_slug}`;
   const orgOf = (tid: string) => ({ slug: tid.slice(4), name: tenants.get(tid)?.name ?? tid.slice(4) });
@@ -1852,6 +1962,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       member_slug: a.member_slug,
       created_at: a.created_at,
       created_via: a.created_via,
+      // 第 62 批：手机号只给打码；凭哪个注册邀请码注册
+      phone: a.phone?.masked ?? null,
+      invite_id: a.invite_id ?? null,
       last_login_at: a.last_login_at,
       has_password: a.pw !== null,
       devices: accountDevices(a).filter((d) => !d.revoked_at).length,
@@ -2123,9 +2236,296 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       routing: { version: routing.version, providers: routing.providers.map((x) => { const h = routingView(routing, routingKeyId).providers.find((y) => y.id === x.id)?.health; return { id: x.id, label: x.label, enabled: x.enabled, state: x.enabled ? (h?.state ?? "unknown") : "disabled", latency_ms: h?.latency_ms ?? null, updated_at: h?.updated_at ?? null }; }) },
     };
   };
+  // ─── 第 62 批：注册管理（注册策略、短信通道、注册邀请码；契约 docs/contract-b62-registration.md） ───
+  /** 管理操作记一条注册管理记录（控制台“操作记录”看；内部访问审计照常另记一条）。 */
+  const regNote = (who: StaffWho, action: string, target: string | null, detail: Record<string, string | number | boolean | null> | null = null) => reg.note({ at: iso(), actor: who.operator, action, target, detail });
+  const policyView = () => {
+    const set = catalog.settings;
+    return { registration: set.registration, phone_required: set.phone_required === true, trial_plan: set.trial_plan, trial_days: set.trial_days, trial_seats: set.trial_seats, default_device_limit: set.default_device_limit };
+  };
+  const inviteRow = (c: InviteCode, reveal: boolean) => inviteView(c, reg.batches.get(c.batch_id), now(), inviteCodeText(c, sealKey), reveal);
+  const inviteUses = (c: InviteCode) =>
+    c.uses.map((u) => {
+      const a = accounts.get(u.aid);
+      return { at: u.at, aid: u.aid, email: a?.email ?? null, name: a?.name ?? null, phone: a?.phone?.masked ?? null, tid: u.tid, tenant_name: tenants.get(u.tid)?.name ?? u.tid.replace(/^ten_/, "") };
+    });
+  /** 邀请码筛选：batch_id、status（available / exhausted / expired / disabled）、q（完整的码精确查；否则按批次名、码末 4 位、使用人邮箱或手机号）。 */
+  const inviteQuery = (qs: URLSearchParams): InviteCode[] => {
+    const t0 = now();
+    const bid = qs.get("batch_id");
+    const status = qs.get("status");
+    if (status && !(INVITE_STATUSES as readonly string[]).includes(status)) throw new CpError(400, "status_invalid", "status 须为 available、exhausted、expired 或 disabled");
+    const q = (qs.get("q") ?? "").trim();
+    let list = [...reg.invites.values()].sort((x, y) => y.created_at.localeCompare(x.created_at) || x.id.localeCompare(y.id));
+    if (bid) list = list.filter((c) => c.batch_id === bid);
+    if (status) list = list.filter((c) => inviteStatus(c, t0) === (status as InviteStatus));
+    if (q) {
+      const exact = normalizeInviteCode(q);
+      const hit = exact ? reg.inviteByCode(codePepper, exact) : undefined;
+      if (hit) return list.filter((c) => c.id === hit.id);
+      const ql = q.toLowerCase();
+      const qPhone = normalizePhone(q);
+      const qPhoneMac = qPhone ? phoneMacOf(qPhone) : null;
+      const tail = /^[0-9A-Za-z]{4}$/.test(q) ? q.toUpperCase().replace(/[IL]/g, "1").replace(/O/g, "0") : null;
+      list = list.filter((c) => {
+        if ((reg.batches.get(c.batch_id)?.name ?? "").toLowerCase().includes(ql)) return true;
+        if (tail && inviteCodeText(c, sealKey)?.endsWith(tail)) return true;
+        return c.uses.some((u) => {
+          const a = accounts.get(u.aid);
+          return !!a && (a.email.includes(ql) || (qPhoneMac !== null && a.phone?.mac === qPhoneMac));
+        });
+      });
+    }
+    return list;
+  };
+  const opsSpecRegistration = (method: string, p: string, qs: URLSearchParams): OpsSpec | null => {
+    const none = () => null;
+    const read = (action: string, run: (who: StaffWho) => unknown, perm: CpPermission = "registration.read"): OpsSpec => ({ perm, action, tid: none, target: none, run: (_b, who) => run(who) });
+    if (method === "GET" && p === "/v1/ops/registration")
+      return read("registration.read", () => {
+        const t0 = now();
+        const counts: Record<InviteStatus, number> = { available: 0, exhausted: 0, expired: 0, disabled: 0 };
+        for (const c of reg.invites.values()) counts[inviteStatus(c, t0)] += 1;
+        const v = smsView(sms, smsAllowDryRun);
+        return { policy: policyView(), meta: registrationPolicy(), sms: { enabled: v.enabled, available: v.available, mode: v.mode, unavailable_reason: v.unavailable_reason, dry_run: v.dry_run, dry_run_blocked: v.dry_run_blocked, missing: v.missing }, invites: { total: reg.invites.size, batches: reg.batches.size, by_status: counts } };
+      });
+    // 注册策略：开放 / 仅凭码 / 关闭；是否必须验证手机号；试用规格（与 /v1/ops/settings 里的同一份设置）
+    if (method === "PUT" && p === "/v1/ops/registration/policy")
+      return {
+        perm: "registration.manage",
+        danger: true,
+        action: "registration.policy_update",
+        tid: none,
+        target: (b) => `fields:${Object.keys(b).sort().join(",").slice(0, 200)}`,
+        run: (b, who) => {
+          const allowed = new Set(["registration", "phone_required", "trial_plan", "trial_days", "trial_seats", "default_device_limit"]);
+          for (const k of Object.keys(b)) if (!allowed.has(k)) throw new CpError(400, "policy_invalid", `不认识的设置项：${k.slice(0, 40)}`);
+          const prev = catalog.settings;
+          const next = validateSettings(b, catalog.plans, prev);
+          assertPhonePolicy(next, prev);
+          const pv = prev as unknown as Record<string, unknown>;
+          const nv = next as unknown as Record<string, unknown>;
+          const changed = [...allowed].filter((k) => (k === "phone_required" ? (prev.phone_required === true) !== (next.phone_required === true) : pv[k] !== nv[k]));
+          catalog.settings = next;
+          if (changed.length) regNote(who, "registration.policy_update", null, { fields: changed.join(","), registration: next.registration, phone_required: next.phone_required === true });
+          return { ok: true, policy: policyView(), meta: registrationPolicy() };
+        },
+      };
+    // ─── 短信通道（系统设置：settings.manage；写操作要求复核） ───
+    if (method === "GET" && p === "/v1/ops/registration/sms") return read("sms.settings_read", () => ({ sms: smsView(sms, smsAllowDryRun) }), "settings.manage");
+    if (method === "PUT" && p === "/v1/ops/registration/sms")
+      return {
+        perm: "settings.manage",
+        action: "sms.settings_update",
+        tid: none,
+        // 只记改了哪些字段（不记值；AppKey 更不记）
+        target: (b) => `fields:${Object.keys(b).sort().join(",").slice(0, 200)}`,
+        run: (b, who) => {
+          const { next, changed } = validateSmsPatch(b, sms, { sealKey, allowDryRun: smsAllowDryRun, by: who.operator, at: iso() });
+          if (catalog.settings.phone_required === true && !smsMode(next, smsAllowDryRun, "register").ok) throw new CpError(409, "sms_required_by_policy", "注册策略要求验证手机号，不能停用短信或清掉注册所需的配置：请先在注册策略里关闭“必须验证手机号”");
+          sms = next;
+          if (changed.length) regNote(who, "sms.settings_update", null, { fields: changed.join(","), enabled: next.enabled, dry_run: next.dry_run, app_key_hint: changed.includes("app_key") ? next.app_key_hint : null });
+          return { ok: true, changed, sms: smsView(sms, smsAllowDryRun) };
+        },
+      };
+    // 测试连接：查余额（不发短信）。要 settings.manage，不要求复核（只读，不花钱）
+    if (method === "POST" && p === "/v1/ops/registration/sms/test-connection")
+      return {
+        perm: "settings.manage",
+        danger: false,
+        action: "sms.test_connection",
+        tid: none,
+        target: none,
+        run: async (_b, who) => {
+          const creds = smsCreds(sms, sealKey);
+          if (!creds) throw smsFail("sms_not_configured");
+          const r = await submailBalance(creds, smsOpts);
+          regNote(who, "sms.test_connection", null, { result: r.ok ? "ok" : r.code, provider_code: r.ok ? null : r.provider_code });
+          persistNow();
+          if (!r.ok) throw new CpError(SMS_FAIL[r.code].status === 400 ? 502 : SMS_FAIL[r.code].status, r.code, SMS_FAIL[r.code].message, { provider_code: r.provider_code });
+          return { ok: true, provider: "submail", balance: r.balance, transactional_balance: r.transactional_balance, checked_at: iso() };
+        },
+      };
+    // 发送测试短信：按注册模板给指定手机号发一条（随机码，不能用来注册）；花钱，要求复核；同样受同号间隔与每日上限约束
+    if (method === "POST" && p === "/v1/ops/registration/sms/test-send")
+      return {
+        perm: "settings.manage",
+        danger: true,
+        action: "sms.test_send",
+        tid: none,
+        target: (b) => {
+          const ph = normalizePhone(b.phone);
+          return ph ? maskPhone(ph) : null;
+        },
+        run: async (b, who) => {
+          const phone = normalizePhone(b.phone);
+          if (!phone) throw new CpError(400, "phone_invalid", "手机号格式不对：请填写 11 位中国大陆手机号");
+          // 不要求已启用（先配好、测通再启用）；要凭据、签名与注册模板齐全
+          const miss = smsMissing(sms, "test");
+          if (miss.length) throw new CpError(503, "sms_not_configured", `短信服务未配置齐：缺 ${miss.join("、")}`, { missing: miss });
+          const creds = smsCreds(sms, sealKey);
+          if (!creds) throw smsFail("sms_not_configured");
+          const pm = phoneMacOf(phone);
+          smsBudget(pm, null);
+          const rec = issueSmsCode("test", pm, null);
+          persistNow();
+          const r = await submailSendCode(creds, { to: phone, project: sms.projects.register!, code: newSmsCode(sms.code_length), signName: sms.sign_name!, ttlMinutes: sms.ttl_minutes }, smsOpts);
+          // 发送失败不占同号间隔与每日额度（改好配置可立刻再试），与律师端发码一致
+          if (!r.ok) reg.smsCodes.delete(rec.id);
+          reg.logSend({ at: iso(), purpose: "test", phone: maskPhone(phone), result: r.ok ? "sent" : "failed", code: r.ok ? null : r.code, provider_code: r.ok ? null : r.provider_code, by: who.operator });
+          regNote(who, "sms.test_send", maskPhone(phone), { result: r.ok ? "sent" : r.code, provider_code: r.ok ? null : r.provider_code });
+          persistNow();
+          if (!r.ok) throw new CpError(SMS_FAIL[r.code].status, r.code, SMS_FAIL[r.code].message, { provider_code: r.provider_code });
+          return { ok: true, phone: maskPhone(phone), sent_at: iso() };
+        },
+      };
+    if (method === "GET" && p === "/v1/ops/registration/sms/logs") {
+      const lim = Math.min(500, Math.max(1, Number(qs.get("limit") ?? "100") || 100));
+      const purpose = qs.get("purpose");
+      const result = qs.get("result");
+      return read("sms.logs", () => ({ logs: reg.smsLog.filter((x) => (!purpose || x.purpose === purpose) && (!result || x.result === result)).slice(0, lim) }));
+    }
+    if (method === "GET" && p === "/v1/ops/registration/audit") {
+      const lim = Math.min(1000, Math.max(1, Number(qs.get("limit") ?? "100") || 100));
+      return read("registration.audit", () => ({ entries: reg.audit.slice(0, lim) }));
+    }
+    // ─── 注册邀请码 ───
+    if (method === "GET" && p === "/v1/ops/registration/invite-batches")
+      return read("invite.batches", () => ({ batches: [...reg.batches.values()].sort((x, y) => y.created_at.localeCompare(x.created_at)).map((x) => batchView(x, reg, now())) }));
+    if (method === "POST" && p === "/v1/ops/registration/invite-batches")
+      return {
+        perm: "registration.manage",
+        action: "invite.batch_create",
+        tid: none,
+        target: none,
+        run: (b, who) => {
+          const { batch, codes: made } = createInviteBatch(reg, b, { pepper: codePepper, sealKey, by: who.operator, t: now(), planExists: (id) => catalog.plans.some((x) => x.id === id), newId });
+          regNote(who, "invite.batch_create", batch.id, { name: batch.name, count: batch.count, max_uses: batch.max_uses, expires_at: batch.expires_at, plan: batch.plan, trial_days: batch.trial_days, trial_seats: batch.trial_seats });
+          return { ok: true, batch: batchView(batch, reg, now()), codes: made.map((x) => inviteRow(reg.invites.get(x.id)!, true)) };
+        },
+      };
+    /** 停用一批码（ids 或整个批次）：已停用、已用完的照样标停用（之后也不会再被用）。 */
+    const disableMany = (list: InviteCode[], reason: unknown, who: StaffWho): number => {
+      if (reason !== undefined && reason !== null && !(typeof reason === "string" && reason.length <= 100)) throw new CpError(400, "reason_invalid", "原因至多 100 个字符");
+      let n = 0;
+      for (const c of list)
+        if (c.status !== "disabled") {
+          Object.assign(c, { status: "disabled", disabled_at: iso(), disabled_by: who.operator, disabled_reason: typeof reason === "string" && reason.trim() ? reason.trim() : null });
+          n += 1;
+        }
+      return n;
+    };
+    const bd = /^\/v1\/ops\/registration\/invite-batches\/(ivb_[A-Za-z0-9_-]{16})\/disable$/.exec(p);
+    if (method === "POST" && bd)
+      return {
+        perm: "registration.manage",
+        action: "invite.batch_disable",
+        tid: none,
+        target: () => bd[1]!,
+        run: (b, who) => {
+          if (!reg.batches.has(bd[1]!)) throw new CpError(404, "batch_unknown", "没有这个批次");
+          const n = disableMany([...reg.invites.values()].filter((c) => c.batch_id === bd[1]), b.reason, who);
+          regNote(who, "invite.batch_disable", bd[1]!, { disabled: n });
+          return { ok: true, disabled: n, batch: batchView(reg.batches.get(bd[1]!)!, reg, now()) };
+        },
+      };
+    if (method === "POST" && p === "/v1/ops/registration/invites/disable")
+      return {
+        perm: "registration.manage",
+        action: "invite.disable_many",
+        tid: none,
+        target: none,
+        run: (b, who) => {
+          const ids = b.ids;
+          if (!Array.isArray(ids) || ids.length < 1 || ids.length > 1000 || !ids.every((x) => typeof x === "string" && /^inv_[A-Za-z0-9_-]{16}$/.test(x))) throw new CpError(400, "ids_invalid", "ids 须为 1–1000 个邀请码编号（inv_…）");
+          const list = ids.map((x) => reg.invites.get(x as string)).filter((x): x is InviteCode => !!x);
+          if (list.length !== new Set(ids).size) throw new CpError(404, "invite_unknown", "有邀请码编号不存在");
+          const n = disableMany(list, b.reason, who);
+          regNote(who, "invite.disable_many", null, { requested: list.length, disabled: n });
+          return { ok: true, disabled: n };
+        },
+      };
+    if (method === "GET" && (p === "/v1/ops/registration/invites" || p === "/v1/ops/registration/invites.csv")) {
+      const csvOut = p.endsWith(".csv");
+      // 导出含完整的码：要 registration.manage
+      return {
+        perm: csvOut ? "registration.manage" : "registration.read",
+        action: csvOut ? "invite.export" : "invite.list",
+        tid: none,
+        target: none,
+        run: (_b, who) => {
+          const list = inviteQuery(qs);
+          const reveal = who.perms.includes("registration.manage");
+          if (csvOut) {
+            const rows = list.map((c) => {
+              const v = inviteRow(c, true);
+              const users = inviteUses(c).map((u) => u.email ?? u.aid).join("; ");
+              return [v.code, v.batch_name, { available: "可用", exhausted: "已用完", expired: "已过期", disabled: "已停用" }[v.status], v.max_uses, v.used, v.expires_at ?? "长期", v.plan ?? "", v.trial_days ?? "", v.trial_seats ?? "", v.created_at, v.last_used_at ?? "", users];
+            });
+            regNote(who, "invite.export", qs.get("batch_id"), { rows: rows.length });
+            return { __csv: csv(["邀请码", "批次", "状态", "可用次数", "已用次数", "有效期至", "套餐", "试用天数", "试用席位", "生成时间", "最近使用", "使用人"], rows), filename: `invites-${dayOf(now())}.csv` } satisfies CsvOut;
+          }
+          const lim = Math.min(500, Math.max(1, Number(qs.get("limit") ?? "100") || 100));
+          const cursor = qs.get("cursor");
+          const start = cursor ? Math.max(0, list.findIndex((c) => c.id === cursor) + 1) : 0;
+          const page = list.slice(start, start + lim);
+          return { invites: page.map((c) => inviteRow(c, reveal)), next: start + lim < list.length ? page[page.length - 1]!.id : null, total: list.length, revealed: reveal };
+        },
+      };
+    }
+    const im = /^\/v1\/ops\/registration\/invites\/(inv_[A-Za-z0-9_-]{16})(?:\/(disable|enable))?$/.exec(p);
+    if (im) {
+      const id = im[1]!;
+      const inviteOf = (): InviteCode => {
+        const c = reg.invites.get(id);
+        if (!c) throw new CpError(404, "invite_unknown", "没有这个邀请码");
+        return c;
+      };
+      if (method === "GET" && !im[2])
+        return {
+          perm: "registration.read",
+          action: "invite.read",
+          tid: none,
+          target: () => id,
+          run: (_b, who) => {
+            const c = inviteOf();
+            return { invite: inviteRow(c, who.perms.includes("registration.manage")), uses: inviteUses(c), batch: batchView(reg.batches.get(c.batch_id)!, reg, now()) };
+          },
+        };
+      if (method === "POST" && im[2] === "disable")
+        return {
+          perm: "registration.manage",
+          action: "invite.disable",
+          tid: none,
+          target: () => id,
+          run: (b, who) => {
+            const n = disableMany([inviteOf()], b.reason, who);
+            if (n) regNote(who, "invite.disable", id);
+            return { ok: true, invite: inviteRow(inviteOf(), true) };
+          },
+        };
+      if (method === "POST" && im[2] === "enable")
+        return {
+          perm: "registration.manage",
+          action: "invite.enable",
+          tid: none,
+          target: () => id,
+          run: (_b, who) => {
+            const c = inviteOf();
+            if (c.status === "disabled") {
+              Object.assign(c, { status: "active", disabled_at: null, disabled_by: null, disabled_reason: null });
+              regNote(who, "invite.enable", id);
+            }
+            return { ok: true, invite: inviteRow(c, true) };
+          },
+        };
+    }
+    return null;
+  };
   const opsSpecRest = (method: string, p: string, qs: URLSearchParams): OpsSpec | null => {
     const none = () => null;
     const read = (action: string, run: () => unknown, perm: CpPermission = "tenant.read"): OpsSpec => ({ perm, action, tid: none, target: none, run });
+    if (p === "/v1/ops/registration" || p.startsWith("/v1/ops/registration/")) return opsSpecRegistration(method, p, qs);
     // ─── 套餐与注册设置 ───
     if (method === "GET" && p === "/v1/ops/plans") return read("plan.list", () => ({ plans: catalog.plans.map(planView), default_plan: catalog.default_plan }));
     const pl = /^\/v1\/ops\/plans\/([a-z0-9][a-z0-9-]{0,23})$/.exec(p);
@@ -2175,7 +2575,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
             }
           }
           const { staff_mfa: _m, clients: _c, mail: _ml, ...rest } = b;
-          catalog.settings = validateSettings(rest, catalog.plans, catalog.settings);
+          const nextSet = validateSettings(rest, catalog.plans, catalog.settings);
+          assertPhonePolicy(nextSet, catalog.settings);
+          catalog.settings = nextSet;
           clients = { min_version: mv };
           return { ok: true, ...settingsView() };
         },
@@ -2209,7 +2611,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const lim = Math.min(200, Math.max(1, Number(qs.get("limit") ?? "50") || 50));
         const cursor = qs.get("cursor");
         let list = [...accounts.values()].sort((x, y) => y.created_at.localeCompare(x.created_at) || x.aid.localeCompare(y.aid));
-        if (q) list = list.filter((a) => a.email.includes(q) || a.name.toLowerCase().includes(q) || (tenants.get(a.tid)?.name ?? a.tid).toLowerCase().includes(q));
+        // 第 62 批：q 是手机号时按手机号摘要精确查（账号里只有打码与摘要）
+        const qPhone = normalizePhone(q);
+        const qPhoneMac = qPhone ? phoneMacOf(qPhone) : null;
+        if (q) list = list.filter((a) => a.email.includes(q) || a.name.toLowerCase().includes(q) || (tenants.get(a.tid)?.name ?? a.tid).toLowerCase().includes(q) || (qPhoneMac !== null && a.phone?.mac === qPhoneMac));
         if (tid) list = list.filter((a) => a.tid === tid);
         if (status === "active" || status === "disabled") list = list.filter((a) => a.status === status);
         const start = cursor ? Math.max(0, list.findIndex((a) => a.aid === cursor) + 1) : 0;
@@ -2813,7 +3218,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     return send(res, 200, staffAuthResult(st, token, rec));
   };
   const OPS_LOGIN_GONE = new Set(["/v1/ops/login", "/v1/ops/logout", "/v1/ops/password"]);
-  const opsRoute = (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): void => {
+  const opsRoute = async (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): Promise<void> => {
     // 运营路径按请求行原样匹配（不认点段与编码）：生产入口按原样路径判断来源网段，规范化后才落到运营路由的写法一律不认。GET 可带查询串
     const qi = path.indexOf("?");
     const pathOnly = qi < 0 ? path : path.slice(0, qi);
@@ -2857,9 +3262,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     let out: unknown;
     try {
       out = asOperator(st.aid, () => spec.run(b, who));
+      // 第 62 批：短信“测试连接”“发送测试短信”要等短信平台（异步）；其余运营路由仍是同步的
+      if (out instanceof Promise) out = await out;
     } catch (e) {
       try {
-        opsAccess({ at: iso(), ...rec, result: `rejected:${e instanceof CpError || e instanceof QuotaError || e instanceof RoutingError || e instanceof PlanError ? e.code : "error"}` });
+        opsAccess({ at: iso(), ...rec, result: `rejected:${e instanceof CpError || e instanceof QuotaError || e instanceof RoutingError || e instanceof PlanError || e instanceof RegError ? e.code : "error"}` });
       } catch {
         // 结果补记不进去：“已请求”一条已在
       }
@@ -2941,6 +3348,53 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   const authRoute = async (req: IncomingMessage, res: ServerResponse, method: string, path: string, p: string, raw: string): Promise<void> => {
     const src = sourceOf(req);
+    // ─── 第 62 批：短信验证码（register = 注册前验证手机号；reset = 用手机号找回密码）。不需要会话 ───
+    if (method === "POST" && p === "/v1/auth/sms/send") {
+      if (!authAllowed(src, "sms", 5)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
+      const b = parseJson(raw);
+      minVersionGate(b.client);
+      const purpose = (b.purpose === undefined ? "register" : b.purpose) as SmsPurpose;
+      if (!SMS_PURPOSES.includes(purpose)) throw new CpError(400, "sms_purpose_invalid", "验证码用途须为 register 或 reset");
+      const phone = normalizePhone(b.phone);
+      if (!phone) throw new CpError(400, "phone_invalid", "手机号格式不对：请填写 11 位中国大陆手机号");
+      const mode = smsMode(sms, smsAllowDryRun, purpose);
+      if (!mode.ok) throw smsFail(mode.code);
+      const pm = phoneMacOf(phone);
+      if (purpose === "register") {
+        if (catalog.settings.registration === "closed") throw new CpError(403, "registration_closed", "暂不开放注册，请联系中软开通");
+        if (accountByPhone.has(pm)) throw new CpError(409, "phone_taken", "这个手机号已注册，请直接登录（忘记密码可用手机号找回）");
+      }
+      smsBudget(pm, src);
+      smsIpNote(src);
+      const reply = { ok: true, purpose, phone: maskPhone(phone), code_length: sms.code_length, expires_in_s: sms.ttl_minutes * 60, resend_after_s: sms.resend_seconds };
+      // 找回密码：手机号没有对应的有效账号时照样回“已发送”（不泄露手机号是否注册），不发短信、不记验证码
+      const holder = purpose === "reset" ? accounts.get(accountByPhone.get(pm) ?? "") : undefined;
+      if (purpose === "reset" && (!holder || holder.status !== "active")) return sendRaw(res, 200, reply);
+      const code = newSmsCode(sms.code_length);
+      const rec = issueSmsCode(purpose, pm, code);
+      const logBase = { at: iso(), purpose, phone: maskPhone(phone), by: null };
+      if (mode.mode === "dry_run") {
+        // 只在允许 dry-run 的部署（非生产）：验证码随应答返回，不写日志、不发短信
+        reg.logSend({ ...logBase, result: "dry_run", code: null, provider_code: null });
+        return send(res, 200, { ...reply, dry_run: true, debug_code: code });
+      }
+      const creds = smsCreds(sms, sealKey);
+      if (!creds) {
+        reg.smsCodes.delete(rec.id);
+        throw smsFail("sms_not_configured");
+      }
+      // 先落盘再等短信平台（等待期间别的请求失败回滚，不会把这条验证码与额度占用撤掉）
+      persistNow();
+      const r = await submailSendCode(creds, { to: phone, project: sms.projects[purpose]!, code, signName: sms.sign_name!, ttlMinutes: sms.ttl_minutes }, smsOpts);
+      if (!r.ok) {
+        reg.smsCodes.delete(rec.id);
+        reg.logSend({ ...logBase, result: "failed", code: r.code, provider_code: r.provider_code });
+        persistNow();
+        throw smsFail(r.code);
+      }
+      reg.logSend({ ...logBase, result: "sent", code: null, provider_code: null });
+      return send(res, 200, reply);
+    }
     if (method === "POST" && p === "/v1/auth/register") {
       if (!authAllowed(src, "register", 10)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
       const b = parseJson(raw);
@@ -2953,6 +3407,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const probs = passwordProblems(b.password, email);
       if (probs.length) throw new CpError(400, "password_weak", `密码需要：${probs.join("、")}`, { rules: probs });
       if (emailTaken(email)) throw new CpError(409, "email_taken", "这个邮箱已注册，请直接登录（忘记密码可找回）");
+      // 第 62 批：手机号（策略要求时必填；不要求时也可以填，填了就要验证）
+      const phoneIn = typeof b.phone === "string" && b.phone.trim() !== "" ? b.phone : null;
+      if (set.phone_required === true && phoneIn === null) throw new CpError(400, "phone_required", "请填写手机号并获取短信验证码");
+      const phone = phoneIn === null ? null : normalizePhone(phoneIn);
+      if (phoneIn !== null && !phone) throw new CpError(400, "phone_invalid", "手机号格式不对：请填写 11 位中国大陆手机号");
+      const pm = phone ? phoneMacOf(phone) : null;
+      if (pm && accountByPhone.has(pm)) throw new CpError(409, "phone_taken", "这个手机号已注册，请直接登录（忘记密码可用手机号找回）");
+      if (phone && !(typeof b.sms_code === "string" && b.sms_code.trim() !== "")) throw new CpError(400, "sms_code_required", "请填写短信验证码");
       const name = String(b.name).trim();
       let t: TenantRecord;
       let role: AccountRecord["role"];
@@ -2966,20 +3428,39 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 同一个人在管理员的成员页叫“李律师”、在用量明细和他自己的界面叫另一个名字。一个成员在本所只有一个名字：管理员批准的那个。
       let memberName = name;
       const hasCode = typeof b.code === "string" && b.code.trim() !== "";
+      // 第 62 批：先只查码、不改状态（短信验证码一核对就作废，码不对不能白白耗掉验证码）；核对验证码之后才占用码
+      let act: { ht: TenantRecord; r: ActivationRecord } | null = null;
+      let inv: InviteCode | null = null;
       if (hasCode) {
         // 开通码（20 位）或邀请码的控制面段（邀请码的本机核对段留在客户端，用于入组申请的 HMAC）
         const code = normalizeActivationCode(b.code);
-        const mac = code ? activationCodeMac(codePepper, code) : null;
-        const ix = mac ? codeIndex.get(mac) : undefined;
-        const ht = ix ? tenants.get(ix.tid) : undefined;
-        const r = ix && ht ? ht.activations.get(ix.id) : undefined;
-        if (!ht || !r || r.via_account || !sameHex(r.code_mac, mac!) || !redeemable(ht, r)) throw new CpError(400, "code_invalid", "开通码或邀请码不正确或已失效，请向发码人重新获取");
-        if (!licenseValid(ht)) throw new CpError(402, "license_expired", "律所订阅已到期，请联系中软开通");
+        if (code) {
+          const mac = activationCodeMac(codePepper, code);
+          const ix = codeIndex.get(mac);
+          const ht = ix ? tenants.get(ix.tid) : undefined;
+          const r = ix && ht ? ht.activations.get(ix.id) : undefined;
+          if (!ht || !r || r.via_account || !sameHex(r.code_mac, mac) || !redeemable(ht, r)) throw new CpError(400, "code_invalid", "开通码或邀请码不正确或已失效，请向发码人重新获取");
+          if (!licenseValid(ht)) throw new CpError(402, "license_expired", "律所订阅已到期，请联系中软开通");
+          if (r.kind === "founder" && (ht.root_public_key_pem || [...accounts.values()].some((x) => x.tid === ht.tid && x.role === "admin"))) throw new CpError(400, "code_invalid", "开通码或邀请码不正确或已失效，请向发码人重新获取");
+          if (accountOfMember(ht.tid, `usr_${ht.tid.slice(4)}_${r.member.slug}`)) throw new CpError(409, "member_taken", "这份邀请对应的成员已有账号：请用那个账号登录");
+          act = { ht, r };
+        } else {
+          // 第 62 批：平台注册邀请码（12 位，运营按批次发；凭它开一家试用律所）
+          const ic = normalizeInviteCode(b.code);
+          const c = ic ? reg.inviteByCode(codePepper, ic) : undefined;
+          if (!c) throw new CpError(400, "code_invalid", "邀请码或开通码不正确，请核对后重新输入");
+          const st = inviteStatus(c, now());
+          if (st !== "available") throw new CpError(INVITE_REJECT[st].status, INVITE_REJECT[st].code, INVITE_REJECT[st].message);
+          inv = c;
+        }
+      } else if (set.registration === "code") throw new CpError(403, "code_required", "请输入邀请码或律所发给你的开通码");
+      // 短信验证码：通过即作废（一次性）
+      if (phone) consumeSmsCode("register", phone, b.sms_code);
+      if (act) {
+        const { ht, r } = act;
         t = ht;
         slug = r.member.slug;
         role = r.kind === "founder" ? "admin" : r.member.role;
-        if (r.kind === "founder" && (t.root_public_key_pem || [...accounts.values()].some((x) => x.tid === t.tid && x.role === "admin"))) throw new CpError(400, "code_invalid", "开通码或邀请码不正确或已失效，请向发码人重新获取");
-        if (accountOfMember(t.tid, `usr_${t.tid.slice(4)}_${slug}`)) throw new CpError(409, "member_taken", "这份邀请对应的成员已有账号：请用那个账号登录");
         via = r.kind === "founder" ? "founder_code" : "invite_code";
         const secret = newClaimSecret();
         r.status = "claimed";
@@ -2990,16 +3471,50 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         if (r.kind === "member" && r.member.name) memberName = r.member.name;
         claim = { kind: r.kind, tid: t.tid, activation_id: r.id, claim_secret: secret, firm: orgOf(t.tid), member: { slug, name: memberName, role } };
       } else {
-        if (set.registration === "code") throw new CpError(403, "code_required", "请输入律所发给你的开通码或邀请码");
         const orgName = typeof b.org_name === "string" && validDisplayName(b.org_name.trim()) ? b.org_name.trim() : `${name}的工作室`.slice(0, 40);
-        t = viaRoute(() => ops.createTenant({ tid: newFirmTid(email), edition: "team", seats: set.trial_seats, subscriptionDays: set.trial_days, plan: set.trial_plan, name: orgName, activationRequired: true, accountsRequired: true, createdVia: "self" }));
+        // 注册邀请码原子占用：与建律所、建账号在同一段同步代码里（没有 await），并发注册时后到的看到“已用完”
+        const batch = inv ? reg.batches.get(inv.batch_id) : undefined;
+        if (inv) {
+          const st = inviteStatus(inv, now());
+          if (st !== "available") throw new CpError(INVITE_REJECT[st].status, INVITE_REJECT[st].code, INVITE_REJECT[st].message);
+          inv.used += 1;
+        }
+        try {
+          const plan = batch?.plan && catalog.plans.some((x) => x.id === batch.plan) ? batch.plan : set.trial_plan;
+          t = viaRoute(() => ops.createTenant({ tid: newFirmTid(email), edition: "team", seats: batch?.trial_seats ?? set.trial_seats, subscriptionDays: batch?.trial_days ?? set.trial_days, plan, name: orgName, activationRequired: true, accountsRequired: true, createdVia: "self" }));
+        } catch (e) {
+          if (inv) inv.used -= 1;
+          throw e;
+        }
         role = "admin";
         slug = newMemberSlug(t, email);
         via = "self";
       }
-      const a: AccountRecord = { aid: newId("acc"), email, name: via === "invite_code" ? memberName : name, status: "active", disabled_reason: null, tid: t.tid, member_slug: slug, role, pw: hashPassword(String(b.password)), pw_changed_at: iso(), created_at: iso(), created_via: via, last_login_at: iso(), failed: { count: 0, first_at: null, locked_until: null }, device_limit: null, quota_limit: null };
+      const aid = newId("acc");
+      const a: AccountRecord = {
+        aid,
+        email,
+        name: via === "invite_code" ? memberName : name,
+        status: "active",
+        disabled_reason: null,
+        tid: t.tid,
+        member_slug: slug,
+        role,
+        pw: hashPassword(String(b.password)),
+        pw_changed_at: iso(),
+        created_at: iso(),
+        created_via: via,
+        last_login_at: iso(),
+        failed: { count: 0, first_at: null, locked_until: null },
+        device_limit: null,
+        quota_limit: null,
+        // 第 62 批：验证过的手机号（存储也打码：HMAC + 打码 + 密文）与注册邀请码
+        ...(phone && pm ? { phone: { mac: pm, masked: maskPhone(phone), sealed: sealText(sealKey, phone, `kwl-account-phone/1\n${aid}`), verified_at: iso() } } : {}),
+        ...(inv ? { invite_id: inv.id } : {}),
+      };
       accounts.set(a.aid, a);
       indexAccount(a);
+      if (inv) inv.uses.push({ at: iso(), aid: a.aid, tid: t.tid });
       const kind = clientInfo(b.client).platform === "web" ? "web" : "desktop";
       const { token, rec } = newSession(a, kind, null, b.client);
       const base = { tid: t.tid, firm: orgOf(t.tid), member: { slug, name: memberName, role }, devices_used: 0, device_limit: deviceLimitOf(a) };
@@ -3085,6 +3600,22 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (method === "POST" && p === "/v1/auth/password-reset/confirm") {
       if (!authAllowed(src, "reset-confirm", 10)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
       const b = parseJson(raw);
+      // 第 62 批：用手机号找回（先经 /v1/auth/sms/send purpose=reset 取验证码）。先查密码规则再核对验证码（密码不合格不耗掉验证码）
+      if (b.phone !== undefined && b.email === undefined) {
+        const phone = normalizePhone(b.phone);
+        if (!phone) throw new CpError(400, "phone_invalid", "手机号格式不对：请填写 11 位中国大陆手机号");
+        const pa = accounts.get(accountByPhone.get(phoneMacOf(phone)) ?? "");
+        if (!pa || pa.status !== "active") throw new CpError(400, "sms_code_invalid", "验证码不正确");
+        const pp = passwordProblems(b.password, pa.email);
+        if (pp.length) throw new CpError(400, "password_weak", `密码需要：${pp.join("、")}`, { rules: pp });
+        consumeSmsCode("reset", phone, b.code);
+        pa.pw = hashPassword(String(b.password));
+        pa.pw_changed_at = iso();
+        pa.failed = { count: 0, first_at: null, locked_until: null };
+        revokeSessions((x) => x.aid === pa.aid, "password_reset");
+        accountMark(res, pa, "account.password_reset");
+        return send(res, 200, { ok: true });
+      }
       const email = normalizeEmail(b.email);
       // 成员账号或平台人员（第 46 批：人员的设置码 / 重置码同一张码表）；停用的人员不能借此重新进来
       const stf = email ? staff.get(staffByEmail.get(email) ?? "") : undefined;
@@ -3207,7 +3738,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (p === "/v1/ops" || p.startsWith("/v1/ops/")) return opsRoute(req, res, method, path, p, raw);
     if (p.startsWith("/v1/auth/")) return authRoute(req, res, method, path, p, raw);
     // 第 46 批：版本与策略（无鉴权）；成员网页接口
-    if (method === "GET" && p === "/v1/meta") return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration });
+    // 第 62 批：registration_policy / sms_available / features 是能力字段——客户端按它们做特性检测（旧云端没有，客户端照旧流程注册）
+    if (method === "GET" && p === "/v1/meta") {
+      const pol = registrationPolicy();
+      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites"] });
+    }
     if (p.startsWith("/v1/me/") || p.startsWith("/v1/firm/")) return memberRoute(req, res, method, p, url, raw);
 
     // ─── 开通：律所根公钥入组（G0：创始设备持根私钥签名证明；生产为开通流程） ───
@@ -4148,8 +4683,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const ce =
         e instanceof CpError
           ? e
-          : e instanceof QuotaError || e instanceof RoutingError || e instanceof PlanError || e instanceof AuthError
-            ? new CpError(e.status, e.code, e.message, e instanceof AuthError ? e.extra : undefined)
+          : e instanceof QuotaError || e instanceof RoutingError || e instanceof PlanError || e instanceof AuthError || e instanceof RegError
+            ? new CpError(e.status, e.code, e.message, e instanceof AuthError || e instanceof RegError ? e.extra : undefined)
             : e instanceof SignerUnavailableError
               ? new CpError(503, "signer_unavailable", "控制面签名服务暂不可用，请稍后重试")
               : new CpError(500, "control_plane_error", "控制面错误");

@@ -33,11 +33,14 @@ export interface PlanSpec {
 }
 
 export interface RegistrationSettings {
+  /** 注册方式：open = 开放（不填码即自助开通试用律所）；code = 仅凭码（开通码、成员邀请码或第 62 批的注册邀请码）；closed = 关闭。 */
   registration: "open" | "code" | "closed";
   trial_plan: string;
   trial_days: number;
   trial_seats: number;
   default_device_limit: number;
+  /** 第 62 批：注册是否必须验证手机号（短信验证码）。打开前须短信通道可用（server.ts 校验）；之前的状态读回为 false。 */
+  phone_required?: boolean;
 }
 
 export interface Catalog {
@@ -124,7 +127,7 @@ export const DEFAULT_CATALOG: Catalog = {
     plan({ id: "trial", label: "试用", note: "自助注册试用 14 天，2,000 万 token，约 10 单常规任务", quota_unit: "tokens", seat_quota: 20_000_000, burst: { hours: 5, pct: 50 }, device_limit: 1, origin: "default" }),
   ],
   default_plan: "standard",
-  settings: { registration: "open", trial_plan: "trial", trial_days: 14, trial_seats: 1, default_device_limit: 2 },
+  settings: { registration: "open", trial_plan: "trial", trial_days: 14, trial_seats: 1, default_device_limit: 2, phone_required: false },
 };
 
 function plan(p: Partial<PlanSpec> & Pick<PlanSpec, "id" | "label" | "quota_unit" | "seat_quota">): PlanSpec {
@@ -183,7 +186,8 @@ export function validateSettings(raw: unknown, plans: PlanSpec[], prev: Registra
   if (!(Number.isSafeInteger(b.trial_days) && b.trial_days >= 1 && b.trial_days <= 365)) throw new PlanError(400, "trial_days_invalid", "试用天数须为 1–365");
   if (!(Number.isSafeInteger(b.trial_seats) && b.trial_seats >= 1 && b.trial_seats <= 50)) throw new PlanError(400, "trial_seats_invalid", "试用席位须为 1–50");
   if (!(Number.isSafeInteger(b.default_device_limit) && b.default_device_limit >= 1 && b.default_device_limit <= 9)) throw new PlanError(400, "device_limit_invalid", "缺省设备数须为 1–9");
-  return { registration: b.registration, trial_plan: b.trial_plan, trial_days: b.trial_days, trial_seats: b.trial_seats, default_device_limit: b.default_device_limit };
+  if (b.phone_required !== undefined && typeof b.phone_required !== "boolean") throw new PlanError(400, "phone_required_invalid", "phone_required 须为 true 或 false");
+  return { registration: b.registration, trial_plan: b.trial_plan, trial_days: b.trial_days, trial_seats: b.trial_seats, default_device_limit: b.default_device_limit, phone_required: b.phone_required === true };
 }
 
 /**

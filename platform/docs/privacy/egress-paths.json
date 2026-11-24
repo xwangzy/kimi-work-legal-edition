@@ -2,7 +2,7 @@
   "_comment": "闸门每个外发通道发往云端的路径逐条登记（v9.3 A-12；评审 Z4 P0-11“通道 ↔ 清单”）。门禁 packages/egress-gate/test/egress-paths.test.ts：源码里提取的路径须与这里逐条一致；classes 为驻留面清单 residency.json 的数据类编号。cp-relay 与 dist-relay 是路径白名单正则（源码原样），其余是源码拼出的路径（${…} 记作 {}）。",
   "channels": {
     "packages/egress-gate/src/cp-relay.ts": {
-      "what": "控制面通道：开通与入组、设备登记与吊销、席位与许可、律所策略与连接器、租户盐、匿名事项摘要、用量与运营审计、我方账号（第 44 批：注册、登录、退出、本人资料、改密、找回密码、吊销本人的登录、解绑本人的设备；密码只在请求里、本机不保存，会话令牌封装保存在本机）",
+      "what": "控制面通道：开通与入组、设备登记与吊销、席位与许可、律所策略与连接器、租户盐、匿名事项摘要、用量与运营审计、我方账号（第 44 批：注册、登录、退出、本人资料、改密、找回密码、吊销本人的登录、解绑本人的设备；密码只在请求里、本机不保存，会话令牌封装保存在本机）；第 62 批：注册策略（/v1/meta，无鉴权）与短信验证码（注册与找回密码时的手机号与验证码，只在请求里、本机不保存）",
       "classes": [
         24,
         25,
@@ -12,7 +12,7 @@
         "^\\/v1\\/activation\\/redeem$",
         "^\\/v1\\/anon-matters\\/[A-Za-z0-9_-]{16,64}$",
         "^\\/v1\\/audit\\?after=\\d{1,15}&limit=\\d{1,3}$",
-        "^\\/v1\\/auth\\/(?:register|login|logout|me|password|password-reset\\/request|password-reset\\/confirm)$",
+        "^\\/v1\\/auth\\/(?:register|login|logout|me|password|password-reset\\/request|password-reset\\/confirm|sms\\/send)$",
         "^\\/v1\\/auth\\/devices\\/[A-Za-z0-9_-]{1,128}\\/unbind$",
         "^\\/v1\\/auth\\/sessions\\/ses_[A-Za-z0-9_-]{16}\\/revoke$",
         "^\\/v1\\/connectors$",
@@ -28,6 +28,7 @@
         "^\\/v1\\/join-requests$",
         "^\\/v1\\/join-requests\\/jr_[A-Za-z0-9_-]{16}\\/(?:fetch|approve|reject|withdraw)$",
         "^\\/v1\\/license$",
+        "^\\/v1\\/meta$",
         "^\\/v1\\/notify-token$",
         "^\\/v1\\/policy$",
         "^\\/v1\\/quota$",
