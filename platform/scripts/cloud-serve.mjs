@@ -64,6 +64,8 @@
  *   // 控制台、登录入口与 /v1/ops/* 对任意来源开放；安全靠 TLS + 账号密码 + 角色权限 + 登录限流与锁定 + 危险操作密码复核 + 访问审计（均在服务端）
  *   "clients": { "min_version": "0.2.0" },                                // 可选：客户端最低版本（首次启动导入状态，之后在控制台改）；低于它登录、注册、续期席位令牌回 426
  *   "usage_dir": "/srv/kwl-shared/usage",                                 // 可选：用量账本目录（缺省 <data_dir>/control-plane/usage）；一主多备时须放共享存储
+ *   "sms": { "allow_dry_run": true },                                     // 控制面可选（第 62 批）：只给测试 / 联调部署——允许运营在控制台打开短信 dry-run（验证码随应答返回、不发短信）；
+ *                                                                         //   缺省 false；ops.deployment 以 prod 开头时配 true 即拒绝启动。短信通道本身（赛邮云 AppID、AppKey、签名、模板）在控制台“注册管理”里配
  *   // 找回全部系统管理员：有服务器 shell 的人写 <data_dir>/control-plane/admin-recovery.request（内容：系统管理员邮箱），30 秒内处理
  *   // 控制面可选（第 44 批）：套餐目录与注册设置的初始值（首次启动导入状态；之后运营在控制台改）。额度单位 tokens 或 cny（价目表售价 × 实际 usage）
  *   "billing": { "plans": [ { "id": "standard", "label": "标准", "quota_unit": "tokens", "seat_quota": 50000000, "period": "month", "seat_price_cny": 399,
@@ -539,6 +541,16 @@ if (cfg.role === "cp-signer") {
       }
     })(),
     ...(typeof cfg.ops?.deployment === "string" ? { opsInfo: { deployment: cfg.ops.deployment } } : {}),
+    // 第 62 批：短信 dry-run 只在显式允许、且不是生产部署时可开（生产入口缺省不允许）
+    sms: (() => {
+      const s = cfg.sms ?? {};
+      if (typeof s !== "object" || s === null || Array.isArray(s)) fail("sms 须为对象");
+      for (const k of Object.keys(s)) if (k !== "allow_dry_run") fail(`sms.${k} 不认识（短信通道在控制台“注册管理”里配）`);
+      if (s.allow_dry_run !== undefined && typeof s.allow_dry_run !== "boolean") fail("sms.allow_dry_run 须为 true 或 false");
+      if (s.allow_dry_run === true && /^prod/i.test(String(cfg.ops?.deployment ?? ""))) fail("生产部署（ops.deployment 以 prod 开头）不能允许短信 dry-run：请删掉 sms.allow_dry_run");
+      if (s.allow_dry_run === true) console.error("[cloud-serve] 告警：已允许短信 dry-run（验证码随应答返回、不发短信）——只用于测试与联调部署");
+      return { allowDryRun: s.allow_dry_run === true };
+    })(),
   });
   if (cfg.kimi_account !== undefined) fail("kimi_account 已撤下（第 44 批：Kimi 官方账号体系未开放第三方接入，改为我方自有账号），请从配置里删除");
   svc = cpInstance.server;

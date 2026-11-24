@@ -945,6 +945,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     api["account.login"] = (p) => onboarding.accountLogin((p ?? {}) as Record<string, unknown>);
     api["account.reset_request"] = (p) => onboarding.resetRequest((p ?? {}) as Record<string, unknown>);
     api["account.reset_confirm"] = (p) => onboarding.resetConfirm((p ?? {}) as Record<string, unknown>);
+    // 第 62 批：注册策略（按云端能力字段决定注册页显示手机号与邀请码；旧云端回 legacy）与短信验证码
+    api["account.registration_meta"] = () => onboarding.registrationMeta();
+    api["account.sms_send"] = (p) => onboarding.smsSend((p ?? {}) as Record<string, unknown>);
     // 从备份恢复（第 14 批；设计 docs/design/恢复与备份设计-v1.md §3.4）：恢复包 + 恢复码 + 备份位置 → 与原机相同的身份与数据
     api["onboarding.restore"] = async (p) => {
       const done = onboarding.exclusive();

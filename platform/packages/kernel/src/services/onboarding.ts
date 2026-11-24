@@ -123,8 +123,8 @@ function cpErrorText(code: string): string {
   }
 }
 
-async function cpPost(relay: CpRelay, path: string, body: unknown): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string }> {
-  const r = await relay({ method: "POST", path, headers: {}, body: JSON.stringify(body) });
+async function cpPost(relay: CpRelay, path: string, body: unknown, method: "POST" | "GET" = "POST"): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string; retry_after_s?: number }> {
+  const r = await relay({ method, path, headers: {}, body: method === "GET" ? "" : JSON.stringify(body) });
   // 证书类、安装包配置类的代码原样保留（cp_tls_*、cp_upstream_*），其余通道错误并成 cp_unreachable
   if (!r.ok) return { ok: false, code: r.reason.startsWith("cp_") && !cloudFailureText(r.reason) ? "cp_unreachable" : r.reason };
   let json: Record<string, any> = {};
@@ -141,6 +141,8 @@ async function cpPost(relay: CpRelay, path: string, body: unknown): Promise<{ ok
       ...(typeof json?.error?.message === "string" && json.error.message.length <= 200 ? { message: json.error.message } : {}),
       // 第 46 批：客户端版本过旧（426）时控制面给出最低版本号
       ...(typeof json?.error?.min_version === "string" && json.error.min_version.length <= 40 ? { min_version: json.error.min_version } : {}),
+      // 第 62 批：验证码重发还要等几秒
+      ...(Number.isSafeInteger(json?.error?.retry_after_s) && json.error.retry_after_s > 0 && json.error.retry_after_s <= 86_400 ? { retry_after_s: json.error.retry_after_s } : {}),
     };
   return { ok: true, json };
 }
@@ -428,22 +430,60 @@ export class OnboardingService {
     if (!r.ok) {
       slog.event("KERNEL_ACCOUNT_CALL_FAILED", { reason: /^[a-z_]{1,40}$/.test(r.code) ? r.code : "other" });
       // 第 46 批：与正常模式的 account.* 共用一处映射（状态码、文案；控制面原话只用于密码规则与锁定时长）
-      const f = accountFailure(r.code, r.message ?? null, { min_version: r.min_version ?? null });
-      throw new DomainError(f.fault, f.text, f.status, { reason: f.reason });
+      const f = accountFailure(r.code, r.message ?? null, { min_version: r.min_version ?? null, retry_after_s: r.retry_after_s ?? null });
+      throw new DomainError(f.fault, f.text, f.status, { reason: f.reason, ...(r.retry_after_s ? { retry_after_s: r.retry_after_s } : {}) });
     }
     return r.json;
   }
 
-  /** 注册（待激活模式）：自助开通个人律所，或凭开通码 / 邀请码。密码只经闸门的控制面通道发给中软（TLS 钉住），本机不保存。 */
-  async accountRegister(p: { email?: unknown; password?: unknown; name?: unknown; org_name?: unknown; code?: unknown }): Promise<Record<string, unknown>> {
+  /**
+   * 注册策略（第 62 批；GET /v1/meta 的能力字段）：云端有 registration_policy 才按它显示手机号与邀请码；旧云端没有、取不到或格式不对，
+   * 一律回 legacy（注册页照旧流程：不要求手机号，码可填可不填）。只回界面要用的几项，不透传云端原文。
+   */
+  async registrationMeta(): Promise<Record<string, unknown>> {
+    const r = await cpPost(this.d.relay, "/v1/meta", undefined, "GET");
+    const pol = r.ok ? (r.json.registration_policy as Record<string, unknown> | undefined) : undefined;
+    const features = r.ok && Array.isArray(r.json.features) ? (r.json.features as unknown[]).filter((x): x is string => typeof x === "string") : [];
+    if (!pol || typeof pol !== "object" || !features.includes("sms_send")) return { legacy: true, mode: r.ok && typeof r.json.registration === "string" ? r.json.registration : null };
+    const sms = (pol.sms ?? {}) as Record<string, unknown>;
+    const int = (v: unknown, lo: number, hi: number, d: number) => (Number.isSafeInteger(v) && (v as number) >= lo && (v as number) <= hi ? (v as number) : d);
+    return {
+      legacy: false,
+      mode: pol.mode === "open" || pol.mode === "code" || pol.mode === "closed" ? pol.mode : "open",
+      invite_required: pol.invite_required === true,
+      require_phone: pol.require_phone === true,
+      sms_available: pol.sms_available === true,
+      phone_reset: pol.phone_reset === true,
+      sms: { code_length: int(sms.code_length, 4, 8, 6), resend_seconds: int(sms.resend_seconds, 30, 600, 60), ttl_minutes: int(sms.ttl_minutes, 1, 30, 10) },
+    };
+  }
+
+  /** 发短信验证码（第 62 批；register = 注册、reset = 找回密码）。手机号只经闸门的控制面通道发给中软，本机不保存、不记日志。 */
+  async smsSend(p: { phone?: unknown; purpose?: unknown }): Promise<Record<string, unknown>> {
+    const purpose = p.purpose === "reset" ? "reset" : "register";
+    const phone = typeof p.phone === "string" ? p.phone.trim() : "";
+    if (!/^(?:\+?86)?1[3-9]\d{9}$/.test(phone.replace(/[\s-]/g, ""))) throw new DomainError("validation", accountErrorText("phone_invalid"), 400, { reason: "phone_invalid" });
+    const j = await this.accountCall("/v1/auth/sms/send", { phone, purpose, client: this.clientInfo() });
+    const n = (v: unknown, d: number) => (Number.isSafeInteger(v) && (v as number) > 0 && (v as number) <= 86_400 ? (v as number) : d);
+    // dry-run（只在非生产云端）：云端随应答给出验证码，界面写明“测试环境”；生产不会有这一项
+    return { ok: true, phone: typeof j.phone === "string" ? j.phone : null, resend_after_s: n(j.resend_after_s, 60), expires_in_s: n(j.expires_in_s, 600), code_length: n(j.code_length, 6), ...(j.dry_run === true && typeof j.debug_code === "string" && /^\d{4,8}$/.test(j.debug_code) ? { dry_run: true, debug_code: j.debug_code } : {}) };
+  }
+
+  /**
+   * 注册（待激活模式）：自助开通个人律所，或凭开通码 / 邀请码。密码只经闸门的控制面通道发给中软（TLS 钉住），本机不保存。
+   * 第 62 批：可带手机号与短信验证码（云端要求时必填）；码另认 12 位注册邀请码（运营按批次发，凭它开试用律所，没有本机核对段）。
+   */
+  async accountRegister(p: { email?: unknown; password?: unknown; name?: unknown; org_name?: unknown; code?: unknown; phone?: unknown; sms_code?: unknown }): Promise<Record<string, unknown>> {
     const done = this.exclusive();
     try {
       if (this.pending()) throw new DomainError("conflict", "这台电脑正在等待批准；如要改用别的账号，请先点“重新输入”", 409);
       const hasCode = typeof p.code === "string" && p.code.trim() !== "";
-      const input = hasCode ? splitInvitationInput(p.code) : null;
-      if (hasCode && !input) throw new DomainError("validation", "开通码是 20 位、邀请码是 36 位字母与数字（可带连字符），请核对后重新输入", 400);
+      const input = hasCode ? (splitInvitationInput(p.code) ?? registrationInviteInput(p.code)) : null;
+      if (hasCode && !input) throw new DomainError("validation", "注册邀请码是 12 位、开通码是 20 位、成员邀请码是 36 位字母与数字（可带连字符），请核对后重新输入", 400);
       rmSync(join(this.root, JOIN_FAILED_FILE), { force: true });
-      const j = await this.accountCall("/v1/auth/register", { email: p.email, password: p.password, name: p.name, ...(typeof p.org_name === "string" && p.org_name.trim() ? { org_name: p.org_name } : {}), ...(input ? { code: input.code } : {}), client: this.clientInfo() });
+      const phone = typeof p.phone === "string" && p.phone.trim() ? p.phone.trim() : null;
+      const smsCode = typeof p.sms_code === "string" && p.sms_code.trim() ? p.sms_code.replace(/\s+/g, "") : null;
+      const j = await this.accountCall("/v1/auth/register", { email: p.email, password: p.password, name: p.name, ...(typeof p.org_name === "string" && p.org_name.trim() ? { org_name: p.org_name } : {}), ...(input ? { code: input.code } : {}), ...(phone ? { phone, ...(smsCode ? { sms_code: smsCode } : {}) } : {}), client: this.clientInfo() });
       return await this.afterAuth(j, input?.secret ?? null);
     } finally {
       if (!this.restarting) done();
@@ -467,9 +507,10 @@ export class OnboardingService {
     return this.accountCall("/v1/auth/password-reset/request", { email: p.email });
   }
 
-  /** 用验证码 / 重置码 / 设置码设新密码（两种模式都可用；之后要重新登录）。 */
-  async resetConfirm(p: { email?: unknown; code?: unknown; password?: unknown }): Promise<Record<string, unknown>> {
-    await this.accountCall("/v1/auth/password-reset/confirm", { email: p.email, code: p.code, password: p.password });
+  /** 用验证码 / 重置码 / 设置码设新密码（两种模式都可用；之后要重新登录）。第 62 批：也可用手机号 + 短信验证码（先 account.sms_send purpose=reset）。 */
+  async resetConfirm(p: { email?: unknown; phone?: unknown; code?: unknown; password?: unknown }): Promise<Record<string, unknown>> {
+    const byPhone = typeof p.phone === "string" && p.phone.trim() !== "" && (p.email === undefined || p.email === null || p.email === "");
+    await this.accountCall("/v1/auth/password-reset/confirm", byPhone ? { phone: String(p.phone).trim(), code: p.code, password: p.password } : { email: p.email, code: p.code, password: p.password });
     return { ok: true };
   }
 
@@ -850,7 +891,18 @@ export const membersApi = (d: MembersDeps) => {
 };
 
 /** 待激活模式下开放的内核方法（其余一律 not_activated）。第 14 批加“从备份恢复”。 */
-export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "device.env_probe", "account.register", "account.login", "account.reset_request", "account.reset_confirm"]);
+export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "device.env_probe", "account.register", "account.login", "account.reset_request", "account.reset_confirm", "account.registration_meta", "account.sms_send"]);
+
+/** 第 62 批：12 位注册邀请码（Crockford Base32，与开通码同一归一规则）；不是即 null。纯函数。 */
+export function registrationInviteInput(input: unknown): { code: string; secret: null } | null {
+  if (typeof input !== "string" || input.length > 64) return null;
+  const s = input
+    .toUpperCase()
+    .replace(/[\s\-‐-―－]/g, "")
+    .replace(/[IL]/g, "1")
+    .replace(/O/g, "0");
+  return /^[0-9A-HJKMNP-TV-Z]{12}$/.test(s) ? { code: s, secret: null } : null;
+}
 
 const JOIN_FAILED_FILE = "onboarding-failed.json";
 const PENDING_ACTIVATION_FILE = "activation.pending.json";

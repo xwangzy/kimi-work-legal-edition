@@ -1615,6 +1615,10 @@ table.data.visibility-table th:first-child, table.data.visibility-table td:first
 .pw-rules li.bad { color: var(--status-warning-text); }
 .auth-check { display: flex; align-items: center; gap: 6px; font-size: var(--fs-body); color: var(--text-label); }
 .auth-row { display: flex; justify-content: flex-end; }
+/* 第 62 批：短信验证码输入框与“获取验证码”按钮同一行 */
+.sms-row { display: flex; align-items: center; gap: 8px; }
+.sms-row .auth-input { flex: 1 1 auto; min-width: 0; }
+.sms-row .btn-ghost { flex: none; white-space: nowrap; }
 .auth-secondary { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
 .auth-secondary .btn-link { padding: 0; }
 .auth-devices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }

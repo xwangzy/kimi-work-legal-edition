@@ -49,6 +49,42 @@ export function codeLengthOk(code: string): boolean {
   return [20, 36].includes(code.replace(/[^0-9A-Za-z]/g, "").length);
 }
 
+/** 第 62 批：注册时的码——注册邀请码 12 位、开通码 20 位、成员邀请码 36 位（只数字母与数字）。 */
+export function registerCodeLengthOk(code: string): boolean {
+  return [12, 20, 36].includes(code.replace(/[^0-9A-Za-z]/g, "").length);
+}
+
+/** 中国大陆手机号的粗查（可带 +86、空格与连字符；真正的核对在中软）。 */
+export function phoneLooksValid(v: string): boolean {
+  return /^(?:\+?86)?1[3-9]\d{9}$/.test(v.replace(/[\s-]/g, ""));
+}
+
+/** 短信验证码：纯数字、位数与云端公布的一致（缺省 6 位）。 */
+export function smsCodeLooksValid(v: string, len = 6): boolean {
+  return new RegExp(`^\\d{${len}}$`).test(v.trim());
+}
+
+/** 内核 account.registration_meta 的结果（第 62 批；旧云端 legacy = true）。 */
+export interface RegistrationMeta {
+  legacy: boolean;
+  mode?: "open" | "code" | "closed" | null;
+  invite_required?: boolean;
+  require_phone?: boolean;
+  sms_available?: boolean;
+  phone_reset?: boolean;
+  sms?: { code_length: number; resend_seconds: number; ttl_minutes: number };
+}
+
+/**
+ * 注册页显示哪些字段（第 62 批，按云端能力字段做特性检测）：取不到策略或旧云端（legacy）→ 照旧流程（不显示手机号，码可勾选填写）；
+ * 新云端 → 短信可用才显示手机号（要求时必填，否则选填）；仅凭码注册时码必填、不再用勾选框。纯函数。
+ */
+export function registrationFields(m: RegistrationMeta | null | undefined): { legacy: boolean; phone: "hidden" | "optional" | "required"; code: "checkbox" | "required"; codeLength: number; resendSeconds: number; phoneReset: boolean } {
+  if (!m || m.legacy) return { legacy: true, phone: "hidden", code: "checkbox", codeLength: 6, resendSeconds: 60, phoneReset: false };
+  const phone = m.require_phone ? "required" : m.sms_available ? "optional" : "hidden";
+  return { legacy: false, phone, code: m.invite_required ? "required" : "checkbox", codeLength: m.sms?.code_length ?? 6, resendSeconds: m.sms?.resend_seconds ?? 60, phoneReset: m.phone_reset === true };
+}
+
 export const ROLE_LABEL: Readonly<Record<string, string>> = { admin: "管理员", firm_admin: "管理员", partner: "合伙人", lawyer: "律师", assistant: "助理" };
 
 export function roleLabel(r: string | null | undefined): string {

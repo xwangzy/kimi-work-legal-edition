@@ -24,7 +24,7 @@
 /v1/drafts[/drf_<16 hex>[/signatures|/publish]]                  /v1/anon-matters/{id}
 /v1/devices/{id}/revoke          /v1/seats/{uid}/revoke          /v1/quota              /v1/quota/cap
 /v1/support-token                /v1/notify-token                /v1/relay-token
-/v1/auth/{register|login|logout|me|password|password-reset/request|password-reset/confirm}
+/v1/auth/{register|login|logout|me|password|password-reset/request|password-reset/confirm|sms/send}   /v1/meta（第 62 批：注册策略能力字段）
 /v1/auth/sessions/ses_<16>/revoke                                /v1/auth/devices/{id}/unbind
 /v1/audit?after=<n>&limit=<n>
 /v1/activation/redeem            /v1/join-requests               /v1/join-requests/jr_<16>/{fetch|approve|reject|withdraw}

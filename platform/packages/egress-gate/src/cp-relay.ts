@@ -41,7 +41,8 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/relay-token$/,
   /^\/v1\/quota\/cap$/,
   // 第 44 批：我方账号（注册、登录、退出、本人资料、改密、找回密码、吊销本人的登录、解绑本人的设备）
-  /^\/v1\/auth\/(?:register|login|logout|me|password|password-reset\/request|password-reset\/confirm)$/,
+  // 第 62 批：注册与找回密码的短信验证码（sms/send：手机号与用途）
+  /^\/v1\/auth\/(?:register|login|logout|me|password|password-reset\/request|password-reset\/confirm|sms\/send)$/,
   /^\/v1\/auth\/sessions\/ses_[A-Za-z0-9_-]{16}\/revoke$/,
   /^\/v1\/auth\/devices\/[A-Za-z0-9_-]{1,128}\/unbind$/,
   /^\/v1\/audit\?after=\d{1,15}&limit=\d{1,3}$/,
@@ -51,6 +52,8 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/join-requests\/jr_[A-Za-z0-9_-]{16}\/(?:fetch|approve|reject|withdraw)$/,
   /^\/v1\/invitations$/,
   /^\/v1\/invitations\/act_[A-Za-z0-9_-]{16}\/revoke$/,
+  // 第 62 批：版本与注册策略（无鉴权、无请求体；注册页按其中的能力字段决定显示手机号与邀请码）
+  /^\/v1\/meta$/,
 ];
 const METHODS = new Set(["GET", "POST", "PUT", "DELETE"]);
 // 第 44 批：x-kwl-session = 账号会话令牌（内核从封装文件读出、只附在控制面请求上）
