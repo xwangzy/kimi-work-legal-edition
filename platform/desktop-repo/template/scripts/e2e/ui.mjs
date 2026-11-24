@@ -733,6 +733,10 @@ async function preview() {
   if (runHash) {
     await go(runHash);
     await sleep(3000);
+    // 合同审查一类任务右栏缺省是“审查摘要”页签：先切到“成果”再看预览
+    const tab = page.getByRole("tab", { name: "成果" });
+    if (await tab.count()) await tab.first().click().catch(() => {});
+    await sleep(1500);
     results.push(await framePainted("任务页右栏-缺省选中").catch((e) => ({ label: "任务页右栏", ok: false, dark: 0, why: e.message })));
     log(JSON.stringify(results[results.length - 1]));
     // 右栏下拉里逐个切换（版本切换时预览要跟着换、不残留上一份）
