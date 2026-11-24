@@ -521,6 +521,7 @@ details.fold > .fold-body { padding: 0 var(--sp-5) var(--sp-5); }
 .tbl tbody tr:hover td { background: var(--bg-hover-soft); }
 .tbl tbody tr.dim td { color: var(--text-secondary); }
 .tbl tbody tr.flagged td:first-child, .tbl tbody tr.estimated td:first-child { box-shadow: inset 3px 0 0 var(--status-warning-solid); }
+.tbl tbody tr.selected-row td { background: var(--bg-active); }
 .tbl tbody tr.danger-row td:first-child { box-shadow: inset 3px 0 0 var(--status-danger-solid); }
 .tbl tfoot td { font-weight: 600; background: var(--bg-subtle); border-top: 1px solid var(--border-default); border-bottom: 0; }
 .tbl .empty-row td { text-align: center; color: var(--text-secondary); padding: var(--sp-6) var(--sp-4); }
@@ -761,3 +762,54 @@ dialog { color: var(--text-primary); }
 .toast { pointer-events: auto; max-width: min(640px, calc(100vw - 32px)); padding: 9px 16px; border-radius: var(--r-sm); background: var(--btn-primary); color: var(--btn-primary-text); box-shadow: var(--shadow-md); font-size: var(--fs-caption); transition: opacity 0.3s, transform 0.3s; }
 .toast.tone-error { background: var(--status-danger-solid); color: var(--text-on-solid); }
 .toast.leaving { opacity: 0; transform: translateY(6px); }
+
+/* ── 第 62 批第二轮：模型与价目（按上游型号）、注册管理、总览“需要关注” ── */
+.model-meta { gap: 4px; }
+.model-meta .badges { margin-top: 2px; }
+.model-meta small { font-size: var(--fs-meta); color: var(--text-secondary); }
+.sale-explicit { padding: 0 4px; border-radius: var(--r-xs); box-shadow: inset 0 0 0 1px var(--accent-border); }
+.price-global { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: flex-end; }
+.inline-field { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); color: var(--text-label); white-space: nowrap; }
+.inline-field.grow { flex: 1; min-width: 220px; }
+.inline-field.grow input { flex: 1; }
+.price-model { border: 1px solid var(--border-subtle); border-radius: var(--r-md); padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); background: var(--bg-surface); }
+.price-model > header { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.price-grid { display: grid; grid-template-columns: 96px repeat(5, minmax(0, 1fr)); gap: 6px var(--sp-2); align-items: center; }
+.price-grid > div { display: contents; }
+.price-grid .num-input { width: 100%; }
+.pg-head { font-size: var(--fs-meta); color: var(--text-secondary); text-align: right; }
+.pg-label { font-size: var(--fs-caption); color: var(--text-label); }
+.price-grid .ro { text-align: right; color: var(--text-secondary); font-size: var(--fs-caption); padding-right: 10px; }
+.price-model-foot { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
+@media (max-width: 720px) { .price-grid { grid-template-columns: 80px repeat(5, minmax(64px, 1fr)); overflow-x: auto; } }
+
+/* 需要关注：唯一的待办来源——一项一行（状态点 + 一句话 + 直达动作）；为 0 的项收成一行安静的“其余 N 项正常” */
+.todo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.todo-item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: var(--sp-3); align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-body); }
+.todo-item:last-child { border-bottom: 0; }
+.todo-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.todo-text b { font-weight: 500; }
+.todo-text small { color: var(--text-secondary); font-size: var(--fs-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-act { display: flex; gap: var(--sp-2); align-items: center; }
+.todo-rest { display: flex; align-items: center; gap: var(--sp-2); padding-top: 10px; border-top: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: var(--fs-caption); }
+.todo-rest .dot, .todo-empty .dot { background: var(--status-success-solid); }
+.todo-empty { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-label); font-size: var(--fs-body); }
+@media (max-width: 560px) { .todo-item { grid-template-columns: 8px minmax(0, 1fr); } .todo-act { grid-column: 2; } }
+.todo-sub { list-style: none; margin: 6px 0 0; padding: 0 0 0 var(--sp-3); border-left: 1px solid var(--border-default); display: flex; flex-direction: column; gap: 6px; }
+.todo-sub li { display: flex; align-items: center; gap: var(--sp-3); }
+.todo-sub-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--sp-2); font-size: var(--fs-caption); }
+.todo-sub-main b { font-weight: 500; }
+.todo-sub-main small { flex-basis: 100%; color: var(--text-secondary); font-size: var(--fs-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 注册管理 */
+.status-line { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.code-cell { display: inline-flex; align-items: center; gap: 2px; }
+.icon-btn.sm { width: 26px; height: 26px; }
+.icon-btn.sm .icon { width: 14px; height: 14px; }
+.btn.ghost.danger { color: var(--status-danger-text); }
+.btn.ghost.danger:hover:not(:disabled) { background: var(--status-danger-bg); }
+.reg-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-4); }
+.tbl th.check-col, .tbl td.check-col { width: 1%; padding-right: 0; }
+.selection-bar { display: flex; align-items: center; gap: var(--sp-3); padding: 8px var(--sp-5); background: var(--bg-subtle); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-caption); }
+.code-list { margin: 0; padding: var(--sp-3); max-height: 260px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-subtle); font-family: var(--font-mono); font-size: var(--fs-caption); line-height: 1.8; columns: 2; user-select: all; }
+@media (max-width: 768px) { .reg-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .code-list { columns: 1; } }

@@ -11,7 +11,8 @@
  * - 开发数据**只经控制面的真实接口写入**（客户运营与系统管理员的会话令牌，与浏览器同一条路）：开通律所、代建负责人账号
  *   （拿设置码经 /v1/auth/password-reset/confirm 设好密码，用来以律所管理员身份登录“本所”）、上游（密钥用临时路由公钥在本机加密）、
  *   别名路由、加量与上限、停用一个账号；第 62 批起另模拟网关回报近 30 日逐请求用量与上游健康（走网关同一条服务间接口，见
- *   seedGatewayReports；--no-usage 不造，用量页显示空状态）。--empty 只建平台人员。
+ *   seedGatewayReports；价目经 PUT /v1/ops/pricing 改按上游型号，留一段“价目生效前”；--no-usage 不造，用量页显示空状态），
+ *   并经真实接口造注册邀请码、凭码注册、测试模式短信发送记录（seedRegistration）。--empty 只建平台人员。
  */
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -64,17 +65,20 @@ const cp = createControlPlane({
       : {
           provider: { id: "csi-maas", label: "中软 MaaS（开发地址）", vendor: "csi-maas", base_url: "https://maas.example.invalid/v1" },
           models: { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k3.1-pro-highspeed" },
+          // 第 62 批之前的按别名价目（v1，只给 legal/k3 定了价）：之后经 PUT /v1/ops/pricing 改为按上游型号（v2），
+          // 这样账本里有一段“价目生效前”的行，用量与计费页的“按现行价估算”有真实形态可看
           prices: { "legal/k3": { input: 8, cached_input: 2, output: 32, cost_input: 4, cost_cached_input: 1, cost_output: 16 } },
         },
   },
-  // 示例套餐（正式套餐由商务写进控制面配置的 billing 段，或在控制台“套餐与额度”里改）
+  // 示例套餐（第 62 批口径：额度按金额，元 / 席位 / 月；同生产缺省目录 CNY_CATALOG 的量级）
   billing: EMPTY
     ? undefined
     : {
         plans: [
-          { id: "standard", label: "标准", quota_unit: "tokens", seat_quota: 20_000_000, period: "month", seat_price_cny: 399, boost_price_factor: 1, device_limit: 2, alert_thresholds: [80, 100], enforce_seat_quota: false, models: null, burst: null },
-          { id: "pro", label: "专业", quota_unit: "cny", seat_quota: 300, period: "month", seat_price_cny: 799, boost_price_factor: 1, device_limit: 3, alert_thresholds: [80, 100], enforce_seat_quota: false, models: null, burst: { hours: 5, pct: 20 } },
-          { id: "max", label: "旗舰", quota_unit: "tokens", seat_quota: 100_000_000, period: "month", seat_price_cny: 1599, boost_price_factor: 1.2, device_limit: 3, alert_thresholds: [50, 80, 100], enforce_seat_quota: true, models: null, burst: null },
+          { id: "standard", label: "标准", quota_unit: "cny", seat_quota: 210, period: "month", seat_price_cny: 399, boost_price_factor: 1, device_limit: 2, alert_thresholds: [80, 100], enforce_seat_quota: false, models: null, burst: null },
+          { id: "pro", label: "专业", quota_unit: "cny", seat_quota: 525, period: "month", seat_price_cny: 799, boost_price_factor: 1, device_limit: 3, alert_thresholds: [80, 100], enforce_seat_quota: false, models: null, burst: { hours: 5, pct: 20 } },
+          { id: "max", label: "旗舰", quota_unit: "cny", seat_quota: 1260, period: "month", seat_price_cny: 1599, boost_price_factor: 1.2, device_limit: 3, alert_thresholds: [50, 80, 100], enforce_seat_quota: true, models: null, burst: null },
+          { id: "trial", label: "试用", quota_unit: "cny", seat_quota: 84, period: "month", seat_price_cny: null, boost_price_factor: 1, device_limit: 1, alert_thresholds: [80, 100], enforce_seat_quota: false, models: null, burst: { hours: 5, pct: 50 }, note: "自助注册与注册邀请码开的试用律所" },
         ],
         default_plan: "standard",
       },
@@ -165,29 +169,33 @@ if (!EMPTY) {
   );
   await tryDo("路由 legal/k3", () => as(SYS, "PUT", `/v1/ops/routing/models/${encodeURIComponent("legal/k3")}`, { label: "主任务模型", enabled: true, is_default: true, targets: [{ provider: "csi-maas", model: "kimi-k3.1-pro", priority: 1 }, { provider: "csi-maas-b", model: "kimi-k3.1-pro", priority: 2 }], allow_cross_vendor: false, default_max_tokens: 8192 }));
   if (!NO_USAGE) await seedGatewayReports(firms);
+  await seedRegistration();
 }
 
 /**
  * 第 62 批（界面走查用）：模拟网关回报近 30 日的逐请求用量与上游健康——走网关同一条服务间接口
  * （POST /v1/quota/settle、POST /v1/feed/routing-health，服务凭据），控制面照常按请求编号去重、按价目版本重算、触发告警。
- * 数字是虚构的开发数据（固定随机种子，截图可复现）；--no-usage 不造。
+ * 口径同第 62 批：8 天前的行记在按别名的旧价目 v1 下（legal/k2.6 没价 →“价目生效前”）；之后经真实接口 PUT /v1/ops/pricing
+ * 改为按上游型号（官方价成本 × 倍率，v2），近 8 天的行按 v2 计价；客户端断开且上游没给 usage 的行按估算回报 → 待对账（不计费、不扣额度）；
+ * 少量行带缓存写入。数字是虚构的开发数据（固定随机种子，截图可复现）；--no-usage 不造。
  */
 async function seedGatewayReports(firms) {
   const svc = (path, body) => http("POST", path, body, SERVICE_SECRET);
   let seed = 20261124;
   const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
   const DAY = 86_400_000;
+  const CUT = 8;
   const nowMs = Date.now();
-  // 每家：近 30 日请求数、平均输入、成员（有账号的 + 未建账号的）、legal/k2.6（未定价）占比
+  // 每家：近 30 日请求数、平均输入、成员（有账号的 + 未建账号的）、legal/k2.6 占比
   const plan = {
     ten_chengming: { n: 2600, input: 82_000, uids: ["chenyu", "lawyer-02", "lawyer-03", "lawyer-04"], sub: 0.18 },
     ten_hengshi: { n: 1500, input: 118_000, uids: ["sunli", "lawyer-02", "lawyer-05"], sub: 0.1 },
     ten_qinghe: { n: 760, input: 116_000, uids: ["fengxi", "lawyer-02"], sub: 0.05 },
   };
+  const batches = { old: [], recent: [] };
   for (const f of firms) {
     const p = plan[f.tid];
     if (!p) continue;
-    const records = [];
     for (let i = 0; i < p.n; i++) {
       // 越近的日子越多（产品在推开），工作日比周末多
       const back = Math.floor(Math.pow(rnd(), 1.35) * 30);
@@ -201,27 +209,47 @@ async function seedGatewayReports(firms) {
       const failed = outcome === "upstream_error" || outcome === "timeout";
       const uid = `usr_${f.tid.slice(4)}_${p.uids[Math.floor(rnd() * p.uids.length)]}`;
       const switched = !failed && rnd() < 0.02;
-      records.push({
-        request_id: `dev-${f.tid.slice(4)}-${i.toString(36)}-${Math.floor(rnd() * 1e9).toString(36)}`,
-        at: new Date(at).toISOString(),
-        started_at: new Date(at - 4000 - Math.floor(rnd() * 40_000)).toISOString(),
-        uid,
-        sid: `seat_dev_${uid.slice(-8)}`,
-        alias: sub ? "legal/k2.6" : "legal/k3",
-        provider: switched ? "csi-maas-b" : "csi-maas",
-        upstream_model: sub ? "kimi-k3.1-pro-highspeed" : "kimi-k3.1-pro",
-        stream: true,
-        status: failed ? (outcome === "timeout" ? 504 : 502) : 200,
-        outcome,
-        usage: failed ? null : { input, cached: Math.round(input * (0.2 + rnd() * 0.35)), output: Math.round(1200 + rnd() * 5200), reasoning: 0 },
-        usage_source: failed ? "none" : outcome === "client_gone" ? "estimated" : "upstream",
-        latency_ms: Math.round(failed ? 30_000 + rnd() * 30_000 : 6000 + rnd() * 50_000),
-        attempts: switched ? [{ provider: "csi-maas", status: 503, error: "upstream_5xx", ms: 1200 }, { provider: "csi-maas-b", status: 200, ms: 22_000 }] : [],
+      const cached = Math.round(input * (0.2 + rnd() * 0.35));
+      const cacheWrite = !failed && rnd() < 0.12 ? Math.round((input - cached) * 0.4) : 0;
+      const old = back >= CUT;
+      (old ? batches.old : batches.recent).push({
+        tid: f.tid,
+        rec: {
+          request_id: `dev-${f.tid.slice(4)}-${i.toString(36)}-${Math.floor(rnd() * 1e9).toString(36)}`,
+          at: new Date(at).toISOString(),
+          started_at: new Date(at - 4000 - Math.floor(rnd() * 40_000)).toISOString(),
+          uid,
+          sid: `seat_dev_${uid.slice(-8)}`,
+          alias: sub ? "legal/k2.6" : "legal/k3",
+          provider: switched ? "csi-maas-b" : "csi-maas",
+          upstream_model: sub ? "kimi-k3.1-pro-highspeed" : "kimi-k3.1-pro",
+          stream: true,
+          status: failed ? (outcome === "timeout" ? 504 : 502) : 200,
+          outcome,
+          usage: failed ? null : { input, cached, ...(cacheWrite ? { cache_write: cacheWrite } : {}), output: Math.round(1200 + rnd() * 5200), reasoning: 0 },
+          // 客户端断开且网关读不到上游 usage：按估算回报 → 控制面记“待对账”，不计费、不扣额度
+          usage_source: failed ? "none" : outcome === "client_gone" ? "estimated" : "upstream",
+          latency_ms: Math.round(failed ? 30_000 + rnd() * 30_000 : 6000 + rnd() * 50_000),
+          attempts: switched ? [{ provider: "csi-maas", status: 503, error: "upstream_5xx", ms: 1200 }, { provider: "csi-maas-b", status: 200, ms: 22_000 }] : [],
+          ...(old ? { price_version: 1 } : {}),
+        },
       });
     }
-    records.sort((a, b) => a.at.localeCompare(b.at));
-    for (let i = 0; i < records.length; i += 200) await tryDo(`用量回报 ${f.tid}`, () => svc("/v1/quota/settle", { tid: f.tid, holder: "gw-dev-01", records: records.slice(i, i + 200) }));
   }
+  const settle = async (list) => {
+    const byTid = new Map();
+    for (const x of list) byTid.set(x.tid, [...(byTid.get(x.tid) ?? []), x.rec]);
+    for (const [tid, recs] of byTid) {
+      recs.sort((a, b) => a.at.localeCompare(b.at));
+      for (let i = 0; i < recs.length; i += 200) await tryDo(`用量回报 ${tid}`, () => svc("/v1/quota/settle", { tid, holder: "gw-dev-01", records: recs.slice(i, i + 200) }));
+    }
+  };
+  await settle(batches.old);
+  // 价目改按上游型号（真实接口，危险操作：系统管理员复核后写）：成本取官方价，整表 × 1.5，高速型号 × 1.3
+  await tryDo("价目改按上游型号", () =>
+    as(SYS, "PUT", "/v1/ops/pricing", { markup: 1.5, note: "第 62 批：按上游型号；成本取 Kimi 官方价，售价 = 成本 × 倍率（开发数据）", models: { "kimi-k3.1-pro": {}, "kimi-k3.1-pro-highspeed": { markup: 1.3 } } }),
+  );
+  await settle(batches.recent);
   const at = new Date().toISOString();
   await tryDo("上游健康回报", () =>
     svc("/v1/feed/routing-health", {
@@ -232,6 +260,25 @@ async function seedGatewayReports(firms) {
       },
     }),
   );
+}
+
+/**
+ * 第 62 批注册管理（界面走查用，全部经真实接口）：客户运营生成两批注册邀请码、停用两个；两位新用户凭码注册（开出试用律所，
+ * 码上留下使用记录）；系统管理员把短信通道配成测试模式（本机部署允许 dry-run，不真发），律师端发几条注册 / 找回验证码留下发送记录。
+ */
+async function seedRegistration() {
+  const b1 = await tryDo("邀请码批次 1", () => as(OPS, "POST", "/v1/ops/registration/invite-batches", { name: "11 月推介会", count: 12, max_uses: 1, ttl_days: 30, plan: "trial", note: "杭州律协推介会现场发放" }));
+  await tryDo("邀请码批次 2", () => as(OPS, "POST", "/v1/ops/registration/invite-batches", { name: "律协合作渠道", count: 5, max_uses: 20, ttl_days: 180, trial_days: 30, trial_seats: 3, note: "合作律协统一转发" }));
+  const codes = b1?.codes ?? [];
+  if (codes.length >= 4) {
+    await tryDo("停用两个邀请码", () => as(OPS, "POST", "/v1/ops/registration/invites/disable", { ids: [codes[10].id, codes[11].id], reason: "推介会现场作废（印错）" }));
+    for (const [i, who] of [["0", { email: "he.ming@lawfirm-a.example", name: "何明" }], ["1", { email: "tang.yue@lawfirm-b.example", name: "唐悦" }]]) {
+      const password = pw();
+      await tryDo(`凭邀请码注册 ${who.email}`, () => http("POST", "/v1/auth/register", { ...who, password, code: codes[Number(i)].code, client: { platform: "web", version: "dev" } }));
+    }
+  }
+  await tryDo("短信通道（测试模式）", () => as(SYS, "PUT", "/v1/ops/registration/sms", { enabled: true, dry_run: true, provider: "submail", app_id: "dev-app-10086", sign_name: "中软法律", projects: { register: "devReg01", reset: "devRst01" } }));
+  for (const [phone, purpose] of [["13800138000", "register"], ["13900139000", "register"], ["13700137000", "reset"], ["15000150000", "register"]]) await tryDo(`发验证码 ${phone}`, () => http("POST", "/v1/auth/sms/send", { phone, purpose, client: { platform: "web", version: "dev" } }));
 }
 // 开发数据写完：脚本自己的会话退出（浏览器里重新登录）
 for (const [email, t] of Object.entries(sessions)) await http("POST", "/v1/auth/logout", {}, t).catch(() => skipped.push(`退出 ${email}`));

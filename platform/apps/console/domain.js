@@ -45,16 +45,19 @@ export const PERM_LABEL = {
   "system.read": "查看系统",
   "staff.manage": "管理人员",
   "settings.manage": "管理设置",
+  "registration.read": "查看注册管理",
+  "registration.manage": "管理注册",
 };
 export const needs = (perm) => (can(perm) ? undefined : `你的角色没有“${PERM_LABEL[perm] ?? perm}”权限`);
-/** 平台角色（GET /v1/ops/roles 未就绪时的兜底，与契约 §2.2 同表） */
+/** 平台角色（GET /v1/ops/roles 未就绪时的兜底，与控制面 rbac.ts 同表；第 62 批加注册管理两项、客户运营加改价目） */
+const READS = ["tenant.read", "account.read", "usage.read", "billing.read", "route.read", "system.read", "registration.read"];
 export const PLATFORM_ROLES = [
-  { id: "sysadmin", label: "系统管理员", description: "人员与权限、系统设置、模型路由、清除数据", perms: ["staff.manage", "settings.manage", "route.manage", "price.manage", "plan.manage", "tenant.purge", "tenant.read", "account.read", "usage.read", "billing.read", "route.read", "system.read"] },
-  { id: "operator", label: "客户运营", description: "开通与管理律所、额度、套餐、账号、设备", perms: ["tenant.manage", "tenant.terminate", "quota.manage", "quota.cap", "plan.manage", "account.manage", "account.support", "device.revoke", "tenant.read", "account.read", "usage.read", "billing.read", "route.read"] },
+  { id: "sysadmin", label: "系统管理员", description: "人员与权限、系统设置（含短信通道）、注册管理、模型与路由、套餐与价目、清除数据", perms: ["staff.manage", "settings.manage", "registration.manage", "route.manage", "price.manage", "plan.manage", "tenant.purge", ...READS] },
+  { id: "operator", label: "客户运营", description: "开通与管理律所、额度、套餐与价目、注册邀请码、账号、设备", perms: ["tenant.manage", "tenant.terminate", "quota.manage", "quota.cap", "plan.manage", "price.manage", "registration.manage", "account.manage", "account.support", "device.revoke", "tenant.read", "account.read", "usage.read", "billing.read", "route.read", "registration.read"] },
   { id: "issuer", label: "开通专员", description: "签发开通码（与客户运营互斥）", perms: ["activation.issue", "tenant.read", "account.read"] },
   { id: "finance", label: "财务", description: "查看客户、用量与账单", perms: ["tenant.read", "usage.read", "billing.read"] },
-  { id: "support", label: "客服", description: "账号客服（解锁、重置码）与只读", perms: ["account.support", "tenant.read", "account.read", "usage.read"] },
-  { id: "viewer", label: "只读", description: "全部只读", perms: ["tenant.read", "account.read", "usage.read", "billing.read", "route.read", "system.read"] },
+  { id: "support", label: "客服", description: "账号客服（解锁、重置码）、看注册记录与只读", perms: ["account.support", "tenant.read", "account.read", "usage.read", "registration.read"] },
+  { id: "viewer", label: "只读", description: "全部只读", perms: READS },
 ];
 export const roleLabel = (id, roles = PLATFORM_ROLES) => roles.find((r) => r.id === id)?.label ?? id;
 /** 三分区：#/me/…、#/firm/…、#/ops/…；旧页面里的 go("tenants/…") 等不带分区的路径一律归平台运营 */
@@ -82,10 +85,11 @@ export const PROVIDER_STATE = {
   disabled: ["已停用", "neutral"],
   unknown: ["未上报", "neutral"],
 };
-export const ALERT_KIND = { threshold: "跨过阈值", cap: "到上限", exhausted: "额度用完", anomaly: "用量异常", route_down: "上游不可用", device_flag: "设备异常" };
+export const ALERT_KIND = { threshold: "跨过阈值", cap: "到上限", exhausted: "额度用完", anomaly: "用量异常", route_down: "上游不可用", device_flag: "设备异常", usage_missing: "上游未给用量" };
 export const ALERT_LEVEL = { info: ["提示", "info"], warn: ["注意", "warn"], critical: ["严重", "danger"] };
 export const OUTCOME = { ok: ["成功", "ok"], client_gone: ["客户端断开", "warn"], upstream_error: ["上游出错", "danger"], timeout: ["超时", "danger"], blocked: ["已拦截", "neutral"] };
-export const USAGE_SOURCE = { upstream: ["上游回执", "ok"], drained: ["断开后读完", "info"], estimated: ["估算", "warn"], none: ["无用量", "neutral"] };
+/** 用量来源。第 62 批起 estimated 行不计费、不扣额度，待与上游账单对账（契约 contract-b62-pricing §3、§6） */
+export const USAGE_SOURCE = { upstream: ["上游回执", "ok"], drained: ["断开后读完", "info"], estimated: ["估算（待对账）", "warn"], none: ["无用量", "neutral"] };
 export const PAUSED = { cap: "已到上限", allowance: "额度用完", burst: "5 小时频率限制已满", seat: "个人额度用完" };
 /** 个人用量的分母：与客户端 firm-usage.ts 的 ownDenominatorText 同一说法 */
 export const DENOMINATOR = { account_limit: "分母：个人上限（管理员设置）", seat_quota: "分母：每人额度（套餐约定，仅作参考、不限制）" };
@@ -100,6 +104,16 @@ export const providerBadge = (health, enabled) => {
   return h("span", { class: "state-cell" }, dot(tone), t);
 };
 export const outcomeBadge = (o) => badge(...pick(OUTCOME, o));
+/**
+ * 账本行的计费徽章（第 62 批口径）：待对账 = 上游没给真实用量、按估算记——不计费、不扣额度；
+ * partial = 流式中途服务出错——不计费（拿到真实用量时成本照记）。原先写的“按已转发内容估算计费”与实际口径不符，已改。
+ */
+export const billingBadges = (r) => [
+  r?.reconcile === "pending" ? badge("待对账（不计费）", "warn", r.billing_note || "上游没给真实用量，按估算记：不计入额度与金额，待与上游账单对账") : null,
+  r?.partial && r?.reconcile !== "pending" ? badge("服务出错，不计费", "warn", r.billing_note || "流式中途服务出错：不扣额度、不计售价；拿到真实用量时成本照记") : null,
+  r?.retry_of ? badge("重试", "info", `同一客户端请求的重试（首个请求 ${r.retry_of}）；每次都真实调用了上游，各自计费`) : null,
+  r?.usage && r?.value_micro === null && r?.reconcile !== "pending" ? badge("价目生效前", "neutral", "这一行发生时价目里还没有它的价格：不改写，金额记“未定价”") : null,
+];
 export const firmFlagBadge = (f) => badge(...pick(FIRM_DEVICE_FLAG, f));
 export const sourceBadge = (s) => (s === "upstream" ? null : badge(...pick(USAGE_SOURCE, s)));
 export const roleText = (r) => ROLE[r] ?? r ?? "—";

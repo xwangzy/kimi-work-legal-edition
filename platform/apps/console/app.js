@@ -82,7 +82,7 @@ export const NAV = [
         label: "注册管理",
         icon: "register",
         mod: registration,
-        perms: ["tenant.read", "settings.manage"],
+        perms: ["registration.read", "registration.manage", "settings.manage"],
         group: "客户",
         children: registration.SUBPAGES,
       },
