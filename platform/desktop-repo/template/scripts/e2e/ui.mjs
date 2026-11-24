@@ -523,6 +523,14 @@ async function task(cardFile) {
           await opts[0].click();
           log("提问未预设，选第一项：", (await opts[0].innerText()).slice(0, 60));
         }
+        // 第 62 批：一张提问卡可能有多道题（如“论点确认”+“财产保全”），每组单选都要有选择，否则“确定”不可点、驱动原地打转
+        for (const g of await main.locator("[role=radiogroup]").all()) {
+          if (await g.locator('[role=radio][aria-checked="true"]').count()) continue;
+          const first = g.locator("[role=radio]").first();
+          if (!(await first.count())) continue;
+          await first.click().catch(() => {});
+          log("同卡另一题未预设，选第一项：", (await first.innerText().catch(() => "")).slice(0, 60));
+        }
         const ok = main.locator("button").filter({ hasText: /^\s*确定\s*$/ });
         if (await ok.count()) await ok.first().click().catch(() => {});
       }
