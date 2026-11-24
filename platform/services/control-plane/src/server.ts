@@ -2842,7 +2842,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         }
         const out = (key: string, label: string, a: Agg) => {
           const e = est.get(key);
-          return { key, label, requests: a.requests, tokens_in: a.tokens_in, tokens_cached: a.tokens_cached, tokens_cache_write: a.tokens_cache_write ?? 0, tokens_out: a.tokens_out, value_cny: cny(a.value_micro), cost_cny: cny(a.cost_micro), errors: a.errors, estimated: a.estimated, unpriced: a.unpriced, pending_reconcile: a.pending ?? 0, est_value_cny: cny(a.est_value_micro ?? 0), est_cost_cny: cny(a.est_cost_micro ?? 0), unpriced_note: a.unpriced ? "价目生效前" : null, unpriced_est_value_cny: e ? cny(e.value) : null, unpriced_est_cost_cny: e ? cny(e.cost) : null, unpriced_still: e?.still ?? 0 };
+          return { key, label, requests: a.requests, tokens_in: a.tokens_in, tokens_cached: a.tokens_cached, tokens_cache_write: a.tokens_cache_write ?? 0, tokens_out: a.tokens_out, value_cny: cny(a.value_micro), cost_cny: cny(a.cost_micro), costed_value_cny: cny(a.costed_value_micro ?? 0), uncosted: a.uncosted, errors: a.errors, estimated: a.estimated, unpriced: a.unpriced, pending_reconcile: a.pending ?? 0, est_value_cny: cny(a.est_value_micro ?? 0), est_cost_cny: cny(a.est_cost_micro ?? 0), unpriced_note: a.unpriced ? "价目生效前" : null, unpriced_est_value_cny: e ? cny(e.value) : null, unpriced_est_cost_cny: e ? cny(e.cost) : null, unpriced_still: e?.still ?? 0 };
         };
         let pairs: [string, string, Agg][] = [];
         if (acc0) {

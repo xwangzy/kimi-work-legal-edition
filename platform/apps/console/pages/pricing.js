@@ -79,14 +79,17 @@ function draw(head, box, pc, us, reload, monthFrom) {
   // 本期实际（按上游型号）
   const u = us.status === "fulfilled" ? us.value : null;
   const ut = u?.totals ?? {};
-  const realized = Number(ut.value_cny) > 0 && has(ut.cost_cny) ? (Number(ut.value_cny) - Number(ut.cost_cny)) / Number(ut.value_cny) : null;
+  // 毛利只在售价与成本都有的行上算（第 62 批：价目生效前按售价定价、未填成本的行若算进来，毛利会被高估）
+  const costedValue = has(ut.costed_value_cny) ? Number(ut.costed_value_cny) : Number(ut.value_cny);
+  const realized = costedValue > 0 && has(ut.cost_cny) ? (costedValue - Number(ut.cost_cny)) / costedValue : null;
+  const marginNote = Number(ut.uncosted) > 0 ? `（仅含有成本价的行；另 ${fmt.int(ut.uncosted)} 行未定成本、不计毛利）` : "（不含席位费）";
   const kpis = u
     ? h(
         "div",
         { class: "kpis" },
         stat("本期用量价值", fmt.cny(ut.value_cny), "售价 × 实测用量", { hero: true }),
         stat("本期模型成本", fmt.cny(ut.cost_cny), "成本价 × 实测用量"),
-        stat("模型毛利", has(ut.value_cny) && has(ut.cost_cny) ? fmt.cny(Number(ut.value_cny) - Number(ut.cost_cny)) : "—", realized === null ? "用量价值 − 成本（不含席位费）" : `毛利率 ${fmt.pct(realized)}（不含席位费）`, { hero: true, extra: realized === null ? null : marginBar(realized), tone: realized !== null && realized < 0 ? "danger" : undefined }),
+        stat("模型毛利", has(ut.value_cny) && has(ut.cost_cny) ? fmt.cny(costedValue - Number(ut.cost_cny)) : "—", realized === null ? "用量价值 − 成本（不含席位费）" : `毛利率 ${fmt.pct(realized)}${marginNote}`, { hero: true, extra: realized === null ? null : marginBar(realized), tone: realized !== null && realized < 0 ? "danger" : undefined }),
         stat("不计入的行", `${fmt.int(ut.pending_reconcile)} / ${fmt.int(ut.unpriced)}`, "待对账 / 价目生效前", { tone: Number(ut.pending_reconcile) > 0 || Number(ut.unpriced) > 0 ? "warn" : undefined }),
       )
     : null;
@@ -165,7 +168,11 @@ function draw(head, box, pc, us, reload, monthFrom) {
   const byUpstream = u
     ? dataTable({
         state: { sort: "value_cny", asc: false },
-        rows: (u.rows ?? []).map((r) => ({ ...r, margin: has(r.value_cny) && has(r.cost_cny) ? Number(r.value_cny) - Number(r.cost_cny) : null, rate: Number(r.value_cny) > 0 && has(r.cost_cny) ? (Number(r.value_cny) - Number(r.cost_cny)) / Number(r.value_cny) : null })),
+        // 毛利按有成本价的行算（costed_value_cny），未定成本的行不计毛利
+        rows: (u.rows ?? []).map((r) => {
+          const cv = has(r.costed_value_cny) ? Number(r.costed_value_cny) : Number(r.value_cny);
+          return { ...r, margin: has(r.value_cny) && has(r.cost_cny) ? cv - Number(r.cost_cny) : null, rate: cv > 0 && has(r.cost_cny) ? (cv - Number(r.cost_cny)) / cv : null };
+        }),
         empty: "本期还没有用量",
         columns: [
           { key: "key", label: "上游型号", value: (r) => r.key, render: (r) => (r.key ? mono(r.key) : h("span", { class: "muted" }, "未到达上游")) },

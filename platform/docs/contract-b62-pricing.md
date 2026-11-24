@@ -127,6 +127,7 @@ CSV 新列（追加在末尾）：计价依据、计价键、加价倍率、未�
 - 新分组 `upstream`：按实际服务的上游型号（成本对账用；`key` 为型号，空串 = 未到达上游）。
 - 每行与 `totals` 新增：`tokens_cache_write`、`pending_reconcile`（待对账行数）、`est_value_cny`、`est_cost_cny`（估算，不计入 `value_cny` / `cost_cny`）、`unpriced_note`（有价目生效前的行时为 `"价目生效前"`）、`unpriced_est_value_cny` / `unpriced_est_cost_cny`（按现行价估算，只读；没有这类行为 null）、`unpriced_still`（按现行价仍未定价的行数）。
 - 顶层新增 `price_version`（现行版本）与 `notes.unpriced`、`notes.pending_reconcile`（界面说明文字）。
+- （线上验收后补）每行与 `totals` 另有 `costed_value_cny`（有成本价的行的售价合计）与 `uncosted`（没有成本价的行数）：毛利 = `costed_value_cny − cost_cny`，价目生效前只有售价、没有成本的行不计毛利（否则毛利率被高估）。
 
 ### 4.2 `GET /v1/ops/billing[.csv]`（`billing.read`）
 

@@ -112,9 +112,11 @@ export interface Agg {
   pending?: number;
   est_value_micro?: number;
   est_cost_micro?: number;
+  /** 第 62 批：有成本价的行的售价合计（微元）——毛利只在“售价与成本都有”的行上算（价目生效前按售价定价、未填成本的行不计毛利）。 */
+  costed_value_micro?: number;
 }
 
-export const emptyAgg = (): Agg => ({ requests: 0, tokens_in: 0, tokens_cached: 0, tokens_out: 0, value_micro: 0, cost_micro: 0, errors: 0, estimated: 0, unpriced: 0, uncosted: 0, tokens_cache_write: 0, pending: 0, est_value_micro: 0, est_cost_micro: 0 });
+export const emptyAgg = (): Agg => ({ requests: 0, tokens_in: 0, tokens_cached: 0, tokens_out: 0, value_micro: 0, cost_micro: 0, errors: 0, estimated: 0, unpriced: 0, uncosted: 0, tokens_cache_write: 0, pending: 0, est_value_micro: 0, est_cost_micro: 0, costed_value_micro: 0 });
 
 export function addAgg(a: Agg, b: Agg): Agg {
   a.requests += b.requests;
@@ -131,6 +133,7 @@ export function addAgg(a: Agg, b: Agg): Agg {
   a.pending = (a.pending ?? 0) + (b.pending ?? 0);
   a.est_value_micro = (a.est_value_micro ?? 0) + (b.est_value_micro ?? 0);
   a.est_cost_micro = (a.est_cost_micro ?? 0) + (b.est_cost_micro ?? 0);
+  a.costed_value_micro = (a.costed_value_micro ?? 0) + (b.costed_value_micro ?? 0);
   return a;
 }
 
@@ -141,6 +144,7 @@ export function rowAgg(r: UsageRow): Agg {
     pending: r.reconcile === "pending" ? 1 : 0,
     est_value_micro: r.est_value_micro ?? 0,
     est_cost_micro: r.est_cost_micro ?? 0,
+    costed_value_micro: r.cost_micro === null || r.cost_micro === undefined ? 0 : (r.value_micro ?? 0),
     requests: 1,
     tokens_in: u?.input ?? 0,
     tokens_cached: u?.cached ?? 0,
