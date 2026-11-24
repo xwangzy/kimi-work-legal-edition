@@ -406,3 +406,31 @@ test("汇总：价目生效前的行如实标出（不改写），另给“按�
   assert.match(text, /价目生效前（未定价）/);
   await env.close();
 });
+
+test("并发回报与重放：4 路同时报、编号互相重叠，每个请求编号只入账一次；估算行出告警（每上游每小时一条）；账期按北京时间", async () => {
+  const env = await boot({ store: memStore(), usageDir: join(mkdtempSync(join(tmpdir(), "kwl-b62-cc-")), "usage"), billing: {} });
+  const f = await opsFirm(env, "ten_b62cc", "boss@b62cc.cn", "standard");
+  const l = await env.service("/v1/quota/lease", { tid: f.tid, sid: f.sid, holder: "gw-c", need_estimate: { alias: "legal/k3", input: 1_000, output: 100 } });
+  const L = l.json.lease_id as string;
+  const v = l.json.price_version as number;
+  const ids = Array.from({ length: 12 }, (_, i) => `cc_${i}`);
+  // 4 路：每路报 8 条，与其他路重叠（网关重发、两实例重放同一份预写日志）
+  const batches = [0, 1, 2, 3].map((k) => ids.slice(k * 2, k * 2 + 8).map((id) => rec(id, f, L, { input: 1_000, cached: 500, output: 100 }, { price_version: v })));
+  const rs = await Promise.all(batches.map((records) => env.service("/v1/quota/settle", { tid: f.tid, lease_id: L, holder: "gw-c", records })));
+  assert.ok(rs.every((r) => r.status === 200));
+  assert.equal(rs.reduce((n, r) => n + r.json.accepted, 0), 12, "12 个不同编号各入账一次");
+  assert.equal(rs.reduce((n, r) => n + r.json.duplicates, 0), batches.flat().length - 12);
+  const one = Math.round(500 * 13 + 500 * 1.3 + 100 * 68);
+  const t = (await env.ops("sys_1", "GET", `/v1/ops/tenants/${f.tid}`)).json.tenant;
+  assert.equal(t.used, y4(12 * one));
+  // 估算行：告警一条（同一上游一小时内不重复）
+  await env.service("/v1/quota/settle", { tid: f.tid, lease_id: L, holder: "gw-c", records: [rec("cc_est1", f, L, { input: 10, output: 1 }, { usage_source: "estimated" }), rec("cc_est2", f, L, { input: 10, output: 1 }, { usage_source: "estimated" })] });
+  const al = (await env.ops("sys_1", "GET", "/v1/ops/alerts")).json.alerts.filter((x: any) => x.kind === "usage_missing");
+  assert.equal(al.length, 1);
+  assert.match(al[0].message, /待对账（不计入额度）/);
+  // 北京时间 11 月 1 日 0:30（UTC 10-31 16:30）的请求记在 11 月 1 日（账期与额度周期同为北京时间）
+  await env.service("/v1/quota/settle", { tid: f.tid, lease_id: L, holder: "gw-c", records: [rec("cc_bj", f, L, { input: 10, output: 1 }, { at: "2026-10-31T16:30:00.000Z" })] });
+  const row = env.cp.usageBook.query({ tid: f.tid, request_id: "cc_bj", from: "2026-10-01", to: "2026-12-31" }).rows[0];
+  assert.equal(row?.day ?? "", "2026-11-01");
+  await env.close();
+});

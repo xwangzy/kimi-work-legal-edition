@@ -65,8 +65,8 @@
  *   "clients": { "min_version": "0.2.0" },                                // 可选：客户端最低版本（首次启动导入状态，之后在控制台改）；低于它登录、注册、续期席位令牌回 426
  *   "usage_dir": "/srv/kwl-shared/usage",                                 // 可选：用量账本目录（缺省 <data_dir>/control-plane/usage）；一主多备时须放共享存储
  *   // 找回全部系统管理员：有服务器 shell 的人写 <data_dir>/control-plane/admin-recovery.request（内容：系统管理员邮箱），30 秒内处理
- *   // 控制面可选（第 44 批）：套餐目录与注册设置的初始值（首次启动导入状态；之后运营在控制台改）。额度单位 tokens 或 cny（价目表售价 × 实际 usage）
- *   "billing": { "plans": [ { "id": "standard", "label": "标准", "quota_unit": "tokens", "seat_quota": 50000000, "period": "month", "seat_price_cny": 399,
+ *   // 控制面可选（第 44 批）：套餐目录与注册设置的初始值（首次启动导入状态；之后运营在控制台改）。额度单位 cny（第 62 批起缺省：价目表售价 × 实际 usage，按上游型号计价）或 tokens
+ *   "billing": { "plans": [ { "id": "standard", "label": "标准", "quota_unit": "cny", "seat_quota": 210, "period": "month", "seat_price_cny": 399,
  *                             "burst": { "hours": 5, "pct": 25 }, "device_limit": 2, "alert_thresholds": [80, 100] }, ... ],
  *                "default_plan": "standard", "registration": { "registration": "code", "trial_plan": "trial", "trial_days": 14, "trial_seats": 1, "default_device_limit": 2 } },
  *   // 控制面可选（第 44 批）：API 路由初始值（首次启动导入；缺省取 upstream.base_url，密钥用网关本机文件）与网关路由公钥（控制台加密上游密钥用的那把）

@@ -176,7 +176,8 @@ export interface ActivationRecord {
 export interface AlertRecord {
   id: string;
   at: string;
-  kind: "threshold" | "cap" | "exhausted" | "anomaly" | "route_down" | "device_flag";
+  /** usage_missing（第 62 批）：上游没给真实用量、按估算记的请求（不计入额度，待对账）——持续出现说明上游或网关的用量采集有问题，额度会被绕过。 */
+  kind: "threshold" | "cap" | "exhausted" | "anomaly" | "route_down" | "device_flag" | "usage_missing";
   level: "info" | "warn" | "critical";
   tid: string | null;
   aid: string | null;
@@ -3490,6 +3491,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (b.final === true && l) closed = closeLease(q, leaseId, b.holder, now());
       sweepLeases(q, now());
       if (fresh.length) checkAlerts(t, new Set(fresh.map((r) => r.uid).filter((x): x is string => !!x)));
+      // 第 62 批：估算的行不扣额度——按上游每小时至多一条告警，让运营知道有用量没有采到（持续出现即用量采集坏了）
+      for (const r of fresh) {
+        if (r.reconcile !== "pending") continue;
+        quotaCount("usage_missing");
+        const key = `usage_missing:${r.provider ?? ""}`;
+        if (now() - (routeAlertSent.get(key) ?? 0) < 3600_000) continue;
+        routeAlertSent.set(key, now());
+        addAlert({ kind: "usage_missing", level: "warn", tid: t.tid, aid: r.aid, provider: r.provider, pct: null, message: `上游${r.provider ? `“${routing.providers.find((x) => x.id === r.provider)?.label ?? r.provider}”` : ""}有请求没给出用量，已按估算记为待对账（不计入额度）` });
+      }
       quotaCount("settle_ok");
       return send(res, 200, { ok: true, accepted: fresh.length, duplicates: rows.length - fresh.length, closed, ...(l?.revoked ? { revoked: true } : {}) });
     }
