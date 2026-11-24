@@ -222,6 +222,8 @@ async function register() {
   // 第 62 批：手机号 + 短信验证码（云端要求时界面才有这一栏）。验证码由收到短信的人转交：
   // KWL_SMS_RELAY=file:<路径>（本机：人把验证码写进这个文件）或 gh-release:<owner/repo>:<tag>:<文件名>（CI：人把验证码作为预发布附件上传，凭 GITHUB_TOKEN 读取）
   const phoneInput = page.locator('input[type="tel"]');
+  // 注册策略由云端 /v1/meta 异步取回后才决定是否显示手机号一栏：给了手机号就等它出现（旧云端或策略没开时 8 秒后照旧流程）
+  if (process.env.KWL_PHONE) await phoneInput.first().waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
   if (await phoneInput.count()) {
     const phone = process.env.KWL_PHONE;
     if (!phone) throw new Error("云端要求手机号验证：请给 KWL_PHONE 与 KWL_SMS_RELAY");
