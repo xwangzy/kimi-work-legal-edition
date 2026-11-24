@@ -3,7 +3,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const src = (p: string) => readFileSync(fileURLToPath(new URL(`../src/${p}`, import.meta.url)), "utf8");
@@ -126,11 +126,15 @@ test("品牌：两行签名式组合，官方 Logomark 与文字块等高；云�
   // 第 55 批：改为一行组合（标识 26px + 字标 + 小标），见 b55-ui 用例
   assert.match(css, /\.brand-logo \{ width: 26px; height: 26px; \}/);
   assert.match(css, /\.brand-words \{ display: inline-flex; align-items: center;/);
-  const consoleHtml = readFileSync(fileURLToPath(new URL("../../console/index.html", import.meta.url)), "utf8");
-  assert.match(consoleHtml, /<svg class="logo-mark brand-mark" viewBox="0 0 180 180"/);
-  assert.doesNotMatch(consoleHtml, /<span class="brand-mark" aria-hidden="true">K<\/span>/);
-  const consoleAuth = readFileSync(fileURLToPath(new URL("../../console/auth.js", import.meta.url)), "utf8");
-  assert.doesNotMatch(consoleAuth, /"brand-mark", "aria-hidden": "true" \}, "K"/);
+  // 云端控制台只在 monorepo 里（桌面独立仓库不含 apps/console，第 62 批：Windows 关键用例在桌面仓库跑时读不到）
+  const consoleIndex = fileURLToPath(new URL("../../console/index.html", import.meta.url));
+  if (existsSync(consoleIndex)) {
+    const consoleHtml = readFileSync(consoleIndex, "utf8");
+    assert.match(consoleHtml, /<svg class="logo-mark brand-mark" viewBox="0 0 180 180"/);
+    assert.doesNotMatch(consoleHtml, /<span class="brand-mark" aria-hidden="true">K<\/span>/);
+    const consoleAuth = readFileSync(fileURLToPath(new URL("../../console/auth.js", import.meta.url)), "utf8");
+    assert.doesNotMatch(consoleAuth, /"brand-mark", "aria-hidden": "true" \}, "K"/);
+  }
   // 动效令牌在令牌文件里（组件样式不另起令牌）
   const tokens = readFileSync(fileURLToPath(new URL("../../../packages/design-tokens/src/tokens.css", import.meta.url)), "utf8");
   for (const t of ["--motion-fast", "--motion-base", "--motion-slow", "--ease-standard", "--ease-out-soft"]) assert.match(tokens, new RegExp(`${t}:`));
