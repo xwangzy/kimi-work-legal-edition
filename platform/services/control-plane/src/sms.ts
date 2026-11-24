@@ -1,5 +1,6 @@
 /**
- * 短信验证码通道（第 62 批：手机号验证码注册与找回密码；契约 docs/contract-b62-registration.md）。
+ * 短信验证码通道（第 62 批：手机号验证码注册与找回密码；契约 docs/contract-b62-registration.md。
+ * 第 63 批：验证码登录与绑定手机号；契约 docs/contract-b63-phone-login.md）。
  *
  * - 供应商：赛邮云 SUBMAIL v4（`/sms/xsend` 模板短信、`/balance/sms` 查余额、`/service/timestamp` 取服务器时间）。数字签名 md5：
  *   md5(appid + appkey + 按键名升序的 `键=值&…` + appid + appkey)；不参与计算的：signature、tag，以及 sign_version=2 时的 vars
@@ -64,8 +65,9 @@ export function openText(key: Buffer, sealed: unknown, aad: string): string | nu
 
 // ─── 设置 ───
 
-export type SmsPurpose = "register" | "reset";
-export const SMS_PURPOSES: readonly SmsPurpose[] = ["register", "reset"];
+/** 验证码用途（码记录绑定用途，HMAC 输入含用途：登录码不能拿去注册、找回、绑定，反之亦然）。第 63 批加 login、bind。 */
+export type SmsPurpose = "register" | "reset" | "login" | "bind";
+export const SMS_PURPOSES: readonly SmsPurpose[] = ["register", "reset", "login", "bind"];
 
 export interface SmsSettings {
   /** 总开关：关 = 不发任何验证码（注册要求手机号时须先关掉那一项）。 */
@@ -78,8 +80,13 @@ export interface SmsSettings {
   app_key_hint: string | null;
   /** 短信签名（模板变量 sign_name：在赛邮云报备的签名文字，不带【】）。 */
   sign_name: string | null;
-  /** 模板项目编号（赛邮云“短信模板”的项目标识）：注册、找回密码、登录（登录为预留，本批不开手机号登录）。 */
-  projects: { register: string | null; reset: string | null; login: string | null };
+  /**
+   * 模板项目编号（赛邮云“短信模板”的项目标识）：注册（必填）、找回密码、登录、绑定手机号。
+   * 第 63 批：后三项不填即沿用注册模板（与 MaaS 一致：同一个验证码模板 @var(code)、@var(time) 通用）。
+   */
+  projects: { register: string | null; reset: string | null; login: string | null; bind: string | null };
+  /** 第 63 批：手机号验证码登录开关（缺省开）。关掉只影响验证码登录，注册、找回、绑定照常。 */
+  login_enabled: boolean;
   code_length: number;
   ttl_minutes: number;
   resend_seconds: number;
@@ -100,7 +107,8 @@ export const DEFAULT_SMS: SmsSettings = {
   app_key_sealed: null,
   app_key_hint: null,
   sign_name: null,
-  projects: { register: null, reset: null, login: null },
+  projects: { register: null, reset: null, login: null, bind: null },
+  login_enabled: true,
   code_length: 6,
   ttl_minutes: 10,
   resend_seconds: 60,
@@ -129,6 +137,8 @@ const APP_KEY_AAD = "kwl-sms-app-key/1";
 export function migrateSms(raw: unknown): SmsSettings {
   const b = (raw && typeof raw === "object" ? raw : {}) as Partial<SmsSettings>;
   const out: SmsSettings = { ...structuredClone(DEFAULT_SMS), ...b, projects: { ...DEFAULT_SMS.projects, ...(b.projects ?? {}) }, provider: "submail" };
+  // 第 63 批之前的状态没有登录开关：缺省开（线上已配好短信的，升级后验证码登录即可用；不想开在控制台关掉）
+  if (typeof out.login_enabled !== "boolean") out.login_enabled = true;
   for (const [k, [lo, hi]] of Object.entries(LIMITS)) {
     const v = (out as unknown as Record<string, unknown>)[k];
     if (!(typeof v === "number" && Number.isSafeInteger(v) && v >= lo && v <= hi)) (out as unknown as Record<string, unknown>)[k] = (DEFAULT_SMS as unknown as Record<string, unknown>)[k];
@@ -140,14 +150,19 @@ const PROJECT_RE = /^[0-9A-Za-z_-]{1,32}$/;
 const APP_ID_RE = /^[0-9A-Za-z_-]{1,64}$/;
 const APP_KEY_RE = /^[0-9A-Za-z_-]{8,128}$/;
 
-/** 缺了哪些才能真实发送（注册用途）：空 = 齐。 */
+/** 某用途实际用的模板项目：注册与测试用注册模板；找回、登录、绑定不填即沿用注册模板（第 63 批）。 */
+export function smsProject(s: SmsSettings, purpose: SmsPurpose | "test"): string | null {
+  if (purpose === "register" || purpose === "test") return s.projects.register;
+  return s.projects[purpose] ?? s.projects.register;
+}
+
+/** 缺了哪些才能真实发送（缺省按注册用途）：空 = 齐。模板缺失一律报 projects.register（其余用途沿用它）。 */
 export function smsMissing(s: SmsSettings, purpose: SmsPurpose | "test" = "register"): string[] {
   const m: string[] = [];
   if (!s.app_id) m.push("app_id");
   if (!s.app_key_sealed) m.push("app_key");
   if (!s.sign_name) m.push("sign_name");
-  const proj = purpose === "test" ? s.projects.register : s.projects[purpose];
-  if (!proj) m.push(`projects.${purpose === "test" ? "register" : purpose}`);
+  if (!smsProject(s, purpose)) m.push("projects.register");
   return m;
 }
 
@@ -160,9 +175,9 @@ export function validateSmsPatch(raw: unknown, prev: SmsSettings, o: { sealKey: 
   const b = raw as Record<string, unknown>;
   const next: SmsSettings = structuredClone(prev);
   const changed: string[] = [];
-  const known = new Set(["enabled", "provider", "app_id", "app_key", "sign_name", "projects", "dry_run", ...Object.keys(LIMITS)]);
+  const known = new Set(["enabled", "login_enabled", "provider", "app_id", "app_key", "sign_name", "projects", "dry_run", ...Object.keys(LIMITS)]);
   for (const k of Object.keys(b)) if (!known.has(k)) throw new RegError(400, "sms_settings_invalid", `不认识的设置项：${k.slice(0, 40)}`);
-  const bool = (k: "enabled" | "dry_run") => {
+  const bool = (k: "enabled" | "dry_run" | "login_enabled") => {
     if (!(k in b)) return;
     if (typeof b[k] !== "boolean") throw new RegError(400, "sms_settings_invalid", `${k} 须为 true 或 false`);
     if (next[k] !== b[k]) changed.push(k);
@@ -170,6 +185,7 @@ export function validateSmsPatch(raw: unknown, prev: SmsSettings, o: { sealKey: 
   };
   bool("enabled");
   bool("dry_run");
+  bool("login_enabled");
   if ("provider" in b && b.provider !== "submail") throw new RegError(400, "sms_provider_invalid", "短信供应商目前只支持 submail（赛邮云）");
   if ("app_id" in b) {
     const v = b.app_id === "" ? null : b.app_id;
@@ -194,9 +210,9 @@ export function validateSmsPatch(raw: unknown, prev: SmsSettings, o: { sealKey: 
   }
   if ("projects" in b) {
     const p = b.projects;
-    if (!p || typeof p !== "object" || Array.isArray(p)) throw new RegError(400, "sms_project_invalid", "projects 须为 { register, reset, login }");
+    if (!p || typeof p !== "object" || Array.isArray(p)) throw new RegError(400, "sms_project_invalid", "projects 须为 { register, reset, login, bind }");
     for (const [k, v0] of Object.entries(p as Record<string, unknown>)) {
-      if (k !== "register" && k !== "reset" && k !== "login") throw new RegError(400, "sms_project_invalid", `不认识的模板用途：${k.slice(0, 20)}`);
+      if (k !== "register" && k !== "reset" && k !== "login" && k !== "bind") throw new RegError(400, "sms_project_invalid", `不认识的模板用途：${k.slice(0, 20)}`);
       const v = v0 === "" ? null : v0;
       if (v !== null && !(typeof v === "string" && PROJECT_RE.test(v.trim()))) throw new RegError(400, "sms_project_invalid", "模板项目编号只允许字母、数字、下划线与连字符（1–32 位）");
       const nv = v === null ? null : (v as string).trim();
@@ -230,9 +246,15 @@ export function smsMode(s: SmsSettings, allowDryRun: boolean, purpose: SmsPurpos
   return smsMissing(s, purpose).length ? { ok: false, code: "sms_not_configured" } : { ok: true, mode: "live" };
 }
 
+/** 手机号验证码登录是否可用（第 63 批）：总开关、登录开关都开，且登录用途能发送。 */
+export function smsLoginAvailable(s: SmsSettings, allowDryRun: boolean): boolean {
+  return s.login_enabled && smsMode(s, allowDryRun, "login").ok;
+}
+
 /** 运营视图（不含 AppKey，只给是否已设与末 4 位）。 */
 export function smsView(s: SmsSettings, allowDryRun: boolean) {
   const m = smsMode(s, allowDryRun, "register");
+  const purposes = SMS_PURPOSES;
   return {
     enabled: s.enabled,
     provider: s.provider,
@@ -240,6 +262,11 @@ export function smsView(s: SmsSettings, allowDryRun: boolean) {
     app_key: { set: s.app_key_sealed !== null, hint: s.app_key_hint },
     sign_name: s.sign_name,
     projects: { ...s.projects },
+    // 第 63 批：不填即沿用注册模板后的实际值、各用途还缺什么、验证码登录开关与是否可用
+    projects_effective: Object.fromEntries(purposes.map((p) => [p, smsProject(s, p)])) as Record<SmsPurpose, string | null>,
+    missing_by_purpose: Object.fromEntries(purposes.map((p) => [p, smsMissing(s, p)])) as Record<SmsPurpose, string[]>,
+    login_enabled: s.login_enabled,
+    login_available: smsLoginAvailable(s, allowDryRun),
     code_length: s.code_length,
     ttl_minutes: s.ttl_minutes,
     resend_seconds: s.resend_seconds,

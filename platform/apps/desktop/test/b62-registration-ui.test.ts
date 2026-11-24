@@ -9,7 +9,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { codeLengthOk, phoneLooksValid, registerCodeLengthOk, registrationFields, smsCodeLooksValid } from "../src/lib/account.ts";
 
-const src = readFileSync(fileURLToPath(new URL("../src/pages/Activate.tsx", import.meta.url)), "utf8");
+// 第 63 批：手机号 + 验证码与注册策略的读取抽到 components/SmsCodeFields.tsx（开通页与“设置 → 账号”共用），两处一起查
+const src = ["../src/pages/Activate.tsx", "../src/components/SmsCodeFields.tsx"].map((f) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8")).join("\n");
 
 test("旧云端或取不到策略：照旧流程（不显示手机号、码用勾选框）", () => {
   for (const m of [null, undefined, { legacy: true }, { legacy: true, mode: "code" as const }]) assert.deepEqual(registrationFields(m), { legacy: true, phone: "hidden", code: "checkbox", codeLength: 6, resendSeconds: 60, phoneReset: false });

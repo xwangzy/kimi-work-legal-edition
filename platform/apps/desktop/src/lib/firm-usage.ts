@@ -207,6 +207,9 @@ const ACTIONS: Readonly<Record<string, string>> = {
   "account.enable": "启用账号",
   "account.limits": "调整个人上限或设备数",
   "account.login": "登录",
+  "account.login_sms": "验证码登录",
+  "account.phone_bind": "绑定手机号",
+  "account.phone_change": "更换手机号",
   "account.logout": "退出登录",
   "account.password_change": "修改密码",
   "account.password_reset": "重置密码",
@@ -316,7 +319,7 @@ export function auditResultLabel(result: string): { text: string; tone: "ok" | "
 // ─── 第 56 批：操作记录写成“一句话”（谁 · 做了什么 · 结果），界面上不出现任何内部编号；编号只在“详情”里给 IT 核对 ───
 
 /** 日常的、量大的操作：签发各类使用凭据、更新事项匿名摘要、登录与退出。“重要改动”一档不列（失败的照列）。 */
-const ROUTINE_ACTIONS = new Set(["seat_token.issue", "support_token.issue", "notify_token.issue", "relay_token.issue", "anon_summary.update", "account.login", "account.logout"]);
+const ROUTINE_ACTIONS = new Set(["seat_token.issue", "support_token.issue", "notify_token.issue", "relay_token.issue", "anon_summary.update", "account.login", "account.login_sms", "account.logout"]);
 
 export type AuditRowLike = Pick<CpAuditRow, "actor" | "actor_name" | "action" | "target" | "target_name" | "result" | "detail"> & Partial<Pick<CpAuditRow, "actor_is_me" | "target_kind" | "target_is_me" | "target_ordinal">>;
 
@@ -395,6 +398,9 @@ export function auditSentence(r: AuditRowLike): { who: string; what: string; imp
     "account.sessions_revoke": () => `让${person}在所有地方退出登录`,
     "account.session_revoke": () => "让一处登录退出",
     "account.login": () => "登录了账号",
+    "account.login_sms": () => "用手机号验证码登录了账号",
+    "account.phone_bind": () => "绑定了手机号",
+    "account.phone_change": () => "更换了手机号",
     "account.logout": () => "退出了登录",
     "account.password_change": () => "修改了密码",
     "account.password_reset": () => "重置了密码",

@@ -4,14 +4,15 @@
  * 原来的“输入开通码或邀请码”“从备份恢复”保留为次要入口。
  * 登录或注册后按中软的答复走：创始开通 → 等后台按新身份重启；成员入组（凭邀请码，或同一账号的新电脑）→ 等批准并核对 12 位核对码；
  * 不能继续（设备已满、这台电脑属于别的成员、律所还没开通）→ 写明原因与已登记的电脑。
- * 律师层不出现“证书、密钥、签名、令牌”等词；登录只把邮箱和密码发给中软核对，不上传任何案件材料。
+ * 律师层不出现“证书、密钥、签名、令牌”等词；登录只把邮箱和密码（第 63 批起也可以是手机号和短信验证码）发给中软核对，不上传任何案件材料。
  */
 import { useEffect, useRef, useState } from "react";
 import { BrandLockup } from "../components/Brand.tsx";
 import { account, api, onboarding, recovery } from "../api.ts";
 import { PasswordField } from "../components/PasswordField.tsx";
+import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta } from "../components/SmsCodeFields.tsx";
 import { setAsideAutoOpen, setAsideNotice } from "../lib/activate-text.ts";
-import { checkPassword, codeLengthOk, dayLabel, deviceLine, emailLooksValid, nameLooksValid, phoneLooksValid, registerCodeLengthOk, registrationFields, resetNextText, roleLabel, smsCodeLooksValid, waitApprovalLead, type AccountDevice, type RegistrationMeta } from "../lib/account.ts";
+import { checkPassword, codeLengthOk, dayLabel, deviceLine, emailLooksValid, nameLooksValid, notRegisteredActions, phoneLooksValid, phoneNotRegistered, registerCodeLengthOk, registrationFields, resetNextText, roleLabel, saveLoginMethod, smsCodeLooksValid, waitApprovalLead, type AccountDevice, type LoginMethod, type RegistrationMeta } from "../lib/account.ts";
 import { fmtTime } from "../lib/labels.ts";
 
 /** 律师在恢复页点过“返回”的那个目录（每个查看者本机记一下；读写失败按没点过）。 */
@@ -141,6 +142,10 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
   // 刚把打不开的数据移到一边（主进程对话框里选了“用恢复包恢复”）：直接打开从备份恢复
   const [view, setView] = useState<View>(setAside !== null && !failed && setAsideAutoOpen(setAside, Date.now(), readDismissed()) ? "restore" : "login");
   const [email, setEmail] = useState("");
+  // 第 63 批：手机号在登录与注册之间共用（验证码登录发现没注册 → “用这个手机号注册”直接带过去）
+  const [phone, setPhone] = useState("");
+  // 注册策略整页只取一次，登录、注册、找回密码共用（取不到按旧流程）
+  const meta = useRegistrationMeta();
   const [err, setErr] = useState(failed);
   const [note, setNote] = useState("");
   const [done, setDone] = useState<string | null>(null);
@@ -213,10 +218,27 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
           {note}
         </p>
       )}
-      {view === "login" && <LoginForm email={email} setEmail={setEmail} err={err} setErr={setErr} onResult={outcome} onForgot={() => go("forgot")} />}
-      {view === "register" && <RegisterForm email={email} setEmail={setEmail} err={err} setErr={setErr} onResult={outcome} />}
+      {view === "login" && (
+        <LoginForm
+          meta={meta}
+          email={email}
+          setEmail={setEmail}
+          phone={phone}
+          setPhone={setPhone}
+          err={err}
+          setErr={setErr}
+          onResult={outcome}
+          onForgot={() => go("forgot")}
+          onRegisterWithPhone={() => {
+            go("register");
+            setNote(`已带上手机号 ${phone.trim()}。请补全邮箱、密码和姓名，再获取验证码完成注册；之后就可以用这个手机号登录。`);
+          }}
+        />
+      )}
+      {view === "register" && <RegisterForm meta={meta} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} err={err} setErr={setErr} onResult={outcome} />}
       {view === "forgot" && (
         <ForgotPassword
+          meta={meta}
           email={email}
           setEmail={setEmail}
           onBack={() => go("login")}
@@ -231,7 +253,7 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
             void waitForActivated(stuck, "#/welcome");
           }} failed={err} onBack={() => go("login")} />}
       {view !== "forgot" && secondary}
-      <p className="muted activate-foot">登录与开通只把邮箱、密码或码发给 Kimi Work 服务核对；你的案卷不会上传。</p>
+      <p className="muted activate-foot">登录与开通只把邮箱或手机号、密码或短信验证码、开通码或邀请码发给 Kimi Work 服务核对；你的案卷不会上传。</p>
       {legacy.length > 0 && (
         <p className="muted activate-foot" role="note">
           这台电脑上还有以前留下的数据（{legacy.join("、")}，例如旧版本试用或没有完成的入组）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
@@ -241,17 +263,47 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
   );
 }
 
-function LoginForm(p: { email: string; setEmail: (v: string) => void; err: string; setErr: (v: string) => void; onResult: (r: any) => void; onForgot: () => void }) {
+/**
+ * 登录（第 44 批邮箱 + 密码；第 63 批云端开了验证码登录时另有“验证码登录”，先显示上次用过的方式，没有记录先显示验证码登录）。
+ * 两种方式的结果一样，都交给 onResult（创始开通、入组等待、不能继续）。
+ */
+function LoginForm(p: {
+  meta: RegistrationMeta | null;
+  email: string;
+  setEmail: (v: string) => void;
+  phone: string;
+  setPhone: (v: string) => void;
+  err: string;
+  setErr: (v: string) => void;
+  onResult: (r: any) => void;
+  onForgot: () => void;
+  onRegisterWithPhone: () => void;
+}) {
   const [pw, setPw] = useState("");
+  const [smsCode, setSmsCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const ready = emailLooksValid(p.email) && pw.length > 0;
+  // 验证码登录时手机号没有对应的账号：在表单里给“用这个手机号注册 / 改用密码登录”
+  const [unreg, setUnreg] = useState(false);
+  const lm = useLoginMethod(p.meta);
+  const f = registrationFields(p.meta);
+  const byPhone = lm.method === "phone";
+  const ready = byPhone ? phoneLooksValid(p.phone) && smsCodeLooksValid(smsCode, f.codeLength) : emailLooksValid(p.email) && pw.length > 0;
+  const switchTo = (m: LoginMethod) => {
+    p.setErr("");
+    setUnreg(false);
+    lm.choose(m);
+  };
   const submit = async () => {
     if (!ready || busy) return;
     setBusy(true);
     p.setErr("");
+    setUnreg(false);
     try {
-      p.onResult(await account.login(p.email.trim(), pw));
+      const r = byPhone ? await account.loginByPhone(p.phone.trim(), smsCode.trim()) : await account.login(p.email.trim(), pw);
+      if (lm.methods.phone) saveLoginMethod(lm.method);
+      p.onResult(r);
     } catch (e) {
+      setUnreg(byPhone && phoneNotRegistered(e));
       p.setErr((e as Error).message || "登录没有完成，请稍后重试");
     } finally {
       setBusy(false);
@@ -265,110 +317,85 @@ function LoginForm(p: { email: string; setEmail: (v: string) => void; err: strin
         void submit();
       }}
     >
-      <p className="activate-lead">用邮箱和密码登录。第一次使用请先注册。</p>
-      <label className="field">
-        <span>邮箱</span>
-        <input className="auth-input" type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} autoComplete="username" autoFocus spellCheck={false} />
-      </label>
-      <PasswordField label="密码" value={pw} onChange={setPw} />
+      {lm.methods.phone && <LoginMethodTabs value={lm.method} onChange={switchTo} />}
+      {byPhone ? (
+        <>
+          <p className="activate-lead">用手机号和短信验证码登录。第一次使用请先注册。</p>
+          <SmsCodeFields
+            phone={p.phone}
+            setPhone={(v) => {
+              p.setPhone(v);
+              if (unreg) {
+                setUnreg(false);
+                p.setErr("");
+              }
+            }}
+            code={smsCode}
+            setCode={setSmsCode}
+            purpose="login"
+            codeLength={f.codeLength}
+            resendSeconds={f.resendSeconds}
+            setErr={p.setErr}
+            onSendError={(e) => setUnreg(phoneNotRegistered(e))}
+            autoFocus
+          />
+        </>
+      ) : (
+        <>
+          <p className="activate-lead">用邮箱和密码登录。第一次使用请先注册。</p>
+          <label className="field">
+            <span>邮箱</span>
+            <input className="auth-input" type="email" value={p.email} onChange={(e) => (lm.lock(), p.setEmail(e.target.value))} autoComplete="username" autoFocus spellCheck={false} />
+          </label>
+          <PasswordField label="密码" value={pw} onChange={(v) => (lm.lock(), setPw(v))} />
+        </>
+      )}
       {p.err && (
         <p className="activate-error" role="alert">
           {p.err}
         </p>
       )}
+      {unreg && (
+        <div className="auth-unreg">
+          {notRegisteredActions("activate").map((a) =>
+            a === "register" ? (
+              <button key={a} type="button" className="btn-ghost btn-sm" onClick={p.onRegisterWithPhone}>
+                用这个手机号注册
+              </button>
+            ) : (
+              <button key={a} type="button" className="btn-ghost btn-sm" onClick={() => switchTo("password")}>
+                改用密码登录
+              </button>
+            ),
+          )}
+        </div>
+      )}
       <button type="submit" className="btn-primary activate-submit" disabled={!ready || busy}>
         {busy ? "正在登录…" : "登录"}
       </button>
-      <div className="auth-row">
-        <button type="button" className="btn-link" onClick={p.onForgot}>
-          忘记密码？
-        </button>
-      </div>
+      {!byPhone && (
+        <div className="auth-row">
+          <button type="button" className="btn-link" onClick={p.onForgot}>
+            忘记密码？
+          </button>
+        </div>
+      )}
     </form>
   );
 }
 
-/**
- * 注册策略（第 62 批）：按云端公布的能力字段决定显示手机号与邀请码。取不到（旧云端、网络不通）一律按旧流程，不报错。
- * 未取到之前（null）也按旧流程显示，取到后再补上手机号一栏。
- */
-function useRegistrationMeta(): RegistrationMeta | null {
-  const [meta, setMeta] = useState<RegistrationMeta | null>(null);
-  useEffect(() => {
-    let live = true;
-    account
-      .registrationMeta()
-      .then((m) => live && setMeta(m && typeof m === "object" ? m : { legacy: true }))
-      .catch(() => live && setMeta({ legacy: true }));
-    return () => {
-      live = false;
-    };
-  }, []);
-  return meta;
-}
-
-/** 手机号 + 短信验证码（第 62 批）：“获取验证码”后按云端给的间隔倒计时（缺省 60 秒）；发送失败把原因写在表单的错误行。 */
-function SmsCodeFields(p: { phone: string; setPhone: (v: string) => void; code: string; setCode: (v: string) => void; purpose: "register" | "reset"; codeLength: number; resendSeconds: number; optional?: boolean; setErr: (v: string) => void; autoFocus?: boolean }) {
-  const [wait, setWait] = useState(0);
-  const [sending, setSending] = useState(false);
-  const [hint, setHint] = useState("");
-  useEffect(() => {
-    if (wait <= 0) return;
-    const t = setTimeout(() => setWait((w) => w - 1), 1000);
-    return () => clearTimeout(t);
-  }, [wait]);
-  const sendCode = async () => {
-    if (!phoneLooksValid(p.phone) || sending || wait > 0) return;
-    setSending(true);
-    p.setErr("");
-    setHint("");
-    try {
-      const r = await account.smsSend(p.phone.trim(), p.purpose);
-      setWait(r.resend_after_s || p.resendSeconds);
-      // 测试环境（云端开了 dry-run）不发短信，把验证码直接给出；正式环境不会有这一项
-      setHint(r.dry_run && r.debug_code ? `测试环境：验证码是 ${r.debug_code}（正式环境会发到手机）` : `验证码已发送到 ${r.phone ?? "你的手机"}，${Math.round((r.expires_in_s || 600) / 60)} 分钟内有效`);
-    } catch (e) {
-      const d = (e as { detail?: { retry_after_s?: number } }).detail;
-      if (d && Number.isSafeInteger(d.retry_after_s) && (d.retry_after_s as number) > 0) setWait(Math.min(600, d.retry_after_s as number));
-      p.setErr((e as Error).message || "验证码没有发出，请稍后重试");
-    } finally {
-      setSending(false);
-    }
-  };
-  return (
-    <>
-      <label className="field">
-        <span>{p.optional ? "手机号（可不填，填了可用手机号找回密码）" : "手机号"}</span>
-        <input className="auth-input" type="tel" value={p.phone} onChange={(e) => p.setPhone(e.target.value)} autoComplete="tel" inputMode="tel" maxLength={20} placeholder="11 位中国大陆手机号" autoFocus={p.autoFocus} />
-        {p.phone.trim() && !phoneLooksValid(p.phone) && <span className="field-warn">手机号格式不对</span>}
-      </label>
-      {(!p.optional || p.phone.trim() !== "") && (
-        <label className="field">
-          <span>短信验证码</span>
-          <span className="sms-row">
-            <input className="auth-input" value={p.code} onChange={(e) => p.setCode(e.target.value.replace(/\D/g, "").slice(0, p.codeLength))} inputMode="numeric" autoComplete="one-time-code" maxLength={p.codeLength} placeholder={`${p.codeLength} 位数字`} spellCheck={false} />
-            <button type="button" className="btn-ghost" disabled={!phoneLooksValid(p.phone) || sending || wait > 0} onClick={() => void sendCode()}>
-              {sending ? "正在发送…" : wait > 0 ? `${wait} 秒后重新获取` : "获取验证码"}
-            </button>
-          </span>
-          {hint && <span className="muted">{hint}</span>}
-        </label>
-      )}
-    </>
-  );
-}
-
-function RegisterForm(p: { email: string; setEmail: (v: string) => void; err: string; setErr: (v: string) => void; onResult: (r: any) => void }) {
+function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmail: (v: string) => void; phone: string; setPhone: (v: string) => void; err: string; setErr: (v: string) => void; onResult: (r: any) => void }) {
   const [pw, setPw] = useState("");
   const [name, setName] = useState("");
   const [org, setOrg] = useState("");
   const [hasCode, setHasCode] = useState(false);
   const [code, setCode] = useState("");
-  const [phone, setPhone] = useState("");
+  // 第 63 批：手机号由开通页持有（验证码登录发现没注册时带过来）
+  const { phone, setPhone } = p;
   const [smsCode, setSmsCode] = useState("");
   const [busy, setBusy] = useState(false);
   // 第 62 批：按云端注册策略显示手机号与邀请码（旧云端照旧流程）
-  const f = registrationFields(useRegistrationMeta());
+  const f = registrationFields(p.meta);
   const codeOn = f.code === "required" || hasCode;
   const codeLen = code.replace(/[^0-9A-Z]/g, "").length;
   const phoneOn = f.phone === "required" || (f.phone === "optional" && phone.trim() !== "");
@@ -409,7 +436,7 @@ function RegisterForm(p: { email: string; setEmail: (v: string) => void; err: st
         {/* 第 56 批：凭邀请码（36 位）加入的，本所里显示的是管理员写在邀请上的姓名 */}
         {codeOn && codeLen > 20 && <span className="muted">凭邀请码加入时，在本所显示的是管理员写在邀请上的姓名。</span>}
       </label>
-      {f.phone !== "hidden" && <SmsCodeFields phone={phone} setPhone={setPhone} code={smsCode} setCode={setSmsCode} purpose="register" codeLength={f.codeLength} resendSeconds={f.resendSeconds} optional={f.phone === "optional"} setErr={p.setErr} />}
+      {f.phone !== "hidden" && <SmsCodeFields phone={phone} setPhone={setPhone} code={smsCode} setCode={setSmsCode} purpose="register" codeLength={f.codeLength} resendSeconds={f.resendSeconds} optional={f.phone === "optional"} setErr={p.setErr} {...(f.phone === "optional" && p.meta?.phone_login ? { phoneLabel: "手机号（可不填；填了以后可用手机号验证码登录、找回密码）" } : {})} />}
       {orgShown && (
         <label className="field">
           <span>律所或工作室名称（可不填）</span>
@@ -441,7 +468,7 @@ function RegisterForm(p: { email: string; setEmail: (v: string) => void; err: st
   );
 }
 
-function ForgotPassword(p: { email: string; setEmail: (v: string) => void; onBack: () => void; onDone: () => void }) {
+function ForgotPassword(p: { meta: RegistrationMeta | null; email: string; setEmail: (v: string) => void; onBack: () => void; onDone: () => void }) {
   const [step, setStep] = useState<"ask" | "set">("ask");
   const [code, setCode] = useState("");
   const [pw, setPw] = useState("");
@@ -449,7 +476,7 @@ function ForgotPassword(p: { email: string; setEmail: (v: string) => void; onBac
   const [err, setErr] = useState("");
   const [hint, setHint] = useState("");
   // 第 62 批：云端短信可用时可改用手机号找回（旧云端没有这个选项）
-  const f = registrationFields(useRegistrationMeta());
+  const f = registrationFields(p.meta);
   const [by, setBy] = useState<"email" | "phone">("email");
   const [phone, setPhone] = useState("");
   const [smsCode, setSmsCode] = useState("");

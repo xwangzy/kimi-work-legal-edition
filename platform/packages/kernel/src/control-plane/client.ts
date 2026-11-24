@@ -127,7 +127,7 @@ export interface QuotaView {
   unreconciled_leases?: number;
 }
 
-type CallResult = { ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number; message?: string };
+type CallResult = { ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number; message?: string; retry_after_s?: number };
 const SESSION_PROBLEMS: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch"]);
 
 export class ControlPlaneClient {
@@ -203,7 +203,9 @@ export class ControlPlaneClient {
         const mv = (json.error as { min_version?: unknown } | undefined)?.min_version;
         this.outdated = { min_version: typeof mv === "string" && mv.length <= 40 ? mv : null, at: this.d.now?.() ?? Date.now() };
       }
-      return { ok: false, error: code, status: r.status, ...(typeof (json.error as { message?: unknown } | undefined)?.message === "string" ? { message: String((json.error as { message: string }).message).slice(0, 200) } : {}) };
+      // 第 63 批：验证码重发、锁定还要等几秒（已激活电脑上的验证码登录与绑定手机号按它倒计时）
+      const ra = (json.error as { retry_after_s?: unknown } | undefined)?.retry_after_s;
+      return { ok: false, error: code, status: r.status, ...(typeof (json.error as { message?: unknown } | undefined)?.message === "string" ? { message: String((json.error as { message: string }).message).slice(0, 200) } : {}), ...(Number.isSafeInteger(ra) && (ra as number) > 0 && (ra as number) <= 86_400 ? { retry_after_s: ra as number } : {}) };
     }
     return { ok: true, status: r.status, json };
   }
@@ -551,8 +553,14 @@ export class ControlPlaneClient {
   async account(method: "GET" | "POST", path: string, body?: unknown): Promise<Record<string, unknown>> {
     if (!/^\/v1\/auth\/[a-z0-9/_-]{2,80}$/.test(path)) throw new Error("account_path_invalid");
     const r = await this.call(method, path, method === "GET" ? undefined : (body ?? {}));
-    if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null, ...(r.error === "client_outdated" ? { minVersion: this.outdated?.min_version ?? null } : {}) });
+    if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null, retryAfter: r.retry_after_s ?? null, ...(r.error === "client_outdated" ? { minVersion: this.outdated?.min_version ?? null } : {}) });
     return r.json;
+  }
+
+  /** 第 63 批：云端版本与注册 / 登录策略（GET /v1/meta，无鉴权、不带个人信息）；取不到返回 null（界面按旧流程）。 */
+  async meta(): Promise<Record<string, unknown> | null> {
+    const r = await this.call("GET", "/v1/meta");
+    return r.ok ? r.json : null;
   }
 
   // ─── 中软侧操作记录（第 9 批 S14） ───

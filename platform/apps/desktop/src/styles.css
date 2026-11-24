@@ -1602,6 +1602,14 @@ table.data.visibility-table th:first-child, table.data.visibility-table td:first
 .auth-seg { display: flex; gap: 4px; padding: 3px; margin: 0 0 18px; border-radius: var(--r-sm); background: var(--bg-muted); }
 .auth-seg button { flex: 1 1 0; border: 0; background: none; color: var(--text-secondary); padding: 6px 12px; border-radius: var(--r-xs); font-size: var(--fs-body); }
 .auth-seg button.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 600; box-shadow: var(--shadow-xs); }
+/* 第 63 批：登录方式“验证码登录 | 密码登录”比外层“登录 | 注册”轻一档——只用文字 + 下划线，不再套底色，主次一眼分得清 */
+.auth-method { display: flex; gap: 20px; border-bottom: 1px solid var(--border-subtle); }
+.auth-method button { border: 0; background: none; padding: 2px 0 8px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--text-secondary); font-size: var(--fs-body); cursor: pointer; }
+.auth-method button:hover { color: var(--text-primary); }
+.auth-method button.on { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--text-primary); }
+.auth-method button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: var(--r-xs); }
+/* 验证码登录时手机号没注册：错误下面的两个动作（用这个手机号注册 / 改用密码登录） */
+.auth-unreg { display: flex; flex-wrap: wrap; gap: 8px; }
 .auth-form { display: flex; flex-direction: column; gap: 12px; }
 .auth-form .activate-lead { margin: 0 0 4px; }
 .auth-form .activate-submit { margin-top: 4px; }
@@ -1629,9 +1637,15 @@ table.data.visibility-table th:first-child, table.data.visibility-table td:first
 .login-banner .login-box.compact { flex-direction: row; flex-wrap: wrap; align-items: flex-end; max-width: none; gap: 8px 12px; }
 .login-banner .login-box.compact .field { flex: 1 1 200px; max-width: 280px; }
 .login-banner .login-box.compact .activate-error { flex-basis: 100%; margin: 0; }
+.login-banner .login-box.compact .auth-method { flex-basis: 100%; border-bottom: 0; }
+.login-banner .login-box.compact .auth-unreg { flex-basis: 100%; }
+.login-banner .login-box.compact .field:has(.sms-row) { max-width: 360px; }
 .account-card { display: flex; align-items: flex-start; gap: 12px; }
 .account-card .pill { margin-left: 8px; }
 .account-card-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* 第 63 批：账号卡上的手机号一行（号码或“未绑定” + 绑定 / 更换） */
+.account-phone { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.account-phone .btn-link { padding: 0; }
 .account-avatar { flex: none; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); font-weight: 600; }
 .account-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-width: 640px; }
 .account-list li { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); }

@@ -93,7 +93,7 @@ export function accountErrorText(code: string, fallback?: string): string {
   if (cloud) return cloud;
   switch (code) {
     case "auth_invalid":
-      return "邮箱或密码不正确";
+      return fallback ?? "邮箱或密码不正确";
     case "account_locked":
       return fallback ?? "密码错误次数过多，请稍后再试，或找回密码";
     case "account_disabled":
@@ -116,7 +116,7 @@ export function accountErrorText(code: string, fallback?: string): string {
     case "phone_required":
       return "请填写手机号并获取短信验证码";
     case "phone_taken":
-      return "这个手机号已注册，请直接登录（忘记密码可用手机号找回）";
+      return fallback ?? "这个手机号已注册，请直接登录（忘记密码可用手机号找回）";
     case "sms_code_required":
       return "请填写短信验证码";
     case "sms_code_invalid":
@@ -141,6 +141,19 @@ export function accountErrorText(code: string, fallback?: string): string {
     case "sms_disabled":
     case "sms_not_configured":
       return "短信验证暂不可用，请联系中软客服";
+    // ─── 第 63 批：验证码登录与绑定手机号 ───
+    case "sms_login_disabled":
+      return "手机号验证码登录暂未开放，请用邮箱和密码登录";
+    case "phone_not_registered":
+      return "这个手机号还没有注册账号。新用户请先注册；已用邮箱注册的，请用密码登录后在“设置 → 账号”绑定手机号";
+    case "phone_same":
+      return "这个手机号已经绑定在你的账号上";
+    case "sms_probe_limit":
+      return "获取验证码过于频繁，请一小时后再试";
+    case "member_only":
+      return "这是中软平台人员账号，不能在律师端使用";
+    case "sms_purpose_invalid":
+      return "客户端与云端版本不一致，请升级客户端后再试";
     case "sms_auth_failed":
     case "sms_ip_blocked":
     case "sms_balance_insufficient":
@@ -191,8 +204,8 @@ export function clientOutdatedText(minVersion?: string | null): string {
 }
 
 /** 第 62 批：短信频控类（429）与短信服务类（502，云端或短信平台的问题）的代码。 */
-const SMS_THROTTLE_CODES: ReadonlySet<string> = new Set(["sms_too_frequent", "sms_daily_limit", "sms_ip_limit", "sms_daily_total_limit", "sms_provider_throttled"]);
-const SMS_SERVICE_CODES: ReadonlySet<string> = new Set(["sms_disabled", "sms_not_configured", "sms_auth_failed", "sms_ip_blocked", "sms_balance_insufficient", "sms_sign_invalid", "sms_template_invalid", "sms_provider_error", "sms_timeout", "sms_network_error"]);
+const SMS_THROTTLE_CODES: ReadonlySet<string> = new Set(["sms_too_frequent", "sms_daily_limit", "sms_ip_limit", "sms_daily_total_limit", "sms_provider_throttled", "sms_probe_limit"]);
+const SMS_SERVICE_CODES: ReadonlySet<string> = new Set(["sms_disabled", "sms_not_configured", "sms_login_disabled", "sms_auth_failed", "sms_ip_blocked", "sms_balance_insufficient", "sms_sign_invalid", "sms_template_invalid", "sms_provider_error", "sms_timeout", "sms_network_error"]);
 
 /**
  * 账号接口失败 → HTTP 状态、错误类别与律师话（第 46 批：待激活模式 onboarding.accountCall 与正常模式 account.* 共用这一处，口径不再分叉）。
@@ -207,19 +220,30 @@ export function accountFailure(code: string, cpMessage?: string | null, extra?: 
         ? 423
         : c === "rate_limited" || SMS_THROTTLE_CODES.has(c)
           ? 429
-          : c === "email_taken" || c === "member_taken" || c === "phone_taken" || c === "invite_exhausted"
+          : c === "email_taken" || c === "member_taken" || c === "phone_taken" || c === "phone_same" || c === "invite_exhausted"
             ? 409
-            : c === "account_disabled" || c === "registration_closed" || c === "code_required" || c === "staff_client_forbidden" || c === "invite_disabled"
+            : c === "account_disabled" || c === "registration_closed" || c === "code_required" || c === "staff_client_forbidden" || c === "invite_disabled" || c === "member_only"
               ? 403
+              : c === "phone_not_registered"
+                ? 404
               : c === "client_outdated"
                 ? 426
                 : c.startsWith("cp_") || c === "gate_unavailable" || SMS_SERVICE_CODES.has(c)
                   ? 502
                   : 400;
-  const useCp = typeof cpMessage === "string" && cpMessage !== "" && (c === "password_weak" || c === "account_locked");
+  // 第 63 批：改密码、换绑手机号时核对的是“当前密码”（云端原话），不能说成“邮箱或密码不正确”
+  const useCp = typeof cpMessage === "string" && cpMessage !== "" && (c === "password_weak" || c === "account_locked" || (c === "auth_invalid" && /^(?:当前密码不正确|密码不正确)$/.test(cpMessage)));
   // 第 62 批：重发间隔按云端给的秒数说；验证码不对时说还能试几次（云端原话只在这两处采用）
   const wait = Number.isSafeInteger(extra?.retry_after_s) && (extra!.retry_after_s as number) > 0 ? (extra!.retry_after_s as number) : null;
-  const smsText = c === "sms_too_frequent" && wait ? `验证码已发送，请 ${wait} 秒后再重新获取` : c === "sms_code_invalid" && typeof cpMessage === "string" && /^验证码不正确（还可再试 \d 次）$/.test(cpMessage) ? cpMessage : undefined;
+  // 第 63 批：绑定手机号时被别的账号占用（云端原话“已绑定在别的账号上”），不能说成“请直接登录”
+  const smsText =
+    c === "sms_too_frequent" && wait
+      ? `验证码已发送，请 ${wait} 秒后再重新获取`
+      : c === "sms_code_invalid" && typeof cpMessage === "string" && /^验证码不正确（还可再试 \d 次）$/.test(cpMessage)
+        ? cpMessage
+        : c === "phone_taken" && typeof cpMessage === "string" && /^这个手机号已绑定在别的账号上[^<>]{0,40}$/.test(cpMessage)
+          ? cpMessage
+          : undefined;
   const text = c === "client_outdated" ? clientOutdatedText(extra?.min_version ?? null) : accountErrorText(c, useCp ? cpMessage! : smsText);
   return { status, fault: status === 502 ? "provider_unavailable" : status === 429 ? "rate_limited" : "validation", text, reason: c };
 }

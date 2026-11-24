@@ -73,6 +73,10 @@ export interface RegistrationMeta {
   sms_available?: boolean;
   phone_reset?: boolean;
   sms?: { code_length: number; resend_seconds: number; ttl_minutes: number };
+  /** 第 63 批：云端开放了手机号验证码登录（旧云端没有这一项，按 false）。 */
+  phone_login?: boolean;
+  /** 第 63 批：已登录的账号可以绑定 / 更换手机号（旧云端没有这一项，按 false）。 */
+  phone_bind?: boolean;
 }
 
 /**
@@ -83,6 +87,97 @@ export function registrationFields(m: RegistrationMeta | null | undefined): { le
   if (!m || m.legacy) return { legacy: true, phone: "hidden", code: "checkbox", codeLength: 6, resendSeconds: 60, phoneReset: false };
   const phone = m.require_phone ? "required" : m.sms_available ? "optional" : "hidden";
   return { legacy: false, phone, code: m.invite_required ? "required" : "checkbox", codeLength: m.sms?.code_length ?? 6, resendSeconds: m.sms?.resend_seconds ?? 60, phoneReset: m.phone_reset === true };
+}
+
+/** 短信验证码的用途（第 63 批扩为四种）：注册、找回密码、验证码登录、绑定 / 更换手机号。码与用途绑定，不能混用。 */
+export type SmsPurpose = "register" | "reset" | "login" | "bind";
+
+/** 登录方式：手机号 + 短信验证码，或邮箱 + 密码。 */
+export type LoginMethod = "phone" | "password";
+
+/** 第 63 批：登录页能用哪些方式。旧云端、取不到策略（legacy）或云端没开验证码登录 → 只有密码登录（与第 62 批相同）。纯函数。 */
+export function loginMethods(m: RegistrationMeta | null | undefined): { phone: boolean; password: true } {
+  return { phone: !!m && !m.legacy && m.phone_login === true, password: true };
+}
+
+/** 本机记住的“上次用过的登录方式”（只记方式，不记手机号、邮箱）。 */
+export const LOGIN_METHOD_KEY = "kwl.login.method";
+
+type MethodStore = { getItem(k: string): string | null; setItem(k: string, v: string): void };
+const defaultStore = (): MethodStore | undefined => (globalThis as { localStorage?: MethodStore }).localStorage;
+
+/** 读上次用过的登录方式；没有记录、记录不认识或读不了（隐私模式、存储被禁用）一律按没有记录。 */
+export function rememberedLoginMethod(store?: MethodStore | null): LoginMethod | null {
+  try {
+    const v = (store ?? defaultStore())?.getItem(LOGIN_METHOD_KEY);
+    return v === "phone" || v === "password" ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 登录成功后记下这次用的方式；存不下就算了（下次按缺省）。 */
+export function saveLoginMethod(m: LoginMethod, store?: MethodStore | null): void {
+  try {
+    (store ?? defaultStore())?.setItem(LOGIN_METHOD_KEY, m);
+  } catch {
+    // 存不下：下次按缺省方式显示，不影响登录
+  }
+}
+
+/** 登录框先显示哪种方式：云端没开验证码登录 → 密码；开了 → 上次用过的，没有记录 → 验证码登录。纯函数。 */
+export function initialLoginMethod(methods: { phone: boolean }, remembered: LoginMethod | null): LoginMethod {
+  if (!methods.phone) return "password";
+  return remembered ?? "phone";
+}
+
+/** 内核报的失败原因代码（DomainError.detail.reason）。 */
+export function errorReason(e: unknown): string | null {
+  const r = (e as { detail?: { reason?: unknown } } | null)?.detail?.reason;
+  return typeof r === "string" ? r : null;
+}
+
+/** 验证码登录时手机号还没有对应的账号（发码或登录时都可能报）。 */
+export function phoneNotRegistered(e: unknown): boolean {
+  return errorReason(e) === "phone_not_registered";
+}
+
+/**
+ * 手机号没注册时表单里给哪些动作：开通页（还没激活）可以“用这个手机号注册”或“改用密码登录”；
+ * 已激活电脑的重新登录框只能登这台电脑已登记的成员，不能在这里注册新账号，只给“改用密码登录”。纯函数。
+ */
+export function notRegisteredActions(where: "activate" | "relogin"): ("register" | "password")[] {
+  return where === "activate" ? ["register", "password"] : ["password"];
+}
+
+/** 账号卡上的手机号一栏：打码后的号码，或“未绑定”。 */
+export function phoneLabel(phone: string | null | undefined): string {
+  return phone && phone.trim() ? phone.trim() : "未绑定";
+}
+
+/**
+ * 绑定 / 更换手机号对话框（第 63 批）：账号还没有手机号 → 绑定，不要密码；已有 → 更换，须输入当前密码。
+ * done = 成功后的提示（云端开了验证码登录才说“可以用手机号验证码登录”）。纯函数。
+ */
+export function phoneBindForm(current: string | null | undefined, phoneLogin = false): { change: boolean; title: string; needPassword: boolean; phoneField: string; lead: string; done: string } {
+  const change = !!(current && current.trim());
+  return change
+    ? {
+        change,
+        title: "更换手机号",
+        needPassword: true,
+        phoneField: "新手机号",
+        lead: `现在绑定的是 ${current!.trim()}。换成新手机号后，原来的号码不能再用来登录或找回密码；为确认是你本人，请输入当前密码。`,
+        done: phoneLogin ? "已更换手机号，之后用新手机号验证码登录。" : "已更换手机号。",
+      }
+    : {
+        change,
+        title: "绑定手机号",
+        needPassword: false,
+        phoneField: "手机号",
+        lead: phoneLogin ? "绑定后，在登录页可以用手机号和短信验证码登录，不用记密码；邮箱和密码照常可用。" : "绑定后，这个手机号与你的账号关联；邮箱和密码照常可用。",
+        done: phoneLogin ? "已绑定，之后可以用手机号验证码登录。" : "已绑定手机号。",
+      };
 }
 
 export const ROLE_LABEL: Readonly<Record<string, string>> = { admin: "管理员", firm_admin: "管理员", partner: "合伙人", lawyer: "律师", assistant: "助理" };

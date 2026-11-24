@@ -41,8 +41,8 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/relay-token$/,
   /^\/v1\/quota\/cap$/,
   // 第 44 批：我方账号（注册、登录、退出、本人资料、改密、找回密码、吊销本人的登录、解绑本人的设备）
-  // 第 62 批：注册与找回密码的短信验证码（sms/send：手机号与用途）
-  /^\/v1\/auth\/(?:register|login|logout|me|password|password-reset\/request|password-reset\/confirm|sms\/send)$/,
+  // 第 62 批：注册与找回密码的短信验证码（sms/send：手机号与用途）；第 63 批：验证码登录（同 login）、绑定 / 更换手机号（phone）
+  /^\/v1\/auth\/(?:register|login|logout|me|password|password-reset\/request|password-reset\/confirm|sms\/send|phone)$/,
   /^\/v1\/auth\/sessions\/ses_[A-Za-z0-9_-]{16}\/revoke$/,
   /^\/v1\/auth\/devices\/[A-Za-z0-9_-]{1,128}\/unbind$/,
   /^\/v1\/audit\?after=\d{1,15}&limit=\d{1,3}$/,

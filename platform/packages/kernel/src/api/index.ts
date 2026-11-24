@@ -5,6 +5,7 @@
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
 import { accountErrorText, accountFailure, controlPlaneErrorText, CP_RULE_REJECTIONS, onboardingStateText, seatBlockReason } from "../account-session.ts";
+import { loginBody, registrationMetaOf, smsPhoneInput, smsSendResult } from "../services/onboarding.ts";
 import { diagnoseView } from "../services/cloud-connection.ts";
 import { launchCheck, QUOTA_VIEW_MAX_AGE_MS, type LaunchHint } from "../services/launch-check.ts";
 import { calcDeadline } from "../tools/tools/deadline.ts";
@@ -3797,7 +3798,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
     "account.login": async (p, id) => {
       const cp = requireCpAccount();
-      const j = await accountCp(() => cp.account("POST", "/v1/auth/login", { email: p?.email, password: p?.password, client: clientInfo() }));
+      // 第 63 批：也可用手机号 + 短信验证码（先 account.sms_send purpose=login）；之后与密码方式完全相同（只许登这台电脑已登记成员的账号）
+      const j = await accountCp(() => cp.account("POST", "/v1/auth/login", { ...loginBody((p ?? {}) as Record<string, unknown>), client: clientInfo() }));
       const onb = (j.onboarding ?? {}) as Record<string, any>;
       const acc = (j.account ?? {}) as Record<string, any>;
       // 第 46 批：非 ready 的状态用准确的原因（与待激活模式同一份文案），不再一律说“登录已失效”
@@ -3856,8 +3858,36 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
     "account.reset_confirm": async (p) => {
       const cp = requireCpAccount();
-      await accountCp(() => cp.account("POST", "/v1/auth/password-reset/confirm", { email: p?.email, code: p?.code, password: p?.password }));
+      // 第 63 批：已激活的电脑上也可用手机号找回（与待激活模式同一写法）
+      const byPhone = typeof p?.phone === "string" && p.phone.trim() !== "" && (p?.email === undefined || p?.email === null || p?.email === "");
+      await accountCp(() => cp.account("POST", "/v1/auth/password-reset/confirm", byPhone ? { phone: String(p!.phone).trim(), code: p?.code, password: p?.password } : { email: p?.email, code: p?.code, password: p?.password }));
       return { ok: true };
+    },
+    // ─── 第 63 批：已激活的电脑上的注册 / 登录策略、短信验证码（登录、找回、绑定）与绑定手机号 ───
+    "account.registration_meta": async () => {
+      const cp = requireCpAccount();
+      try {
+        return registrationMetaOf(await cp.meta());
+      } catch {
+        return { legacy: true, mode: null };
+      }
+    },
+    "account.sms_send": async (p) => {
+      const cp = requireCpAccount();
+      const purpose = p?.purpose === "bind" || p?.purpose === "reset" ? p.purpose : "login";
+      const phone = smsPhoneInput(p?.phone);
+      // 绑定要会话（控制面通道带上本机的会话头）；登录、找回不看会话
+      return smsSendResult(await accountCp(() => cp.account("POST", "/v1/auth/sms/send", { phone, purpose, client: clientInfo() })));
+    },
+    "account.bind_phone": async (p, id) => {
+      const cp = requireCpAccount();
+      const phone = smsPhoneInput(p?.phone);
+      const sms_code = typeof p?.sms_code === "string" ? p.sms_code.replace(/\s+/g, "") : "";
+      const password = typeof p?.password === "string" && p.password !== "" ? p.password : undefined;
+      const j = await accountCp(() => cp.account("POST", "/v1/auth/phone", { phone, sms_code, ...(password !== undefined ? { password } : {}) }));
+      const acc = (j.account ?? {}) as Record<string, unknown>;
+      audit(db, id, "account.phone_bind", "user", id.userId, undefined, keyctx);
+      return { ok: true, phone: typeof acc.phone === "string" && /^\d{3}\*{4}\d{4}$/.test(acc.phone) ? acc.phone : null };
     },
     // ─── 中软侧操作记录（第 9 批 S14）：取回、验控制面签名与哈希链、本机留存；律所管理员与合伙人可看、可导出 ───
     "control_plane.audit": async (p, id) => {
@@ -5088,8 +5118,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const code = String((e as { code?: unknown })?.code ?? (e as Error)?.message ?? "error");
       const cpMessage = (e as { cpMessage?: unknown })?.cpMessage;
       const minVersion = (e as { minVersion?: unknown })?.minVersion;
-      const f = accountFailure(code, typeof cpMessage === "string" ? cpMessage : null, { min_version: typeof minVersion === "string" ? minVersion : null });
-      throw new DomainError(f.fault, f.text, f.status, { reason: f.reason });
+      const ra = (e as { retryAfter?: unknown })?.retryAfter;
+      const retry = Number.isSafeInteger(ra) && (ra as number) > 0 ? (ra as number) : null;
+      const f = accountFailure(code, typeof cpMessage === "string" ? cpMessage : null, { min_version: typeof minVersion === "string" ? minVersion : null, retry_after_s: retry });
+      throw new DomainError(f.fault, f.text, f.status, { reason: f.reason, ...(retry ? { retry_after_s: retry } : {}) });
     }
   }
   function clientInfo(): { version: string | null; platform: string } {

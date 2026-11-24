@@ -442,31 +442,15 @@ export class OnboardingService {
    */
   async registrationMeta(): Promise<Record<string, unknown>> {
     const r = await cpPost(this.d.relay, "/v1/meta", undefined, "GET");
-    const pol = r.ok ? (r.json.registration_policy as Record<string, unknown> | undefined) : undefined;
-    const features = r.ok && Array.isArray(r.json.features) ? (r.json.features as unknown[]).filter((x): x is string => typeof x === "string") : [];
-    if (!pol || typeof pol !== "object" || !features.includes("sms_send")) return { legacy: true, mode: r.ok && typeof r.json.registration === "string" ? r.json.registration : null };
-    const sms = (pol.sms ?? {}) as Record<string, unknown>;
-    const int = (v: unknown, lo: number, hi: number, d: number) => (Number.isSafeInteger(v) && (v as number) >= lo && (v as number) <= hi ? (v as number) : d);
-    return {
-      legacy: false,
-      mode: pol.mode === "open" || pol.mode === "code" || pol.mode === "closed" ? pol.mode : "open",
-      invite_required: pol.invite_required === true,
-      require_phone: pol.require_phone === true,
-      sms_available: pol.sms_available === true,
-      phone_reset: pol.phone_reset === true,
-      sms: { code_length: int(sms.code_length, 4, 8, 6), resend_seconds: int(sms.resend_seconds, 30, 600, 60), ttl_minutes: int(sms.ttl_minutes, 1, 30, 10) },
-    };
+    return registrationMetaOf(r.ok ? r.json : null);
   }
 
-  /** 发短信验证码（第 62 批；register = 注册、reset = 找回密码）。手机号只经闸门的控制面通道发给中软，本机不保存、不记日志。 */
+  /** 发短信验证码（第 62 批；register = 注册、reset = 找回密码；第 63 批 login = 验证码登录）。手机号只经闸门的控制面通道发给中软，本机不保存、不记日志。 */
   async smsSend(p: { phone?: unknown; purpose?: unknown }): Promise<Record<string, unknown>> {
-    const purpose = p.purpose === "reset" ? "reset" : "register";
-    const phone = typeof p.phone === "string" ? p.phone.trim() : "";
-    if (!/^(?:\+?86)?1[3-9]\d{9}$/.test(phone.replace(/[\s-]/g, ""))) throw new DomainError("validation", accountErrorText("phone_invalid"), 400, { reason: "phone_invalid" });
+    const purpose = p.purpose === "reset" || p.purpose === "login" ? p.purpose : "register";
+    const phone = smsPhoneInput(p.phone);
     const j = await this.accountCall("/v1/auth/sms/send", { phone, purpose, client: this.clientInfo() });
-    const n = (v: unknown, d: number) => (Number.isSafeInteger(v) && (v as number) > 0 && (v as number) <= 86_400 ? (v as number) : d);
-    // dry-run（只在非生产云端）：云端随应答给出验证码，界面写明“测试环境”；生产不会有这一项
-    return { ok: true, phone: typeof j.phone === "string" ? j.phone : null, resend_after_s: n(j.resend_after_s, 60), expires_in_s: n(j.expires_in_s, 600), code_length: n(j.code_length, 6), ...(j.dry_run === true && typeof j.debug_code === "string" && /^\d{4,8}$/.test(j.debug_code) ? { dry_run: true, debug_code: j.debug_code } : {}) };
+    return smsSendResult(j);
   }
 
   /**
@@ -490,12 +474,12 @@ export class OnboardingService {
     }
   }
 
-  /** 登录（待激活模式：这台电脑还没有身份）。 */
-  async accountLogin(p: { email?: unknown; password?: unknown }): Promise<Record<string, unknown>> {
+  /** 登录（待激活模式：这台电脑还没有身份）。第 63 批：也可用手机号 + 短信验证码（先 account.sms_send purpose=login）。 */
+  async accountLogin(p: { email?: unknown; password?: unknown; phone?: unknown; sms_code?: unknown }): Promise<Record<string, unknown>> {
     const done = this.exclusive();
     try {
       if (this.pending()) throw new DomainError("conflict", "这台电脑正在等待批准；如要改用别的账号，请先点“重新输入”", 409);
-      const j = await this.accountCall("/v1/auth/login", { email: p.email, password: p.password, client: this.clientInfo() });
+      const j = await this.accountCall("/v1/auth/login", { ...loginBody(p), client: this.clientInfo() });
       return await this.afterAuth(j, null);
     } finally {
       if (!this.restarting) done();
@@ -891,6 +875,50 @@ export const membersApi = (d: MembersDeps) => {
 };
 
 /** 待激活模式下开放的内核方法（其余一律 not_activated）。第 14 批加“从备份恢复”。 */
+/**
+ * 注册 / 登录策略（第 62 批；第 63 批加 phone_login、phone_bind）：云端 /v1/meta 有 registration_policy 才按它显示手机号、邀请码与验证码登录；
+ * 旧云端没有、取不到或格式不对，一律回 legacy（界面照旧流程：只有邮箱密码登录、注册不要求手机号）。只回界面要用的几项，不透传云端原文。
+ * 待激活模式（onboarding）与已激活模式（account.registration_meta）共用。
+ */
+export function registrationMetaOf(json: Record<string, unknown> | null): Record<string, unknown> {
+  const pol = json ? (json.registration_policy as Record<string, unknown> | undefined) : undefined;
+  const features = json && Array.isArray(json.features) ? (json.features as unknown[]).filter((x): x is string => typeof x === "string") : [];
+  if (!pol || typeof pol !== "object" || !features.includes("sms_send")) return { legacy: true, mode: json && typeof json.registration === "string" ? json.registration : null };
+  const sms = (pol.sms ?? {}) as Record<string, unknown>;
+  const int = (v: unknown, lo: number, hi: number, d: number) => (Number.isSafeInteger(v) && (v as number) >= lo && (v as number) <= hi ? (v as number) : d);
+  return {
+    legacy: false,
+    mode: pol.mode === "open" || pol.mode === "code" || pol.mode === "closed" ? pol.mode : "open",
+    invite_required: pol.invite_required === true,
+    require_phone: pol.require_phone === true,
+    sms_available: pol.sms_available === true,
+    phone_reset: pol.phone_reset === true,
+    phone_login: features.includes("phone_login") && pol.phone_login === true,
+    phone_bind: features.includes("phone_bind") && pol.phone_bind === true,
+    sms: { code_length: int(sms.code_length, 4, 8, 6), resend_seconds: int(sms.resend_seconds, 30, 600, 60), ttl_minutes: int(sms.ttl_minutes, 1, 30, 10) },
+  };
+}
+
+/** 手机号输入（本机先粗查格式，最终以云端为准）：不合格即 phone_invalid。 */
+export function smsPhoneInput(v: unknown): string {
+  const phone = typeof v === "string" ? v.trim() : "";
+  if (!/^(?:\+?86)?1[3-9]\d{9}$/.test(phone.replace(/[\s-]/g, ""))) throw new DomainError("validation", accountErrorText("phone_invalid"), 400, { reason: "phone_invalid" });
+  return phone;
+}
+
+/** 发码应答 → 界面要用的几项。dry-run（只在非生产云端）：云端随应答给出验证码，界面写明“测试环境”；生产不会有这一项。 */
+export function smsSendResult(j: Record<string, any>): Record<string, unknown> {
+  const n = (v: unknown, d: number) => (Number.isSafeInteger(v) && (v as number) > 0 && (v as number) <= 86_400 ? (v as number) : d);
+  return { ok: true, phone: typeof j.phone === "string" ? j.phone : null, resend_after_s: n(j.resend_after_s, 60), expires_in_s: n(j.expires_in_s, 600), code_length: n(j.code_length, 6), ...(j.dry_run === true && typeof j.debug_code === "string" && /^\d{4,8}$/.test(j.debug_code) ? { dry_run: true, debug_code: j.debug_code } : {}) };
+}
+
+/** 登录请求体（第 63 批）：给了手机号、没给邮箱 → 验证码方式（phone + sms_code）；否则邮箱 + 密码。 */
+export function loginBody(p: { email?: unknown; password?: unknown; phone?: unknown; sms_code?: unknown }): Record<string, unknown> {
+  const byPhone = typeof p.phone === "string" && p.phone.trim() !== "" && (p.email === undefined || p.email === null || p.email === "");
+  if (!byPhone) return { email: p.email, password: p.password };
+  return { phone: smsPhoneInput(p.phone), sms_code: typeof p.sms_code === "string" ? p.sms_code.replace(/\s+/g, "") : "" };
+}
+
 export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "device.env_probe", "account.register", "account.login", "account.reset_request", "account.reset_confirm", "account.registration_meta", "account.sms_send"]);
 
 /** 第 62 批：12 位注册邀请码（Crockford Base32，与开通码同一归一规则）；不是即 null。纯函数。 */

@@ -6,7 +6,7 @@ import { downloadPlan } from "./lib/download.ts";
 import { GENERIC_FAILURE } from "./lib/errors.ts";
 import { ask } from "./lib/ask.ts";
 import type { KernelPreviewCard } from "./lib/accept-preview.ts";
-import type { AccountDevice, AccountSession, RegistrationMeta } from "./lib/account.ts";
+import type { AccountDevice, AccountSession, RegistrationMeta, SmsPurpose } from "./lib/account.ts";
 
 declare global {
   interface Window {
@@ -812,7 +812,8 @@ export interface AccountStatus {
 
 /** 账号详情（account.me）：本人、当前登录、名下的电脑、仍有效的登录。 */
 export interface AccountMe {
-  account: { aid: string; email: string; name: string; role: string; status: string; tid: string; org?: { slug: string; name: string }; device_limit: number; last_login_at?: string | null; created_at?: string };
+  /** phone：验证过的手机号（打码，如 138****8000），没有绑定为 null；旧内核没有这一项。 */
+  account: { aid: string; email: string; name: string; role: string; status: string; tid: string; org?: { slug: string; name: string }; device_limit: number; last_login_at?: string | null; created_at?: string; phone?: string | null };
   session: AccountSession;
   devices: AccountDevice[];
   sessions: AccountSession[];
@@ -1537,12 +1538,16 @@ export const onboarding = {
 export const account = {
   register: (o: { email: string; password: string; name: string; org_name?: string; code?: string; phone?: string; sms_code?: string }) => invoke<any>("account.register", o),
   login: (email: string, password: string) => invoke<any>("account.login", { email, password }),
+  // 第 63 批：手机号 + 短信验证码登录（同一个内核方法，结果与密码登录相同）
+  loginByPhone: (phone: string, smsCode: string) => invoke<any>("account.login", { phone, sms_code: smsCode }),
   resetRequest: (email: string) => invoke<{ ok: boolean; channel: "email" | "admin"; message?: string }>("account.reset_request", { email }),
   resetConfirm: (email: string, code: string, password: string) => invoke<{ ok: true }>("account.reset_confirm", { email, code, password }),
   // 第 62 批：注册策略（旧云端回 legacy）、短信验证码、用手机号找回密码
   registrationMeta: () => invoke<RegistrationMeta>("account.registration_meta"),
-  smsSend: (phone: string, purpose: "register" | "reset") => invoke<{ ok: true; phone: string | null; resend_after_s: number; expires_in_s: number; code_length: number; dry_run?: true; debug_code?: string }>("account.sms_send", { phone, purpose }),
+  smsSend: (phone: string, purpose: SmsPurpose) => invoke<{ ok: true; phone: string | null; resend_after_s: number; expires_in_s: number; code_length: number; dry_run?: true; debug_code?: string }>("account.sms_send", { phone, purpose }),
   resetConfirmByPhone: (phone: string, code: string, password: string) => invoke<{ ok: true }>("account.reset_confirm", { phone, code, password }),
+  // 第 63 批：绑定手机号（账号还没有手机号）；更换手机号另要当前密码。结果里的手机号已打码
+  bindPhone: (o: { phone: string; sms_code: string; password?: string }) => invoke<{ ok: true; phone: string | null }>("account.bind_phone", o),
   status: () => invoke<AccountStatus>("account.status"),
   logout: () => invoke<{ ok: true }>("account.logout"),
   me: () => invoke<AccountMe>("account.me"),

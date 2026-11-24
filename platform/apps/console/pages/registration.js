@@ -4,13 +4,16 @@
  *             PUT /v1/ops/registration/policy，危险操作要复核）+ 客户端最低版本与邮件通道（/v1/ops/settings）
  *   邀请码    批次（生成、整批停用）与码列表（状态筛选、搜索、按批次、复制、详情与使用记录、单个 / 批量停用与重新启用、导出 CSV）
  *   短信服务  配置（AppKey 只写不回显、测试连接 = 查余额、发送测试短信要复核）、发送记录、注册管理操作记录
+ * 第 63 批（platform/docs/contract-b63-phone-login.md §2）：短信服务多“手机号验证码登录”开关（login_enabled）、
+ *   登录 / 绑定 / 找回模板不填沿用注册模板（显示 projects_effective）、状态行与概览显示验证码登录是否可用；
+ *   发送记录多用途“登录”“绑定手机号”与“最近 7 天”统计（应答 stats；旧服务端没有就不显示）。
  * 权限：看 registration.read；改策略、邀请码 registration.manage；短信通道 settings.manage（系统设置）。
  * 完整的邀请码只在 registration.manage 下给（列表 code 字段）；只读角色看打码 ABCD-****-WXYZ。
  */
 import * as api from "../api.js";
 import { can, ctx, go, isMe, needs, pageHead } from "../domain.js";
 import {
-  $, badge, btn, clear, confirmAction, copyBtn, dataTable, errorBlock, facts, field, fmt, h, icon, load, loadingBlock, mono, note, openDrawer, panel, readForm, saveCsv,
+  $, badge, bjDay, btn, clear, confirmAction, copyBtn, dataTable, dot, errorBlock, facts, field, fmt, h, icon, load, loadingBlock, mono, note, openDrawer, panel, readForm, saveCsv,
   searchInput, segmented, selectEl, settingRow, stat, tabBar, toast,
 } from "../ui.js";
 
@@ -29,8 +32,33 @@ export function render(page, r) {
 
 const MODE = { open: "开放自助注册", code: "仅凭码注册", closed: "关闭注册" };
 const SMS_REASON = { sms_disabled: "未启用", sms_not_configured: "未配置齐" };
-const MISSING = { app_id: "AppID", app_key: "AppKey", sign_name: "签名", "projects.register": "注册模板", "projects.reset": "找回模板", register: "注册模板", reset: "找回模板" };
+const MISSING = {
+  app_id: "AppID",
+  app_key: "AppKey",
+  sign_name: "签名",
+  "projects.register": "注册模板",
+  "projects.reset": "找回模板",
+  "projects.login": "登录模板",
+  "projects.bind": "绑定模板",
+  register: "注册模板",
+  reset: "找回模板",
+  login: "登录模板",
+  bind: "绑定模板",
+};
 const missingText = (list) => (list ?? []).map((k) => MISSING[k] ?? k).join("、");
+/**
+ * 手机号验证码登录是否可用（第 63 批）：{ key: on | off | na, text, tone, why }。
+ * v 是短信视图（GET …/sms，带 missing_by_purpose）或概览里的 sms（enabled、login_enabled、login_available…）；
+ * 旧服务端没有 login_* 字段 → null（调用方不显示这一项）。
+ */
+const loginState = (v) => {
+  if (!v || (typeof v.login_enabled !== "boolean" && typeof v.login_available !== "boolean")) return null;
+  if (v.login_available) return v.mode === "dry_run" ? { key: "on", text: "可用", tone: "warn", why: "测试模式，不真发" } : { key: "on", text: "可用", tone: "ok", why: null };
+  if (v.login_enabled === false) return { key: "off", text: "已关闭", tone: "neutral", why: "注册、找回、绑定照常" };
+  const miss = v.missing_by_purpose?.login;
+  const why = !v.enabled ? "短信未启用" : v.dry_run_blocked ? "测试模式被部署禁用" : miss?.length ? `缺 ${missingText(miss)}` : SMS_REASON[v.unavailable_reason] ?? "通道未配齐";
+  return { key: "na", text: "不可用", tone: "neutral", why };
+};
 const smsStatus = (v) =>
   !v ? ["—", "neutral"] : v.available ? [v.mode === "dry_run" ? "可用 · 测试模式（不真发）" : "可用", v.mode === "dry_run" ? "warn" : "ok"] : [`不可用：${SMS_REASON[v.unavailable_reason] ?? v.unavailable_reason ?? "未启用"}`, "neutral"];
 /** 复制按钮（表格里用小图标，不抢视线） */
@@ -143,6 +171,7 @@ function drawPolicy(head, box, o, set, plans, reload) {
   });
 
   const [, smsTone] = smsStatus(sms);
+  const ls = loginState(sms);
   const byS = inv.by_status ?? {};
   clear(
     box,
@@ -152,6 +181,14 @@ function drawPolicy(head, box, o, set, plans, reload) {
       stat("注册方式", MODE[pol.registration] ?? pol.registration ?? "—", o.meta?.invite_required ? "须填码" : "可不带码"),
       stat("手机号验证", pol.phone_required ? "必须" : "可选", pol.phone_required ? "注册要短信验证码" : "填了才验证"),
       stat("短信通道", h("span", { class: "status-line" }, h("span", { class: `dot tone-${smsTone}`, "aria-hidden": "true" }), sms.available ? "可用" : "不可用"), sms.dry_run_blocked ? "测试模式被部署禁用" : sms.available ? (sms.mode === "dry_run" ? "测试模式（不真发）" : "真实发送") : `${SMS_REASON[sms.unavailable_reason] ?? "未启用"}${sms.missing?.length ? `：缺 ${missingText(sms.missing)}` : ""}`, { onClick: can("settings.manage") ? () => go("ops/registration/sms") : undefined }),
+      ls
+        ? stat(
+            "手机号登录",
+            h("span", { class: "status-line" }, h("span", { class: `dot tone-${ls.tone}`, "aria-hidden": "true" }), ls.text),
+            ls.key === "on" ? `验证码登录${ls.why ? ` · ${ls.why}` : "已开放"}` : ls.key === "off" ? `已在“短信服务”关闭；${ls.why}` : ls.why,
+            { onClick: can("settings.manage") ? () => go("ops/registration/sms") : undefined },
+          )
+        : null,
       stat("注册邀请码", `${fmt.int(byS.available)} 可用`, `共 ${fmt.int(inv.total)} 个 · ${fmt.int(inv.batches)} 批`, { onClick: () => go("ops/registration/invites") }),
     ),
     sms.dry_run_blocked ? h("div", { class: "banner warn" }, icon("alert"), h("span", {}, "短信设置里开着测试模式，但本部署不允许测试模式：按关闭处理。请到“短信服务”关闭测试模式并配置真实通道。")) : null,
@@ -475,7 +512,24 @@ function showCodes(batch, codes) {
 }
 
 // ─── 短信服务 ───────────────────────────────────────────────────────
-const PURPOSE = { register: "注册", reset: "找回密码", test: "测试" };
+const PURPOSE = { register: "注册", login: "登录", reset: "找回密码", bind: "绑定手机号", test: "测试" };
+/** 失败原因与拦截代码 → 中文（发送记录与“最近 7 天”统计）；没列到的显示代码本身 */
+const SMS_CODE = {
+  sms_template_invalid: "模板不存在或未审核",
+  sms_sign_invalid: "签名问题",
+  sms_auth_failed: "凭据或签名校验未通过",
+  sms_ip_blocked: "服务器 IP 不在白名单",
+  sms_balance_insufficient: "余额不足",
+  sms_too_frequent: "重发间隔内",
+  sms_daily_limit: "同号每日上限",
+  sms_ip_limit: "来源每小时上限",
+  sms_daily_total_limit: "全平台每日上限",
+  sms_probe_limit: "查询手机号过多",
+  sms_phone_rejected: "号码无效或已退订",
+  sms_provider_throttled: "赛邮云限流",
+  sms_timeout: "发送超时",
+  sms_network_error: "连不上赛邮云",
+};
 const SEND_RESULT = { sent: ["已发送", "ok"], dry_run: ["测试模式", "info"], failed: ["失败", "danger"] };
 const AUDIT_ACTION = {
   "registration.policy_update": "改注册策略",
@@ -495,7 +549,7 @@ function renderSms(page, r) {
   if (["config", "logs", "audit"].includes(r.params.tab)) sst.tab = r.params.tab;
   const tabs = h("div");
   const box = h("div", { class: "stack-lg" });
-  page.append(pageHead("短信服务", "手机号注册与找回密码用的短信通道（赛邮云）"), tabs, box);
+  page.append(pageHead("短信服务", "手机号注册、验证码登录、找回密码与绑定手机号用的短信通道（赛邮云）"), tabs, box);
   const draw = () => {
     clear(tabs, tabBar([{ id: "config", label: "配置" }, { id: "logs", label: "发送记录" }, { id: "audit", label: "操作记录" }], sst.tab, (id) => ((sst.tab = id), draw())));
     if (sst.tab === "logs") return smsLogs(box);
@@ -512,15 +566,26 @@ function smsConfig(box) {
 
 function drawSmsConfig(box, c, reload) {
   const canEdit = can("settings.manage");
+  // 第 63 批服务端才有 login_enabled：旧服务端不显示开关与验证码登录状态
+  const hasLogin = typeof c.login_enabled === "boolean";
   const N = (name, label, min, max, value, hint) => ({ name, label, type: "number", min, max, value, hint });
+  /** 找回、登录、绑定的模板项目：不填沿用注册模板；说明里写实际生效值（服务端 projects_effective，旧服务端按同一规则推算） */
+  const effHint = (k) => {
+    const own = c.projects?.[k] || "";
+    const e = c.projects_effective?.[k] || own || c.projects?.register || "";
+    return own ? `生效：${e}` : e ? `不填沿用注册模板 · 生效：${e}` : "不填沿用注册模板（注册模板也还没填）";
+  };
+  const P = (k, label) => ({ name: `p_${k}`, label, value: c.projects?.[k] ?? "", placeholder: "不填沿用注册模板", hint: effHint(k) });
   const specs = [
-    { name: "enabled", label: "启用短信验证码", type: "checkbox", value: !!c.enabled, hint: "关掉后手机号注册与找回不可用（注册策略要求手机号时不能关）" },
+    { name: "enabled", label: "启用短信验证码", type: "checkbox", value: !!c.enabled, hint: "关掉后手机号注册、找回、验证码登录与绑定手机号都不可用（注册策略要求手机号时不能关）" },
+    hasLogin ? { name: "login_enabled", label: "手机号验证码登录", type: "checkbox", value: c.login_enabled !== false, hint: "关掉只影响验证码登录，注册、找回、绑定照常；律师端在下次打开登录页时生效，不需要重新安装客户端" } : null,
     { name: "provider", label: "服务商", type: "select", options: [["submail", "赛邮云 SUBMAIL"]], value: c.provider ?? "submail" },
     { name: "app_id", label: "AppID", value: c.app_id ?? "" },
     { name: "sign_name", label: "短信签名", value: c.sign_name ?? "", placeholder: "不带【】", hint: "须在赛邮云审核通过" },
-    { name: "p_register", label: "注册模板项目", value: c.projects?.register ?? "" },
-    { name: "p_reset", label: "找回密码模板项目", value: c.projects?.reset ?? "" },
-    { name: "p_login", label: "登录模板项目（预留）", value: c.projects?.login ?? "" },
+    { name: "p_register", label: "注册模板项目", value: c.projects?.register ?? "", placeholder: "必填", hint: "必填；下面三项不填时都用它" },
+    P("reset", "找回密码模板项目"),
+    P("login", "登录模板项目"),
+    P("bind", "绑定手机号模板项目"),
     N("code_length", "验证码位数", 4, 8, c.code_length),
     N("ttl_minutes", "有效分钟", 1, 30, c.ttl_minutes),
     N("resend_seconds", "重发间隔（秒）", 30, 600, c.resend_seconds),
@@ -535,12 +600,26 @@ function drawSmsConfig(box, c, reload) {
   const keyClear = h("input", { type: "checkbox", disabled: !canEdit || !c.app_key?.set });
   const err = h("p", { class: "form-error", role: "alert" });
   const [txt, tone] = smsStatus(c);
+  const ls = loginState(c);
   const form = h(
     "form",
     { class: "settings", novalidate: true },
-    settingRow("状态", c.updated_at ? `最近由 ${isMe(c.updated_by) ? "我" : c.updated_by ?? "—"} 于 ${fmt.full(c.updated_at)} 修改` : null, h("span", { class: "status-line" }, h("span", { class: `dot tone-${tone}`, "aria-hidden": "true" }), txt), c.missing?.length ? h("small", { class: "muted" }, `真实发送还缺：${missingText(c.missing)}`) : null, f("enabled")),
+    settingRow(
+      "状态",
+      c.updated_at ? `最近由 ${isMe(c.updated_by) ? "我" : c.updated_by ?? "—"} 于 ${fmt.full(c.updated_at)} 修改` : null,
+      h("span", { class: "status-line" }, dot(tone), `短信通道：${txt}`),
+      ls ? h("span", { class: "status-line" }, dot(ls.tone), `验证码登录：${ls.text}${ls.why ? `（${ls.why}）` : ""}`) : null,
+      c.missing?.length ? h("small", { class: "muted" }, `真实发送还缺：${missingText(c.missing)}`) : null,
+      f("enabled"),
+      hasLogin ? f("login_enabled") : null,
+    ),
     settingRow("凭据", "AppKey 只写不回显：保存后输入框清空，控制面只存密文与末 4 位。服务器出口 IP 若在赛邮云开了白名单须先加上。", h("div", { class: "inline-fields" }, f("provider"), f("app_id")), h("div", { class: "field" }, h("label", {}, "AppKey"), keyIn), h("label", { class: "field-check" }, keyClear, h("span", {}, "清除已存的 AppKey"))),
-    settingRow("签名与模板", "模板项目编号在赛邮云控制台申请；注册与找回各用一套。", h("div", { class: "inline-fields" }, f("sign_name"), f("p_register"), f("p_reset"), f("p_login"))),
+    settingRow(
+      "签名与模板",
+      "模板项目编号在赛邮云控制台申请。注册必填；找回密码、登录、绑定手机号不填即沿用注册模板（同一个验证码模板通用），各项下方是实际生效的模板。",
+      h("div", { class: "inline-fields" }, f("sign_name"), f("p_register")),
+      h("div", { class: "inline-fields" }, f("p_reset"), f("p_login"), f("p_bind")),
+    ),
     settingRow("验证码", null, h("div", { class: "inline-fields" }, f("code_length"), f("ttl_minutes"), f("resend_seconds"), f("max_attempts"))),
     settingRow("限额", "防刷：超过即拒发（429）并记发送记录。", h("div", { class: "inline-fields" }, f("daily_limit_per_phone"), f("ip_hourly_limit"), f("daily_total_limit"))),
     c.dry_run_allowed ? settingRow("测试模式", "联调时不真发短信；生产部署不允许打开。", f("dry_run")) : null,
@@ -572,7 +651,7 @@ function drawSmsConfig(box, c, reload) {
     ev.preventDefault();
     err.textContent = "";
     const v = readForm(form, specs);
-    const cur = { enabled: !!c.enabled, provider: c.provider ?? "submail", app_id: c.app_id ?? "", sign_name: c.sign_name ?? "", p_register: c.projects?.register ?? "", p_reset: c.projects?.reset ?? "", p_login: c.projects?.login ?? "", code_length: c.code_length, ttl_minutes: c.ttl_minutes, resend_seconds: c.resend_seconds, max_attempts: c.max_attempts, daily_limit_per_phone: c.daily_limit_per_phone, ip_hourly_limit: c.ip_hourly_limit, daily_total_limit: c.daily_total_limit, dry_run: !!c.dry_run };
+    const cur = { enabled: !!c.enabled, provider: c.provider ?? "submail", app_id: c.app_id ?? "", sign_name: c.sign_name ?? "", p_register: c.projects?.register ?? "", p_reset: c.projects?.reset ?? "", p_login: c.projects?.login ?? "", p_bind: c.projects?.bind ?? "", login_enabled: c.login_enabled !== false, code_length: c.code_length, ttl_minutes: c.ttl_minutes, resend_seconds: c.resend_seconds, max_attempts: c.max_attempts, daily_limit_per_phone: c.daily_limit_per_phone, ip_hourly_limit: c.ip_hourly_limit, daily_total_limit: c.daily_total_limit, dry_run: !!c.dry_run };
     const body = {};
     for (const k of Object.keys(v)) {
       if (String(v[k] ?? "") === String(cur[k] ?? "")) continue;
@@ -585,9 +664,17 @@ function drawSmsConfig(box, c, reload) {
     if (!Object.keys(body).length) return void (err.textContent = "没有改动");
     const ok = await confirmAction({
       title: "保存短信设置",
-      danger: c.enabled && body.enabled === false,
+      danger: (c.enabled && body.enabled === false) || (c.login_enabled !== false && body.login_enabled === false),
       consequences: [
-        body.enabled === false ? "停用后手机号注册与找回不可用；" : body.enabled === true ? "启用后律师端注册与找回可以收短信验证码；" : null,
+        body.enabled === false ? "停用后手机号注册、找回、验证码登录与绑定手机号都不可用；" : body.enabled === true ? "启用后律师端注册、找回、验证码登录与绑定手机号可以收短信验证码；" : null,
+        body.login_enabled === false
+          ? "关闭手机号验证码登录：律师端下次打开登录页时只剩邮箱和密码登录（已登录的不受影响）；注册、找回、绑定照常；"
+          : body.login_enabled === true
+            ? "开放手机号验证码登录：律师端下次打开登录页即可用手机号和验证码登录，不需要重新安装客户端；"
+            : null,
+        body.projects
+          ? `模板项目：${Object.entries(body.projects).map(([k, v]) => `${PURPOSE[k] ?? k}${v ? `改为 ${v}` : k === "register" ? "清空（没单独填的找回、登录、绑定也随之不可用）" : "改为沿用注册模板"}`).join("；")}；`
+          : null,
         plain ? "AppKey 换成新的一把（只存密文与末 4 位）；" : body.app_key === null ? "清除已存的 AppKey；" : "AppKey 不改；",
         body.dry_run === true ? "打开测试模式：不真发短信，验证码随应答返回（只用于联调）；" : null,
         "这是危险操作：要求 10 分钟内复核过密码。",
@@ -604,10 +691,74 @@ function drawSmsConfig(box, c, reload) {
   clear(box, c.dry_run_blocked ? h("div", { class: "banner warn" }, icon("alert"), h("span", {}, "状态里开着测试模式，但本部署不允许测试模式：按关闭处理。请关闭测试模式并配好真实通道。")) : null, panel(null, form));
 }
 
+/** 计数（缺字段当 0） */
+const cnt = (x) => Number(x) || 0;
+/** 拆分计数 { 代码: n } → “中文 n · 中文 n”：跳过 0；byCount = 多的在前，否则按 names 的顺序；全为 0 → null（表格写“—”） */
+const splitText = (obj, names, byCount = true) => {
+  const order = Object.keys(names);
+  const e = Object.entries(obj ?? {}).filter(([, n]) => cnt(n) > 0);
+  e.sort(byCount ? (a, b) => cnt(b[1]) - cnt(a[1]) : (a, b) => (order.indexOf(a[0]) + 1 || 99) - (order.indexOf(b[0]) + 1 || 99));
+  return e.length ? e.map(([k, n]) => `${names[k] ?? k} ${fmt.int(n)}`).join(" · ") : null;
+};
+/** 多天的拆分计数相加 */
+const sumSplit = (rows, key) => {
+  const o = {};
+  for (const r of rows) for (const [k, n] of Object.entries(r?.[key] ?? {})) o[k] = (o[k] ?? 0) + cnt(n);
+  return o;
+};
+const blockedTotal = (obj) => Object.values(obj ?? {}).reduce((a, n) => a + cnt(n), 0);
+
+/** “最近 7 天”统计（GET …/sms/logs 应答 stats：北京时间自然日，新的在前；只计数，不含手机号与验证码） */
+function smsStats(rows) {
+  const today = bjDay();
+  const sum = (k) => rows.reduce((a, r) => a + cnt(r?.[k]), 0);
+  const anyDry = rows.some((r) => cnt(r.dry_run) > 0);
+  const blockedCell = (obj) => {
+    const n = blockedTotal(obj);
+    return n ? `${fmt.int(n)}：${splitText(obj, SMS_CODE)}` : "0";
+  };
+  const failedCell = (n) => (cnt(n) > 0 ? badge(fmt.int(n), "danger") : "0");
+  const allBlocked = sumSplit(rows, "blocked");
+  return panel(
+    "最近 7 天",
+    dataTable({
+      state: { sort: "day", asc: false },
+      rows,
+      empty: "最近 7 天没有发码与核对记录",
+      columns: [
+        { key: "day", label: "日期", render: (r) => (r.day === today ? `${r.day}（今天）` : r.day) },
+        { key: "sent", label: "已发送", num: true, value: (r) => cnt(r.sent), render: (r) => fmt.int(cnt(r.sent)) },
+        anyDry ? { key: "dry_run", label: "测试模式", num: true, value: (r) => cnt(r.dry_run), render: (r) => fmt.int(cnt(r.dry_run)) } : null,
+        { key: "failed", label: "失败", num: true, value: (r) => cnt(r.failed), render: (r) => failedCell(r.failed) },
+        { key: "by_purpose", label: "按用途", class: "wrap", sortable: false, render: (r) => splitText(r.by_purpose, PURPOSE, false) },
+        { key: "fail_codes", label: "失败原因", class: "wrap", sortable: false, render: (r) => splitText(r.fail_codes, SMS_CODE) },
+        { key: "blocked", label: "被拦截", class: "wrap", value: (r) => blockedTotal(r.blocked), render: (r) => blockedCell(r.blocked), title: "被频控或查询上限挡下、没有发出的发码请求" },
+        { key: "verify_ok", label: "核对成功 / 失败", num: true, value: (r) => cnt(r.verify_ok), render: (r) => `${fmt.int(cnt(r.verify_ok))} / ${fmt.int(cnt(r.verify_failed))}`, title: "注册、登录、找回、绑定的验证码核对合计" },
+        { key: "attempts_exhausted", label: "输错作废", num: true, value: (r) => cnt(r.attempts_exhausted), render: (r) => fmt.int(cnt(r.attempts_exhausted)), title: "单码输错达到上限后作废的次数" },
+      ].filter(Boolean),
+      footer: rows.length
+        ? {
+            day: "7 天合计",
+            sent: fmt.int(sum("sent")),
+            dry_run: fmt.int(sum("dry_run")),
+            failed: failedCell(sum("failed")),
+            by_purpose: splitText(sumSplit(rows, "by_purpose"), PURPOSE, false) ?? "—",
+            fail_codes: splitText(sumSplit(rows, "fail_codes"), SMS_CODE) ?? "—",
+            blocked: blockedCell(allBlocked),
+            verify_ok: `${fmt.int(sum("verify_ok"))} / ${fmt.int(sum("verify_failed"))}`,
+            attempts_exhausted: fmt.int(sum("attempts_exhausted")),
+          }
+        : null,
+    }),
+    { flush: true, sub: "北京时间自然日 · 只计数，不含手机号与验证码" },
+  );
+}
+
 function smsLogs(box) {
+  const statsBox = h("div", { hidden: true });
   const tools = h("div", { class: "toolbar" });
   const list = h("div");
-  clear(box, h("div", { class: "stack" }, tools, list));
+  clear(box, statsBox, h("div", { class: "stack" }, tools, list));
   const drawTools = () =>
     clear(
       tools,
@@ -615,7 +766,11 @@ function smsLogs(box) {
       segmented([{ id: "", label: "全部结果" }, ...Object.entries(SEND_RESULT).map(([id, [label]]) => ({ id, label }))], sst.result, (v) => ((sst.result = v), drawTools(), reload()), "结果"),
     );
   const reload = () =>
-    load(list, () => api.registration.smsLogs({ purpose: sst.purpose, result: sst.result, limit: 500 }), (d) =>
+    load(list, () => api.registration.smsLogs({ purpose: sst.purpose, result: sst.result, limit: 500 }), (d) => {
+      // 旧服务端（第 62 批）应答没有 stats：不显示统计块
+      const has = Array.isArray(d.stats);
+      statsBox.hidden = !has;
+      clear(statsBox, has ? smsStats(d.stats) : null);
       list.append(
         panel(
           null,
@@ -629,14 +784,14 @@ function smsLogs(box) {
               { key: "purpose", label: "用途", value: (x) => PURPOSE[x.purpose] ?? x.purpose },
               { key: "phone", label: "手机号", render: (x) => mono(x.phone ?? "—") },
               { key: "result", label: "结果", render: (x) => badge(...(SEND_RESULT[x.result] ?? [x.result, "neutral"])) },
-              { key: "code", label: "失败原因", render: (x) => (x.code ? h("span", {}, mono(x.code), x.provider_code ? h("span", { class: "muted" }, ` · 赛邮云 ${x.provider_code}`) : null) : "—") },
+              { key: "code", label: "失败原因", value: (x) => (x.code ? SMS_CODE[x.code] ?? x.code : ""), render: (x) => (x.code ? h("span", { title: x.code }, SMS_CODE[x.code] ?? mono(x.code), x.provider_code ? h("span", { class: "muted" }, ` · 赛邮云 ${x.provider_code}`) : null) : "—") },
               { key: "by", label: "发起", render: (x) => (x.by ? (isMe(x.by) ? "我" : mono(x.by)) : h("span", { class: "muted" }, "律师端")) },
             ],
           }),
           { flush: true, sub: "最近 500 条；手机号打码，不含验证码" },
         ),
-      ),
-    "正在读取发送记录…");
+      );
+    }, "正在读取发送记录…");
   drawTools();
   reload();
 }

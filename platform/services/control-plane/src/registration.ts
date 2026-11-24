@@ -198,6 +198,87 @@ export class RegistrationBook {
   }
 }
 
+// ─── 第 63 批：短信每日统计（运营看异常：发送成败、失败原因、被频控拦下、核对成败） ───
+
+/** 一天（北京时间自然日）的计数：只有数字，不含手机号与验证码。 */
+export interface SmsDayStats {
+  day: string;
+  sent: number;
+  failed: number;
+  dry_run: number;
+  by_purpose: Record<string, number>;
+  fail_codes: Record<string, number>;
+  blocked: Record<string, number>;
+  verify_ok: number;
+  verify_failed: number;
+  attempts_exhausted: number;
+}
+
+const STATS_DAYS = 7;
+const bjDay = (t: number): string => new Date(t + 8 * 3600_000).toISOString().slice(0, 10);
+const CODE_RE = /^[a-z_]{1,40}$/;
+
+/**
+ * 短信每日统计。与防重放 nonce 同样处理：不算进“状态有没有变”（被频控拦下的请求很多，不能每次都整份重写快照——那会把攻击放大成写盘），
+ * 随下一次状态写入或每 30 秒的定时写入一并落盘；请求失败回滚内存状态时不撤（被拦下的请求本来就是失败的请求）。只留最近 7 天。
+ */
+export class SmsStatsBook {
+  private readonly days = new Map<string, SmsDayStats>();
+  dirty = false;
+
+  load(raw: unknown): void {
+    this.days.clear();
+    this.dirty = false;
+    if (!Array.isArray(raw)) return;
+    for (const d of raw.slice(0, STATS_DAYS)) if (d && typeof d === "object" && typeof (d as SmsDayStats).day === "string" && /^\d{4}-\d{2}-\d{2}$/.test((d as SmsDayStats).day)) this.days.set((d as SmsDayStats).day, { ...SmsStatsBook.empty((d as SmsDayStats).day), ...(d as SmsDayStats) });
+  }
+
+  dump(): SmsDayStats[] {
+    return [...this.days.values()].sort((x, y) => y.day.localeCompare(x.day)).slice(0, STATS_DAYS);
+  }
+
+  private static empty(day: string): SmsDayStats {
+    return { day, sent: 0, failed: 0, dry_run: 0, by_purpose: {}, fail_codes: {}, blocked: {}, verify_ok: 0, verify_failed: 0, attempts_exhausted: 0 };
+  }
+
+  private at(t: number): SmsDayStats {
+    const day = bjDay(t);
+    let d = this.days.get(day);
+    if (!d) {
+      d = SmsStatsBook.empty(day);
+      this.days.set(day, d);
+      if (this.days.size > STATS_DAYS) for (const k of [...this.days.keys()].sort().slice(0, this.days.size - STATS_DAYS)) this.days.delete(k);
+    }
+    this.dirty = true;
+    return d;
+  }
+
+  /** 一次发送的结果（sent / dry_run / failed + 失败代码）。 */
+  send(t: number, purpose: string, result: "sent" | "dry_run" | "failed", code: string | null): void {
+    const d = this.at(t);
+    d[result] += 1;
+    if (CODE_RE.test(purpose)) d.by_purpose[purpose] = (d.by_purpose[purpose] ?? 0) + 1;
+    if (result === "failed" && code && CODE_RE.test(code)) d.fail_codes[code] = (d.fail_codes[code] ?? 0) + 1;
+  }
+
+  /** 发码请求被频控 / 探测上限挡下。 */
+  blocked(t: number, code: string): void {
+    if (!CODE_RE.test(code)) return;
+    const d = this.at(t);
+    d.blocked[code] = (d.blocked[code] ?? 0) + 1;
+  }
+
+  /** 验证码核对：ok / failed（输错）/ exhausted（输错次数用完，码作废）。 */
+  verify(t: number, r: "ok" | "failed" | "exhausted"): void {
+    const d = this.at(t);
+    if (r === "ok") d.verify_ok += 1;
+    else {
+      d.verify_failed += 1;
+      if (r === "exhausted") d.attempts_exhausted += 1;
+    }
+  }
+}
+
 /** 解出码明文（有 registration.manage 的视图与导出用）。 */
 export function inviteCodeText(c: InviteCode, sealKey: Buffer): string | null {
   return openText(sealKey, c.sealed, `${INVITE_AAD}\n${c.id}`);

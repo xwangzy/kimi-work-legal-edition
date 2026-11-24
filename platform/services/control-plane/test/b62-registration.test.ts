@@ -128,7 +128,7 @@ test("赛邮云签名：固定输入与独立算出的 md5 一致（sign_version
 test("/v1/meta 能力字段：缺省开放注册、短信未开、不要求手机号；旧字段 registration 保留", async () => {
   const m = (await pub("GET", "/v1/meta")).json;
   assert.equal(m.registration, "open");
-  assert.deepEqual(m.registration_policy, { mode: "open", invite_required: false, require_phone: false, sms_available: false, phone_reset: false, sms: { code_length: 6, resend_seconds: 60, ttl_minutes: 10 } });
+  assert.deepEqual(m.registration_policy, { mode: "open", invite_required: false, require_phone: false, sms_available: false, phone_reset: false, phone_login: false, phone_bind: false, sms: { code_length: 6, resend_seconds: 60, ttl_minutes: 10 } });
   assert.equal(m.sms_available, false);
   assert.ok(m.features.includes("sms_send") && m.features.includes("registration_invites"));
   // 短信没开：发码给人话与可排查代码
@@ -270,7 +270,7 @@ test("dry-run（非生产部署）：验证码随应答返回、不发短信；�
   nextHour();
   // 发码前校验手机号格式与用途
   assert.equal((await sendCode("12345")).json.error.code, "phone_invalid");
-  assert.equal((await pub("POST", "/v1/auth/sms/send", { phone: "13844438444", purpose: "login" })).json.error.code, "sms_purpose_invalid");
+  assert.equal((await pub("POST", "/v1/auth/sms/send", { phone: "13844438444", purpose: "notify" })).json.error.code, "sms_purpose_invalid");
 });
 
 test("用手机号找回密码：未注册的号照样回“已发送”但不给码；已注册的改密后旧会话退出；密码不合格不耗验证码", async () => {

@@ -1,38 +1,60 @@
 /**
  * 设置 → 账号与团队 → 账号（第 44 批，主文 §2）：账号卡、我的电脑（解绑须输入密码）、登录记录（可让别处下线）、改密码、退出登录；
- * 以及登录失效时的就地登录框（App 顶部横幅与这里共用）。
+ * 以及登录失效时的就地登录框（App 顶部横幅与这里共用）。第 63 批：云端开了验证码登录时登录框可选“验证码登录 | 密码登录”；
+ * 账号卡显示手机号（打码）或“未绑定”，可绑定 / 更换手机号（更换另要当前密码）。
  * 律师层用语：说“账号、这台电脑、登录”，不说“令牌、证书、席位、吊销”。
  */
 import { useEffect, useState } from "react";
 import { account, type AccountMe, type AccountStatus } from "../api.ts";
-import { checkPassword, dayLabel, deviceLine, emailLooksValid, loginRequiredText, resetNextText, roleLabel, sessionLine } from "../lib/account.ts";
+import { checkPassword, dayLabel, deviceLine, emailLooksValid, loginRequiredText, notRegisteredActions, phoneBindForm, phoneLabel, phoneLooksValid, phoneNotRegistered, registrationFields, resetNextText, roleLabel, saveLoginMethod, sessionLine, smsCodeLooksValid, type LoginMethod, type RegistrationMeta } from "../lib/account.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { Modal } from "./Modal.tsx";
 import { PasswordField } from "./PasswordField.tsx";
 import { SettingRow } from "./SettingRow.tsx";
+import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta } from "./SmsCodeFields.tsx";
 
 /** 账号状态变了（登录、退出）：App 顶部横幅据此立即刷新。 */
 export const ACCOUNT_CHANGED = "kwl:account-changed";
 export const notifyAccountChanged = () => window.dispatchEvent(new Event(ACCOUNT_CHANGED));
 
-/** 就地登录（会话失效、退出登录之后）：只登这台电脑已登记的那位成员的账号。 */
+/**
+ * 就地登录（会话失效、退出登录之后）：只登这台电脑已登记的那位成员的账号。第 63 批：云端开了验证码登录时可选两种方式，
+ * 先显示上次用过的（没有记录先显示验证码登录）；手机号没有对应账号时只给“改用密码登录”（这里不能注册新账号）。
+ */
 export function LoginBox({ email: initialEmail = "", onDone, compact = false }: { email?: string; onDone: () => void; compact?: boolean }) {
   const [email, setEmail] = useState(initialEmail);
   const [pw, setPw] = useState("");
+  const [phone, setPhone] = useState("");
+  const [smsCode, setSmsCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [unreg, setUnreg] = useState(false);
   const [forgot, setForgot] = useState(false);
-  const ready = emailLooksValid(email) && pw.length > 0;
+  const meta = useRegistrationMeta();
+  const lm = useLoginMethod(meta);
+  const f = registrationFields(meta);
+  const byPhone = lm.method === "phone";
+  const ready = byPhone ? phoneLooksValid(phone) && smsCodeLooksValid(smsCode, f.codeLength) : emailLooksValid(email) && pw.length > 0;
+  const switchTo = (m: LoginMethod) => {
+    setErr("");
+    setUnreg(false);
+    lm.choose(m);
+  };
   const submit = async () => {
     if (!ready || busy) return;
     setBusy(true);
     setErr("");
+    setUnreg(false);
     try {
-      await account.login(email.trim(), pw);
+      if (byPhone) await account.loginByPhone(phone.trim(), smsCode.trim());
+      else await account.login(email.trim(), pw);
+      if (lm.methods.phone) saveLoginMethod(lm.method);
       setPw("");
+      setSmsCode("");
       notifyAccountChanged();
       onDone();
     } catch (e) {
+      setUnreg(byPhone && phoneNotRegistered(e));
       setErr((e as Error).message || "登录没有完成，请稍后重试");
     } finally {
       setBusy(false);
@@ -47,23 +69,57 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false }: 
         void submit();
       }}
     >
-      <label className="field">
-        <span>邮箱</span>
-        <input className="auth-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" spellCheck={false} />
-      </label>
-      <PasswordField label="密码" value={pw} onChange={setPw} autoFocus={!!initialEmail} />
+      {lm.methods.phone && <LoginMethodTabs value={lm.method} onChange={switchTo} />}
+      {byPhone ? (
+        <SmsCodeFields
+          phone={phone}
+          setPhone={(v) => {
+            setPhone(v);
+            if (unreg) {
+              setUnreg(false);
+              setErr("");
+            }
+          }}
+          code={smsCode}
+          setCode={setSmsCode}
+          purpose="login"
+          codeLength={f.codeLength}
+          resendSeconds={f.resendSeconds}
+          setErr={setErr}
+          onSendError={(e) => setUnreg(phoneNotRegistered(e))}
+        />
+      ) : (
+        <>
+          <label className="field">
+            <span>邮箱</span>
+            <input className="auth-input" type="email" value={email} onChange={(e) => (lm.lock(), setEmail(e.target.value))} autoComplete="username" spellCheck={false} />
+          </label>
+          <PasswordField label="密码" value={pw} onChange={(v) => (lm.lock(), setPw(v))} autoFocus={!!initialEmail} />
+        </>
+      )}
       <div className="login-box-actions">
         <button type="submit" className="btn-primary btn-sm" disabled={!ready || busy}>
           {busy ? "正在登录…" : "登录"}
         </button>
-        <button type="button" className="btn-link" onClick={() => setForgot(true)}>
-          忘记密码？
-        </button>
+        {!byPhone && (
+          <button type="button" className="btn-link" onClick={() => setForgot(true)}>
+            忘记密码？
+          </button>
+        )}
       </div>
       {err && (
         <p className="activate-error" role="alert">
           {err}
         </p>
+      )}
+      {unreg && (
+        <div className="auth-unreg">
+          {notRegisteredActions("relogin").map((a) => (
+            <button key={a} type="button" className="btn-ghost btn-sm" onClick={() => switchTo("password")}>
+              改用密码登录
+            </button>
+          ))}
+        </div>
       )}
     </form>
   );
@@ -173,6 +229,87 @@ function UnbindDialog({ title, onClose, onDone }: { title: string; onClose: () =
         </button>
       </div>
     </Modal>
+  );
+}
+
+/** 绑定 / 更换手机号（第 63 批）：手机号 + 短信验证码；更换另要当前密码。 */
+function BindPhoneDialog({ current, meta, onClose, onDone }: { current: string | null; meta: RegistrationMeta | null; onClose: () => void; onDone: (msg: string) => void }) {
+  const form = phoneBindForm(current, meta?.phone_login === true);
+  const f = registrationFields(meta);
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const ready = phoneLooksValid(phone) && smsCodeLooksValid(code, f.codeLength) && (!form.needPassword || pw.length > 0);
+  const submit = async () => {
+    if (!ready || busy) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await account.bindPhone({ phone: phone.trim(), sms_code: code.trim(), ...(form.needPassword ? { password: pw } : {}) });
+      onDone(form.done);
+    } catch (e) {
+      setErr((e as Error).message || (form.change ? "没有更换成功，请稍后重试" : "没有绑定成功，请稍后重试"));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={form.title} onClose={onClose}>
+      <form
+        className="auth-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <p className="confirm-dialog-q">{form.lead}</p>
+        <SmsCodeFields phone={phone} setPhone={setPhone} code={code} setCode={setCode} purpose="bind" codeLength={f.codeLength} resendSeconds={f.resendSeconds} setErr={setErr} phoneLabel={form.phoneField} autoFocus />
+        {form.needPassword && <PasswordField label="当前密码" value={pw} onChange={setPw} />}
+        {err && (
+          <p className="activate-error" role="alert">
+            {err}
+          </p>
+        )}
+        <div className="modal-actions">
+          <button type="button" className="btn-ghost btn-sm" onClick={onClose}>
+            取消
+          </button>
+          <button type="submit" className="btn-primary btn-sm" disabled={!ready || busy}>
+            {busy ? (form.change ? "正在更换…" : "正在绑定…") : form.change ? "确认更换" : "确认绑定"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** 账号卡上的手机号一行：打码的号码或“未绑定”；云端允许时有“绑定手机号 / 更换手机号”。 */
+function PhoneLine({ phone, onDone }: { phone: string | null; onDone: (msg: string) => void }) {
+  const meta = useRegistrationMeta();
+  const [open, setOpen] = useState(false);
+  const bindable = !!meta && !meta.legacy && meta.phone_bind === true;
+  return (
+    <div className="muted account-phone">
+      手机号：{phoneLabel(phone)}
+      {bindable && (
+        <button className="btn-link" onClick={() => setOpen(true)}>
+          {phoneBindForm(phone).title}
+        </button>
+      )}
+      {open && (
+        <BindPhoneDialog
+          current={phone}
+          meta={meta}
+          onClose={() => setOpen(false)}
+          onDone={(m) => {
+            setOpen(false);
+            onDone(m);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -300,6 +437,16 @@ export function AccountSection({ firm }: { firm: string | null }) {
               <span className="pill pill-green">已登录</span>
             </div>
             <div className="muted">{a?.email ?? st.account?.email}</div>
+            {/* 第 63 批：手机号（打码）或“未绑定”；账号详情取到了才显示 */}
+            {me && (
+              <PhoneLine
+                phone={me.account.phone ?? null}
+                onDone={(m) => {
+                  setMsg(m);
+                  load();
+                }}
+              />
+            )}
             <div className="muted">
               {a?.org?.name ?? firm ?? "本所"}
               {me?.session ? ` · 本次登录 ${dayLabel(me.session.created_at)}起，不使用到 ${dayLabel(me.session.idle_expires_at)}会自动退出` : ""}
