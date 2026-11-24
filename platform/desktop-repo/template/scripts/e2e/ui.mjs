@@ -8,7 +8,11 @@
  *   ready                              等主窗口加载，打印当前页面
  *   register                           注册（KWL_EMAIL / KWL_PASSWORD / KWL_NAME，凭码时加 KWL_CODE；云端要求手机验证时加 KWL_PHONE 与 KWL_SMS_RELAY）；
  *                                      凭成员邀请码的会停在“等待批准”，打印入组核对码
- *   login                              登录（KWL_EMAIL / KWL_PASSWORD）
+ *   login                              登录（KWL_EMAIL / KWL_PASSWORD）；云端开了验证码登录时先切到“密码登录”
+ *   login-sms                          第 63 批：手机号验证码登录（KWL_PHONE；验证码由人转交：KWL_SMS_RELAY_LOGIN，缺省同 KWL_SMS_RELAY）。
+ *                                      在开通页（这台电脑还没有身份）或已激活电脑的“设置 · 账号”就地登录框里都可用；新电脑会停在“等待批准这台电脑”
+ *   logout                             第 63 批：设置 · 账号 → 退出登录（确认对话框），核对出现就地登录框
+ *   approve-join                       第 63 批：管理员电脑上“设置 · 成员”里按 KWL_CHECK_CODE 找到待批准申请、逐位一致才批准
  *   await-approval [分钟]              等管理员批准；出现“本所识别码”后与 KWL_FIRM_CODE 逐位比对，一致才点“一致，打开”
  *   diagnose [expect-ok|expect-fail]   设置里的“检测连接”（connection.diagnose），打印各服务结论
  *   qa <问题>                          问答页真实提问，等回答，打印前 800 字与引用条数
@@ -177,8 +181,7 @@ async function ready() {
 }
 
 /** 等人把收到的短信验证码转交过来（最多 15 分钟）：只认发码之后写入/上传的那一份。 */
-async function waitSmsCode(sinceMs) {
-  const relay = process.env.KWL_SMS_RELAY ?? "";
+async function waitSmsCode(sinceMs, relay = process.env.KWL_SMS_RELAY ?? "") {
   log("等待转交短信验证码：", relay.replace(/:[^:]*$/, ":…"));
   return until(
     async () => {
@@ -278,6 +281,10 @@ async function login() {
   const { KWL_EMAIL: email, KWL_PASSWORD: pw } = process.env;
   await ready();
   await page.getByRole("tab", { name: "登录" }).click();
+  // 第 63 批：云端开了验证码登录时登录页缺省是“验证码登录”（或上次用过的方式）——密码登录要先切过去
+  await sleep(1500);
+  const pwTab = page.getByRole("tab", { name: "密码登录" });
+  if (await pwTab.count()) await pwTab.click();
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').first().fill(pw);
   await btnExact("登录").click();
@@ -292,6 +299,102 @@ async function login() {
   log("登录结果：", r.startsWith("error:") ? r : r);
   await shot("登录后");
   if (r.startsWith("error:")) throw new Error(r);
+}
+
+/** 第 63 批：手机号验证码登录（开通页或已激活电脑的就地登录框）。 */
+async function loginSms() {
+  const phone = process.env.KWL_PHONE;
+  if (!phone) throw new Error("login-sms 需要 KWL_PHONE 与 KWL_SMS_RELAY_LOGIN（或 KWL_SMS_RELAY）");
+  await ready();
+  const onActivate = (await page.getByRole("tablist", { name: "登录或注册" }).count()) > 0;
+  if (onActivate) await page.getByRole("tab", { name: "登录", exact: true }).click();
+  else await go("#/connections/account");
+  // 登录方式由云端 /v1/meta 异步取回后才出现
+  const smsTab = page.getByRole("tab", { name: "验证码登录" });
+  await smsTab.first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+  if (!(await smsTab.count())) throw new Error("界面上没有“验证码登录”：云端没有开放验证码登录，或这台电脑还登录着");
+  await smsTab.first().click();
+  const tel = page.locator('input[type="tel"]:visible').first();
+  await tel.fill(phone);
+  const sendAt = Date.now();
+  await page.locator("button:visible").filter({ hasText: /^\s*获取验证码\s*$/ }).first().click();
+  const hint = await until(async () => {
+    const t = await text();
+    const m = t.match(/验证码已发送到\s*\S+|测试环境：验证码是\s*\d+|这个手机号还没有注册账号[^\n]*|手机号验证码登录暂未开放[^\n]*|短信服务暂时不可用[^\n]*|连不上中软服务[^\n]*|获取验证码过于频繁[^\n]*|验证码已发送，请 \d+ 秒后[^\n]*/);
+    return m ? m[0] : null;
+  }, 30000, 500, "短信发送结果");
+  log("短信：", hint.replace(/\d{4,}/g, "<码>"));
+  if (!/验证码已发送到|测试环境/.test(hint)) throw new Error(`验证码没有发出：${hint}`);
+  let sms = (hint.match(/测试环境：验证码是\s*(\d+)/) ?? [])[1] ?? "";
+  if (!sms) sms = await waitSmsCode(sendAt, process.env.KWL_SMS_RELAY_LOGIN || process.env.KWL_SMS_RELAY || "");
+  await page.locator('input[autocomplete="one-time-code"]:visible').first().fill(sms);
+  log("已填入转交的短信验证码");
+  await shot("登录-验证码已填");
+  await btnExact("登录").first().click();
+  const r = await until(
+    async () => {
+      const t = await text();
+      if (/等待管理员批准|等待批准这台电脑/.test(t)) return "pending";
+      if (/这台电脑暂时不能继续/.test(t)) return `blocked:${(await page.locator(".activate-error").first().textContent().catch(() => "")) ?? ""}`;
+      // 先数再取（没有错误行时 textContent 会等满默认超时 20 秒）
+      const al = page.locator('.activate-error[role="alert"]');
+      const err = (await al.count()) ? await al.last().textContent().catch(() => null) : null;
+      if (err && !/你已退出登录/.test(err)) return `error:${err}`;
+      if (onActivate ? !/获取验证码/.test(t) && /事项|问答|开通的最后一步/.test(t) : !(await page.getByRole("tab", { name: "验证码登录" }).count()) && /已登录/.test(t)) return "in";
+      return null;
+    },
+    180000,
+    1000,
+    "验证码登录结果",
+  );
+  log("验证码登录结果：", mask(r));
+  if (r === "pending") {
+    const check = (await page.locator('[aria-label="入组核对码"]').textContent()).trim();
+    state.check_code = check;
+    saveState();
+    writeFileSync(join(OUT, "check-code.txt"), check + "\n");
+    log("新电脑已提交入组申请，入组核对码：", check);
+  }
+  await shot(r === "pending" ? "登录-等待批准这台电脑" : "登录-验证码登录后");
+  if (r.startsWith("error:") || r.startsWith("blocked:")) throw new Error(mask(r));
+}
+
+/** 第 63 批：退出登录（设置 · 账号），核对出现就地登录框。 */
+async function logout() {
+  await ready();
+  await go("#/connections/account");
+  await btnExact("退出登录").first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "退出登录" }).click();
+  await until(async () => /你已退出登录/.test(await text()), 30000, 500, "退出登录");
+  const st = await inv("account.status");
+  log("退出后：", JSON.stringify(st.ok ? { logged_in: st.result.logged_in, login_required: st.result.login_required } : st));
+  await shot("退出登录后");
+}
+
+/** 第 63 批：管理员电脑上批准新电脑的入组申请（按 KWL_CHECK_CODE 逐位核对，一致才批准）。 */
+async function approveJoin() {
+  const want = (process.env.KWL_CHECK_CODE || "").replace(/\s+/g, "");
+  if (!/^\d{6,}$/.test(want)) throw new Error("approve-join 需要 KWL_CHECK_CODE（新电脑屏幕上的入组核对码）");
+  await ready();
+  await go("#/connections/members");
+  const row = await until(
+    async () => {
+      for (const tr of await page.locator("tr").all()) {
+        const t = (await tr.innerText()).replace(/\s+/g, "");
+        if (t.includes(want)) return tr;
+      }
+      return null;
+    },
+    10 * 60000,
+    5000,
+    "待批准申请（核对码一致）",
+  );
+  await shot("批准-待批准申请");
+  await row.getByRole("button", { name: "批准" }).click();
+  await page.getByRole("button", { name: "已核对一致，批准" }).click();
+  await until(async () => /已批准/.test(await text()), 60000, 500, "批准结果");
+  log("已批准入组申请（核对码逐位一致）");
+  await shot("批准-已批准");
 }
 
 async function awaitApproval(minutes = 45) {
@@ -779,7 +882,7 @@ async function usage() {
 }
 
 const [phase, ...args] = process.argv.slice(2);
-const phases = { ready, register, login, "await-approval": awaitApproval, diagnose, qa, task, export: exportAll, preview, usage, shot: (n) => shot(n ?? "shot") };
+const phases = { ready, register, login, "login-sms": loginSms, logout, "approve-join": approveJoin, "await-approval": awaitApproval, diagnose, qa, task, export: exportAll, preview, usage, shot: (n) => shot(n ?? "shot") };
 if (!phases[phase]) {
   console.error(`未知阶段：${phase}`);
   process.exit(2);
