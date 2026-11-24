@@ -23,14 +23,14 @@ on:
         description: "release.json 的 sha256（核对后才构建）"
         required: true
       invite_code:
-        description: "律所管理员在“设置 → 管理 → 成员”生成的邀请码（36 位，只能用一次）"
-        required: true
+        description: "律所管理员在“设置 → 管理 → 成员”生成的邀请码（36 位，只能用一次）；第 62 批起可留空＝开放注册（自助开通试用律所，不等管理员批准）"
+        default: ""
       member_name:
         description: "注册时填的姓名：须与管理员发邀请时写的姓名完全一致（116 云端当前版本按注册名回成员姓名，两边不同会被判“在传送中被改动过”；云端修复见第 54 批）"
         default: "Windows验收律师"
       firm_code:
-        description: "管理员电脑“设置 → 账号与团队 → 本所识别码”（用于入组后逐位比对）"
-        required: true
+        description: "管理员电脑“设置 → 账号与团队 → 本所识别码”（用于入组后逐位比对；开放注册时留空）"
+        default: ""
       content_bundle_sha256:
         description: "正式包必填：预发布里 kwl-signed-content.tar.gz（生产签名内容包）的 sha256；测试包（release.json 标 test_build）留空"
         default: ""
@@ -38,9 +38,12 @@ on:
         description: "等管理员批准的分钟数"
         default: "45"
       run_task:
-        description: "跑合同审查任务（约 30～40 分钟真实模型）"
+        description: "跑真实任务（真实模型）"
         type: boolean
         default: true
+      task_card:
+        description: "任务卡（scripts/e2e/cards 下的文件名）：contract-review-D2.json（合同审查+修订稿，约 30～60 分钟）或 pleading-L1.json（起草起诉状，约 20 分钟）"
+        default: "contract-review-D2.json"
       publish_exe:
         description: "把构建出的 EXE 与摘要回传到预发布"
         type: boolean
@@ -94,8 +97,7 @@ jobs:
           # 那时屏蔽还没生效（第 59 批运行 45043549304 的作业日志里有一行明文；码是一次性的、已用掉）
           $ev = (Get-Content -Raw $env:GITHUB_EVENT_PATH | ConvertFrom-Json).inputs
           $invite = $ev.invite_code
-          Write-Output "::add-mask::$invite"
-          Write-Output "::add-mask::$($invite -replace '\s', '')"
+          if ($invite) { Write-Output "::add-mask::$invite"; Write-Output "::add-mask::$($invite -replace '\s', '')" }
           # 本所识别码（第 60 批：审计建议一并屏蔽）
           if ($ev.firm_code) { Write-Output "::add-mask::$($ev.firm_code)"; Write-Output "::add-mask::$($ev.firm_code -replace '\s', '')" }
           $pw = "Kwl" + [guid]::NewGuid().ToString("N").Substring(0, 16) + "Aa9"
@@ -179,6 +181,7 @@ jobs:
         run: node scripts/e2e/ui.mjs register
       # 作业日志要等作业结束才能下载：入组核对码与“等待批准”截图立即作为构件传出，管理员在自己电脑上与之逐位比对后再批准
       - name: 传出入组核对码（供管理员比对）
+        if: inputs.invite_code != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: enroll-check-code
@@ -187,6 +190,7 @@ jobs:
             C:\kwl-e2e\out\02-等待管理员批准.png
           retention-days: 3
       - name: 等管理员批准并逐位比对本所识别码
+        if: inputs.invite_code != ''
         env:
           KWL_FIRM_CODE: ${{ inputs.firm_code }}
           WAIT_MIN: ${{ inputs.approval_wait_min }}
@@ -215,10 +219,17 @@ jobs:
         run: node scripts/e2e/ui.mjs diagnose expect-ok
       - name: 问答（真实模型）
         run: node scripts/e2e/ui.mjs qa "买卖合同约定的逾期交货违约金按每日万分之五计算、上限为合同价款的20%，卖方逾期40日，买方能否在主张违约金的同时解除合同？请给出法律依据。"
-      - name: 合同审查与建议修订稿（真实模型）
+      - name: 真实任务（真实模型；卡片见输入 task_card）
         if: inputs.run_task
         timeout-minutes: 90
-        run: node scripts/e2e/ui.mjs task scripts/e2e/cards/contract-review-D2.json
+        env:
+          TASK_CARD: ${{ inputs.task_card }}
+        run: node scripts/e2e/ui.mjs task "scripts/e2e/cards/$TASK_CARD"
+      # 第 62 批：Word/Excel 即时预览必须真的出图（按框架区域截图数深色像素；第 0.2.0 版安装包预览空白的回归核对）
+      - name: 成果即时预览与版本切换（出图核对）
+        if: inputs.run_task
+        timeout-minutes: 15
+        run: node scripts/e2e/ui.mjs preview
       - name: 经系统“另存为”对话框导出成果
         if: inputs.run_task
         run: node scripts/e2e/ui.mjs export
