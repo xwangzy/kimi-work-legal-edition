@@ -108,7 +108,8 @@ export const fmt = {
     return fmt.cny(n);
   },
   /** 单价（元 / 百万 token） */
-  price: (v) => (v === null ? "未定价" : isNum(v) ? `¥${Number(v).toLocaleString("zh-CN", { maximumFractionDigits: 4 })}` : "—"),
+  // 第 62 批：至少两位小数（与金额同一精度，列里小数点对齐），必要时到四位
+  price: (v) => (v === null ? "未定价" : isNum(v) ? `¥${Number(v).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}` : "—"),
   /** 比例 → 百分比：<0.1% 不写 0；10% 以下一位小数 */
   pct(r) {
     if (!isNum(r)) return "—";
@@ -290,6 +291,24 @@ export function toast(msg, tone = "ok") {
   setTimeout(() => t.remove(), tone === "error" ? 6400 : 3600);
 }
 
+/**
+ * 本页生成的 CSV（如刚生成的邀请码）：UTF-8 BOM，逗号与引号转义，= + - @ 开头的格加单引号防公式注入；只在本机存成文件，不经第三方。
+ */
+export function saveCsv(rows, filename) {
+  const cell = (v) => {
+    let s = v === null || v === undefined ? "" : String(v);
+    if (/^[=+\-@]/.test(s)) s = `'${s}`;
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const blob = new Blob([`﻿${rows.map((r) => r.map(cell).join(",")).join("\r\n")}\r\n`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = h("a", { href: url, download: filename });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 export function copyBtn(text, label = "复制") {
   return btn(label, async (ev) => {
     try {
@@ -400,7 +419,8 @@ export function dataTable(o) {
       }
       for (const c of o.columns) {
         const v = c.render ? c.render(r) : val(c, r);
-        tr.append(h("td", { class: [c.num && "num", c.class] }, v === null || v === undefined || v === "" ? "—" : v));
+        // 操作列没有可做的事时留空（不写“—”，免得像一列缺数据）
+        tr.append(h("td", { class: [c.num && "num", c.class] }, v === null || v === undefined || v === "" ? (c.key === "_act" || c.key === "_sel" ? "" : "—") : v));
       }
       body.append(tr);
     }

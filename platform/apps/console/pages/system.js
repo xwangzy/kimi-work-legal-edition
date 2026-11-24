@@ -15,9 +15,9 @@ export function render(page) {
   load(
     box,
     async () => {
-      const [s, set] = await Promise.allSettled([api.get("/v1/ops/system"), api.get("/v1/ops/settings")]);
+      const [s, set, mig] = await Promise.allSettled([api.get("/v1/ops/system"), api.get("/v1/ops/settings"), can("billing.read") ? api.pricing.migrations() : Promise.reject(null)]);
       if (s.status === "rejected") throw s.reason;
-      return { s: s.value, set: set.status === "fulfilled" ? set.value : undefined, mail: set.status === "fulfilled" ? set.value.mail ?? null : undefined };
+      return { s: { ...s.value, b62: mig.status === "fulfilled" ? mig.value.b62_billing ?? null : undefined }, set: set.status === "fulfilled" ? set.value : undefined, mail: set.status === "fulfilled" ? set.value.mail ?? null : undefined };
     },
     ({ s, set, mail }) => draw(box, s, mail, set),
     "正在读取系统信息…",
@@ -60,6 +60,8 @@ function draw(box, s, mail, set) {
           ["控制面地址", mono(cfg.control_plane_base)],
           ["控制台配置", `${cfg.label || "—"} · ${cfg.deployment}`],
           ["账本", s.usage_book ? `已载入 ${fmt.int(s.usage_book.rows_loaded)} 行${s.usage_book.load_errors ? `，${fmt.int(s.usage_book.load_errors)} 行读不出` : ""}` : "—"],
+          // 第 62 批计费迁移状态（详情与还原在“计费”页底部）
+          s.b62 === undefined ? null : ["计费口径", h("span", { class: "sub-row" }, { native: "新部署（金额额度、按型号价目）", applied: `已迁移 ${fmt.date(s.b62?.at)}`, reverted: "迁移已还原" }[s.b62?.status] ?? "没有记录", h("button", { type: "button", class: "link small", onclick: () => go("ops/billing") }, "详情"))],
           ["网关路由公钥", can("route.read") ? h("button", { type: "button", class: "link", onclick: () => go("ops/routing") }, "在“模型与路由”核对指纹") : "由控制面下发（需查看路由权限）"],
         ]),
       ),

@@ -4,8 +4,8 @@
  * 接口：GET /v1/firm/usage/summary?days=；GET /v1/firm/usage/records?from&to&aid&alias&cursor；/records.csv 同参数（契约 §3.3）。
  */
 import * as api from "../api.js";
-import { ctx, outcomeBadge, pageHead, sourceBadge } from "../domain.js";
-import { badge, bjDay, btn, clear, dataTable, emptyBlock, errorBlock, field, fmt, h, hbars, icon, load, loadingBlock, mono, panel, readForm, segmented, stat, tabBar, toast, trendChart } from "../ui.js";
+import { billingBadges, ctx, outcomeBadge, pageHead, sourceBadge } from "../domain.js";
+import { bjDay, btn, clear, dataTable, emptyBlock, errorBlock, field, fmt, h, hbars, icon, load, loadingBlock, mono, panel, readForm, segmented, stat, tabBar, toast, trendChart } from "../ui.js";
 
 const st = { view: "summary", days: 30, from: `${bjDay().slice(0, 7)}-01`, to: bjDay(), aid: "", alias: "", members: [], models: [] };
 const tokensOf = (r) => (Number(r.tokens_in) || 0) + (Number(r.tokens_out) || 0);
@@ -140,7 +140,8 @@ function records(box) {
           { key: "tokens_cached", label: "缓存", num: true, render: (r) => fmt.tokens(r.tokens_cached) },
           { key: "tokens_out", label: "输出", num: true, render: (r) => fmt.tokens(r.tokens_out) },
           { key: "value_cny", label: "金额", num: true, value: (r) => r.value_cny ?? null, render: (r) => fmt.cny(r.value_cny, 4) },
-          { key: "outcome", label: "结果", render: (r) => h("span", { class: "badges" }, outcomeBadge(r.outcome), r.retry_of ? badge("重试", "info", "同一请求的重试：每次都真实调用了上游，照常计费") : null, r.partial ? badge("中断估算", "warn") : null, sourceBadge(r.usage_source)) },
+          // 第 62 批口径：待对账、服务出错都不计费（原先“中断估算”的说法与实际不符）
+          { key: "outcome", label: "结果", render: (r) => h("span", { class: "badges" }, outcomeBadge(r.outcome), billingBadges(r), r.reconcile === "pending" ? null : sourceBadge(r.usage_source)) },
           { key: "request_id", label: "请求编号", render: (r) => mono(String(r.request_id ?? "").slice(0, 14), r.request_id) },
         ],
       }),

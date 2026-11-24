@@ -262,22 +262,32 @@ export const T = (tid) => `/v1/ops/tenants/${seg(tid)}`;
 export const A = (aid) => `/v1/ops/accounts/${seg(aid)}`;
 export const M = (aid) => `/v1/firm/members/${seg(aid)}`;
 
-// ─── 第 62 批：注册管理、模型与价目（后端由另两位同事在做） ───────────────────────────
-// 页面只经这里调用；路径按契约（platform/docs/contract-b62-registration.md、contract-b62-pricing.md）接。
-// 契约到之前控制面没有这些路径：404 → ApiError code "not_ready"，页面显示“接口未就绪”，不造任何替代数据。
-/** 注册管理：注册策略、邀请码、短信服务配置 */
+// ─── 第 62 批：注册管理、模型与价目（契约 platform/docs/contract-b62-registration.md §4、contract-b62-pricing.md §2、§5.3） ───
+const R = "/v1/ops/registration";
+/** 注册管理：概览、注册策略、短信通道、发送与操作记录、注册邀请码 */
 export const registration = {
-  policy: () => get("/v1/ops/registration/policy"),
-  savePolicy: (body) => put("/v1/ops/registration/policy", body),
-  invites: (params) => get("/v1/ops/registration/invites", params),
-  createInvite: (body) => post("/v1/ops/registration/invites", body),
-  revokeInvite: (id) => post(`/v1/ops/registration/invites/${seg(id)}/revoke`),
-  sms: () => get("/v1/ops/registration/sms"),
-  saveSms: (body) => put("/v1/ops/registration/sms", body),
-  testSms: (body) => post("/v1/ops/registration/sms/test", body),
+  overview: () => get(R),
+  savePolicy: (body) => put(`${R}/policy`, body),
+  sms: () => get(`${R}/sms`),
+  saveSms: (body) => put(`${R}/sms`, body),
+  testConnection: () => post(`${R}/sms/test-connection`),
+  testSend: (phone) => post(`${R}/sms/test-send`, { phone }),
+  smsLogs: (params) => get(`${R}/sms/logs`, params),
+  audit: (params) => get(`${R}/audit`, params),
+  batches: () => get(`${R}/invite-batches`),
+  createBatch: (body) => post(`${R}/invite-batches`, body),
+  disableBatch: (id, reason) => post(`${R}/invite-batches/${seg(id)}/disable`, reason ? { reason } : {}),
+  invites: (params) => get(`${R}/invites`, params),
+  invite: (id) => get(`${R}/invites/${seg(id)}`),
+  disableInvite: (id, reason) => post(`${R}/invites/${seg(id)}/disable`, reason ? { reason } : {}),
+  enableInvite: (id) => post(`${R}/invites/${seg(id)}/enable`),
+  disableInvites: (ids, reason) => post(`${R}/invites/disable`, { ids, ...(reason ? { reason } : {}) }),
+  exportInvites: (params, filename) => downloadCsv(`${R}/invites.csv`, params, filename),
 };
-/** 模型与价目：成本价、销售价与毛利 */
+/** 模型与价目（按上游型号）与第 62 批计费迁移 */
 export const pricing = {
-  catalog: () => get("/v1/ops/pricing"),
+  get: () => get("/v1/ops/pricing"),
   save: (body) => put("/v1/ops/pricing", body),
+  migrations: () => get("/v1/ops/billing/migrations"),
+  revertB62: () => post("/v1/ops/billing/migrations/b62/revert"),
 };

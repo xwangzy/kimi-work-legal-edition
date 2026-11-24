@@ -1,6 +1,6 @@
 /**
  * 模型与路由：上游（地址、密钥尾号、健康、延迟、测试连接）、模型别名（目标与优先级、启停、默认）。
- * 第 62 批：价目表挪到“模型与价目”（pages/pricing.js，成本价、销售价、毛利放在一起看）；#/ops/routing?tab=prices 自动转过去。
+ * 第 62 批：价目按上游型号，在“模型与价目”（pages/pricing.js）里改；本页不再提供按别名改价的入口（旧接口 PUT /v1/ops/routing/prices 一律 409）；#/ops/routing?tab=prices 自动转过去。
  * 接口：GET /v1/ops/routing；写（route.manage）PUT/DELETE providers/{id}、POST providers/{id}/probe、PUT/DELETE models/{alias}（契约 §5）。
  *
  * 上游密钥：在本页用网关路由公钥加密成 key_sealed 再提交（seal-key.js，主文 §3.2），同时只提交“…”+ 末 4 位作 key_hint。
@@ -311,7 +311,7 @@ function editModel(m, d, reload) {
         "约 15 秒内全部网关按新路由转发这个别名的请求（进行中的请求不受影响）；",
         v.enabled ? null : "停用后用这个别名的请求返回“模型不可用”；",
         v.is_default && !m?.is_default ? "设为默认后，原来的默认别名自动取消默认；" : null,
-        "账本按别名记账：价目表里这个别名的单价不变。",
+        "计价按实际服务的上游型号：别名改指别的型号（如 highspeed），售价与成本跟着型号走（见“模型与价目”；目标型号未定价时金额额度的律所会被拒）。",
       ].filter(Boolean),
       typeToConfirm: !isNew && builtin ? alias : undefined,
       confirmLabel: isNew ? "新增" : "保存路由",

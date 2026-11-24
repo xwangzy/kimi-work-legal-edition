@@ -174,7 +174,7 @@ function drawDetail(head, body, d, reload) {
       h(
         "div",
         { class: "head-stats" },
-        h("div", { class: ["head-stat", "stat", usedTone && `tone-${usedTone}`] }, h("span", { class: "stat-label" }, "本期用量"), h("span", { class: "stat-value num" }, fmt.pct(t.used_ratio)), h("span", { class: "stat-sub" }, t.forecast_exhaust_at ? `按当前速度 ${fmt.date(t.forecast_exhaust_at)} 用完` : fmt.resetLine(t.period?.resets_at))),
+        h("div", { class: ["head-stat", "stat", usedTone && `tone-${usedTone}`] }, h("span", { class: "stat-label" }, "本期用量"), h("span", { class: "stat-value num" }, fmt.pct(t.used_ratio)), h("span", { class: "stat-sub" }, [t.used !== undefined && t.total !== undefined ? `${fmt.amount(t.used, t.unit)} / ${fmt.amount(t.total, t.unit)}` : null, t.forecast_exhaust_at ? `预计 ${fmt.date(t.forecast_exhaust_at)} 用完` : fmt.resetLine(t.period?.resets_at)].filter(Boolean).join(" · "))),
         h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "席位"), h("span", { class: "stat-value num" }, `${fmt.int(t.seats_used)} / ${fmt.int(t.seats)}`), h("span", { class: "stat-sub" }, `账号 ${fmt.int(t.accounts)} · 设备 ${fmt.int(t.devices)}`)),
         h("div", { class: ["head-stat", "stat", left !== null && left <= 30 && "tone-warn"] }, h("span", { class: "stat-label" }, "订阅到期"), h("span", { class: "stat-value num" }, fmt.date(t.subscription_until)), h("span", { class: "stat-sub" }, left === null ? "—" : left < 0 ? `已过期 ${-left} 天` : `还有 ${left} 天`)),
         h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "本期用量价值"), h("span", { class: "stat-value num" }, fmt.cny(t.value_cny)), h("span", { class: "stat-sub" }, `成本 ${fmt.cny(t.cost_cny)} · ${fmt.int(t.requests)} 次请求`)),
