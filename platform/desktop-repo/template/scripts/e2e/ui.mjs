@@ -287,7 +287,7 @@ async function login() {
   if (await pwTab.count()) await pwTab.click();
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').first().fill(pw);
-  await btnExact("登录").click();
+  await page.locator('form button[type="submit"]:visible').filter({ hasText: /^\s*登录\s*$/ }).first().click();
   const r = await until(async () => {
     const t = await text();
     if (/等待管理员批准|等待批准这台电脑/.test(t)) return "pending";
@@ -330,7 +330,8 @@ async function loginSms() {
   await page.locator('input[autocomplete="one-time-code"]:visible').first().fill(sms);
   log("已填入转交的短信验证码");
   await shot("登录-验证码已填");
-  await btnExact("登录").first().click();
+  // 开通页上“登录”既是外层分段（登录｜注册）也是提交按钮：只点表单里的提交按钮（第 63 批 Windows 运行 45427882175 点到了分段）
+  await page.locator('form button[type="submit"]:visible').filter({ hasText: /^\s*登录\s*$/ }).first().click();
   const r = await until(
     async () => {
       const t = await text();
