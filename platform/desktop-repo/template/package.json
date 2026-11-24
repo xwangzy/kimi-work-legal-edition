@@ -1,6 +1,6 @@
 {
   "name": "kimi-work-legal-desktop",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "Kimi Work 法律行业发行版——桌面客户端（Windows EXE / macOS DMG）：本机法律内核、出站闸门、Agent 宿主与界面。云端地址、证书钉住与公钥只认构建时写入的 release.json。",

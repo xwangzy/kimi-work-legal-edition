@@ -24,13 +24,15 @@
 /v1/drafts[/drf_<16 hex>[/signatures|/publish]]                  /v1/anon-matters/{id}
 /v1/devices/{id}/revoke          /v1/seats/{uid}/revoke          /v1/quota              /v1/quota/cap
 /v1/support-token                /v1/notify-token                /v1/relay-token
-/v1/auth/{register|login|logout|me|password|password-reset/request|password-reset/confirm|sms/send}   /v1/meta（第 62 批：注册策略能力字段）
+/v1/auth/{register|login|logout|me|password|password-reset/request|password-reset/confirm|sms/send|phone}   /v1/meta（第 62 批：注册策略能力字段；第 63 批另有 phone_login、phone_bind）
 /v1/auth/sessions/ses_<16>/revoke                                /v1/auth/devices/{id}/unbind
 /v1/audit?after=<n>&limit=<n>
 /v1/activation/redeem            /v1/join-requests               /v1/join-requests/jr_<16>/{fetch|approve|reject|withdraw}
 /v1/invitations                  /v1/invitations/act_<16>/revoke
 ```
 请求头只放行 `x-kwl-tenant`、`x-kwl-device`、`x-kwl-ts`、`x-kwl-nonce`、`x-kwl-sig`（设备签名，时钟偏差 5 分钟）与 `x-kwl-session`（账号会话）。请求体至多 256 KiB，应答至多 8 MiB。
+
+第 63 批（客户端 0.4.0 起使用，旧客户端不受影响）：`/v1/auth/login` 可给 `{ phone, sms_code }`（不给 email/password）做手机号验证码登录；`/v1/auth/sms/send` 的 `purpose` 增加 `login`（手机号须已绑定账号，否则 404 `phone_not_registered`、不发短信）与 `bind`（要账号会话）；`POST /v1/auth/phone` 绑定 / 更换手机号（换绑要 `password`）。能力字段：`/v1/meta` 的 `features` 含 `phone_login`、`phone_bind`，`registration_policy.phone_login` / `phone_bind` 为当前是否可用。详见 monorepo `docs/contract-b63-phone-login.md`。
 
 ## 3. 令牌与签名格式
 
