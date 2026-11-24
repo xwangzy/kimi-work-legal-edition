@@ -1122,6 +1122,7 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
   // 事实页与时间线下载后都还原不了、引文也定位不到）：该条不入库，退回说明，让助手照抄材料里的代号重交
   const known = deps.tokens ? new Set(deps.tokens.table(scope.matterId).map((e) => e.token)) : null;
   const rejected: { index: number; reason: string; tokens: string[] }[] = [];
+  const corrected: { index: number; fact_id: string }[] = [];
   let inserted = 0;
   deps.db.tx(() => {
     facts.forEach((f: any, i: number) => {
@@ -1139,6 +1140,30 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
           rejected.push({ index: i, reason: "含有本事项不存在的代号（多半是照抄时抄错了）：statement 与 quote 里的代号只能逐字照抄材料里出现过的，改正后只重交这几条", tokens: bad });
           return;
         }
+      }
+      // 更正（第 61 批）：带 fact_id 的是更正本任务已提交、律师尚未确认的那条（日期、陈述、金额、引文写错了）；律师确认过或驳回的、别的任务提交的不能改
+      const fixId = optStr(f?.fact_id, 80);
+      if (fixId) {
+        const row = deps.db.get<{ matter_id: string; run_id: string | null; status: string }>(`SELECT matter_id, run_id, status FROM matter_facts WHERE fact_id = ?`, [fixId]);
+        if (!row || row.matter_id !== scope.matterId) {
+          rejected.push({ index: i, reason: `事实 ${fixId} 不在本事项`, tokens: [] });
+          return;
+        }
+        if (row.run_id !== scope.runId || row.status === "confirmed" || row.status === "rejected") {
+          rejected.push({ index: i, reason: row.status === "confirmed" ? "这条事实律师已确认，不能由助手更正：在最终答复里写明哪里不对、应当是什么，请律师在事实页改" : row.status === "rejected" ? "这条事实律师已驳回，不能更正" : "这条事实不是本任务提交的，不能更正：在最终答复里写明，请律师在事实页处理", tokens: [] });
+          return;
+        }
+        let fixLoc: { status: string; start: number | null; end: number | null } = { status: "no_document", start: null, end: null };
+        if (docId) {
+          if (!views.has(docId)) views.set(docId, documentView(deps, scope.matterId, docId).view);
+          fixLoc = quote ? locateQuote(views.get(docId)!, quote) : { status: "not_found", start: null, end: null };
+        }
+        deps.db.run(
+          `UPDATE matter_facts SET statement = ?, kind = ?, occurred_on = ?, amount_yuan = ?, party = ?, document_version_id = ?, quote = ?, anchor_start = ?, anchor_end = ?, anchor_status = ? WHERE fact_id = ?`,
+          [statement, kind, occurredOn, amount, optStr(f?.party, 200), docId, quote, fixLoc.start, fixLoc.end, fixLoc.status, fixId],
+        );
+        corrected.push({ index: i, fact_id: fixId });
+        return;
       }
       const keys = factKeys({ statement, kind, occurred_on: occurredOn, document_version_id: docId, quote });
       const dup = duplicateOf(keys, statement);
@@ -1173,6 +1198,7 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
     facts: out.map(withRef),
     ...(duplicates.length > 0 ? { duplicates: duplicates.map((d) => (nos.has(d.duplicate_of) ? { ...d, duplicate_ref: `事实 ${nos.get(d.duplicate_of)}` } : d)) } : {}),
     ...(rejected.length > 0 ? { rejected } : {}),
+    ...(corrected.length > 0 ? { corrected, corrected_note: "已更正这几条事实；引用了它们的表格里系统附的“事实对照”要用 xlsx.edit_cells 写 refresh_facts: true 重新生成，Word 文书里的事实对照在下一次 docx.edit_draft 时随引用更新" } : {}),
     note: `${rejected.length > 0 ? `${rejected.length} 条没有入库：含有本事项不存在的代号（见 rejected），照抄材料里的代号后只重交这几条。` : ""}${unanchored > 0 ? `${unanchored} 条事实没有在材料中定位到逐字引文：律师确认前不会被文书与汇报引用` : "已提交，律师确认后才可被文书与汇报引用"}${dupNote}`,
   };
 }

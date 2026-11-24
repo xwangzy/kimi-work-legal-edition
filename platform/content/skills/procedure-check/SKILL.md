@@ -6,7 +6,7 @@ when_to_use: 起诉或申请仲裁前确定去哪里、还来不来得及；收�
 arguments: [claims, side, received_on, doc_kind, amount]
 kwl:
   id: procedure-check
-  version: 1.4.1
+  version: 1.4.2
   lines: [诉讼仲裁, 企业法务]
   chain: casefile
   tier: beta
@@ -64,7 +64,7 @@ kwl:
 | law.search | 实体法与程序法定位、版本 | query（不含当事人信息） |
 | law.get_article | 取条文原文核对要件与例外（可选） | law，article，as_of |
 | citations.verify | 核验所引条文 | citations[{law, article}]（本批要引的条文一次带齐），as_of |
-| calc.deadline | 时效与程序期限届满日 | 起算事实日（可只到月），期间 {unit, n}，规则 |
+| calc.deadline | 时效与程序期限届满日 | 起算事实日（可只到月）；诉讼时效、答辩、上诉、申请撤销仲裁裁决、诉前保全后起诉、申请执行、再审写 type（程序期间目录给出期间与依据条号），约定期间写 period 与 rule |
 | xlsx.render_table | 核查表 | title，sheets[{name, columns, rows}] |
 
 ## 5. 输出规格

@@ -14,7 +14,7 @@ export const CATALOG_LINE_LABELS: Record<CatalogLine, string> = { ...LINE_LABELS
 const STAGES: Record<CatalogLine, readonly { stage: string; ids: readonly string[] }[]> = {
   litigation: [
     { stage: "接案与案情", ids: ["intake-lit", "casefile", "casefile-deep", "issues", "case-analysis", "procedure", "amount"] },
-    { stage: "起诉与应诉", ids: ["pleading", "defense", "appeal", "arbitration-app", "preservation"] },
+    { stage: "起诉与应诉", ids: ["pleading", "defense", "ruling-digest", "appeal", "arbitration-app", "preservation"] },
     { stage: "庭审", ids: ["cross-exam", "hearing-outline", "agency"] },
     { stage: "执行与汇报", ids: ["enforcement", "case-report-lit"] },
     { stage: "劳动争议", ids: ["labor-apply", "labor-arb-application", "labor-arb-defense-lit"] },
@@ -24,12 +24,12 @@ const STAGES: Record<CatalogLine, readonly { stage: string; ids: readonly string
     { stage: "交易与尽调", ids: ["intake", "dd-list", "dd-findings", "corporate-resolutions", "closing-checklist", "research-deal"] },
   ],
   inhouse: [
-    { stage: "合同与合规", ids: ["contract-review-inhouse", "rules-from-template-inhouse", "compliance-qa", "policy-review"] },
-    { stage: "纠纷应对", ids: ["suit-received", "demand-inhouse", "case-report"] },
+    { stage: "合同与合规", ids: ["contract-review-inhouse", "rules-from-template-inhouse", "compliance-qa", "privacy", "policy-review"] },
+    { stage: "纠纷应对", ids: ["suit-received", "performance", "demand-inhouse", "case-report"] },
     { stage: "劳动用工", ids: ["labor-response", "labor-arb-defense", "labor-termination"] },
   ],
   general: [
-    { stage: "研究与意见", ids: ["research-lit", "legal-opinion"] },
+    { stage: "研究与意见", ids: ["research-lit", "case-law", "legal-opinion"] },
     { stage: "文书加工", ids: ["demand-lit", "doc-revise", "citation-audit", "audience-pack"] },
   ],
 };

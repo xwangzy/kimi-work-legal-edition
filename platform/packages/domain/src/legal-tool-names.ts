@@ -42,6 +42,8 @@ export const LEGAL_MCP_TOOLS = [
   "xlsx.edit_cells",
   // 2026-11-22 第 57 批（D-228）：债权台账——分段计息、还款抵充与汇总一次算完，可直接成表（模型不再心算抵充与合计）
   "calc.ledger",
+  // 2026-11-24 第 61 批（D-264）：证据形式规则核对（按证据属性给民事证据规定的法定后果与条号；确定性，只读）
+  "evidence.rules_check",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];

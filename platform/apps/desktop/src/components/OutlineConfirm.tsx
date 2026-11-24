@@ -4,7 +4,7 @@
  * 确认后 Agent 只按确认版起草（内核门禁：确认之前不能生成文书）。文字为令牌形态，按事项令牌表还原显示；律师改写的论点按原文保存。
  */
 import { useState } from "react";
-import { basisStateText, decisionsOf, emptyDraft, keptCount, unconfirmedFactsOf, type OutlineDraft, type OutlineView } from "../lib/outline.ts";
+import { basisStateText, decisionsOf, elementStateText, emptyDraft, keptCount, modeText, unconfirmedFactsOf, type OutlineDraft, type OutlineView } from "../lib/outline.ts";
 
 interface Props {
   outline: OutlineView;
@@ -79,7 +79,23 @@ export function OutlineConfirm({ outline, plain, busy, canStop, onConfirm, onSto
                           《{b.matched ?? b.law}》{b.article ? `第 ${b.article} 条` : ""}
                         </label>
                         <span className={`cite-state cite-${b.check}`}>{basisStateText(b)}</span>
+                        {modeText(b.mode) && <span className={`tag ${b.mode === "analogy" ? "tag-beta" : "tag-gray"} outline-mode`}>{modeText(b.mode)}</span>}
                         {b.note && <div className="muted">怎么支持：{plain(b.note)}</div>}
+                        {b.elements && b.elements.length > 0 && (
+                          <ol className="outline-elements" aria-label="构成要件与事实">
+                            {b.elements.map((e, ei) => {
+                              const st = elementStateText(e);
+                              return (
+                                <li key={ei}>
+                                  <span className="outline-element">{plain(e.element)}</span>
+                                  <span className={`tag ${st.tone === "ok" ? "tag-gray" : st.tone === "warn" ? "tag-beta" : "tag-gray"}`}>{st.text}</span>
+                                  {e.facts.length > 0 && <span className="muted"> {e.facts.map((f) => plain(f.statement)).join("；")}</span>}
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        )}
+                        {b.exceptions && <div className="muted">但书与例外：{plain(b.exceptions)}</div>}
                         {b.article_text && (
                           <>
                             <button className="btn-link" onClick={() => setOpenText(openText === key ? null : key)} aria-expanded={openText === key}>

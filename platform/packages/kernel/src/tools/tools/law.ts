@@ -134,6 +134,9 @@ export interface LawArticleResult {
   reliability?: string;
   source_license_id?: string;
   license_note?: string;
+  /** 转介与例外用语（第 61 批）：有就给出，提示先查被转介或优先的规定、核对但书。 */
+  referral?: string[];
+  referral_note?: string;
   as_of: string;
   note: string;
   checked_at: string;
@@ -165,6 +168,23 @@ function findRows(lawdb: Lawdb, law: string): LawVersionRow[] {
     rows = lawdb.findLawVersions(name);
   }
   return rows;
+}
+
+/**
+ * 转介与例外用语（第 61 批，D-259；外部评估 R3 体系解释一节）：条文里有“法律另有规定的除外 / 依照其规定 / 参照适用 / 适用……的规定 / 但是”
+ * 这类用语时，单看这一条下不了结论——要么有特别规定优先，要么要按被转介的条文判断，要么有但书例外。在取条文的返回里点出来，
+ * 让助手先查被转介或可能优先的规定、核对但书是否适用，再写论点（复核也按“条件遗漏”查）。纯函数。
+ */
+export const REFERRAL_NOTE = "这一条有转介或例外用语（见 referral）：先查被转介的规定或可能优先适用的特别规定、核对但书情形是否排除本案，再据以下结论；论点里写明查了什么、为什么仍适用这一条";
+const REFERRAL_CUES: readonly { re: RegExp; label: string }[] = [
+  { re: /(?:法律|行政法规|法律、行政法规)另有规定的?(?:，依照其规定|除外)?|另有规定的除外|另有约定的除外|另有约定的，按照其约定/, label: "另有规定或约定的除外（须查特别规定或合同约定）" },
+  { re: /依照其规定|依照[^。；]{1,30}的规定(?:处理|执行|办理)?/, label: "依照其他规定（须取被转介的条文）" },
+  { re: /参照适用|参照[^。；]{1,30}(?:的)?(?:有关)?规定/, label: "参照适用（须取被参照的规定并说明相似之处）" },
+  { re: /适用本法[^。；]{0,10}(?:编|章|节)?(?:的)?(?:有关)?规定|适用[^。；]{1,20}(?:的)?(?:有关)?规定/, label: "适用其他规定（须取被指向的条文）" },
+  { re: /但是[^。；]{2,}|但[^。；]{0,4}(?:除外|不在此限)/, label: "但书例外（须核对本案是否属于例外情形）" },
+];
+export function referralCues(text: string): string[] {
+  return REFERRAL_CUES.filter((c) => c.re.test(text)).map((c) => c.label);
 }
 
 export function lawGetArticle(lawdb: Lawdb, params: LawGetArticleParams): LawArticleResult {
@@ -239,6 +259,10 @@ export function lawGetArticle(lawdb: Lawdb, params: LawGetArticleParams): LawArt
     license_note: lawdb.licenseNoteOf(v.source_license_id),
     ...(readWith.length > 0 ? { read_with: readWith, read_with_note: "这一条须与 read_with 列出的文件合读：先取那份文件核对，再下结论；交付件里引用这一条时一并写明" } : {}),
     ...(whole ? { whole_text: true } : {}),
+    ...((): { referral?: string[]; referral_note?: string } => {
+      const r = referralCues(text);
+      return r.length > 0 ? { referral: r, referral_note: REFERRAL_NOTE } : {};
+    })(),
     note:
       reliability === "demo_seed"
         ? "演示数据（reliability=demo_seed），不得作为正式引用；正式引用以官方公报文本为准"

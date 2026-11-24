@@ -14,6 +14,10 @@ export interface OutlineBasisView {
   matched: string | null;
   article_text: string | null;
   demo: boolean;
+  /** 第 61 批（D-263）：适用方式、要件—事实对照、但书与例外（旧提纲没有）。 */
+  mode?: "direct" | "referral" | "extensive" | "analogy" | null;
+  elements?: { element: string; status: "fact" | "to_prove" | "undisputed" | "opponent_burden"; facts: { fact_id: string | null; statement: string; confirmed: boolean }[] }[];
+  exceptions?: string | null;
 }
 export interface OutlineItemView {
   arg_id: string;
@@ -111,4 +115,20 @@ export function basisStateText(b: Pick<OutlineBasisView, "check" | "article_text
   if (b.check === "unverified_offline" || b.check === "unchecked") return "未核实，须你查官方文本";
   const text = b.article_text ? "条文原文见下" : "法规库没有这条的原文";
   return `${b.check === "version_verified" ? "版本已核" : b.check === "source_verified" ? "来源已核" : "已核到条"} · 是否撑得住论点由你判断 · ${text}${b.demo ? "（演示数据，不得作为正式引用）" : ""}`;
+}
+
+/** 适用方式的说法（第 61 批）：直接适用不标；其余写明，类推写“无直接依据”。 */
+export function modeText(mode: OutlineBasisView["mode"]): string | null {
+  return mode === "referral" ? "参照适用（依转介条款）" : mode === "extensive" ? "扩张解释" : mode === "analogy" ? "类推适用 · 无直接依据" : null;
+}
+
+/** 要件的状态说法（第 61 批）：有事实的写确认与否，没有事实的写待证、无争议或对方举证。 */
+export function elementStateText(e: NonNullable<OutlineBasisView["elements"]>[number]): { text: string; tone: "ok" | "warn" | "gray" } {
+  if (e.status === "fact") {
+    if (e.facts.length === 0) return { text: "标了有事实，但没挂事实", tone: "warn" };
+    return e.facts.every((f) => f.confirmed) ? { text: "有事实 · 已确认", tone: "ok" } : { text: "有事实 · 未经你确认", tone: "warn" };
+  }
+  if (e.status === "to_prove") return { text: "待证", tone: "warn" };
+  if (e.status === "undisputed") return { text: "双方无争议", tone: "gray" };
+  return { text: "对方举证", tone: "gray" };
 }

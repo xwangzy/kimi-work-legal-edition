@@ -63,7 +63,7 @@ for (const s of SAMPLES) {
     assert.equal(r.warnings.length, (s.warnYears ?? []).length + (adjusted ? 1 : 0), JSON.stringify(r.warnings));
     if (adjusted) assert.ok(r.warnings.some((w) => /调休上班的周末/.test(w)));
     for (const y of s.warnYears ?? []) {
-      assert.ok(r.warnings.some((w) => w === notCollectedWarning(y, s.input.rule)), `缺少 ${y} 年 warning`);
+      assert.ok(r.warnings.some((w) => w === notCollectedWarning(y, s.input.rule!)), `缺少 ${y} 年 warning`);
     }
     // 过程可复核：起算日、名义末日或计数、届满日都写在过程里
     assert.ok(r.steps[0]!.includes(s.input.start), "过程第一步写起算日");
@@ -144,7 +144,9 @@ test("calc.deadline 非法输入报 validation", () => {
   validateParams(schema, civil("2026-03-01", "day", 15));
   validateParams(schema, civil("2026-03", "month", 1));
   assert.throws(() => validateParams(schema, { ...civil("2026-03-01", "day", 15), extra: 1 }), /不在 schema/);
-  assert.throws(() => validateParams(schema, { start: "2026-03-01", period: { unit: "day", n: 15 } }), /rule 缺失/);
+  // 第 61 批（D-260）：写了 type 时 period、rule 由程序期间目录给出，schema 只要求 start；不写 type 又缺 rule 的由函数拒绝
+  validateParams(schema, { start: "2026-03-01", type: "appeal_judgment" });
+  assert.throws(() => calcDeadline({ start: "2026-03-01", period: { unit: "day", n: 15 } } as CalcDeadlineParams), (e: any) => e.code === "validation" && /rule/.test(e.message));
   assert.throws(() => validateParams(schema, civil("20260301", "day", 15)), /格式不符/);
   assert.throws(() => validateParams(schema, { start: "2026-03-01", period: { unit: "day", n: "15" }, rule: "civil" }), /须为整数/);
 });
@@ -180,7 +182,7 @@ test("calc.deadline 在对 Agent 开放的工具清单内", () => {
   const t = findTool("calc.deadline")!;
   assert.equal(t.sideEffect, "read");
   assert.equal(t.resource, "pure");
-  assert.equal(t.version, "1");
+  assert.equal(t.version, "2"); // 第 61 批：加程序期间目录（type、foreign_domicile、asset）
 });
 
 test("v9.4 复核 Q1-01/02：未收录年份按放假办法的固定日期假日处理；届满日是调休上班的周末时给警告", () => {

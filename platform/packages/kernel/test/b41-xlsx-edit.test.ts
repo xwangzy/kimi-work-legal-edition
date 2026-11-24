@@ -168,6 +168,12 @@ test("定位不到的逐条退回、其余照改；全部定位不到不登记�
     assert.match(JSON.stringify(otherMatter), /not_found/, "别的事项的成果按不存在处理（端点不透露是否存在）");
     const empty = await a.raw("xlsx.edit_cells", { artifact_version_id: t1.artifact_version_id });
     assert.equal(empty.result?.isError, true, "四类操作至少给一类");
+    // 第 61 批真实复测 m25-r2：传了空数组（replace: []）的，报错写明是空数组并给出每类的写法，不再只说“至少给一类”
+    const emptyArr = await a.raw("xlsx.edit_cells", { artifact_version_id: t1.artifact_version_id, replace: [] });
+    assert.equal(emptyArr.result?.isError, true);
+    const emptyText = JSON.stringify(emptyArr.result);
+    assert.match(emptyText, /replace 是空数组/);
+    assert.match(emptyText, /replace: \[\{find, with, sheet\}\]/);
     const doc = await a.call("docx.render_report", { title: "证据分析", sections: [{ heading: "一、结论", paragraphs: ["货款已交付。"] }] });
     const notTable = await a.raw("xlsx.edit_cells", { artifact_version_id: doc.artifact_version_id, edits: [{ sheet: "要件矩阵", row: 1, column: "要件", value: "x" }] });
     assert.equal(notTable.result?.isError, true, "Word 文书不能用表格工具改");

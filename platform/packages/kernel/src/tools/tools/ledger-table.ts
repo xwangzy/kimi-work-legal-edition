@@ -225,7 +225,9 @@ function debtLine(d: LedgerParams["debts"][number], p: LedgerParams): Cell[] {
     ...(d.cap_yuan !== undefined ? [`约定上限 ${money(d.cap_yuan)} 元`] : []),
     ...(d.in_doubled_base !== undefined ? [d.in_doubled_base ? "计入加倍部分债务利息的基数" : "不计入加倍部分债务利息的基数"] : []),
   ];
-  return [`${d.label}（${kindText}）`, d.amount_yuan, bits.join("；")];
+  // 第 61 批（真实验收 m08：“货款（本金）（本金）”）：款项名自己已带同一括注的不再追加
+  const label = d.label.trim().endsWith(`（${kindText}）`) || d.label.trim().endsWith(`(${kindText})`) ? d.label.trim() : `${d.label}（${kindText}）`;
+  return [label, d.amount_yuan, bits.join("；")];
 }
 
 function paramSheet(scenarios: LedgerParams[], results: LedgerResult[], notes: unknown): SheetSpec {

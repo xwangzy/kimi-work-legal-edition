@@ -11,6 +11,7 @@
 import { CitationState, DomainError, type CitationState as CitationStateT } from "@zr-legal/domain";
 import { versionAt, type Lawdb } from "@zr-legal/lawdb";
 import { cnToInt, intToCn } from "./cn-numerals.ts";
+import { caseRefsIn } from "../../services/case-provenance.ts";
 import { BARE_NAMES, INSTRUMENT_NAMES, LAW_ALIASES, lawNameCandidates, repealedInfo } from "./law-names.ts";
 
 export interface RawCitation {
@@ -46,7 +47,12 @@ const TITLE_RE = new RegExp(`《((?:[^《》〈〉\\n]|〈[^〈〉\\n]{1,40}〉)
 const LIST_RE = new RegExp(`^\\s*(?:、|，|,|和|及|以及|与|或者|或|至|到|—|－|-|～|~)\\s*${REF}`);
 const BARE_RE = BARE_NAMES.length > 0 ? new RegExp(`((?:中华人民共和国)?(?:${BARE_NAMES.join("|")}))${PART}${REF}`, "g") : null;
 // 回指词前面须是标点、空白或句首（复核 R15B-04：否则“劳动合同法第X条”里的“同法第X条”会再提一次）
-const SAME_LAW_RE = new RegExp(`(?<![一-鿿])(?:该法|同法|上述法律|前述法律)${REF}`, "g");
+// 第 61 批：“依该法第X条”照常回指（“该”前面只排除“应”）；“同法”“上述法律”仍要求前面不是汉字（“劳动合同法”里也有“同法”）
+const SAME_LAW_RE = new RegExp(`(?:(?<!应)该法|(?<![一-鿿])(?:同法|上述法律|前述法律))${REF}`, "g");
+/** “该办法 / 该条例 / 该规定 / 该解释第X条”（第 61 批：研读报告“依该办法第十六条减半”漏提取，复核拿不到原文、核验也没覆盖）：回指最近提到的同类规范。 */
+const SAME_KIND_RE = new RegExp(`(?:(?<!应)该|(?<![一-鿿])(?:上述|前述))(办法|条例|规定|解释|决定|细则|规则)${REF}`, "g");
+/** 同一句里分号之后接着写的“第X条”（“民事诉讼法第六十七条第三款……；第一百七十七条第一款……”）：归前一处引用的那部法。 */
+const CONT_RE = new RegExp(`[；;]\\s*${REF}`, "g");
 /** 被引的法名（不论带不带条号），供“该法 / 同法”回指（复核 R15B-04：取最近提到的那部，不取最近带条号的那处）。 */
 const TITLE_MENTION_RE = /《((?:[^《》〈〉\n]|〈[^〈〉\n]{1,40}〉){2,80}?)》/g;
 const BARE_MENTION_RE = BARE_NAMES.length > 0 ? new RegExp(`(?:中华人民共和国)?(?:${BARE_NAMES.join("|")})`, "g") : null;
@@ -162,6 +168,24 @@ export function joinCitationCells(text: string): string {
   return text.replace(/((?:法|解释|规定|办法|条例|纪要|批复|意见|细则|规则|决定)(?:[（(][^（）()\n]{1,12}[)）])?》?)\s*[|｜]\s*(?=第[一二三四五六七八九十百千零〇两\d]+条)/g, "$1");
 }
 
+/**
+ * 引用里写明的版本（第 61 批，D-261）：“（2018年修正）”“（2023年修订）”“公司法（2018年修正）”按修正、修订的通过年份比；
+ * “（2024年7月1日施行）”“（2024-07-01施行）”按施行日比；只写年份加“施行”的按施行年份比。文号括注（法释〔2020〕17号）不算。
+ */
+export function versionNoteOf(raw: string): { text: string; year: string; date: string | null; by: "promulgated" | "effective" } | null {
+  const t = raw.replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+  const amend = /[（(]\s*((\d{4})\s*年?\s*(?:\d{1,2}\s*月\s*\d{1,2}\s*日\s*)?(?:第[一二三四五六七八九十]+次)?(?:修正|修订|修改)(?:本|版)?)\s*[）)]/.exec(t);
+  if (amend) return { text: amend[1]!.replace(/\s+/g, ""), year: amend[2]!, date: null, by: "promulgated" };
+  const eff = /[（(]\s*((\d{4})\s*(?:年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日|-(\d{2})-(\d{2}))?\s*(?:起)?(?:施行|生效))\s*[）)]/.exec(t);
+  if (eff) {
+    const mm = eff[3] ?? eff[5];
+    const dd = eff[4] ?? eff[6];
+    const date = mm && dd ? `${eff[2]}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}` : null;
+    return { text: eff[1]!.replace(/\s+/g, ""), year: eff[2]!, date, by: "effective" };
+  }
+  return null;
+}
+
 export function extractCitations(text: string): RawCitation[] {
   const t = foldNestedTitles(text);
   const out: RawCitation[] = [];
@@ -241,6 +265,24 @@ export function extractCitations(text: string): RawCitation[] {
     if (!prev) continue;
     pushRefs(out, { raw: text.slice(start, start + m[0].length), law: prev.law, offset: start }, m, 1);
   }
+  for (const m of t.matchAll(SAME_KIND_RE)) {
+    const start = m.index ?? 0;
+    const kind = m[1]!;
+    const prev = mentions.filter((x) => x.at < start && x.law.replace(/[（(][^（）()]*[）)]$/, "").endsWith(kind)).sort((a, b) => b.at - a.at)[0];
+    if (!prev) continue;
+    pushRefs(out, { raw: text.slice(start, start + m[0].length), law: prev.law, offset: start }, m, 2);
+  }
+  // 分号后续写：前一处引用在同一句（中间没有句号、书名号），且相距不超过 200 字
+  const sorted = [...out].sort((a, b) => a.offset - b.offset);
+  for (const m of t.matchAll(CONT_RE)) {
+    const start = (m.index ?? 0) + m[0].indexOf("第");
+    if (sorted.some((c) => c.offset === start)) continue;
+    const prev = sorted.filter((c) => c.offset < start).at(-1);
+    if (!prev) continue;
+    const gap = t.slice(prev.offset, start);
+    if (gap.length > 260 || /[。《\n]/.test(gap.slice(Math.min(gap.length, prev.raw.length)))) continue;
+    pushRefs(out, { raw: text.slice(start, (m.index ?? 0) + m[0].length), law: prev.law, offset: start }, m, 1);
+  }
   return out.sort((a, b) => a.offset - b.offset);
 }
 
@@ -275,15 +317,15 @@ export function unrecognizedArticleRefs(text: string, found: RawCitation[]): num
  * 如（2023）最高法民终123号、(2024）京01民终1234号；年份与主体间允许全半角括号与数字字母混排。
  * 不覆盖：无「号」收尾的引用、英美 citation、非诉讼编号变体、括号内非 20xx 年份——未覆盖形态按未提取处理（不伪造核验结论）。
  */
-const CASE_NO_RE = /[（(]20\d{2}[）)][0-9A-Za-z一-龥]{1,15}?号/g;
-
+// 第 61 批（D-258）：与案号溯源（services/case-provenance.ts）共用一套提取口径——法院与仲裁两种写法、19xx～20xx 年、须有案件类型代字，
+// 文号（法释〔2020〕17号）不算；否则签发页的“案号未核实”计数与交付前检查报出的案号对不上。
 export function extractCaseNumbers(text: string): string[] {
-  return [...text.matchAll(CASE_NO_RE)].map((m) => m[0]);
+  return caseRefsIn(text).map((r) => r.raw);
 }
 
 /** 案号在文字里的位置（与 extractCaseNumbers 同序；成果的论断—依据对照取原句用）。 */
 export function caseNumberOffsets(text: string): number[] {
-  return [...text.matchAll(CASE_NO_RE)].map((m) => m.index ?? -1);
+  return caseRefsIn(text).map((r) => r.offset);
 }
 
 export interface CitationVerifyParams {
@@ -408,6 +450,30 @@ function verifyOne(lawdb: Lawdb, rc: RawCitation, asOf: string, topicHint: strin
     return base;
   }
   base.matched_law_name = rows[0]!.law_name;
+  // 版本括注对版（第 61 批，D-261；外部评估 R1 实跑复现）：写明“（2018年修正）”“（2021年修正）”的引用此前丢掉括注、按分析时点的现行版核，
+  // 判成“来源与适用版本已核”——错版条文假通过。现在：括注指向的版本库里有、且不是分析时点适用的版本 → 按该版本核条号并报“版本不符”；
+  // 库里没有 → 报“该版本未收录”。两者都归“须人工核对”，不再判已核。
+  const noted = versionNoteOf(rc.raw);
+  if (noted) {
+    const hit = rows.find((r) => (noted.by === "promulgated" ? r.promulgated.slice(0, 4) === noted.year : noted.date ? r.effective === noted.date : r.effective.slice(0, 4) === noted.year));
+    const cur = versionAt(rows, asOf);
+    if (!hit) {
+      base.reasons.push(`version_not_collected:所引“${noted.text}”的版本法规库没有收录，系统没有按该版本核对（库里收录的是 ${rows.map((r) => `${r.effective} 施行`).join("、")} 的版本）；须对照该版本的官方文本核对条号与内容`);
+      base.suggestion = `作为行为时法引用旧版本的，写明适用旧法的依据（行为发生时间与时间效力规定），条号与内容请律师对照该版本原文核对；否则改引现行版本（用 law.get_article 按分析时点取原文）`;
+      return base;
+    }
+    if (cur && hit.lsv_id !== cur.lsv_id) {
+      base.lsv_id = hit.lsv_id;
+      base.effectiveness = hit.effectiveness;
+      if (rc.article < 1 || rc.article > hit.total_articles) {
+        base.reasons.push(`article_out_of_range:第 ${rc.article} 条超出所引版本的总条数 ${hit.total_articles}（《${hit.law_name}》${hit.effective} 起施行的版本共 ${hit.total_articles} 条，没有第${intToCn(rc.article)}条）`);
+        return base;
+      }
+      base.reasons.push(`version_mismatch:所引是 ${hit.effective} 施行的版本，分析时点 ${asOf} 适用的是 ${cur.effective} 施行的版本，两版条号与内容可能不同`);
+      base.suggestion = `作为行为时法引用的，写明适用旧法的依据（行为发生时间与时间效力规定）；否则改引 ${cur.effective} 施行版本的对应条文（用 law.get_article 按内容查准条号，不凭记忆换算）`;
+      return base;
+    }
+  }
   const v = versionAt(rows, asOf);
   if (!v) {
     base.reasons.push(`no_applicable_version:适用时点 ${asOf} 无适用版本`);

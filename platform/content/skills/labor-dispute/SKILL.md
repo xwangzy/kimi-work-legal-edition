@@ -6,7 +6,7 @@ when_to_use: 劳动仲裁应诉、代为申请劳动仲裁、用人单位拟解�
 arguments: [side, mode, situation, claim, received_on, hearing, reason, hired_on, left_on, leave_type, monthly_wage]
 kwl:
   id: labor-dispute
-  version: 1.6.1
+  version: 1.6.2
   lines: [企业法务, 诉讼仲裁]
   chain: labor
   tier: beta
@@ -86,7 +86,7 @@ kwl:
 | law.search | 定位法源与版本 | query（不含当事人信息） |
 | law.get_article | 取条文原文核对前提条件（可选） | law，article，as_of |
 | citations.verify | 核验所引条文 | citations[{law, article}]（本批要引的条文一次带齐），as_of |
-| calc.deadline | 时效、答辩、起诉、撤销申请等期限的届满日 | 起算事实日，期间，规则 |
+| calc.deadline | 时效、答辩、起诉、撤销申请等期限的届满日 | start（起算事实日），type labor_arbitration_limitation / labor_arbitration_defense / labor_award_suit / labor_award_setaside_employer（期间与依据由工具给出） |
 | calc.labor | 经济补偿 N、违法解除赔偿金 2N、代通知金、未休年休假工资、加班费与加班费差额 | kind（compensation · unlawful · annual_leave · overtime），入职日、劳动关系最后一日，wage_table（台账 + 计入项目）、monthly_wages_yuan（逐月合计）或 avg_monthly_wage_yuan，unused_days，当地平均工资与最低工资（律师给的）；加班费给 months（逐月小时、基数、已付）、base_basis |
 | calc.ledger | 逐月工资差额、二倍工资差额的合计，欠薪利息，各情景合计 | scenarios[{name, as_of, debts, rate}] |
 | calc.interest | 单独一段利息（可选） | 本金、期间、利率口径 |

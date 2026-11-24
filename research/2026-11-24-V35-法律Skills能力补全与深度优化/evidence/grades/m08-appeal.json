@@ -1,0 +1,14 @@
+{"tag": "m08-appeal", "card": "appeal", "veto": [], "score": 22, "dims": [3, 3, 3, 2, 3, 2, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 14, "questions": 3,
+ "top_issues": [
+  "未提示鉴定双向风险、恒岳可能在 11-20 前上诉、附条件鉴定申请会被反驳，也无发回重审备选请求",
+  "上诉状理由二出现工作流口吻“本次提供的庭审笔录所载举证、质证及法庭辩论内容中”",
+  "计算表汇总!D15 混入工具提示语“没写 accrual……要按利息计的写 accrual: \"interest\"”"
+ ],
+ "prev_score": null,
+ "product_defect": [
+  "calc_ledger 工具的提示语（含 accrual、interest 等研发字段名）原样写进交付计算表的“需要留意”格；参数表标签重复“（本金）（本金）”",
+  "上诉状技能要求“材料载明但未确认的用保守写法”，模型写成“本次提供的庭审笔录”这类工作流口吻，进入对外文书；独立复核没有拦住",
+  "appeal-draft 方法缺少风险提示环节（鉴定双向风险、对方上诉期、备选发回重审），核对清单只列程序与金额核对项"
+ ],
+ "known_defects_recurring": [], "new_defects": []}

@@ -6,12 +6,12 @@ when_to_use: 事项中已有案卷材料（事实时间线里的事实已确认�
 arguments: [claims, side, defenses]
 kwl:
   id: issue-evidence-matrix
-  version: 1.2.1
+  version: 1.3.0
   lines: [诉讼仲裁, 企业法务]
   chain: casefile
   tier: beta
   tools_required: [facts.list, materials.list, xlsx.render_table]
-  tools_optional: [xlsx.edit_cells, materials.read_excerpt, law.search, law.get_article, citations.verify, docx.render_report]
+  tools_optional: [xlsx.edit_cells, materials.read_excerpt, law.search, law.get_article, citations.verify, docx.render_report, evidence.rules_check]
   outputs: [争点—证据矩阵.xlsx, 补证清单（同表工作表）]
   source_lineage: [demo:scene-civil-evidence@v1.0#步骤2和4, demo:scene-civil-strategy@v1.0#步骤1, demo:scene-labor-employer-response@v1.0, v9:§6.2四类事实]
 ---
@@ -30,6 +30,7 @@ kwl:
 4. 请求权要件的通用拆分与常见证据见 `references/claim-elements.md`；如可信区存在本所覆盖层，优先适用。
 
 ## 3. 步骤
+0. （第 61 批）**证据形式规则**：把各份证据的种类与已知属性（原件或复制件、电子数据的载体、境外或港澳台形成、外文、证人是否出庭及有无利害关系、书证由谁控制）一次交给 `evidence.rules_check`，返回的规则与条号（民事证据规定）用于“缺口”与补证清单：只有复制件、截图、利害关系人证言撑着的要件不评“已有”，写“薄弱”并在补证清单里写要补的手续（找原件、公证保全、申请证人出庭、申请书证提出命令）；证明标准按工作准则第 12 条。
 1. **确定请求权基础**：每项请求对应一个请求权基础；用 `law.search`、`law.get_article` 定位法源（行为时法以事件时点为准，与现行法不同的分别写明），用 `citations.verify` 批量核验。核验不通过的标“依据待核实”，要件拆分仍可进行但须注明。
 2. **拆分要件**：按 `references/claim-elements.md` 拆成要件；每个要件写明举证责任一般在哪一方（“一般由主张方举证”之类的表述，具体分配由律师判断）。
 3. **事实与证据对应**：把律师确认的事实（确认事实为零时按第 2 节第 2 条用材料载明的事实）挂到对应要件下，写明证据（材料名称 + 位置 + 事实编号，如“事实 12”）、证明目的；同一证据支撑多个要件的分别列出。

@@ -13,10 +13,10 @@ import { DomainError, newId, notFound } from "@zr-legal/domain";
 import type { Lawdb } from "@zr-legal/lawdb";
 import type { KernelDb } from "../db.ts";
 import { citationsVerify } from "../tools/tools/citations.ts";
-import { lawGetArticle } from "../tools/tools/law.ts";
+import { lawGetArticle, referralCues } from "../tools/tools/law.ts";
 import { localToday } from "./local-date.ts";
 
-export const OUTLINE_LIMITS = { args: 30, basisPerArg: 8, factsPerArg: 12, field: 2_000, perRun: 10 } as const;
+export const OUTLINE_LIMITS = { args: 30, basisPerArg: 8, factsPerArg: 12, field: 2_000, perRun: 10, elementsPerBasis: 10 } as const;
 
 export interface OutlineBasis {
   law: string;
@@ -30,6 +30,23 @@ export interface OutlineBasis {
   article_text: string | null;
   /** 法规库是演示数据时为 true（不得作为正式引用）。 */
   demo: boolean;
+  /** 适用方式（第 61 批，D-263）：直接适用 / 依转介条款参照适用 / 扩张解释 / 类推适用；不写视为直接适用。 */
+  mode?: OutlineMode | null;
+  /** 这一条的构成要件逐项对应事实（第 61 批，D-263）：律师在确认页逐项看得到哪个要件有事实、哪个待证。 */
+  elements?: OutlineElement[];
+  /** 条文的但书、例外或转介（另有规定的除外、参照适用……）怎么处理（第 61 批）。 */
+  exceptions?: string | null;
+}
+
+export type OutlineMode = "direct" | "referral" | "extensive" | "analogy";
+export const OUTLINE_MODE_LABEL: Record<OutlineMode, string> = { direct: "直接适用", referral: "依转介条款参照适用", extensive: "扩张解释", analogy: "类推适用（无直接依据）" };
+export type OutlineElementStatus = "fact" | "to_prove" | "undisputed" | "opponent_burden";
+export const OUTLINE_ELEMENT_STATUS_LABEL: Record<OutlineElementStatus, string> = { fact: "有事实", to_prove: "待证", undisputed: "双方无争议", opponent_burden: "对方举证" };
+
+export interface OutlineElement {
+  element: string;
+  status: OutlineElementStatus;
+  facts: OutlineFact[];
 }
 
 export interface OutlineFact {
@@ -85,13 +102,28 @@ function asOfFor(db: KernelDb, matterId: string): string {
   return localToday();
 }
 
-function verifyOutlineBasis(lawdb: Lawdb | undefined, asOf: string, raw: unknown): OutlineBasis[] {
+const MODES: readonly OutlineMode[] = ["direct", "referral", "extensive", "analogy"];
+const ELEMENT_STATUSES: readonly OutlineElementStatus[] = ["fact", "to_prove", "undisputed", "opponent_burden"];
+
+function verifyOutlineBasis(lawdb: Lawdb | undefined, asOf: string, raw: unknown, factOf: (id: string) => OutlineFact): OutlineBasis[] {
   const items = Array.isArray(raw) ? raw.slice(0, OUTLINE_LIMITS.basisPerArg) : [];
   return items.map((b: any): OutlineBasis => {
     const law = str(b?.law, 80).replace(/^《|》$/g, "");
     const article = Number.isInteger(b?.article) && b.article > 0 ? (b.article as number) : null;
     const note = optStr(b?.note, OUTLINE_LIMITS.field);
     const out: OutlineBasis = { law, article, note, check: "unchecked", matched: null, article_text: null, demo: false };
+    // 第 61 批（D-263）：适用方式、要件—事实对照、但书与例外
+    if (MODES.includes(b?.mode)) out.mode = b.mode as OutlineMode;
+    const ex = optStr(b?.exceptions, OUTLINE_LIMITS.field);
+    if (ex) out.exceptions = ex;
+    if (Array.isArray(b?.elements) && b.elements.length > 0) {
+      out.elements = b.elements.slice(0, OUTLINE_LIMITS.elementsPerBasis).map((e: any): OutlineElement => {
+        const element = str(e?.element, 300);
+        const status: OutlineElementStatus = ELEMENT_STATUSES.includes(e?.status) ? e.status : "to_prove";
+        const ids = Array.isArray(e?.fact_ids) ? e.fact_ids.filter((x: unknown) => typeof x === "string" && x).slice(0, 6) : [];
+        return { element, status, facts: ids.map((id: string) => factOf(id)) };
+      }).filter((e: OutlineElement) => e.element);
+    }
     if (!law || article === null || !lawdb) return out;
     try {
       const v = (citationsVerify(lawdb, { citations: [{ law, article }], as_of: asOf }) as { verdicts?: { state: string; matched_law_name: string | null }[] }).verdicts?.[0];
@@ -164,8 +196,14 @@ export function submitOutline(
       }
       return { fact_id: null, statement: str(f?.statement, OUTLINE_LIMITS.field), confirmed: false };
     }).filter((f: OutlineFact) => f.statement);
-    return { arg_id: `a${i + 1}`, claim, basis: verifyOutlineBasis(deps.lawdb, asOf, a?.basis), facts, counter: optStr(a?.counter, OUTLINE_LIMITS.field) };
+    const factOf = (factId: string): OutlineFact => {
+      const row = deps.db.get<{ matter_id: string; statement: string; status: string }>(`SELECT matter_id, statement, status FROM matter_facts WHERE fact_id = ?`, [factId]);
+      if (!row || row.matter_id !== scope.matterId) throw new DomainError("validation", `第 ${i + 1} 条论点的要件对照引用的事实 ${factId} 不在本事项`, 422);
+      return { fact_id: factId, statement: row.statement, confirmed: row.status === "confirmed" };
+    };
+    return { arg_id: `a${i + 1}`, claim, basis: verifyOutlineBasis(deps.lawdb, asOf, a?.basis, factOf), facts, counter: optStr(a?.counter, OUTLINE_LIMITS.field) };
   });
+  const reasoning = reasoningChecks(items, docKind);
   const id = newId("outline");
   deps.db.tx(() => {
     deps.db.run(`UPDATE argument_outlines SET status = 'withdrawn' WHERE run_id = ? AND status = 'proposed'`, [scope.runId]);
@@ -186,11 +224,46 @@ export function submitOutline(
     outline_id: id,
     status: "proposed",
     arguments: items.map((x) => ({ arg_id: x.arg_id, basis_checks: x.basis.map((b) => b.check), basis_with_text: x.basis.filter((b) => b.article_text).length, unconfirmed_facts: x.facts.filter((f) => !f.confirmed).length })),
+    ...(reasoning.length > 0 ? { reasoning_checks: reasoning } : {}),
     note:
       `提纲已提交，等待律师在任务页逐条确认。${bad ? `其中 ${bad} 条依据核验未通过（intercepted），请先改正后重新提交。` : ""}` +
+      (reasoning.length > 0 ? `推理检查报了 ${reasoning.length} 处（见 reasoning_checks）：缺要件对照或适用方式写不实的，补齐后重新提交；确属不需要的，在提问里向律师说明。` : "") +
       "下一步：用提问工具请律师确认（问题写“论点与依据已列在任务页，请确认后选择”，第一个选项写“已确认，按确认的论点起草”，第二个写“先不起草”）；" +
       "律师选第一个后用 outline.get 读取确认版，只按确认版起草：律师删掉的论点不写，改写过的论点按律师的写法，去掉的依据不引。确认之前本任务不能生成文书。",
   };
+}
+
+/** 转介条款（第 61 批）：无名合同、其他有偿合同、非合同之债、身份关系协议、身份权利参照适用的出处。 */
+const REFERRAL_ARTICLES: Readonly<Record<string, readonly number[]>> = { 中华人民共和国民法典: [464, 467, 468, 646, 1001] };
+const isReferralBasis = (b: OutlineBasis): boolean =>
+  (b.article !== null && (REFERRAL_ARTICLES[b.matched ?? b.law] ?? []).includes(b.article)) || /参照适用|参照[^。；]{1,30}规定|依照其规定/.test(b.article_text ?? "");
+
+/**
+ * 推理检查（第 61 批，D-263；外部评估 R3：演绎推理的要件对应、类比推理的适用方式、体系解释的转介与但书）。返回给助手的话，纯函数：
+ * - 要件标“有事实”却没挂事实；
+ * - 参照适用却没有引转介条款（民法典第四百六十四条第二款、第四百六十七、四百六十八、六百四十六、一千零一条等，或原文写明“参照适用”的条文）；
+ * - 行政处罚、税收、刑事问题用类推；
+ * - 条文原文有转介或但书（另有规定的除外、依照其规定、参照适用、但是……）而没写怎么处理；
+ * - 主要依据（每条论点的第一条依据）没有列要件对照（只提示一次总数）。
+ */
+export function reasoningChecks(items: readonly OutlineItem[], docKind: string): string[] {
+  const out: string[] = [];
+  let noElements = 0;
+  for (const x of items) {
+    x.basis.forEach((b, bi) => {
+      const where = `${x.arg_id}《${b.matched ?? b.law}》${b.article ? `第 ${b.article} 条` : ""}`;
+      for (const e of b.elements ?? []) {
+        if (e.status === "fact" && e.facts.length === 0) out.push(`${where}：要件“${e.element.slice(0, 30)}”标了“有事实”却没挂事实（fact_ids）——挂上事实，或改标待证`);
+      }
+      if (b.mode === "referral" && !x.basis.some(isReferralBasis)) out.push(`${where}：写的是参照适用，但这条论点没有引转介条款（如民法典第四百六十七条、第六百四十六条，或原文写明“参照适用”的条文）——补上转介条款，否则按扩张解释或类推写明风险`);
+      if (b.mode === "analogy" && /行政处罚|罚款|没收|税|刑事|犯罪/.test(`${x.claim} ${b.note ?? ""} ${docKind}`)) out.push(`${where}：行政处罚、税收、刑事问题受法定原则限制，不能以类推加重当事人义务或责任——改用直接依据，或在论点里写明这一限制与风险`);
+      if (b.article_text && referralCues(b.article_text).length > 0 && !b.exceptions && bi === 0) out.push(`${where}：条文有转介或但书（${referralCues(b.article_text).join("；")}），没写怎么处理（exceptions）——写明查了哪些特别规定、但书是否排除本案`);
+    });
+    const main = x.basis[0];
+    if (main && main.article !== null && !(main.elements && main.elements.length > 0)) noElements += 1;
+  }
+  if (noElements > 0) out.push(`${noElements} 条论点的主要依据没有列要件对照（elements）：把这条依据的构成要件逐项列出，各挂事实或标待证、双方无争议、对方举证，律师在确认页才看得出哪一环没证据`);
+  return out;
 }
 
 /** 本任务最新的提纲（Agent 读确认版用）。 */

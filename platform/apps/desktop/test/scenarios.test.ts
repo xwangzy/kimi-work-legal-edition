@@ -8,7 +8,10 @@ import { suggestScenario } from "../src/lib/scenarios.ts";
 test("意图建议：最具体者优先；答辩状、仲裁申请书不引到起诉状模板", () => {
   assert.equal(suggestScenario("帮我起草一份民事起诉状")?.id, "pleading");
   assert.equal(suggestScenario("核对起诉状里的引用是否有效")?.id, "citation-audit", "引用核对有了自己的卡（v9.4 S1 §6.1 第 1 项）");
-  assert.equal(suggestScenario("帮我检索类案"), null, "案例库未开通：不再把“类案”引到法规研究（v9.4）");
+  // 第 61 批：案例库仍未开通，但有了“类案检索报告（用你提供的判决）”卡——说“类案”引到它，不引到法规研究
+  assert.equal(suggestScenario("帮我检索类案")?.id, "case-law", "类案引到用律师提供判决的类案比对卡（第 61 批）");
+  assert.equal(suggestScenario("一审判决出来了，帮我看看要不要上诉")?.id, "ruling-digest", "收到判决研读与上诉评估（第 61 批）");
+  assert.equal(suggestScenario("帮我写上诉状")?.id, "appeal", "起草上诉状仍到上诉状卡");
   assert.equal(suggestScenario("做一份尽调清单")?.id, "dd-list", "尽调有了自己的方法（v9.4）");
   assert.equal(suggestScenario("整理尽调发现写报告")?.id, "dd-findings");
   assert.equal(suggestScenario("帮我起草一份买卖合同")?.id, "contract-draft");

@@ -112,6 +112,7 @@ import { artifactCitationBlock, artifactText, checkArtifactCitations, CITATIONS_
 import { rankTitles, type TitleCandidate } from "../services/title-search.ts";
 import { latestVersionOf, withFileVersions } from "../services/artifact-lineage.ts";
 import { createMatterFolderApi, folderViewOf } from "../services/matter-folder.ts";
+import { materialCaseIndex } from "../services/case-provenance.ts";
 
 export interface ApiDeps {
   db: KernelDb;
@@ -428,7 +429,7 @@ function artifactCitationsFor(db: KernelDb, blobs: BlobStore, lawdb: Lawdb, art:
     const kd = parseJson<Record<string, unknown>>(m?.key_dates ?? "{}", {});
     const asOf = typeof kd.analysis_as_of === "string" && /^\d{4}-\d{2}-\d{2}$/.test(kd.analysis_as_of) ? kd.analysis_as_of : localToday();
     // 事件时点与地域（v9.4 S-08）：实体法按事件时点复核适用版本、地方性规定按地域复核
-    const c = checkArtifactCitations(lawdb, String(art.filename), blobs.read(String(art.storage_uri)), asOf, { event_date: m?.event_date ?? null, region: m?.region ?? null });
+    const c = checkArtifactCitations(lawdb, String(art.filename), blobs.read(String(art.storage_uri)), asOf, { event_date: m?.event_date ?? null, region: m?.region ?? null }, materialCaseIndex(db, art.matter_id));
     // 律师对每处引用支持性的逐条决定（C-03）：只认本成果版本的
     const decisions = new Map(db.all<{ cite_key: string; decision: CitationDecision }>(`SELECT cite_key, decision FROM citation_decisions WHERE artifact_version_id = ?`, [art.artifact_version_id]).map((r) => [r.cite_key, r.decision] as const));
     return withDecisions(c, decisions);

@@ -75,7 +75,7 @@
     },
     {
       "name": "calc.deadline",
-      "version": "1",
+      "version": "2",
       "sideEffect": "read",
       "resource": "pure",
       "purposes": [
@@ -85,7 +85,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "a87e68ad5df2950d803c7699f89f5f70de9f509ec0bf72999131a8af66f8bc20"
+      "schemaHash": "43f6a9b1d62acfcf0d183ee31204782fd4fd25283f25c874d73eeaa8504da294"
     },
     {
       "name": "redact.scan",
@@ -241,7 +241,7 @@
     },
     {
       "name": "facts.submit",
-      "version": "1",
+      "version": "2",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -251,7 +251,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "90d8fb4cb9a9426f631d24e8ed8fe15f15542993d557fa3b6358d9b65a3ebbdc"
+      "schemaHash": "08a353abcb12295214ce1bdad2e82b131a000982873efc03f19845ec56ebd26c"
     },
     {
       "name": "facts.list",
@@ -283,7 +283,7 @@
     },
     {
       "name": "xlsx.edit_cells",
-      "version": "1",
+      "version": "2",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -293,11 +293,11 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "e46654cf05827737f3db34c6c9cd7862dc644d91c04647ea3e774c09739c24ca"
+      "schemaHash": "cb1783d31392da66625f43048d6c64b5627f63cd6557d6d9b4e025820ddc882b"
     },
     {
       "name": "outline.submit",
-      "version": "1",
+      "version": "2",
       "sideEffect": "write_draft",
       "resource": "matter_work",
       "purposes": [
@@ -307,7 +307,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "4af80ba0b3bcd72838e8264b830dffeb887a70354bf8f96ada6d035c812f1af0"
+      "schemaHash": "2b673bcaf38af5a210869b073dfd3b7fca5010c8d47d9f6bb6075e7b71fad25d"
     },
     {
       "name": "outline.get",
@@ -406,6 +406,20 @@
         "drafting"
       ],
       "schemaHash": "36a2317be35902ff68778c839157ceb4c02cc6b01fa11c4ba17460718d29cd2c"
+    },
+    {
+      "name": "evidence.rules_check",
+      "version": "1",
+      "sideEffect": "read",
+      "resource": "pure",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "5a5b5f1781ef7b5702e53919f6ec606a008426d3874d2176cec52c3f14046adb"
     }
   ]
 }

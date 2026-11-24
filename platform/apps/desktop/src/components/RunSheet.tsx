@@ -2,6 +2,7 @@
  * 发起前的预览（第 03 篇 §5 步骤 5：看到预计用量（占本月份额的百分比）与数据去向预览；第 04 篇 §15.2 先预估、后确认）。
  * 预估与去向由内核按事项记录计算；律师确认后才发起。
  */
+import { pendingOptions } from "../lib/pending-options.ts";
 import { useEffect, useState } from "react";
 import { api, type Matter } from "../api.ts";
 import { nav } from "../App.tsx";
@@ -110,7 +111,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const reestimate = async () => {
     setErr("");
     try {
-      setCur(await prepareStart(matter, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}), ...(cur.docNames ? { docNames: cur.docNames } : {}) }));
+      setCur(await prepareStart(matter, value, pendingOptions(cur)));
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -165,7 +166,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
       // 两条路径都带依据类型与出处（D-225：逐项记录不再只交四项）；内核按当前次处理者清单记版本、追加授权记录
       await api.updateMatter(matter.matter_id, { basis, basis_source: detail ? detailSource(record, matter) : record.kind, basis_ref: record.ref.trim() });
       notifyDataChanged();
-      const fresh = await prepareStart({ ...matter, basis }, value, { ...(cur.skill ? { skill: cur.skill } : {}), ...(cur.label ? { label: cur.label } : {}), ...(cur.skillArgs ? { skillArgs: cur.skillArgs } : {}), ...(cur.reviewRules !== undefined ? { reviewRules: cur.reviewRules } : {}), ...(cur.docNames ? { docNames: cur.docNames } : {}) });
+      const fresh = await prepareStart({ ...matter, basis }, value, pendingOptions(cur));
       setCur(fresh);
       if (fresh.estimate.data_where?.start_blocked) {
         setErr(afterConsentNotice(fresh.estimate.data_where.block_kind, sensitive));

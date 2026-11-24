@@ -21,7 +21,8 @@ import { lawGetArticle, lawGetVersion, lawSearch } from "./tools/law.ts";
 import { citationsVerify } from "./tools/citations.ts";
 import { calcInterest } from "./tools/calc.ts";
 import { calcLedgerTool } from "./tools/ledger-table.ts";
-import { calcDeadline } from "./tools/deadline.ts";
+import { calcDeadline, PROCEDURAL_PERIOD_TYPES } from "./tools/deadline.ts";
+import { evidenceRulesCheck, EVIDENCE_KINDS } from "./tools/evidence-rules.ts";
 import { redactScan } from "./tools/redact.ts";
 import { materialsReadExcerpt } from "./tools/materials.ts";
 import { docxApplyRevisions, docxCompare, docxRenderReport, docxSanitize, redactApply } from "./tools/docx.ts";
@@ -35,6 +36,7 @@ import { sectionChars, shrinkCheck } from "../services/version-shrink.ts";
 import { localToday } from "../services/local-date.ts";
 import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { errFields, slog } from "@zr-legal/safe-log";
+import { caseSource, materialCaseIndex } from "../services/case-provenance.ts";
 
 export interface ToolDef {
   name: string;
@@ -189,7 +191,18 @@ export const TOOLS: readonly ToolDef[] = [
     },
     // 给助手的口径说明（第 35 批真实走查 R3：助手把“支持待判”读成“核验未通过”，劳动争议意见书准备把结论全部降为“初步”）
     invoke: (p, ctx) => {
-      const r = citationsVerify(ctx.lawdb, p);
+      const r0 = citationsVerify(ctx.lawdb, p);
+      // 第 61 批（D-258）：案号对本事项材料溯源——材料里有的写明见哪份；没有的告诉助手不要用
+      let r = r0;
+      const mid = ctx.claims?.mid;
+      if (mid && r0.verdicts.some((v) => v.kind === "case")) {
+        try {
+          const idx = materialCaseIndex(ctx.db, mid, ctx.claims?.rid ?? null);
+          r = { ...r0, verdicts: r0.verdicts.map((v) => (v.kind !== "case" ? v : { ...v, material_source: caseSource(v.raw, idx) ?? "本事项材料里没有这个案号：不要引用，或请律师补充这份裁判文书" })) };
+        } catch {
+          r = r0;
+        }
+      }
       return {
         ...r,
         note: "support_pending（支持待判）是正常结果：条文存在、适用版本现行有效，来源与版本已核；是否支持你的论点由你读 law.get_article 的原文判断后写明，不是核验失败。intercepted（拦截）表示没有核过：reasons 以 unknown_source: 开头的是法规库未收录这部法规（不是条文不存在，写“法规库未收录”，须律师查官方文本）；其余（条号超出、已改号、该时点无有效版本）不得照引，renumbered 时按 suggestion 改引；unverified_offline 是案号等无法离线核验的引用",
@@ -337,14 +350,14 @@ export const TOOLS: readonly ToolDef[] = [
     name: "calc.deadline",
     title: "期间计算（法定期间与工作日）",
     description:
-      "确定性计算期间届满日并给出逐步过程、所用法条与节假日数据来源。start 为起算事实发生日（YYYY-MM-DD；只知道月份时写 YYYY-MM，只返回区间、deadline 为 null）。rule=civil：民法典第二百至二百零四条（开始当日不计入；按月、年以到期月对应日为末日，无对应日取月末；末日为周末或法定节假日顺延，调休上班日不顺延），period.unit 用 day / month / year；rule=workday：法律明确规定按工作日计算的期间（如行政处罚法第八十五条），period.unit 用 workday。不处理中止、中断与在途时间；warnings 非空时须原样告知律师。",
+      "确定性计算期间届满日并给出逐步过程、所用法条与节假日数据来源。start 为起算事实发生日（YYYY-MM-DD；只知道月份时写 YYYY-MM，只返回区间、deadline 为 null）。rule=civil：民法典第二百至二百零四条（开始当日不计入；按月、年以到期月对应日为末日，无对应日取月末；末日为周末或法定节假日顺延，调休上班日不顺延），period.unit 用 day / month / year；rule=workday：法律明确规定按工作日计算的期间（如行政处罚法第八十五条），period.unit 用 workday。不处理中止、中断与在途时间；warnings 非空时须原样告知律师。 诉讼程序期间（第 61 批）写 type、不写 period 与 rule：期间长度、起算事实与依据条号由程序期间目录给出——appeal_judgment 判决上诉期 / appeal_ruling 裁定上诉期 / defense_first_instance 一审答辩期 / defense_appeal 二审答辩期（以上境内没有住所的加 foreign_domicile: true 按三十日）/ labor_arbitration_defense 劳动仲裁答辩期 / labor_award_suit 不服劳动仲裁裁决起诉 / labor_award_setaside_employer 用人单位申请撤销终局裁决 / arbitration_award_setaside 申请撤销仲裁裁决（按收到日适用新旧仲裁法）/ pre_action_preservation_suit 诉前保全后起诉 / enforcement_application 申请执行期间 / retrial_application 申请再审 / preservation_expiry 保全期限与续行截止（须写 asset）/ preservation_renewal 按法院告知的届满日算续行截止 / civil_limitation 诉讼时效 / labor_arbitration_limitation 劳动仲裁时效；start 写目录说明的起算事实日期（返回 procedural.start_means）。",
     sideEffect: "read",
     resource: "pure",
-    version: "1",
+    version: "2",
     inputSchema: {
       type: "object",
       additionalProperties: false,
-      required: ["start", "period", "rule"],
+      required: ["start"],
       properties: {
         start: { type: "string", pattern: "^\\d{4}-\\d{2}(-\\d{2})?$" },
         period: {
@@ -357,6 +370,9 @@ export const TOOLS: readonly ToolDef[] = [
           },
         },
         rule: { type: "string", enum: ["civil", "workday"] },
+        type: { type: "string", enum: [...PROCEDURAL_PERIOD_TYPES] },
+        foreign_domicile: { type: "boolean" },
+        asset: { type: "string", enum: ["deposit", "movable", "immovable_or_rights"] },
       },
     },
     invoke: (p) => calcDeadline(p),
@@ -406,6 +422,48 @@ export const TOOLS: readonly ToolDef[] = [
       },
     },
     invoke: (p) => (p?.kind === "annual_leave" ? calcAnnualLeave(p) : p?.kind === "overtime" ? calcOvertime(p) : calcLabor(p)),
+  },
+  {
+    name: "evidence.rules_check",
+    title: "证据形式规则核对",
+    description:
+      "按每份证据的属性给出民事证据规定（2019 修正）的形式规则与法定后果并附条号：复制件无原件、视听资料无原始载体、电子数据只有打印件或截图、境外或港澳台形成、外文、证人不出庭或有利害关系、当事人陈述、对方控制的书证（书证提出命令）。" +
+      "rows 逐份写 name 与 kind（书证 / 物证 / 视听资料 / 电子数据 / 证人证言 / 当事人陈述 / 鉴定意见 / 勘验笔录），已知的再写 original（原件 / 复制件可核对 / 复制件无原件）、carrier（原始载体 / 打印件或截图 / 公证保全 / 第三方平台）、formed（境内 / 境外 / 港澳台）、official_document、identity_relation、foreign_language、witness_interested、witness_will_appear、held_by（我方 / 对方 / 第三方）；不知道的不写。" +
+      "每条提示分举证方该补什么（for_offering）与质证方可抓什么（for_challenging）。起草证据目录、争点—证据矩阵、质证意见时用；只给规则提示，不判断证明力高低与真伪。",
+    sideEffect: "read",
+    resource: "pure",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["rows"],
+      properties: {
+        rows: {
+          type: "array",
+          minItems: 1,
+          maxItems: 80,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["name", "kind"],
+            properties: {
+              name: { type: "string" },
+              kind: { type: "string", enum: [...EVIDENCE_KINDS] },
+              original: { type: "string", enum: ["原件", "复制件可核对", "复制件无原件"] },
+              carrier: { type: "string", enum: ["原始载体", "打印件或截图", "公证保全", "第三方平台"] },
+              formed: { type: "string", enum: ["境内", "境外", "港澳台"] },
+              official_document: { type: "boolean" },
+              identity_relation: { type: "boolean" },
+              foreign_language: { type: "boolean" },
+              witness_interested: { type: "boolean" },
+              witness_will_appear: { type: "boolean" },
+              held_by: { type: "string", enum: ["我方", "对方", "第三方"] },
+            },
+          },
+        },
+      },
+    },
+    invoke: (p) => evidenceRulesCheck(p),
   },
   {
     name: "calc.court_fee",
@@ -862,11 +920,11 @@ export const TOOLS: readonly ToolDef[] = [
     name: "outline.submit",
     title: "提交论点与依据（起草前确认）",
     description:
-      "文书类任务（起诉状、答辩状、代理词、上诉状、法律研究备忘录等）在起草之前调用：逐条列出拟写的论点，每条附依据（法名 + 条号 + note 写这条怎么支持该论点）与所用事实（优先引用 facts.list 里的 fact_id）；counter 写对方最可能提出的反驳或抗辩（律师据此判断论点撑不撑得住），不写我方的处理口径、待核事项或给律师的说明。" +
+      "文书类任务（起诉状、答辩状、代理词、上诉状、法律研究备忘录等）在起草之前调用：逐条列出拟写的论点，每条附依据（法名 + 条号 + note 写这条怎么支持该论点）与所用事实（优先引用 facts.list 里的 fact_id）；counter 写对方最可能提出的反驳或抗辩（律师据此判断论点撑不撑得住），不写我方的处理口径、待核事项或给律师的说明。每条依据可写 mode（direct 直接适用 / referral 依转介条款参照适用 / extensive 扩张解释 / analogy 类推适用，不写视为直接适用）、elements（这一条的构成要件逐项列出：element 写要件，status 写 fact 有事实（fact_ids 挂 facts.list 的 fact_id）/ to_prove 待证 / undisputed 双方无争议 / opponent_burden 对方举证）、exceptions（条文的但书、例外或“另有规定的除外”怎么处理）；主要依据都应列要件对照。" +
       "内核离线核验每条依据并附上法规库里的条文原文，交律师在任务页逐条确认（留 / 删 / 改写、去掉不用的依据）。确认之前本任务不能生成文书；确认后用 outline.get 读取确认版，只按确认版起草。再次提交会取代前一份待确认的提纲。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "1",
+    version: "2",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -886,7 +944,33 @@ export const TOOLS: readonly ToolDef[] = [
               basis: {
                 type: "array",
                 maxItems: 8,
-                items: { type: "object", additionalProperties: false, required: ["law"], properties: { law: { type: "string" }, article: { type: "integer", minimum: 1 }, note: { type: "string" } } },
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  required: ["law"],
+                  properties: {
+                    law: { type: "string" },
+                    article: { type: "integer", minimum: 1 },
+                    note: { type: "string" },
+                    // 第 61 批（D-263）：适用方式、要件—事实对照、但书与例外
+                    mode: { type: "string", enum: ["direct", "referral", "extensive", "analogy"] },
+                    elements: {
+                      type: "array",
+                      maxItems: 10,
+                      items: {
+                        type: "object",
+                        additionalProperties: false,
+                        required: ["element", "status"],
+                        properties: {
+                          element: { type: "string" },
+                          status: { type: "string", enum: ["fact", "to_prove", "undisputed", "opponent_burden"] },
+                          fact_ids: { type: "array", maxItems: 6, items: { type: "string" } },
+                        },
+                      },
+                    },
+                    exceptions: { type: "string" },
+                  },
+                },
               },
               facts: {
                 type: "array",
@@ -946,10 +1030,10 @@ export const TOOLS: readonly ToolDef[] = [
     name: "facts.submit",
     title: "提交事实",
     description:
-      "把从材料中整理出的事实逐条提交到事实时间线（kind：claimed 材料声称 / inferred 推论 / to_confirm 待确认；不能标为已确认——由律师确认）。quote 逐字摘自 document_version_id 对应材料，occurred_on 为 YYYY-MM-DD（可只到年或月），amount_yuan 为金额（元）。",
+      "把从材料中整理出的事实逐条提交到事实时间线（kind：claimed 材料声称 / inferred 推论 / to_confirm 待确认；不能标为已确认——由律师确认）。quote 逐字摘自 document_version_id 对应材料，occurred_on 为 YYYY-MM-DD（可只到年或月），amount_yuan 为金额（元）。提交后发现某条的日期、陈述、金额或引文写错的（律师尚未确认），带它的 fact_id 再提交一次即更正（整条按新值覆盖）。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "1",
+    version: "2",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -963,6 +1047,8 @@ export const TOOLS: readonly ToolDef[] = [
             required: ["statement"],
             properties: {
               statement: { type: "string" },
+              // 第 61 批：更正本任务已提交、律师尚未确认的那条事实
+              fact_id: { type: "string" },
               kind: { type: "string", enum: ["claimed", "inferred", "to_confirm"] },
               occurred_on: { type: "string" },
               amount_yuan: { type: "number" },
@@ -1036,13 +1122,15 @@ export const TOOLS: readonly ToolDef[] = [
       "能定位的先写入（status=partial），定位不到的逐条退回原因，改正后用新编号只重交这几处；改好后返回新版本的 quality_check，检查通过后不要为润色再整份重出。",
     sideEffect: "write_draft",
     resource: "matter_work",
-    version: "1",
+    version: "2",
     inputSchema: {
       type: "object",
       additionalProperties: false,
       required: ["artifact_version_id"],
       properties: {
         artifact_version_id: { type: "string" },
+        // 第 61 批：事实更正后只让系统附的“事实对照”按更正后的事实重新生成
+        refresh_facts: { type: "boolean" },
         edits: {
           type: "array",
           items: {
@@ -1133,7 +1221,9 @@ function deliverableQualityFor(ctx: InvokeCtx, p: { title?: unknown; sections?: 
     const sections = Array.isArray(p.sections) ? (p.sections as any[]) : [];
     // V32：律师作为材料导入了官方文本的规范，库外也照常写条号（交付前检查不报“库外不写条号”）
     const materialTitles = ctx.claims.mid ? ctx.db.all<{ filename: string }>(`SELECT filename FROM document_versions WHERE matter_id = ? AND quarantined_at IS NULL`, [ctx.claims.mid]).map((r) => r.filename) : [];
-    return checkDeliverable(String(p.title ?? ""), sections, { lawdb: ctx.lawdb, asOf, docx: ctx.blobs.read(storageUri), materialTitles });
+    // 第 61 批（D-258）：案号对本事项材料溯源
+    const caseIndex = ctx.claims?.mid ? materialCaseIndex(ctx.db, ctx.claims.mid, ctx.claims.rid ?? null) : undefined;
+    return checkDeliverable(String(p.title ?? ""), sections, { lawdb: ctx.lawdb, asOf, docx: ctx.blobs.read(storageUri), materialTitles, ...(caseIndex ? { caseIndex } : {}) });
   } catch {
     return null;
   }

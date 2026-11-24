@@ -6,13 +6,13 @@ when_to_use: 准备向人民法院起诉，事项里有案卷材料或事实时�
 arguments: [court, forum_basis, preserve]
 kwl:
   id: pleading-draft
-  version: 1.8.0
+  version: 1.9.0
   lines: [诉讼仲裁]
   chain: casefile
   tier: beta
   requires_outline: true
   tools_required: [facts.list, materials.list, docx.render_report]
-  tools_optional: [materials.read_excerpt, facts.submit, law.search, law.get_article, citations.verify, calc.deadline, calc.ledger, calc.interest, calc.court_fee, outline.submit, outline.get, xlsx.render_table]
+  tools_optional: [materials.read_excerpt, facts.submit, law.search, law.get_article, citations.verify, calc.deadline, calc.ledger, calc.interest, calc.court_fee, outline.submit, outline.get, xlsx.render_table, evidence.rules_check]
   outputs: [民事起诉状（草稿）.docx, 证据目录.xlsx（附件）, 提交前核对清单.xlsx（附件）]
   source_lineage: [demo:pleading@v1.3, demo:scene-civil-pleading@v1.0, spec:历史Demo评估与融合方案#3.2-7]
 ---
@@ -41,6 +41,7 @@ kwl:
 6. 起诉状要素与写法见 `references/civil-complaint-fields.md`。
 
 ## 3. 步骤
+0. （第 61 批）**证据形式规则**：把各份证据的种类与已知属性（原件或复制件、电子数据的载体、境外或港澳台形成、外文、证人是否出庭及有无利害关系、书证由谁控制）一次交给 `evidence.rules_check`，返回的规则与条号（民事证据规定）用于《提交前核对清单》：证据目录里的复制件、截图、境外或外文证据、拟申请出庭的证人、在对方手里的书证，逐项写要补的手续与期限（举证期限届满前申请证人出庭、申请书证提出命令）；证据目录正文只写证据本身。
 1. **确定请求结构**：按“本金 → 利息或违约金（互斥项只取律师选定的一项）→ 律师费等实现债权费用（仅限合同明确约定的）→ 担保责任（如有保证人）→ 诉讼费用承担”排列；每项金额后注明计算依据（“以计算明细第 N 项为准”或“暂计至某日，此后按……计至实际清偿之日止”）。
 2. **定位请求权基础**：用 `law.search`、`law.get_article`（以事件时点取行为时法）定位，`citations.verify` 批量核验后再写进“事实与理由”；核验不通过的不写条号，只写“依照合同约定及法律规定”，并在核对清单中列为待核实。
 3. **写事实与理由**：按时间顺序写事实（口径见第 2 节第 1 项）：合同订立 → 我方履行 → 对方违约 → 催告与协商 → 损失或欠款；每段末尾注明对应证据编号（如“（见证据 3、证据 4）”）。理由部分简明写请求权基础与各项请求的依据；**对方已经书面提出的抗辩或扣减（回函、对账回复、律师函、聊天记录里的扣款、质保金未到期、工期或质量违约、已付款、抵销等）按参考文件第三节逐项回应**，不写“原告不认可”一句带过（第 35 批：上一轮起诉状没有正面驳回对方回函“质保金待保修期满再还”，评审列为跨案共性缺陷）；质量异议要分开回应外观、数量、规格（约定的检验期限）与内在质量（质量保证期或合理期间、出卖人知道或应当知道的除外），不能只用检验期限一条驳回。**写进起诉状的每一个事实先想对方能不能拿来用**：对方的付款承诺、分期或延期说法（“6 月底前结清”）只写成对欠款的确认，不写成我方同意延期，否则对方可主张履行期已变更、此前的违约金不成立（第 35 批真实走查 R4 律师评分）；不写程序策略、不写对我方不利的分析。

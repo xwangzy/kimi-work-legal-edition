@@ -68,7 +68,8 @@ function argsFor(tool: string, skill: string): Record<string, unknown> {
     case "materials.read_excerpt":
       return { parse_version_id: ids.parse };
     case "facts.submit":
-      return { facts: [{ statement: "买方于 2026 年 3 月 1 日签收全部货物", kind: "claimed", occurred_on: "2026-03-01" }] };
+      // 第 61 批：要求事实工具的方法多了一个（履约体检），同一事项里同一句事实会被去重——按方法区分陈述
+      return { facts: [{ statement: skill === "casefile-organize" ? "买方于 2026 年 3 月 1 日签收全部货物" : `买方于 2026 年 3 月 1 日签收全部货物（${skill}）`, kind: "claimed", occurred_on: "2026-03-01" }] };
     case "docx.render_report":
       return { title: `${skill}（草稿）`, sections: [{ heading: "一、说明", paragraphs: ["资料范围：示例材料一份。"] }] }; // 第 41 批：文件里不写“草稿 · 待律师复核”（工作准则第 10 条）
     case "xlsx.render_table":
@@ -97,6 +98,10 @@ function argsFor(tool: string, skill: string): Record<string, unknown> {
       return { table_id: ids.table, cells: [{ document_version_id: ids.doc, column: "contract_name", value: "采购合同", quote: "采购合同" }, { document_version_id: ids.doc, column: "signed_on", status: "not_found" }] };
     case "rules.propose":
       return { title: "本所采购合同标准（草稿）", rules: [{ topic: "付款", standard: "验收合格后六十日内付款", fallback: "不超过九十日", red_line: "不接受预付全款" }] };
+    case "calc.deadline": // 第 61 批：研读与履约体检把期间工具列为必需；程序期间写 type（期间与依据由目录给出）
+      return skill === "performance-check" ? { start: "2026-09-28", period: { unit: "day", n: 10 }, rule: "civil" } : { start: "2026-09-28", type: "appeal_judgment" };
+    case "calc.court_fee": // 第 61 批：研读复算受理费
+      return { kind: "case_property", amount_yuan: 313762, reductions: ["simple_procedure"] };
     case "outline.submit":
       return { doc_kind: skill, arguments: [{ claim: "被告应支付货款", basis: [{ law: "中华人民共和国民法典", article: 509, note: "全面履行" }] }] };
     default:
@@ -117,13 +122,15 @@ test("劳动仲裁申请书与答辩书（评审 S3）：参数先问文书类�
   // 第 55 批：追加劳动关系要素四项（入职日期、离职日期、离职方式、月工资）；文书类型仍排第一
   assert.deepEqual(frontArgs("labor-arbitration-draft"), ["doc_kind", "side", "received_on", "claims", "hired_on", "left_on", "leave_type", "monthly_wage"]);
   const body = readFileSync(repo("content/skills/labor-arbitration-draft/SKILL.md"), "utf8");
-  assert.match(body, /rule = workday/, "答辩期十日按工作日（办案规则第八十条）交期间工具");
+  // 第 61 批（D-260）：答辩期改用程序期间目录 type = labor_arbitration_defense，工具同时给日历日（保守）与办案规则第八十条工作日口径
+  assert.match(body, /type = `labor_arbitration_defense`/, "答辩期交期间工具的程序期间目录");
   assert.match(body, /不收费/, "劳动争议仲裁不收费，核对清单不写仲裁费");
-  // 方法写的答辩期调用形状：start = 收到副本日，period = 10 个工作日，rule = workday
+  // 方法写的答辩期调用形状：start = 收到副本日，type = labor_arbitration_defense
   const tool = TOOLS.find((t) => t.name === "calc.deadline")!;
-  const r = (await tool.invoke({ start: "2026-09-28", period: { unit: "workday", n: 10 }, rule: "workday" }, {} as any)) as { deadline?: string | null };
+  const r = (await tool.invoke({ start: "2026-09-28", type: "labor_arbitration_defense" }, {} as any)) as { deadline?: string | null; alt_deadline?: { deadline: string | null } };
   assert.match(String(r.deadline), /^\d{4}-\d{2}-\d{2}$/, JSON.stringify(r).slice(0, 300));
-  assert.ok(String(r.deadline) >= "2026-10-12", `十个工作日不会早于按自然日算的结果：${r.deadline}`);
+  assert.ok(String(r.alt_deadline?.deadline) >= "2026-10-12", `十个工作日不会早于按自然日算的结果：${r.alt_deadline?.deadline}`);
+  assert.ok(String(r.alt_deadline?.deadline) >= String(r.deadline), "日历日口径是较早的保守控制日");
 });
 
 test("方法包里每个方法都有契约用例的参数准备（新增方法或工具时这里先失败）", () => {

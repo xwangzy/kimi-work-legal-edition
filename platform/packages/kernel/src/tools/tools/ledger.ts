@@ -367,7 +367,8 @@ export function calcLedger(p: LedgerParams): LedgerResult {
     // 模型漏写 accrual 时，违约金不至于回到有争议的缺省口径；推断写进 warnings 随表交付
     const inferredPenalty = d.accrual === undefined && p.accrual === undefined && /违约金|滞纳金/.test(d.label);
     const accrual: LedgerAccrual | null = kind === "penalty" ? "penalty" : kind === "principal" && rate.kind !== "none" ? (d.accrual ?? p.accrual ?? (inferredPenalty ? "penalty" : "interest")) : null;
-    if (inferredPenalty && accrual === "penalty") warnings.push(`“${d.label}”没写 accrual，按名称计为违约金（不按利息先于本金冲抵）；要按利息计的写 accrual: "interest"`);
+    // 第 61 批（真实验收 m08：这句随表交付，原先带着参数名 accrual 写进了律师看的计算表）：表里只写律师的话；按利息计的写法见工具说明
+    if (inferredPenalty && accrual === "penalty") warnings.push(`“${d.label}”按款项名称计为违约金（不作为利息先于本金冲抵）`);
     if (d.accrue_to !== undefined && !accrual) throw new DomainError("validation", `${where}（${d.label}）：accrue_to 只用于计利息或违约金的款项`, 422);
     if (d.accrue_to !== undefined && start && d.accrue_to < start) throw new DomainError("validation", `${where}（${d.label}）的计至日 ${d.accrue_to} 早于起算日 ${start}`, 422);
     if (d.cap_yuan !== undefined && !accrual) throw new DomainError("validation", `${where}（${d.label}）：cap_yuan 只用于计利息或违约金的款项`, 422);

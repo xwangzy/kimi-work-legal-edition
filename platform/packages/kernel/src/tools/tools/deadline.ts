@@ -25,9 +25,189 @@ export type DeadlineRule = "civil" | "workday";
 
 export interface CalcDeadlineParams {
   start: string; // YYYY-MM-DD 或 YYYY-MM
-  period: { unit: DeadlineUnit; n: number };
-  rule: DeadlineRule;
+  /** 写了 type（程序期间目录）时由目录给出，不必写；写了须与目录一致。 */
+  period?: { unit: DeadlineUnit; n: number };
+  rule?: DeadlineRule;
+  /** 程序期间类型（第 61 批，D-260）：期间长度、起算事实与依据条号由目录给出，不由调用方填写。 */
+  type?: ProceduralPeriodType;
+  /** 目录变体：境内没有住所（上诉、答辩 30 日）；保全财产类型（存款 1 年、动产 2 年、不动产与其他财产权 3 年）。 */
+  foreign_domicile?: boolean;
+  asset?: "deposit" | "movable" | "immovable_or_rights";
 }
+
+/** 程序期间目录的一项（第 61 批，D-260；条文 2026-11-24 逐条对照法规库原文）。 */
+export interface ProceduralPeriodSpec {
+  label: string;
+  /** start 应当填写的起算事实。 */
+  start_means: string;
+  period: { unit: Exclude<DeadlineUnit, "workday">; n: number };
+  basis: DeadlineRuleRef[];
+  /** 给律师的提醒（例如简易程序答辩期由法院确定、逾期后果）。 */
+  notes?: string[];
+  /** 另一种计算口径（劳动仲裁答辩期：法律写“十日”，办案规则规定“10日”指工作日）：并列算出，deadline 取较早的保守口径。 */
+  alt?: { label: string; period: { unit: "workday"; n: number }; basis: DeadlineRuleRef[] };
+}
+
+export type ProceduralPeriodType =
+  | "appeal_judgment"
+  | "appeal_ruling"
+  | "defense_first_instance"
+  | "defense_appeal"
+  | "labor_arbitration_defense"
+  | "labor_award_suit"
+  | "labor_award_setaside_employer"
+  | "arbitration_award_setaside"
+  | "pre_action_preservation_suit"
+  | "enforcement_application"
+  | "retrial_application"
+  | "preservation_expiry"
+  | "preservation_renewal"
+  | "civil_limitation"
+  | "labor_arbitration_limitation";
+
+const MS = "中华人民共和国民事诉讼法";
+const MSJ = "最高人民法院关于适用《中华人民共和国民事诉讼法》的解释";
+const BQ = "最高人民法院关于人民法院办理财产保全案件若干问题的规定";
+const LD = "中华人民共和国劳动争议调解仲裁法";
+const FOREIGN_APPEAL: DeadlineRuleRef = { law: MS, article: "第二百八十六条", point: "在中华人民共和国领域内没有住所的当事人，不服第一审判决、裁定的，自判决书、裁定书送达之日起三十日内上诉；被上诉人收到上诉状副本后三十日内答辩" };
+
+/** 程序期间目录。期间长度、起算事实与依据都由这里给，模型只给起算日（与变体）。纯数据。 */
+export function proceduralPeriod(type: ProceduralPeriodType, v: { start?: string | undefined; foreign_domicile?: boolean | undefined; asset?: CalcDeadlineParams["asset"] | undefined } = {}): ProceduralPeriodSpec | null {
+  const foreign = v.foreign_domicile === true;
+  switch (type) {
+    case "appeal_judgment":
+      return foreign
+        ? { label: "上诉期（判决，当事人在境内没有住所）", start_means: "判决书送达之日", period: { unit: "day", n: 30 }, basis: [FOREIGN_APPEAL] }
+        : { label: "上诉期（判决）", start_means: "判决书送达之日（以送达回证或电子送达记录为准；各方收到日不同的分别计算）", period: { unit: "day", n: 15 }, basis: [{ law: MS, article: "第一百七十一条第一款", point: "不服地方人民法院第一审判决的，在判决书送达之日起十五日内上诉" }] };
+    case "appeal_ruling":
+      return foreign
+        ? { label: "上诉期（裁定，当事人在境内没有住所）", start_means: "裁定书送达之日", period: { unit: "day", n: 30 }, basis: [FOREIGN_APPEAL] }
+        : { label: "上诉期（裁定）", start_means: "裁定书送达之日", period: { unit: "day", n: 10 }, basis: [{ law: MS, article: "第一百七十一条第二款", point: "不服地方人民法院第一审裁定的，在裁定书送达之日起十日内上诉" }] };
+    case "defense_first_instance":
+      return foreign
+        ? { label: "答辩期（一审，被告在境内没有住所）", start_means: "收到起诉状副本之日", period: { unit: "day", n: 30 }, basis: [{ law: MS, article: "第二百八十五条", point: "被告在中华人民共和国领域内没有住所的，收到起诉状副本后三十日内提出答辩状" }] }
+        : {
+            label: "答辩期（一审普通程序）",
+            start_means: "收到起诉状副本之日",
+            period: { unit: "day", n: 15 },
+            basis: [{ law: MS, article: "第一百二十八条第一款", point: "被告应当在收到起诉状副本之日起十五日内提出答辩状" }],
+            notes: ["简易程序、小额诉讼的答辩期间可由法院确定或当事人放弃（民诉法解释第二百六十六条、第二百七十五条）：以应诉通知书为准"],
+          };
+    case "defense_appeal":
+      return foreign
+        ? { label: "二审答辩期（被上诉人在境内没有住所）", start_means: "收到上诉状副本之日", period: { unit: "day", n: 30 }, basis: [FOREIGN_APPEAL] }
+        : { label: "二审答辩期", start_means: "收到上诉状副本之日", period: { unit: "day", n: 15 }, basis: [{ law: MS, article: "第一百七十四条第一款", point: "对方当事人在收到上诉状副本之日起十五日内提出答辩状" }] };
+    case "labor_arbitration_defense":
+      return {
+        label: "劳动仲裁答辩期",
+        start_means: "收到仲裁申请书副本之日",
+        period: { unit: "day", n: 10 },
+        basis: [{ law: LD, article: "第三十条第二款", point: "被申请人收到仲裁申请书副本后，应当在十日内向劳动争议仲裁委员会提交答辩书" }],
+        alt: {
+          label: "按办案规则的工作日口径",
+          period: { unit: "workday", n: 10 },
+          basis: [
+            { law: "劳动人事争议仲裁办案规则", article: "第三十三条第二款", point: "被申请人收到仲裁申请书副本后，应当在10日内向仲裁委员会提交答辩书" },
+            { law: "劳动人事争议仲裁办案规则", article: "第八十条", point: "本规则规定的“3日”“5日”“10日”指工作日，“15日”“45日”指自然日" },
+          ],
+        },
+        notes: ["法律写“十日”，办案规则规定“10日”指工作日：两种口径并列，deadline 取较早的日历日口径作保守控制日；管辖异议、反申请须在答辩期满前提出；未提交答辩书不影响仲裁程序进行"],
+      };
+    case "labor_award_suit":
+      return {
+        label: "不服劳动仲裁裁决起诉期",
+        start_means: "收到仲裁裁决书之日",
+        period: { unit: "day", n: 15 },
+        basis: [
+          { law: LD, article: "第四十八条", point: "劳动者对终局裁决不服的，自收到仲裁裁决书之日起十五日内起诉" },
+          { law: LD, article: "第五十条", point: "对终局裁决以外的裁决不服的，自收到裁决书之日起十五日内起诉；期满不起诉的，裁决书发生法律效力" },
+        ],
+        notes: ["用人单位对第四十七条终局裁决不能起诉，只能在三十日内申请撤销（type 用 labor_award_setaside_employer）"],
+      };
+    case "labor_award_setaside_employer":
+      return { label: "用人单位申请撤销终局裁决期限", start_means: "收到仲裁裁决书之日", period: { unit: "day", n: 30 }, basis: [{ law: LD, article: "第四十九条第一款", point: "用人单位有证据证明第四十七条终局裁决有法定情形的，自收到裁决书之日起三十日内向仲裁委员会所在地的中级人民法院申请撤销" }] };
+    case "arbitration_award_setaside": {
+      const newLaw = !v.start || v.start >= "2026-03-01";
+      return newLaw
+        ? { label: "申请撤销仲裁裁决期限", start_means: "收到裁决书之日", period: { unit: "month", n: 3 }, basis: [{ law: "中华人民共和国仲裁法", article: "第七十二条（2025 年修订，2026-03-01 施行）", point: "当事人申请撤销裁决的，应当自收到裁决书之日起三个月内提出" }] }
+        : {
+            label: "申请撤销仲裁裁决期限（修订前仲裁法）",
+            start_means: "收到裁决书之日",
+            period: { unit: "month", n: 6 },
+            basis: [{ law: "中华人民共和国仲裁法", article: "第五十九条（2017 年修正文本；法规库只收现行文本，原文须律师核对）", point: "当事人申请撤销裁决的，应当自收到裁决书之日起六个月内提出" }],
+            notes: ["收到裁决书在 2026-03-01 新法施行之前：按修订前的六个月计算，跨新法施行日的是否改按三个月须律师核对新法的时间效力规定；稳妥起见按三个月（较早者）准备"],
+          };
+    }
+    case "pre_action_preservation_suit":
+      return {
+        label: "诉前（仲裁前）保全后起诉或申请仲裁期限",
+        start_means: "人民法院采取保全措施之日",
+        period: { unit: "day", n: 30 },
+        basis: [
+          { law: MS, article: "第一百零四条第三款", point: "申请人在人民法院采取保全措施后三十日内不依法提起诉讼或者申请仲裁的，人民法院应当解除保全" },
+          { law: BQ, article: "第十七条", point: "三十日内起诉或申请仲裁的，诉前保全自动转为诉讼或仲裁中的保全，期限连续计算" },
+        ],
+      };
+    case "enforcement_application":
+      return {
+        label: "申请执行期间",
+        start_means: "法律文书规定履行期间的最后一日（分期履行的为最后一期履行期限届满之日；未规定履行期间的为法律文书生效之日）",
+        period: { unit: "year", n: 2 },
+        basis: [{ law: MS, article: "第二百五十条", point: "申请执行的期间为二年，中止、中断适用诉讼时效的规定；自法律文书规定履行期间的最后一日起计算" }],
+        notes: ["超过期间申请的，法院仍应受理，由被执行人提出异议后审查：不要据此告诉客户“过期就不能申请”"],
+      };
+    case "retrial_application":
+      return {
+        label: "申请再审期限",
+        start_means: "判决、裁定发生法律效力之日（以第二百一十一条第一、三、十二、十三项为由的，为知道或者应当知道之日）",
+        period: { unit: "month", n: 6 },
+        basis: [{ law: MS, article: "第二百一十六条", point: "当事人申请再审，应当在判决、裁定发生法律效力后六个月内提出" }],
+      };
+    case "preservation_expiry": {
+      const years = v.asset === "deposit" ? 1 : v.asset === "movable" ? 2 : v.asset === "immovable_or_rights" ? 3 : null;
+      if (!years) return null;
+      return {
+        label: `保全期限（${v.asset === "deposit" ? "冻结银行存款" : v.asset === "movable" ? "查封、扣押动产" : "查封不动产、冻结其他财产权"}，最长 ${years} 年）`,
+        start_means: "保全措施实施之日（以法院裁定或协助执行通知载明的起始日为准）",
+        period: { unit: "year", n: years },
+        basis: [
+          { law: MSJ, article: "第四百八十五条第一款", point: "冻结银行存款不得超过一年，查封、扣押动产不得超过两年，查封不动产、冻结其他财产权不得超过三年" },
+          { law: BQ, article: "第十八条第一款", point: "申请续行财产保全的，应当在保全期限届满七日前向人民法院提出；逾期申请或者不申请的，自行承担不能续行保全的法律后果" },
+        ],
+        notes: ["这里按最长期限推算；法院裁定或通知书载明了届满日的，以载明的为准，并用 type=preservation_renewal 按载明的届满日重算续行截止日"],
+      };
+    }
+    case "preservation_renewal":
+      return {
+        label: "申请续行保全截止日",
+        start_means: "保全期限届满日（法院书面告知的届满日）",
+        period: { unit: "day", n: 7 },
+        basis: [{ law: BQ, article: "第十八条", point: "申请续行财产保全的，应当在保全期限届满七日前提出；法院进行保全时应书面告知届满日与续行事项" }],
+      };
+    case "civil_limitation":
+      return {
+        label: "诉讼时效（一般三年）",
+        start_means: "权利人知道或者应当知道权利受到损害以及义务人之日（分期履行的，为最后一期履行期限届满之日）",
+        period: { unit: "year", n: 3 },
+        basis: [{ law: "中华人民共和国民法典", article: "第一百八十八条", point: "诉讼时效期间为三年，自知道或者应当知道权利受到损害以及义务人之日起计算；自权利受到损害之日起超过二十年的不予保护" }],
+        notes: ["中止、中断（催告、对方同意履行、起诉等）由律师给出新的起算事实后重算；起算事实有争议的按各口径分别计算，取最早届满日准备"],
+      };
+    case "labor_arbitration_limitation":
+      return {
+        label: "劳动仲裁时效（一年）",
+        start_means: "知道或者应当知道权利被侵害之日（劳动报酬争议：劳动关系终止之日）",
+        period: { unit: "year", n: 1 },
+        basis: [{ law: LD, article: "第二十七条", point: "仲裁时效期间为一年；劳动关系存续期间拖欠劳动报酬的不受一年限制，但劳动关系终止的应当自终止之日起一年内提出" }],
+      };
+  }
+  return null;
+}
+
+export const PROCEDURAL_PERIOD_TYPES: readonly ProceduralPeriodType[] = [
+  "appeal_judgment", "appeal_ruling", "defense_first_instance", "defense_appeal", "labor_arbitration_defense", "labor_award_suit", "labor_award_setaside_employer",
+  "arbitration_award_setaside", "pre_action_preservation_suit", "enforcement_application", "retrial_application", "preservation_expiry", "preservation_renewal",
+  "civil_limitation", "labor_arbitration_limitation",
+];
 
 export interface DeadlineRuleRef {
   law: string;
@@ -45,6 +225,12 @@ export interface HolidayYearUse {
 }
 
 export interface CalcDeadlineResult {
+  /** 程序期间目录（第 61 批）：写了 type 时给出期间名称、起算事实的含义与依据条号。 */
+  procedural?: { type: ProceduralPeriodType; label: string; start_means: string; basis: DeadlineRuleRef[]; notes: string[] };
+  /** 保全期限（preservation_expiry）：推算的届满日与续行申请截止日；续行（preservation_renewal）：截止日在 deadline。 */
+  renewal_deadline?: string | null;
+  /** 另一口径的届满日（劳动仲裁答辩期的工作日口径）。 */
+  alt_deadline?: { label: string; deadline: string | null; basis: DeadlineRuleRef[] };
   rule: DeadlineRule;
   start: string;
   start_precision: "day" | "month";
@@ -220,6 +406,77 @@ const NOT_HANDLED =
   "不处理诉讼时效中止、中断，在途时间与扣除期间，按小时计算的期间，当事人约定的特别计算方法（民法典第二百零四条），以及民族自治地方的地方性假日；发生这些事由时，由律师给出新的起算事实后重算。工作日规则只用于法律明确规定按工作日计算的期间。";
 
 export function calcDeadline(params: CalcDeadlineParams): CalcDeadlineResult {
+  const p0 = params ?? ({} as CalcDeadlineParams);
+  if (p0.type !== undefined) return calcProcedural(p0);
+  return calcPlain(p0);
+}
+
+/** 按程序期间目录计算（第 61 批，D-260）：期间长度与依据由目录给出，模型只给起算日与变体。 */
+function calcProcedural(p: CalcDeadlineParams): CalcDeadlineResult {
+  const type = p.type as ProceduralPeriodType;
+  if (!PROCEDURAL_PERIOD_TYPES.includes(type)) bad(`type 须为程序期间目录中的一项：${PROCEDURAL_PERIOD_TYPES.join(" / ")}`);
+  if (type === "preservation_expiry" && !p.asset) bad("type=preservation_expiry 须写 asset：deposit（银行存款）/ movable（动产）/ immovable_or_rights（不动产或其他财产权）");
+  const spec = proceduralPeriod(type, { start: p.start, foreign_domicile: p.foreign_domicile, asset: p.asset });
+  if (!spec) bad("目录里没有这一类期间");
+  if (p.period && (p.period.unit !== spec.period.unit || p.period.n !== spec.period.n)) {
+    bad(`type=${type} 的期间由目录给出（${spec.period.n} ${spec.period.unit}，${spec.basis.map((b) => `《${b.law}》${b.article}`).join("、")}）：不要另写 period；确实适用别的期间的，不写 type，按 period 与 rule 计算并写明依据`);
+  }
+  const notes = [...(spec.notes ?? [])];
+  if (type === "preservation_renewal") {
+    // 续行：届满日往前数七日（“届满七日前”提出），再往前留出准备时间的提醒由律师在期限提醒里设
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(typeof p.start === "string" ? p.start : "");
+    if (!m) bad("type=preservation_renewal 的 start 须为法院告知的保全期限届满日（YYYY-MM-DD）");
+    const latest = addDays(p.start, -7);
+    const steps = [
+      `保全期限届满日：${p.start}（${wd(p.start)}）`,
+      `续行申请须在届满七日前提出：最迟 ${latest}（${wd(latest)}）；稳妥起见在此之前提交，并把提醒设在更早（例如届满前十五日 ${addDays(p.start, -15)}）`,
+    ];
+    if (isRestDay(latest)) notes.push(`最迟日 ${latest} 是休息日：“届满七日前”是向前数的期限，不顺延，应在此前最后一个工作日提交`);
+    return {
+      procedural: { type, label: spec.label, start_means: spec.start_means, basis: spec.basis, notes },
+      renewal_deadline: latest,
+      rule: "civil",
+      start: p.start,
+      start_precision: "day",
+      period: spec.period,
+      deadline: latest,
+      range: null,
+      steps,
+      rules: spec.basis,
+      holiday_source: { ...holidaySource(), years_used: [] },
+      warnings: notes,
+      not_handled: NOT_HANDLED,
+    };
+  }
+  const r = calcPlain({ start: p.start, period: spec.period, rule: "civil" });
+  let renewal: string | null | undefined;
+  const steps = [`期间类型：${spec.label}；起算事实：${spec.start_means}；依据：${spec.basis.map((b) => `《${b.law}》${b.article}`).join("、")}`, ...r.steps];
+  let alt: { label: string; deadline: string | null; basis: DeadlineRuleRef[] } | undefined;
+  if (spec.alt) {
+    const a = calcPlain({ start: p.start, period: spec.alt.period, rule: "workday" });
+    alt = { label: spec.alt.label, deadline: a.deadline, basis: spec.alt.basis };
+    steps.push(`［${spec.alt.label}，${spec.alt.basis.map((b) => `《${b.law}》${b.article}`).join("、")}］`, ...a.steps.map((x) => `［工作日口径］${x}`));
+    if (a.deadline && r.deadline) steps.push(`两种口径：日历日 ${r.deadline}（保守控制日）；工作日 ${a.deadline}`);
+  }
+  if (type === "preservation_expiry") {
+    // 法院“自某日至某日”的写法含首尾两日，按“开始当日不计入”推出的届满日可能晚一日：取早一日的口径，续行截止日再往前七日
+    const expiry = r.deadline ? addDays(r.deadline, -1) : null;
+    renewal = expiry ? addDays(expiry, -7) : null;
+    if (expiry) steps.push(`按法院“自起始日至届满日”含首尾的写法，届满日稳妥取 ${expiry}（${wd(expiry)}）；续行申请最迟 ${renewal}（届满七日前，财产保全规定第十八条）`);
+    notes.push("届满日以法院裁定或通知书载明的为准；载明的与这里推算的不同，用 type=preservation_renewal 按载明的届满日重算续行截止日");
+  }
+  return {
+    ...r,
+    ...(alt ? { alt_deadline: alt } : {}),
+    procedural: { type, label: spec.label, start_means: spec.start_means, basis: spec.basis, notes },
+    ...(renewal !== undefined ? { renewal_deadline: renewal } : {}),
+    steps,
+    rules: [...spec.basis, ...r.rules],
+    warnings: [...r.warnings, ...notes],
+  };
+}
+
+function calcPlain(params: CalcDeadlineParams): CalcDeadlineResult {
   const p = params ?? ({} as CalcDeadlineParams);
   const m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(typeof p.start === "string" ? p.start : "");
   if (!m) bad("start 须为 YYYY-MM-DD 或 YYYY-MM（只到月时给区间）");

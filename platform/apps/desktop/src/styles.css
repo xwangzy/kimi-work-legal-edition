@@ -1252,6 +1252,10 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .outline-claim textarea { flex: 1; min-width: 0; }
 .outline-basis, .outline-facts { list-style: none; margin: var(--sp-1) 0 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-body); }
 .outline-basis .cite-state { margin-left: var(--sp-2); }
+/* 第 61 批（D-263）：适用方式与要件—事实对照 */
+.outline-basis .outline-mode { margin-left: var(--sp-2); }
+.outline-elements { margin: var(--sp-1) 0 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--fs-caption); }
+.outline-elements .outline-element { margin-right: var(--sp-2); }
 /* 论断—依据与引用角标（v9.4 第 20 批 C-03）：颜色取三层里最弱的一层；律师确认沿用“律师已确认”的颜色，系统核过的不显示成认可色 */
 .cite-mark { font-size: var(--fs-xs); font-weight: 600; padding: 0 2px; cursor: help; }
 .cite-tone-red { color: var(--cite-intercepted); }

@@ -14,6 +14,9 @@ import type { Lawdb } from "@zr-legal/lawdb";
 import { isCourtFiling, isPartyDocument, isSignMarker } from "@zr-legal/docx-engine";
 import { cnToInt } from "../tools/tools/cn-numerals.ts";
 import { checkArtifactCitations } from "./artifact-citations.ts";
+import { termIssues } from "./term-check.ts";
+import { REPEAT_FIX, repeatIssues } from "./repeat-check.ts";
+import { CASE_NOT_IN_MATERIALS_FIX, CASE_PLACEHOLDER_FIX, CASE_QUOTE_FIX, COURT_QUOTE_FIX, QUOTE_COLUMN_FIX, caseProvenance, caseQuoteIssues, courtQuoteIssues, placeholderCaseRefs, quoteColumnIssues, type CaseIndex } from "./case-provenance.ts";
 
 export interface DeliverableSection {
   heading?: string;
@@ -23,7 +26,7 @@ export interface DeliverableSection {
   table?: { columns?: unknown[]; rows?: unknown[][] } | null;
 }
 
-export type DeliverableIssueKind = "internal_term" | "foreign_word" | "markdown" | "numbering" | "cross_ref" | "amount_words" | "citation" | "table_sum" | "note_to_lawyer" | "equation";
+export type DeliverableIssueKind = "internal_term" | "foreign_word" | "markdown" | "numbering" | "cross_ref" | "amount_words" | "citation" | "table_sum" | "note_to_lawyer" | "equation" | "term" | "prediction" | "repeat";
 
 export interface DeliverableIssue {
   kind: DeliverableIssueKind;
@@ -95,7 +98,7 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   // 来源是方法自己的输出规格，已改；这里兜底。只认界面专名与“界面名 + 界面动作”的组合：合同条文里单独的“工作台”（“乙方提供运维工作台”）、
   // 文件名《事实时间线》不报
   { re: UI_TERM_RE, fix: "改用律师的说法（问题序号、事实清单）：文件里不写产品界面上的名称；修订稿怎么生成、下一步在哪里处理，写在给律师的答复里，不写进文件" },
-  { re: /(?:称呼|全名|姓名|自然人|当事人|住所|地址|信用代码|证件号?|身份证号?|账号|电话|手机号?|联系方式)(?:与全名|和全名)?代号|代号(?:说明|一致|不一致|对应|形态|原样)|原样保留代号|按任务说明|(?:律师|本次|原)任务说明|任务说明(?:中|里|所载|[；;，,。]|$)/g, fix: "删去这句关于代号、任务说明的话本身（导出时系统还原真名，不需要解释）：正文直接写当事人的名称或称呼；确有依据的写材料名称；律师没有说过的，不得写成“律师指示”“律师确认”“律师的说明载明”。两个称呼是否同一人、材料里没有写明的，不下结论，在最终答复里请律师核实" },
+  { re: /(?:称呼|全名|姓名|自然人|当事人|住所|地址|信用代码|证件号?|身份证号?|账号|电话|手机号?|联系方式)(?:与全名|和全名)?代号|代号(?:说明|一致|不一致|对应|形态|原样)|原样保留代号|按任务说明|(?:律师|本次|原)任务说明|任务说明(?:中|里|所载|所述|所列|要求|[；;，,。]|$)|本机(?:离线)?法规库|开工前已知|任务信息|任务金额|任务口径|解析文本|已按(?:独立)?复核(?:意见)?(?:调整|修改|改正)/g, fix: "删去这句关于代号、任务说明的话本身（导出时系统还原真名，不需要解释）：正文直接写当事人的名称或称呼；确有依据的写材料名称；律师没有说过的，不得写成“律师指示”“律师确认”“律师的说明载明”。两个称呼是否同一人、材料里没有写明的，不下结论，在最终答复里请律师核实" },
 ];
 
 /**
@@ -341,7 +344,7 @@ function inMaterials(raw: string, titles: readonly string[]): boolean {
   return name.length >= 3 && titles.some((t) => norm(t).includes(name));
 }
 
-export function checkDeliverable(title: string, sections: readonly DeliverableSection[], opts: { lawdb?: Lawdb; asOf?: string; docx?: Buffer; table?: boolean; materialTitles?: readonly string[] } = {}): DeliverableCheck {
+export function checkDeliverable(title: string, sections: readonly DeliverableSection[], opts: { lawdb?: Lawdb; asOf?: string; docx?: Buffer; table?: boolean; materialTitles?: readonly string[]; caseIndex?: CaseIndex } = {}): DeliverableCheck {
   const paras = flatten(title, sections);
   const issues: DeliverableIssue[] = [];
   const push = (i: DeliverableIssue) => {
@@ -404,6 +407,23 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
       if (u) push({ kind: "note_to_lawyer", where: p.where, text: snippet(p.text, u.index, u[0].length), fix: "对外文书里不写上传文件的文件名（编号前缀“02-”、扩展名“.docx”）：改成证据名称与证据编号（如“证据2《送货单》”），对方证据用对方证据目录里的编号" });
     }
   }
+  // 案号溯源（第 61 批，D-258）：案号须能在本事项材料、任务说明或律师作答里找到；占位案号与归到判决名下却对不上原文的引文一并报回
+  for (const p of paras) {
+    for (const c of placeholderCaseRefs(p.text)) push({ kind: "citation", where: p.where, text: c.raw.slice(0, 60), fix: CASE_PLACEHOLDER_FIX });
+    if (!opts.caseIndex) continue;
+    for (const c of caseProvenance(p.text, opts.caseIndex)) if (!c.source) push({ kind: "citation", where: p.where, text: c.raw.slice(0, 60), fix: CASE_NOT_IN_MATERIALS_FIX });
+    for (const q of caseQuoteIssues(p.text, opts.caseIndex)) push({ kind: "citation", where: p.where, text: `${q.caseNo}“${q.quote}”`.slice(0, 60), fix: CASE_QUOTE_FIX });
+    for (const q of courtQuoteIssues(p.text, opts.caseIndex)) push({ kind: "citation", where: p.where, text: `“${q.quote}”`.slice(0, 60), fix: COURT_QUOTE_FIX });
+  }
+  // 表格“原文摘录”类列逐格核对（第 61 批）：只放材料里的逐字原文
+  if (opts.caseIndex) {
+    const tables = sections.filter((s) => Array.isArray(s?.table?.columns) && (s.table!.columns!.length ?? 0) > 0).map((s, i) => ({ name: String(s.heading ?? "").trim() || `第 ${i + 1} 张表`, columns: s.table!.columns!, rows: (s.table!.rows ?? []) as unknown[][] }));
+    for (const q of quoteColumnIssues(tables, opts.caseIndex)) push({ kind: "citation", where: q.where, text: q.text, fix: QUOTE_COLUMN_FIX });
+  }
+  // 法律用语与裁判结果预测（第 61 批，D-262）
+  for (const i of termIssues(title, paras, opts.asOf ? { asOf: opts.asOf } : {})) push(i);
+  // 重复表述（第 61 批真实复测 m25-r4：修改轮改写后原句没删，对外文书同一段两句重复）：只看正文段落
+  for (const r of repeatIssues(paras.filter((p) => / 段$/.test(p.where)))) push({ kind: "repeat", where: r.where, text: r.text, fix: REPEAT_FIX });
   for (const i of numberingIssues(sections)) push(i);
   for (const i of headingNumberIssues(sections)) push(i);
   for (const i of crossRefIssues(sections, paras)) push(i);
@@ -425,6 +445,8 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
       // V32（主会话根因复盘 m47/m46）：法规库查不到的规范却写了条号——系统核不了“有没有这一条”，模型凭记忆写的条号可能根本不存在
       // （合规问答引《个人信息出境标准合同办法》“第十五条”，该办法只有十三条）。律师把这部规范的官方文本作为材料导入了的不报。
       for (const it of c.items) if (it.kind === "outside" && it.reason === UNKNOWN_SOURCE_REASON && !inMaterials(it.raw, opts.materialTitles ?? [])) push({ kind: "citation", where: "引用", text: it.raw.slice(0, 60), fix: UNKNOWN_SOURCE_FIX });
+      // 第 61 批（D-261）：引用写明的版本不是分析时点适用的版本，或该版本库里没有——当场报回，由助手写明适用旧法的依据或改引现行版本
+      for (const it of c.items) if (it.kind === "outside" && /^(?:所引是|所引“)/.test(it.reason ?? "")) push({ kind: "citation", where: "引用", text: it.raw.slice(0, 60), fix: `${it.reason}；不需要改的（行为时法），在文书或最终答复里写明适用旧版本的依据` });
     } catch {
       // 核验失败不影响文书生成；签发前还会再核
     }
@@ -436,7 +458,7 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
     placeholders,
     issues,
     note: ok
-      ? "交付前检查未发现问题（只查工具用语、夹杂英文、条款编号、互引、大小写金额、表格合计、写出来的算式、法条号，以及递交或发出的文书正文里给律师的标记这几类，不代替律师复核）"
+      ? "交付前检查未发现问题（只查工具用语、夹杂英文、条款编号、互引、大小写金额、表格合计、写出来的算式、法条号、案号出处、法律用语与胜诉率预测，以及递交或发出的文书正文里给律师的标记这几类，不代替律师复核）"
       : `交付前检查发现 ${issues.length} 处问题：Word 文书用 docx.edit_draft 在这份文书上逐处改正（不要整份重新生成），表格用 xlsx.edit_cells 在这份表格上逐格改正（不要整份重新生成）；确实不需要改的（如律师要求保留），在最终答复里说明理由`,
   };
 }

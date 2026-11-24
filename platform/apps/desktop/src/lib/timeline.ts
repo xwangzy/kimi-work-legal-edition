@@ -66,6 +66,7 @@ const LEGAL_TOOL_LABELS: Record<string, string> = {
   "calc.labor": "计算经济补偿",
   "calc.court_fee": "计算诉讼费",
   "calc.ledger": "计算欠款、利息与抵充",
+  "evidence.rules_check": "核对证据形式规则",
   "rules.propose": "起草审查要点",
   "redact.scan": "检查个人信息",
   "materials.list": "阅读材料",

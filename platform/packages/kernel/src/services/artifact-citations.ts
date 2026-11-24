@@ -17,6 +17,7 @@ import { extractParagraphs, mapParagraphs, readZipText, xlsxToText } from "@zr-l
 import { versionAt, type Lawdb } from "@zr-legal/lawdb";
 import { eventDateRange, isProceduralLaw } from "./matter-facts.ts";
 import { lawNameCandidates } from "../tools/tools/law-names.ts";
+import { caseSource, type CaseIndex } from "./case-provenance.ts";
 import { caseNumberOffsets, citationsVerify, extractCitations, joinCitationCells, unrecognizedArticleRefs, type CitationVerdict } from "../tools/tools/citations.ts";
 
 export interface ArtifactCitationCheck {
@@ -51,7 +52,11 @@ export interface ArtifactCitationCheck {
     effective?: string | null;
     article_text?: string | null;
     decision?: CitationDecision | null;
+    /** 案号溯源（第 61 批，D-258）：在本事项哪份材料里找到；null = 材料里没有（只在传入材料索引时给出）。 */
+    source?: string | null;
   }[];
+  /** 本事项材料里找不到的案号个数（第 61 批，D-258；只在传入材料索引时给出）。 */
+  cases_unsourced?: number;
   /** 支持性：系统核到来源与版本、还没有律师逐条决定的条数；律师标为不支持的条数（C-03 签发必过项）。 */
   support_pending?: number;
   unsupported?: number;
@@ -112,7 +117,7 @@ export function artifactText(filename: string, bytes: Buffer): string | "format"
  * 须律师人工核对、勾选后可签发的理由（复核 R15B-03、R15B-14）：法规库没收、款项与本机正文对不上（可能是正文排版）、
  * 适用时点没有有效版本（已废止的旧法按时间效力规定仍可正当引用）。条号超出总条数、已改号仍是定性错误。
  */
-const MANUAL_REASONS = ["unknown_source:", "paragraph_out_of_range:", "item_out_of_range:", "no_applicable_version:", "repealed:"];
+const MANUAL_REASONS = ["unknown_source:", "paragraph_out_of_range:", "item_out_of_range:", "no_applicable_version:", "repealed:", "version_mismatch:", "version_not_collected:"];
 /** “已废止”的提示句开头（交付前检查据此把它报回助手，见 deliverable-check.ts）。 */
 export const REPEALED_REASON_PREFIX = "这部法规";
 /** 法规库没收的规范（V32：交付前检查据此判“带了条号就必须改”，见 deliverable-check.ts）。 */
@@ -138,6 +143,9 @@ export function reasonText(v: Pick<CitationVerdict, "reasons" | "state" | "sugge
   const repealed = v.reasons.find((r) => r.startsWith("repealed:"));
   if (repealed) return `${REPEALED_REASON_PREFIX}${repealed.slice("repealed:".length)}：只有行为发生在废止之前、按时间效力规定仍适用旧法时才能引用，请核对；不能适用的改引现行规定`;
   if (codes.includes("unknown_source")) return UNKNOWN_SOURCE_REASON;
+  // 第 61 批（D-261）：引用写明了版本
+  const vm = v.reasons.find((r) => r.startsWith("version_mismatch:") || r.startsWith("version_not_collected:"));
+  if (vm) return `${vm.slice(vm.indexOf(":") + 1)}：作为行为时法引用的请核对适用旧法的依据与该版本原文，否则改引现行版本`;
   if (codes.includes("no_applicable_version")) return "适用时点没有有效版本（可能已废止或尚未施行），请人工核对适用依据";
   if (codes.includes("paragraph_out_of_range")) return "条号核到了，但本机法规库里这一条没有这么多款（也可能是正文排版），请人工核对";
   if (codes.includes("item_out_of_range")) return "条号核到了，但本机法规库里这一款没有这么多项（也可能是正文排版），请人工核对";
@@ -186,7 +194,7 @@ export function timingNote(lawdb: Pick<Lawdb, "findLawVersions">, law: string, a
   return null;
 }
 
-export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Buffer, asOf: string, matter: { event_date?: string | null; region?: string | null } = {}): ArtifactCitationCheck {
+export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Buffer, asOf: string, matter: { event_date?: string | null; region?: string | null } = {}, caseIndex?: CaseIndex): ArtifactCitationCheck {
   const text = artifactText(filename, bytes);
   const base: ArtifactCitationCheck = { checked: false, total: 0, wrong: 0, unverified_offline: 0, outside_registry: 0, verified: 0, items: [], registry_coverage: lawdb.packageVersion, as_of: asOf };
   if (text === "format" || text === "error") return { ...base, unchecked_reason: text };
@@ -199,7 +207,7 @@ export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Bu
   const caseOffsets = caseNumberOffsets(body);
   const seen = new Map<string, number>();
   let caseIdx = 0;
-  const items = r.verdicts.map((v, i) => {
+  const items = r.verdicts.map((v, i): ArtifactCitationCheck["items"][number] => {
     const offset = v.kind === "case" ? (caseOffsets[caseIdx++] ?? -1) : (statuteRaws[i]?.offset ?? -1);
     const n = (seen.get(v.raw) ?? 0) + 1;
     seen.set(v.raw, n);
@@ -210,6 +218,12 @@ export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Bu
     const partial = kind === "ok" && v.reasons.some((x) => x.startsWith("subdivision_unchecked:") || x.startsWith("suffix_unchecked:"));
     // 只复核系统核到了的法条（核对不通过的先改；库外的本来就要人工核）
     const timing = kind === "ok" && v.kind === "statute" && v.article !== null && (eventDate || region) ? timingNote(lawdb, v.law_input, v.article, asOf, eventDate, region) : null;
+    // 案号溯源（第 61 批）：签发门禁不变（仍须律师勾选“已逐个核对案号”），只告诉律师该对照哪份文书、哪些在材料里根本没有
+    if (kind === "case" && caseIndex) {
+      const source = caseSource(v.raw, caseIndex);
+      const reason = source ? `案号见本事项材料《${source}》：请对照这份裁判文书核对案号与引述的内容` : "本事项材料里没有这个案号，系统无法核实它是否存在（可能来自记忆或编造）：请到裁判文书网等官方来源核对，查不到的删去";
+      return { raw: v.raw, state: v.state, reason, kind, source, ...pair };
+    }
     return { raw: v.raw, state: v.state, reason: reasonText(v), kind, ...(partial ? { partial: true } : {}), ...(timing ? { timing } : {}), ...pair };
   });
   return {
@@ -218,6 +232,7 @@ export function checkArtifactCitations(lawdb: Lawdb, filename: string, bytes: Bu
     total: items.length,
     wrong: items.filter((i) => i.kind === "wrong").length,
     unverified_offline: items.filter((i) => i.kind === "case").length,
+    ...(caseIndex ? { cases_unsourced: items.filter((i) => i.kind === "case" && !i.source).length } : {}),
     outside_registry: items.filter((i) => i.kind === "outside").length,
     verified: items.filter((i) => i.kind === "ok").length,
     partial: items.filter((i) => i.partial).length,

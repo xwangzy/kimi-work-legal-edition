@@ -411,6 +411,27 @@ export const SCENARIOS: ScenarioCard[] = [
     // 方法只做一审判决、裁定的上诉：被上诉人答辩、再审、撤销仲裁裁决、行政与刑事不引过来
     notFor: ["被上诉人", "二审答辩", "再审", "仲裁裁决", "行政", "刑事"],
   },
+  // 第 61 批（V35，D-265）：收到裁判文书后的研读与救济评估（外部评估 R2 legal-document-summarization：产品此前没有这一环）
+  {
+    id: "ruling-digest",
+    line: "litigation",
+    title: "裁判文书研读与上诉评估",
+    gives: "收到的判决书、裁定书或仲裁裁决（本案起诉状、答辩状、庭审笔录一并勾选更好）",
+    gets: ["裁判文书研读报告.docx", "判项与期限核对表.xlsx（判项与金额、期限、援引条文核验）"],
+    scenario: "a1.agent_task",
+    skill: "ruling-digest",
+    verb: "开始研读",
+    goal: "请研读这份裁判文书，目的是{purpose}。我方在本案中是{side}；文书送达我方的日期：{served_on}。逐项拆出裁判结果并与我方请求对照，复算受理费，按法定期间算出上诉、申请撤销或申请执行等期限，梳理争点与裁判理由、核验所引条文；评估救济的理由强弱与成本，不预测二审结果。",
+    fields: [
+      { key: "purpose", label: "研读目的", kind: "select", options: ["上诉评估", "给客户汇报结果", "准备履行或申请执行"], goalText: { 上诉评估: "评估是否上诉（或申请撤销）", 给客户汇报结果: "给客户或管理层汇报结果", 准备履行或申请执行: "准备履行或申请执行" } },
+      { key: "side", label: "我方在本案中是", kind: "select", options: ["原告", "被告", "第三人", "申请人", "被申请人"] },
+      { key: "served_on", label: "文书送达我方的日期", kind: "date", help: "上诉期、申请撤销期限从这一天起算；不填的，从材料里的送达回证或送达记录找，找不到会写“送达日待确认”。" },
+    ],
+    minMaterials: 1,
+    steps: ["逐字拆出裁判结果、查明事实与裁判理由，判项与我方请求逐项对照", "用工具复算受理费、按法定期间目录算出上诉等期限", "梳理争点与裁判理由，核验判决所引条文", "评估上诉或其他救济的理由强弱、对方可能的上诉点与成本"],
+    intents: [["判决书"], ["裁定书"], ["仲裁裁决书"], ["判决", "出来"], ["研读", "判决"], ["要不要", "上诉"], ["是否", "上诉"], ["上诉", "评估"], ["判决", "汇报"]],
+    notFor: ["起草上诉状", "写上诉状", "上诉状草稿"],
+  },
   {
     id: "arbitration-app",
     line: "litigation",
@@ -686,6 +707,29 @@ export const SCENARIOS: ScenarioCard[] = [
     intents: [["研究"], ["检索"], ["法规", "研究"], ["现行有效", "法规"], ["现行有效", "规定"], ["查", "规定"], ["法律", "规定"], ["法条", "规定"], ["怎么", "规定"]],
     // 案例库尚未开通：说“类案、案例”时不建议本卡，免得律师以为能检索案例
     notFor: ["类案", "案例"],
+  },
+  // 第 61 批（V35，D-266）：类案比对——只用律师提供的裁判文书；系统核对报告里的案号能否在材料里找到、归到判决名下的引文能否逐字找到
+  {
+    id: "case-law",
+    line: "litigation",
+    general: true,
+    title: "类案检索报告（用你提供的判决）",
+    gives: "你从裁判文书网或数据库下载的判决书、裁定书（2 份以上）；本案材料可一并勾选",
+    gets: ["类案检索报告.docx", "类案对比表.xlsx（逐案要素、与本案比对）"],
+    scenario: "a1.agent_task",
+    skill: "legal-research-memo",
+    args: { mode: "类案比对" },
+    primary: "类案检索报告.docx",
+    verb: "开始比对",
+    goal: "请用我提供的裁判文书做类案比对：{question}。我方立场：{side}。逐案抽取要素、与本案比对并分为支持、对立、可区分，归纳裁判规则（写明样本边界），只引用材料里的判决，不凭记忆补案例。",
+    fields: [
+      { key: "question", label: "要用类案回答的问题", kind: "long", required: true, goalOnly: true, placeholder: "例如：买受人签署验收单后以性能不达标主张减价，质量瑕疵的举证责任如何分配" },
+      { key: "side", label: "我方立场", kind: "text", goalOnly: true, placeholder: "例如：出卖人（一审原告），拟上诉" },
+    ],
+    minMaterials: 2,
+    steps: ["逐份抽取案号、法院、争点、裁判理由（逐字）与结果", "与本案逐项比对，分出支持、对立与可区分的裁判", "归纳裁判规则并写明样本边界，对立裁判单列", "写出哪几份可提交法院、怎么引用"],
+    intents: [["类案"], ["类似", "案例"], ["案例", "检索"], ["这几份", "判决"], ["判例"], ["裁判", "规则"]],
+    notFor: ["起诉状", "答辩状"],
   },
   {
     // V16 F1：正式法律意见书单独一张卡（原由“合规问答 / 顾问答复”在点名时兼出）；同一方法 client-advice，主交付物是意见书
@@ -1056,6 +1100,51 @@ export const SCENARIOS: ScenarioCard[] = [
     steps: ["找出范本类文件并读完", "逐条概括条款、我方标准、可退让、不可谈，写明出处", "范本之间不一致的并列给你选", "存为草稿，等你审定启用"],
     intents: [["审核标准"], ["公司", "范本"]],
   },
+  // 第 61 批（V35，D-268）：个人信息保护合规审查（外部评估 R4 internal-compliance：企业法务高频需求，法规库已备个保法、出境规章）
+  {
+    id: "privacy",
+    line: "inhouse",
+    title: "个人信息保护合规审查",
+    gives: "隐私政策或个人信息处理规则（Word 最好），业务部门的数据处理说明、SDK 或第三方共享清单",
+    gets: ["个人信息保护合规审查意见.docx", "合规义务对照表.xlsx（告知事项逐项、义务触发与履行、整改清单）"],
+    scenario: "a1.agent_task",
+    skill: "privacy-compliance",
+    verb: "开始审查",
+    goal: "请做个人信息保护合规审查，目的是{purpose}。审查对象：{scope}；用户群体：{audience}；委托方在处理活动中的身份：{role}。先判断各项义务是否触发再判断是否履行，法定告知事项逐项判定并附原文，区分法定义务与管理建议；隐私政策的逐条修改建议{cards}。",
+    fields: [
+      { key: "purpose", label: "审查目的", kind: "select", options: ["上线前审查", "年度体检", "监管或整改排查", "融资上市自查"] },
+      { key: "scope", label: "审查对象", kind: "multi", options: ["隐私政策", "数据处理说明", "SDK与第三方共享", "数据出境", "员工个人信息"] },
+      { key: "audience", label: "用户群体", kind: "select", options: ["一般公众", "含未成年人", "主要面向未成年人", "企业员工"] },
+      { key: "role", label: "委托方的身份", kind: "select", options: ["个人信息处理者", "受托人", "共同处理者", "接收方"], more: true },
+      { key: "cards", label: "隐私政策逐条修改建议", kind: "select", options: ["不要", "要"], goalText: { 不要: "不提交风险卡", 要: "作为风险卡提交到审查工作台" }, more: true },
+    ],
+    minMaterials: 1,
+    steps: ["先列触发清单：敏感信息、未成年人、向第三方提供、委托处理、自动化决策、向境外提供", "法定告知事项逐项判定（有 / 不完整 / 无 / 与实际不符），附逐字原文或写明查过的说法", "核对政策声明与数据处理说明是否一致", "区分法定义务与管理建议，排出整改优先级"],
+    intents: [["隐私政策"], ["个人信息", "合规"], ["个人信息保护"], ["数据", "合规"], ["App", "合规"], ["数据出境"], ["个保法"]],
+    notFor: ["数据处理协议", "委托处理协议", "合同"],
+  },
+  // 第 61 批（V35，D-267）：已签合同的履约体检（外部评估 R4 dispute-and-performance-risk：拟签审查已有，履约阶段是空白）
+  {
+    id: "performance",
+    line: "inhouse",
+    title: "合同履约体检",
+    gives: "已签署的合同（含订单、补充协议）与履行材料（往来函件、签收、验收或质检记录、付款与开票记录）",
+    gets: ["合同履约体检意见.docx", "义务与期限台账.xlsx（义务与期限台账、履约偏差与救济、待补材料）"],
+    scenario: "a1.agent_task",
+    skill: "performance-check",
+    verb: "开始体检",
+    goal: "请对这份已签合同做履约体检，我方是{side}，侧重{focus}，客户的目的是{goal}。材料之后的最新进展：{latest}。抽出双方义务与期限成台账、期限届满日用工具算，判定违约形态并挂事实出处，列对方可能的抗辩与可选的救济路径和时间节点，金额用工具算；需要我定的取舍合并成一次提问。",
+    fields: [
+      { key: "side", label: "我方是", kind: "select", options: ["买方", "卖方", "发包人", "承包人", "出租人", "承租人", "委托方", "受托方", "其他"] },
+      { key: "focus", label: "侧重", kind: "select", options: ["全面体检", "对方违约与救济", "我方自身履约风险", "指定订单或条款"] },
+      { key: "goal", label: "客户的目的", kind: "select", options: ["继续合作并追究", "尽快退出或更换合作方", "先评估再定"] },
+      { key: "latest", label: "材料之后的最新进展", kind: "long", goalOnly: true, placeholder: "例如：对方 11 月 20 日电话说下周补货，没有书面答复", help: "材料截止之后发生的事（电话、口头承诺、新到的货）；不填的，按材料截止日的情况分析并列出待确认。" },
+    ],
+    minMaterials: 1,
+    steps: ["抽出双方义务与期限，条款逐字摘录、履行事实挂出处", "通知、异议、检验、补救、解除等期限一律用工具算届满日", "判定违约形态，写对方最可能的抗辩与我方应对", "并列继续履行、催告后解除、违约金或赔偿等救济路径与时间节点，金额用工具算"],
+    intents: [["履约"], ["合同", "履行"], ["对方", "违约"], ["能不能", "解除"], ["逾期", "交货"], ["质量", "异议"], ["履约", "风险"]],
+    notFor: ["审合同", "审查合同", "修改合同", "起草合同", "催告函", "律师函"],
+  },
   {
     id: "compliance-qa",
     line: "inhouse",
@@ -1308,6 +1397,11 @@ export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.fr
   "research-deal": ["contract-review"],
   "compliance-qa": ["demand-inhouse"],
   "legal-opinion": ["audience-pack"],
+  // 第 61 批：研读裁判文书之后上诉、执行或汇报；类案比对之后写上诉状、代理词
+  "ruling-digest": ["appeal", "enforcement", "case-report-lit"],
+  "case-law": ["appeal", "agency", "research-lit"],
+  performance: ["demand-inhouse", "procedure", "amount"],
+  privacy: ["compliance-qa", "contract-review-inhouse"],
 });
 
 /** 本次任务对应的场景卡：按方法模板（Agent 场景）或工作流场景找第一张；找不到返回 null。 */
@@ -1324,7 +1418,17 @@ export function scenarioOfRun(run: { scenario?: string | null; input_snapshot?: 
   const skill = typeof snap?.skill === "string" ? snap.skill : null;
   // 同一方法模板在不同业务线有不同卡（复核 S6B-05）：优先律师当前所在的业务线
   const pick = (cands: ScenarioCard[]) => (preferLine ? cands.find((c) => c.line === preferLine) : undefined) ?? cands[0] ?? null;
-  if (run.scenario === "a1.agent_task") return skill ? pick(SCENARIOS.filter((c) => c.skill === skill)) : null;
+  if (run.scenario === "a1.agent_task") {
+    if (!skill) return null;
+    const same = SCENARIOS.filter((c) => c.skill === skill);
+    // 同一方法的不同模式（第 61 批：法规研究 / 类案比对）：按任务快照里的方法参数找固定参数一致的那张卡
+    const args = snap?.skill_args && typeof snap.skill_args === "object" ? (snap.skill_args as Record<string, unknown>) : null;
+    const byArgs = args ? same.filter((c) => c.args && Object.entries(c.args).every(([k, v]) => args[k] === v)) : [];
+    if (byArgs.length > 0) return pick(byArgs);
+    // 没有固定参数对得上的：先找不带固定参数的通用卡，没有再按原来的顺序
+    const plain = same.filter((c) => !c.args);
+    return pick(plain.length > 0 ? plain : same);
+  }
   return pick(SCENARIOS.filter((c) => c.scenario === run.scenario));
 }
 

@@ -26,6 +26,7 @@ import { FACT_COLUMNS, FACT_SHEET_NAME, factTableRows, unknownFactNote } from ".
 import { cellChars, shrinkCheck } from "../../services/version-shrink.ts";
 import { reviveSuperseded } from "../../services/attempt-supersede.ts";
 import { amountWordsConflicts, extractFacts, payDayConflicts, type FactRow } from "../../executor/casefile.ts";
+import { materialCaseIndex } from "../../services/case-provenance.ts";
 
 function scopeOf(ctx: InvokeCtx): { tenantId: string; matterId: string; runId: string | null } {
   const mid = ctx.claims.mid;
@@ -489,7 +490,7 @@ export function finishTable(ctx: InvokeCtx, title: string, specs0: SheetSpec[], 
   // 交付前检查（第 35 批）：附件表格同样不该有工具用语、参数名、夹杂英文、Markdown 符号与大小写不一致的金额
   let quality_check: ReturnType<typeof checkDeliverable> | null = null;
   try {
-    quality_check = checkDeliverable(title, specs.map((s) => ({ heading: s.name, paragraphs: [], table: { columns: s.rows[0] ?? [], rows: s.rows.slice(1) as unknown[][] } })), { table: true });
+    quality_check = checkDeliverable(title, specs.map((s) => ({ heading: s.name, paragraphs: [], table: { columns: s.rows[0] ?? [], rows: s.rows.slice(1) as unknown[][] } })), { table: true, ...(scopeOf(ctx).matterId ? { caseIndex: materialCaseIndex(ctx.db, scopeOf(ctx).matterId, scopeOf(ctx).runId ?? null) } : {}) });
   } catch {
     quality_check = null;
   }
@@ -539,6 +540,7 @@ export function xlsxEditCells(
     replace?: unknown;
     append_rows?: unknown;
     delete_rows?: unknown;
+    refresh_facts?: unknown;
   },
 ) {
   const s = scopeOf(ctx);
@@ -566,8 +568,19 @@ export function xlsxEditCells(
   const replaces = arr(p.replace);
   const appends = arr(p.append_rows);
   const deletes = arr(p.delete_rows);
-  if (edits.length + replaces.length + appends.length + deletes.length === 0) {
-    throw new DomainError("validation", "edits、replace、append_rows、delete_rows 至少给一类", 422);
+  // 第 61 批：refresh_facts——事实更正（facts.submit 带 fact_id）之后，只让系统附的“事实对照”按更正后的事实重新生成
+  const refreshOnly = p.refresh_facts === true && edits.length + replaces.length + appends.length + deletes.length === 0;
+  if (edits.length + replaces.length + appends.length + deletes.length === 0 && !refreshOnly) {
+    // 第 61 批真实复测 m25-r2：修改轮连续 7 次传 replace: []（参数没写全），每次只得到“至少给一类”，没改成核对清单——报错写明传了空数组与每类的写法
+    const emptyKeys = (["edits", "replace", "append_rows", "delete_rows"] as const).filter((k) => Array.isArray(p[k]));
+    const shape = "逐格改写 edits: [{sheet, row, column, value}]；同一说法在多格出现写 replace: [{find, with, sheet}]；加行写 append_rows，删行写 delete_rows";
+    throw new DomainError(
+      "validation",
+      emptyKeys.length > 0
+        ? `这次传的 ${emptyKeys.join("、")} 是空数组，没有带要改的内容（参数可能没写全）：把要改的每一处写进数组再调用——${shape}。只想让“事实对照”按更正后的事实重新生成的，写 refresh_facts: true`
+        : `edits、replace、append_rows、delete_rows 至少给一类：${shape}（只想让“事实对照”按更正后的事实重新生成的，写 refresh_facts: true）`,
+      422,
+    );
   }
   const total = edits.length + replaces.length + appends.reduce((n, a) => n + arr(a?.rows).length, 0) + deletes.reduce((n, d) => n + arr(d?.rows).length, 0);
   if (total > EDIT_CELLS_MAX_OPS) throw new DomainError("validation", `一次最多 ${EDIT_CELLS_MAX_OPS} 处修改；改动更多时说明这份表格要重做，用 xlsx.render_table 重新生成`, 422);
@@ -590,6 +603,11 @@ export function xlsxEditCells(
   const sheetOf = (op: CellOp, index: number, name: unknown): SheetSpec | null => {
     const n = String(name ?? "");
     const hit = specs.find((x) => x.name === n) ?? specs.find((x) => x.name === n.trim());
+    // 第 61 批（真实验收 m03：复核要求改“事实对照”里一条事实的发生日期，修改轮逐格改了、保存时又按事实页重新生成，改动丢失，任务记部分完成）
+    if (!hit && autoFacts && n.trim() === FACT_SHEET_NAME) {
+      rejected.push({ op, index, reason: `“${FACT_SHEET_NAME}”由系统按本事项事实页生成，逐格改会在保存时被覆盖：事实的发生日期、陈述或金额有误的，用 facts.submit 带这条事实的 fact_id 更正（只能改本任务提交、律师尚未确认的；fact_id 用 facts.list 查），再用 xlsx.edit_cells 写 refresh_facts: true 让这张表按更正后的事实重新生成` });
+      return null;
+    }
     if (!hit) rejected.push({ op, index, reason: `没有名为“${n}”的工作表；这份表格的工作表：${sheetNames()}` });
     // 第 57 批：calc.ledger 算出来的工作表（带公式）不逐格改——改了一格，别的格子、别的工作表里的同一个数就对不上了
     if (hit?.formulas && op !== "replace") {
@@ -721,7 +739,8 @@ export function xlsxEditCells(
 
   const notFound = rejected.length;
   slog.event("TOOLS_DOCX_EDIT_OUTCOME", { tool: "xlsx_edit_cells", status: applied === 0 ? "not_applied" : notFound > 0 ? "partial" : "applied", patches: total, applied, not_found: notFound, ambiguous: 0, unknown_token: 0, other: 0 });
-  if (applied === 0) {
+  // refresh_facts（第 61 批）：没有逐格改动，也照常存新版本——保存时“事实对照”按事实页重新生成
+  if (applied === 0 && !(refreshOnly && autoFacts)) {
     return {
       status: "not_applied" as const,
       applied: 0,

@@ -1,0 +1,13 @@
+{"tag": "m20-research-lit", "card": "research-lit", "veto": [], "score": 23, "dims": [3, 3, 3, 3, 3, 2, 3, 3],
+ "tier": "可交付", "status": "已通过", "open_ok": true, "minutes": 15, "questions": 1,
+ "top_issues": [
+  "备忘录正文多处产品用语“任务说明所述”“按任务要求”，v2 只修了 1 处",
+  "“法源范围为本机离线法规库……收录范围有限”是产品内部口径",
+  "未引民法典第 623 条；日期写成“2026年11月09日”"
+ ],
+ "prev_score": null,
+ "product_defect": [
+  "legal-research-memo 产出里“任务说明所述”“按任务要求”“本机离线法规库”等产品用语进入正文；修改轮只替换了一处，同类用语没有统一拦截，独立复核也未提出",
+  "日期渲染带前导零（“2026年11月09日”），中文日期格式化规则缺失"
+ ],
+ "known_defects_recurring": [], "new_defects": []}
