@@ -6,7 +6,7 @@
 import * as api from "../api.js";
 import { can, ctx, deviceTable, go, needs, pageHead, periodText, roleText, tenantBadge } from "../domain.js";
 import {
-  add, badge, btn, clear, confirmAction, copyBtn, dataTable, emptyBlock, facts, fmt, h, hbars, icon, load, matches, meter, mono, panel,
+  add, badge, btn, clear, confirmAction, copyBtn, dangerZone, dataTable, emptyBlock, facts, fmt, h, hbars, icon, load, matches, metaLine, meter, mono, note, panel,
   periodBars, searchInput, segmented, showSecret, stat, tabBar, toast, trendChart,
 } from "../ui.js";
 
@@ -18,16 +18,19 @@ const FILTERS = [
   ["attention", "需关注", (t) => t.status === "active" && (Number(t.alerts_open) > 0 || Number(t.used_ratio) >= 0.8 || !!t.paused || (t.forecast_exhaust_at && Date.parse(t.forecast_exhaust_at) < Date.parse(t.period?.resets_at ?? "")))],
   ["paused", "已暂停", (t) => !!t.paused],
   ["pending", "待开通", (t) => t.status === "pending"],
-  ["expiring", "30 天内到期", (t) => t.status === "active" && t.subscription_until && Date.parse(t.subscription_until) - Date.now() < 30 * DAY],
+  // 与总览“30 天内到期”同一口径（控制面 overview.tenants.expiring_30d：到期日在今后 30 天内，不论是否已完成开通）
+  ["expiring", "30 天内到期", (t) => t.status !== "terminated" && !!t.subscription_until && Date.parse(t.subscription_until) > Date.now() && Date.parse(t.subscription_until) - Date.now() < 30 * DAY],
   ["closed", "已到期 / 终止", (t) => t.status === "expired" || t.status === "terminated"],
 ];
 
 export function render(page, r) {
   if (r.arg) return renderDetail(page, r.arg, r.params);
   if (r.params.q !== undefined) st.q = r.params.q;
+  // 总览的信号点进来带 ?filter=attention|pending|expiring
+  if (r.params.filter && FILTERS.some(([id]) => id === r.params.filter)) st.filter = r.params.filter;
   const box = h("div", { class: "stack" });
   page.append(
-    pageHead("客户", "开通的律所、套餐与本期用量", btn("开通律所", () => createTenant(), { kind: "primary", icon: icon("plus"), disabled: !can("tenant.manage"), title: needs("tenant.manage") })),
+    pageHead("客户", "开通的律所、套餐与本期用量；点一行看详情", btn("开通律所", () => createTenant(), { kind: "primary", icon: icon("plus"), disabled: !can("tenant.manage"), title: needs("tenant.manage") })),
     box,
   );
   load(box, () => api.get("/v1/ops/tenants"), (d) => drawList(box, d.tenants ?? []), "正在读取律所…");
@@ -49,6 +52,8 @@ function drawList(box, rows) {
         rows: list,
         onRow: (t) => go(`tenants/${encodeURIComponent(t.tid)}`),
         empty: rows.length ? "没有符合条件的律所" : "还没有开通律所",
+        rowClass: (t) => (t.paused ? "danger-row" : FILTERS[1][2](t) ? "flagged" : t.status === "terminated" || t.status === "expired" ? "dim" : ""),
+        caption: "律所列表",
         columns: [
           { key: "name", label: "律所", render: (t) => h("div", { class: "cell-2" }, h("b", {}, t.name ?? t.tid), mono(t.tid)) },
           { key: "plan", label: "套餐", class: "nowrap", value: (t) => t.plan?.label ?? "", render: (t) => h("div", { class: "cell-2" }, t.plan?.label ?? t.plan?.id ?? "—", h("small", {}, t.edition === "firm" ? "律所版" : t.edition === "team" ? "团队版" : "")) },
@@ -80,7 +85,7 @@ function drawList(box, rows) {
   };
   clear(
     box,
-    h("div", { class: "toolbar" }, seg, searchInput({ placeholder: "律所名称或编号", value: st.q, onInput: (v) => ((st.q = v), redraw()) })),
+    h("div", { class: "toolbar" }, seg, searchInput({ placeholder: "律所名称或编号", value: st.q, onInput: (v) => ((st.q = v), redraw()) }), h("span", { class: "toolbar-count" }, `共 ${rows.length} 家`)),
     tableBox,
   );
   redraw();
@@ -154,11 +159,26 @@ function renderDetail(page, tid, params) {
 
 function drawDetail(head, body, d, reload) {
   const t = d.tenant ?? {};
+  const left = t.subscription_until ? Math.ceil((Date.parse(t.subscription_until) - Date.now()) / DAY) : null;
+  const usedTone = t.paused || Number(t.used_ratio) >= 1 ? "danger" : Number(t.used_ratio) >= 0.8 ? "warn" : undefined;
   clear(
     head,
-    pageHead(
-      h("span", { class: "title-row" }, t.name ?? t.tid, tenantBadge(t.status), t.paused ? badge(({ cap: "已到上限", allowance: "额度用完", burst: "5 小时频率限制已满" })[t.paused] ?? "已暂停", "danger") : null),
-      h("span", { class: "sub-row" }, mono(t.tid), copyBtn(t.tid, "复制编号"), h("span", {}, `${t.plan?.label ?? "—"} · ${fmt.int(t.seats_used)}/${fmt.int(t.seats)} 席 · ${t.edition === "firm" ? "律所版" : "团队版"}`)),
+    h(
+      "div",
+      { class: "stack" },
+      pageHead(
+        h("span", { class: "title-row" }, t.name ?? t.tid, tenantBadge(t.status), t.paused ? badge(({ cap: "已到上限", allowance: "额度用完", burst: "5 小时频率限制已满" })[t.paused] ?? "已暂停", "danger") : null, Number(t.alerts_open) > 0 ? badge(`${t.alerts_open} 条告警`, "warn") : null),
+        metaLine(h("span", {}, mono(t.tid), copyBtn(t.tid, "复制编号")), `${t.plan?.label ?? "—"}套餐`, t.edition === "firm" ? "律所版" : "团队版", `开通于 ${fmt.date(t.created_at)}`),
+      ),
+      // 关键数字：本期用量、席位、到期、本期金额——进详情先看到这四个
+      h(
+        "div",
+        { class: "head-stats" },
+        h("div", { class: ["head-stat", "stat", usedTone && `tone-${usedTone}`] }, h("span", { class: "stat-label" }, "本期用量"), h("span", { class: "stat-value num" }, fmt.pct(t.used_ratio)), h("span", { class: "stat-sub" }, t.forecast_exhaust_at ? `按当前速度 ${fmt.date(t.forecast_exhaust_at)} 用完` : fmt.resetLine(t.period?.resets_at))),
+        h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "席位"), h("span", { class: "stat-value num" }, `${fmt.int(t.seats_used)} / ${fmt.int(t.seats)}`), h("span", { class: "stat-sub" }, `账号 ${fmt.int(t.accounts)} · 设备 ${fmt.int(t.devices)}`)),
+        h("div", { class: ["head-stat", "stat", left !== null && left <= 30 && "tone-warn"] }, h("span", { class: "stat-label" }, "订阅到期"), h("span", { class: "stat-value num" }, fmt.date(t.subscription_until)), h("span", { class: "stat-sub" }, left === null ? "—" : left < 0 ? `已过期 ${-left} 天` : `还有 ${left} 天`)),
+        h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "本期用量价值"), h("span", { class: "stat-value num" }, fmt.cny(t.value_cny)), h("span", { class: "stat-sub" }, `成本 ${fmt.cny(t.cost_cny)} · ${fmt.int(t.requests)} 次请求`)),
+      ),
     ),
   );
   const tabBox = h("div");
@@ -442,7 +462,8 @@ function paneBill(pane, d) {
 function paneOnboarding(pane, d, reload) {
   const t = d.tenant ?? {};
   const T = api.T(t.tid);
-  pane.append(
+  add(
+    pane,
     panel(
       "开通码",
       dataTable({
@@ -487,10 +508,7 @@ function paneOnboarding(pane, d, reload) {
         }, { kind: "primary", disabled: !can("activation.issue"), title: needs("activation.issue") }),
       },
     ),
-    h(
-      "div",
-      { class: "grid-2" },
-      panel(
+    panel(
         "订阅",
         h(
           "div",
@@ -508,13 +526,11 @@ function paneOnboarding(pane, d, reload) {
           }, { disabled: !can("tenant.manage") || t.status === "terminated", title: needs("tenant.manage") }),
         ),
       ),
-      panel(
-        "终止订阅",
-        h(
-          "div",
-          { class: "stack-sm" },
-          h("p", { class: "muted small" }, "终止后这家律所的许可立即失效：不签发席位令牌、不发放额度。律所本机数据不受影响。"),
-          btn("终止订阅…", async () => {
+    dangerZone("危险操作", [
+      {
+        title: "终止订阅",
+        desc: "终止后这家律所的许可立即失效：不签发席位令牌、不发放额度。律所本机数据不受影响；不可撤销。",
+        action: btn("终止订阅…", async () => {
             const r = await confirmAction({
               title: `终止 ${t.name ?? t.tid} 的订阅`,
               danger: true,
@@ -526,9 +542,8 @@ function paneOnboarding(pane, d, reload) {
             });
             if (r) (toast("已终止"), reload());
           }, { kind: "danger", disabled: !can("tenant.terminate") || t.status === "terminated", title: needs("tenant.terminate") }),
-        ),
-      ),
-    ),
+      },
+    ]),
   );
 }
 

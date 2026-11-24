@@ -1,61 +1,58 @@
 /**
- * 套餐与额度：套餐目录（单位、每席位额度、周期、5 小时窗口、阈值、设备数），注册设置（open / code / closed、试用套餐与天数），告警列表。
- * 接口：GET/PUT /v1/ops/plans[/{id}]、GET/PUT /v1/ops/settings、GET /v1/ops/alerts、POST /v1/ops/alerts/{id}/ack（契约 §8；Plan 字段见主文 §4.3）。
+ * 套餐（第 62 批：原“套餐与额度”只留套餐目录；注册设置挪到“注册管理 · 注册策略”，告警成为一级页面）：
+ * 套餐目录以卡片呈现（套餐通常只有几个：一眼看清席位单价、每席位额度、周期与限制），点卡片编辑。
+ * 接口：GET/PUT /v1/ops/plans[/{id}]（契约 §8；Plan 字段见主文 §4.3）；按金额计费的售价随套餐保存时生成新价目版本（PUT /v1/ops/routing/prices）。
  */
 import * as api from "../api.js";
-import { alertList, ALERT_KIND, can, needs, pageHead, PERM_LABEL } from "../domain.js";
-import { add, badge, btn, clear, confirmAction, dataTable, facts, field, fmt, h, icon, load, mono, openDrawer, panel, readForm, segmented, tabBar, toast } from "../ui.js";
+import { can, needs, pageHead, PERM_LABEL } from "../domain.js";
+import { badge, btn, clear, confirmAction, facts, field, fmt, h, icon, load, mono, note, openDrawer, readForm, toast } from "../ui.js";
 
-const st = { tab: "plans", alerts: "open", aKind: "", table: { sort: "id", asc: true } };
 // 与服务端 billing.ts 的 PLAN_ID_RE 同一条（原先这里写 2–32 位、字母开头，服务端是 1–24 位：25 位以上的编号界面放行、服务端 404）
 const PLAN_RE = /^[a-z0-9][a-z0-9-]{0,23}$/;
 
-export function render(page, r) {
-  if (r.params.tab) st.tab = r.params.tab;
-  const tabs = h("div");
+export function render(page) {
   const box = h("div", { class: "stack" });
-  page.append(pageHead("套餐与额度", "额度单位只有 token 与金额两种；百分比 = 实际消耗 ÷ 我方配置的额度"), tabs, box);
-  const draw = () => {
-    clear(tabs, tabBar([{ id: "plans", label: "套餐目录" }, { id: "settings", label: "注册设置" }, { id: "alerts", label: "告警" }], st.tab, (id) => ((st.tab = id), draw())));
-    if (st.tab === "plans") panePlans(box);
-    else if (st.tab === "settings") paneSettings(box);
-    else paneAlerts(box);
-  };
-  draw();
+  const addBtn = btn("新增套餐", () => openPlan(null, last, reload), { kind: "primary", icon: icon("plus"), disabled: !can("plan.manage"), title: needs("plan.manage") });
+  page.append(pageHead("套餐", "额度单位只有 token 与金额两种；百分比 = 实际消耗 ÷ 我方配置的额度", addBtn), box);
+  let last = { plans: [] };
+  const reload = () => load(box, () => api.get("/v1/ops/plans"), (d) => ((last = d), drawPlans(box, d, reload)), "正在读取套餐…");
+  reload();
 }
 
 const quotaText = (p) => (p.quota_unit === "cny" ? fmt.cny(p.seat_quota) : p.quota_unit === "tokens" ? `${fmt.tokens(p.seat_quota)} token` : "—");
+const PERIOD = { month: "自然月", week: "自然周" };
 
-function panePlans(box) {
-  const reload = () =>
-    load(box, () => api.get("/v1/ops/plans"), (d) => {
-      const plans = d.plans ?? [];
-      add(
-        box,
-        h("div", { class: "toolbar" }, h("p", { class: "muted small" }, "改套餐即刻影响在用这个套餐的律所（本期总额度按新的每席位额度重算）。旧套餐由“单位”折算为 token 额度的，请商务确认后再改。"), btn("新增套餐", () => openPlan(null, d, reload), { kind: "primary", icon: icon("plus"), disabled: !can("plan.manage"), title: needs("plan.manage") })),
-        dataTable({
-          state: st.table,
-          rows: plans,
-          onRow: (p) => openPlan(p, d, reload),
-          empty: "套餐目录为空",
-          columns: [
-            { key: "id", label: "套餐", render: (p) => h("div", { class: "cell-2" }, h("b", {}, p.label ?? p.id, p.id === d.default_plan ? badge("缺省", "accent") : null), mono(p.id), p.origin === "migrated" ? badge("由旧版计量额度换算，待商务确认", "warn") : null) },
-            { key: "quota_unit", label: "单位", value: (p) => fmt.unit(p.quota_unit) },
-            { key: "seat_quota", label: "每席位每期", num: true, value: (p) => Number(p.seat_quota) || 0, render: (p) => h("span", { title: p.seat_quota_display ?? undefined }, quotaText(p)) },
-            { key: "period", label: "周期", value: (p) => ({ month: "自然月", week: "自然周" })[p.period] ?? p.period ?? "—" },
-            { key: "burst", label: "5 小时窗口", value: (p) => p.burst?.pct ?? null, render: (p) => (p.burst ? `任意 ${p.burst.hours} 小时 ≤ ${p.burst.pct}%` : h("span", { class: "muted" }, "不限")) },
-            { key: "seat_price_cny", label: "席位单价", num: true, value: (p) => p.seat_price_cny ?? null, render: (p) => fmt.cny(p.seat_price_cny) },
-            { key: "boost_price_factor", label: "加量系数", num: true, class: "opt", render: (p) => fmt.num(p.boost_price_factor) },
-            { key: "device_limit", label: "设备 / 账号", num: true, render: (p) => fmt.int(p.device_limit ?? 2) },
-            { key: "alert_thresholds", label: "告警阈值", sortable: false, class: "opt", render: (p) => (p.alert_thresholds ?? [80, 100]).map((x) => `${x}%`).join(" / ") },
-            { key: "enforce_seat_quota", label: "个人限额", value: (p) => (p.enforce_seat_quota ? 1 : 0), render: (p) => (p.enforce_seat_quota ? badge("按席位限", "warn") : h("span", { class: "muted" }, "只作参考")) },
-            { key: "models", label: "可用模型", sortable: false, class: "opt", render: (p) => (p.models?.length ? h("span", { class: "badges" }, p.models.map((m) => mono(m))) : h("span", { class: "muted" }, "全部")) },
-          ],
-        }),
-        plans.some((p) => p.note) ? panel("说明", h("ul", { class: "plain" }, plans.filter((p) => p.note).map((p) => h("li", {}, h("b", {}, `${p.label ?? p.id}：`), p.note)))) : null,
-      );
-    }, "正在读取套餐…");
-  reload();
+function drawPlans(box, d, reload) {
+  const plans = d.plans ?? [];
+  const card = (p) =>
+    h(
+      "div",
+      { class: "plan-card clickable", role: "button", tabindex: "0", onclick: () => openPlan(p, d, reload), onkeydown: (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), openPlan(p, d, reload)), "aria-label": `编辑套餐 ${p.label ?? p.id}` },
+      h(
+        "div",
+        { class: "plan-card-head" },
+        h("div", {}, h("b", {}, p.label ?? p.id), mono(p.id)),
+        h("span", { class: "badges" }, p.id === d.default_plan ? badge("缺省", "accent", "开通律所时缺省选它") : null, badge(p.quota_unit === "cny" ? "按金额" : "按 token", "neutral")),
+      ),
+      h("div", { class: "plan-price" }, h("b", {}, p.seat_price_cny === null || p.seat_price_cny === undefined ? "未定价" : fmt.cny(p.seat_price_cny, 0)), h("span", {}, `/ 席 / ${PERIOD[p.period] === "自然周" ? "周" : "月"}`)),
+      facts([
+        ["每席位额度", h("span", { title: p.seat_quota_display ?? undefined }, `${quotaText(p)} / ${PERIOD[p.period] ?? p.period ?? "期"}`)],
+        ["5 小时窗口", p.burst ? `任意 ${p.burst.hours} 小时 ≤ ${p.burst.pct}%` : "不限"],
+        ["设备 / 账号", `${fmt.int(p.device_limit ?? 2)} 台`],
+        ["告警阈值", (p.alert_thresholds ?? [80, 100]).map((x) => `${x}%`).join(" / ")],
+        ["加量系数", fmt.num(p.boost_price_factor)],
+        ["个人限额", p.enforce_seat_quota ? "按席位额度限制" : "只作参考"],
+      ]),
+      h("div", { class: "plan-card-foot" }, p.models?.length ? p.models.map((m) => badge(m, "neutral")) : h("span", { class: "muted small" }, "可用全部模型"), p.origin === "migrated" ? badge("由旧版计量额度换算，待商务确认", "warn") : null),
+      p.note ? h("p", { class: "muted small" }, p.note) : null,
+    );
+  clear(
+    box,
+    plans.length
+      ? h("div", { class: "plan-grid" }, plans.map(card), can("plan.manage") ? h("button", { type: "button", class: "plan-card plan-new", onclick: () => openPlan(null, d, reload) }, icon("plus"), "新增套餐") : null)
+      : h("div", { class: "state state-empty" }, h("b", {}, "套餐目录为空")),
+    note("改套餐即刻影响在用这个套餐的律所（本期总额度按新的每席位额度重算）。旧套餐由“单位”折算为 token 额度的，请商务确认后再改；模型的成本价与销售价在“模型与价目”。"),
+  );
 }
 
 // 售价三项（元 / 百万 token）：按金额计费的套餐就按这三项算；成本单价仍在“模型与路由 → 价目表”
@@ -243,73 +240,4 @@ function editPlan(p, d, reload, routing) {
       reload();
     }
   });
-}
-
-function paneSettings(box) {
-  const reload = () =>
-    load(box, async () => {
-      const [s, p] = await Promise.allSettled([api.get("/v1/ops/settings"), api.get("/v1/ops/plans")]);
-      if (s.status === "rejected") throw s.reason;
-      return { s: s.value, plans: p.status === "fulfilled" ? p.value.plans ?? [] : [] };
-    }, ({ s, plans }) => {
-      const specs = [
-        {
-          name: "registration",
-          label: "注册方式",
-          type: "radio",
-          value: s.registration,
-          options: [
-            ["open", "开放自助注册", "不带码注册 = 新建个人律所（试用套餐）；带开通码 / 邀请码照常"],
-            ["code", "只凭码注册", "须有运营发的开通码或律所管理员发的邀请码"],
-            ["closed", "关闭注册", "只能运营代建账号"],
-          ],
-        },
-        plans.length ? { name: "trial_plan", label: "试用套餐", type: "select", options: plans.map((p) => [p.id, p.label ?? p.id]), value: s.trial_plan } : { name: "trial_plan", label: "试用套餐编号", value: s.trial_plan ?? "" },
-        { name: "trial_days", label: "试用天数", type: "number", min: 1, max: 365, value: s.trial_days },
-        { name: "trial_seats", label: "试用席位", type: "number", min: 1, max: 50, value: s.trial_seats },
-        { name: "default_device_limit", label: "缺省每账号设备数", type: "number", min: 1, max: 9, value: s.default_device_limit },
-        { name: "min_version", label: "客户端最低版本", value: s.clients?.min_version ?? s.min_client_version ?? "", placeholder: "如 1.8.0；空 = 不限", hint: "低于此版本的 Windows 客户端登录、注册与取席位令牌时被拒（426），并提示升级" },
-      ];
-      const err = h("p", { class: "form-error", role: "alert" });
-      const cur = { ...s, min_version: s.clients?.min_version ?? s.min_client_version ?? "" };
-      const form = h("form", { class: "settings-form", novalidate: true }, specs.map(field), err, h("div", { class: "btn-row" }, h("button", { type: "submit", class: "btn primary", disabled: !can("settings.manage"), title: needs("settings.manage") }, "保存设置…")));
-      form.addEventListener("submit", async (ev) => {
-        ev.preventDefault();
-        const v = readForm(form, specs);
-        const changes = Object.keys(v).filter((k) => String(v[k] ?? "") !== String(cur[k] ?? ""));
-        if (!changes.length) return void (err.textContent = "没有改动");
-        if (v.min_version && !/^\d+\.\d+\.\d+$/.test(v.min_version)) return void (err.textContent = "客户端最低版本写成 x.y.z，如 1.8.0");
-        const ok = await confirmAction({
-          title: "保存注册设置",
-          danger: v.registration === "open" && s.registration !== "open",
-          consequences: [
-            v.registration !== s.registration ? { open: "任何人都能自助注册并开一个试用律所（没有邮箱验证，存在批量注册薅试用额度的风险）；", code: "只有持开通码或邀请码的人能注册；", closed: "客户端注册入口关闭，只能运营代建账号；" }[v.registration] : null,
-            changes.includes("min_version") ? (v.min_version ? `低于 ${v.min_version} 的客户端将无法登录与调用 AI，须先升级；` : "取消客户端最低版本限制；") : null,
-            "已注册的账号与律所不受影响；试用参数只影响之后的自助注册。",
-          ].filter(Boolean),
-          confirmLabel: "保存",
-          run: () => api.put("/v1/ops/settings", Object.fromEntries(changes.map((k) => (k === "min_version" ? ["clients", { min_version: v.min_version || null }] : [k, v[k]])))),
-        });
-        if (ok) (toast("已保存设置"), reload());
-      });
-      box.append(
-        h("div", { class: "grid-2-1" }, panel("注册与客户端", form), panel("邮件通道", facts([["状态", s.mail?.configured ? badge("已配置", "ok") : badge("未配置", "warn")], ["发件地址", s.mail?.from ?? "—"]]), { sub: s.mail?.configured ? "忘记密码会真发 6 位验证码" : "忘记密码不会真发码：只能运营在“账号”里发一次性重置码" })),
-      );
-    }, "正在读取设置…");
-  reload();
-}
-
-function paneAlerts(box) {
-  const tools = h("div", { class: "toolbar" });
-  const list = h("div");
-  box.replaceChildren(tools, list);
-  const drawTools = () =>
-    clear(
-      tools,
-      segmented([{ id: "open", label: "未确认" }, { id: "all", label: "全部（最近 500 条）" }], st.alerts, (v) => ((st.alerts = v), drawTools(), reload()), "范围"),
-      segmented([{ id: "", label: "全部类型" }, ...Object.entries(ALERT_KIND).map(([id, label]) => ({ id, label }))], st.aKind, (v) => ((st.aKind = v), drawTools(), reload()), "类型"),
-    );
-  const reload = () => load(list, () => api.get("/v1/ops/alerts", { status: st.alerts, limit: 100 }), (d) => list.append(alertList((d.alerts ?? []).filter((a) => !st.aKind || a.kind === st.aKind), { onAck: reload })), "正在读取告警…");
-  drawTools();
-  reload();
 }

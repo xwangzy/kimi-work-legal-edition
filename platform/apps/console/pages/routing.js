@@ -1,6 +1,7 @@
 /**
- * 模型与路由：上游（地址、密钥尾号、健康、延迟、测试连接）、模型别名（目标与优先级、启停、默认）、价目表（版本历史）。
- * 接口：GET /v1/ops/routing；写（route.manage）PUT/DELETE providers/{id}、POST providers/{id}/probe、PUT/DELETE models/{alias}、PUT prices（契约 §5）。
+ * 模型与路由：上游（地址、密钥尾号、健康、延迟、测试连接）、模型别名（目标与优先级、启停、默认）。
+ * 第 62 批：价目表挪到“模型与价目”（pages/pricing.js，成本价、销售价、毛利放在一起看）；#/ops/routing?tab=prices 自动转过去。
+ * 接口：GET /v1/ops/routing；写（route.manage）PUT/DELETE providers/{id}、POST providers/{id}/probe、PUT/DELETE models/{alias}（契约 §5）。
  *
  * 上游密钥：在本页用网关路由公钥加密成 key_sealed 再提交（seal-key.js，主文 §3.2），同时只提交“…”+ 末 4 位作 key_hint。
  * 第 46 批：公钥取自 GET /v1/ops/routing 的 routing_key {kid, spki_b64, fingerprint}（不再读静态 config.json，审计 cloud §9-5），
@@ -8,8 +9,8 @@
  */
 import * as api from "../api.js";
 import { checkRoutingKey, fingerprintText, keyHint, sealUpstreamKey } from "../seal-key.js";
-import { can, needs, pageHead, providerBadge } from "../domain.js";
-import { add, badge, btn, clear, confirmAction, dataTable, emptyBlock, facts, field, fmt, h, icon, load, mono, openDrawer, panel, readForm, tabBar, toast } from "../ui.js";
+import { can, go, needs, pageHead, providerBadge } from "../domain.js";
+import { badge, btn, clear, confirmAction, dataTable, facts, field, fmt, h, icon, load, metaLine, mono, note, openDrawer, panel, readForm, tabBar, toast } from "../ui.js";
 
 const st = { tab: "providers", pTable: { sort: "id", asc: true }, mTable: { sort: "alias", asc: true } };
 const BUILTIN = new Set(["legal/k3", "legal/k2.6"]);
@@ -21,7 +22,7 @@ let keyCheck = null;
 const routingKeyStatus = () => keyCheck ?? Promise.resolve({ ok: false, reason: "还没读到路由：请刷新本页。" });
 
 export function render(page, r) {
-  if (r.params.tab) st.tab = r.params.tab;
+  if (r.params.tab === "providers" || r.params.tab === "models") st.tab = r.params.tab;
   const head = h("div");
   const box = h("div", { class: "stack" });
   page.append(head, box);
@@ -32,28 +33,27 @@ export function render(page, r) {
 
 function draw(head, box, d, reload) {
   keyCheck = checkRoutingKey(d.routing_key);
-  const fp = h("span", { class: "muted" }, " · 路由公钥核对中…");
+  const fp = h("span", {}, "路由公钥核对中…");
   const warn = h("div");
   keyCheck.then((ks) => {
-    clear(fp, h("span", { class: "muted" }, " · 路由公钥 "), mono(ks.kid ?? d.routing_key?.kid ?? d.routing_key_id ?? "未登记"), ks.fingerprint ? h("span", { class: "muted", title: ks.fingerprint }, ` · 指纹 ${fingerprintText(ks.fingerprint)}`) : null, ks.ok ? badge("已核对", "ok", "本页按控制面给的公钥算出的 SHA-256 指纹；请与部署记录（cloud-init-secrets 输出）比对") : null);
+    clear(fp, "路由公钥 ", mono(ks.kid ?? d.routing_key?.kid ?? d.routing_key_id ?? "未登记"), ks.fingerprint ? h("span", { title: ks.fingerprint }, `指纹 ${fingerprintText(ks.fingerprint)}`) : null, ks.ok ? badge("已核对", "ok", "本页按控制面给的公钥算出的 SHA-256 指纹；请与部署记录（cloud-init-secrets 输出）比对") : badge("未核对", "danger"));
     if (!ks.ok) clear(warn, h("div", { class: "banner danger" }, ks.reason));
   });
   clear(
     head,
     pageHead(
       "模型与路由",
-      h("span", { class: "sub-row" }, `路由版本 v${d.version ?? "—"}`, h("span", { class: "muted" }, ` · ${fmt.full(d.updated_at)} 由 ${d.updated_by_label ?? d.updated_by ?? "—"} 更新`), fp),
-      btn("刷新健康", () => reload(), { icon: icon("refresh") }),
+      h("div", { class: "stack-sm" }, metaLine(`路由版本 v${d.version ?? "—"}`, `${fmt.full(d.updated_at)} 由 ${d.updated_by_label ?? d.updated_by ?? "—"} 更新`), h("div", { class: "meta-line" }, fp)),
+      h("div", { class: "btn-row" }, can("route.read") ? btn("模型与价目", () => go("ops/pricing"), { icon: icon("tag") }) : null, btn("刷新健康", () => reload(), { icon: icon("refresh") })),
     ),
   );
   const tabs = h("div");
   const pane = h("div", { class: "stack" });
-  const drawTabs = () => clear(tabs, tabBar([{ id: "providers", label: "上游", count: d.providers?.length }, { id: "models", label: "模型别名", count: d.models?.length }, { id: "prices", label: "价目表" }], st.tab, (id) => ((st.tab = id), drawTabs(), drawPane())));
+  const drawTabs = () => clear(tabs, tabBar([{ id: "providers", label: "上游", count: d.providers?.length }, { id: "models", label: "模型别名", count: d.models?.length }], st.tab, (id) => ((st.tab = id), drawTabs(), drawPane())));
   const drawPane = () => {
     clear(pane);
-    if (st.tab === "providers") paneProviders(pane, d, reload);
-    else if (st.tab === "models") paneModels(pane, d, reload);
-    else panePrices(pane, d, reload);
+    if (st.tab === "models") paneModels(pane, d, reload);
+    else paneProviders(pane, d, reload);
   };
   clear(box, warn, tabs, pane);
   drawTabs();
@@ -65,7 +65,7 @@ function paneProviders(pane, d, reload) {
   const used = new Map();
   for (const m of d.models ?? []) for (const t of m.targets ?? []) used.set(t.provider, [...(used.get(t.provider) ?? []), m.alias]);
   pane.append(
-    h("div", { class: "toolbar" }, h("p", { class: "muted small" }, "网关本机配置有上游主机白名单（routing.allow_hosts）：名单外的上游显示“不在网关白名单”，不会被使用。"), btn("新增上游", () => editProvider(null, d, reload), { kind: "primary", icon: icon("plus"), disabled: !can("route.manage"), title: needs("route.manage") })),
+    h("div", { class: "toolbar" }, note("网关本机配置有上游主机白名单（routing.allow_hosts）：名单外的上游显示“不在网关白名单”，不会被使用。"), btn("新增上游", () => editProvider(null, d, reload), { kind: "primary", icon: icon("plus"), disabled: !can("route.manage"), title: needs("route.manage") })),
     dataTable({
       state: st.pTable,
       rows: d.providers ?? [],
@@ -80,7 +80,7 @@ function paneProviders(pane, d, reload) {
         { key: "latency", label: "延迟", num: true, class: "opt", value: (p) => p.health?.latency_ms ?? null, render: (p) => fmt.ms(p.health?.latency_ms) },
         { key: "fails", label: "连续失败", num: true, class: "opt", value: (p) => p.health?.consecutive_failures ?? null, render: (p) => fmt.int(p.health?.consecutive_failures) },
         { key: "max_concurrency", label: "并发上限", num: true, class: "opt", render: (p) => fmt.int(p.max_concurrency) },
-        { key: "used_by", label: "被引用", sortable: false, class: "opt", render: (p) => ((used.get(p.id) ?? []).length ? h("span", { class: "badges" }, used.get(p.id).map((a) => mono(a))) : h("span", { class: "muted" }, "无")) },
+        { key: "used_by", label: "被引用", sortable: false, class: "opt wrap-sm", render: (p) => ((used.get(p.id) ?? []).length ? h("span", { class: "badges" }, used.get(p.id).map((a) => mono(a))) : h("span", { class: "muted" }, "无")) },
         {
           key: "_act",
           label: "",
@@ -210,7 +210,7 @@ async function editProvider(p, d, reload) {
 function paneModels(pane, d, reload) {
   const pmap = Object.fromEntries((d.providers ?? []).map((p) => [p.id, p]));
   pane.append(
-    h("div", { class: "toolbar" }, h("p", { class: "muted small" }, "同一别名的目标按优先级（小者先）；只在还没给客户端写出任何字节之前切换（连接失败、5xx、429、首包超时），至多 3 次；4xx 不切换。"), btn("新增别名", () => editModel(null, d, reload), { kind: "primary", icon: icon("plus"), disabled: !can("route.manage"), title: needs("route.manage") })),
+    h("div", { class: "toolbar" }, note("同一别名的目标按优先级（小者先）；只在还没给客户端写出任何字节之前切换（连接失败、5xx、429、首包超时），至多 3 次；4xx 不切换。"), btn("新增别名", () => editModel(null, d, reload), { kind: "primary", icon: icon("plus"), disabled: !can("route.manage"), title: needs("route.manage") })),
     dataTable({
       state: st.mTable,
       rows: d.models ?? [],
@@ -319,112 +319,6 @@ function editModel(m, d, reload) {
     });
     if (ok) {
       toast(isNew ? "已新增别名" : "已保存路由");
-      dr.close();
-      reload();
-    }
-  });
-}
-
-// ─── 价目表 ────────────────────────────────────────────────────────
-const PRICE_COLS = [
-  ["input", "售价 · 未缓存输入"],
-  ["cached_input", "售价 · 缓存输入"],
-  ["output", "售价 · 输出"],
-  ["cost_input", "成本 · 未缓存输入"],
-  ["cost_cached_input", "成本 · 缓存输入"],
-  ["cost_output", "成本 · 输出"],
-];
-function panePrices(pane, d, reload) {
-  const prices = d.prices ?? { items: {} };
-  const aliases = [...new Set([...(d.models ?? []).map((m) => m.alias), ...Object.keys(prices.items ?? {})])];
-  const rows = aliases.map((alias) => ({ alias, label: d.models?.find((m) => m.alias === alias)?.label ?? "", ...(prices.items?.[alias] ?? {}) }));
-  const unpriced = rows.filter((r) => r.input === null || r.input === undefined || r.output === null || r.output === undefined);
-  add(
-    pane,
-    unpriced.length ? h("div", { class: "banner warn" }, `${unpriced.map((r) => r.alias).join("、")} 未定价：用量价值与账单里这部分显示“未定价”，不估算。`) : null,
-    panel(
-      `价目表 v${prices.version ?? "—"}`,
-      dataTable({
-        state: { sort: "alias", asc: true },
-        rows,
-        empty: "还没有模型别名",
-        columns: [
-          { key: "alias", label: "别名", render: (r) => h("div", { class: "cell-2" }, mono(r.alias), h("small", {}, r.label)) },
-          ...PRICE_COLS.map(([k, label]) => ({ key: k, label, num: true, value: (r) => r[k] ?? null, render: (r) => (r[k] === null || r[k] === undefined ? h("span", { class: "muted" }, "未定价") : fmt.price(r[k])) })),
-        ],
-      }),
-      { sub: `单位：元 / 百万 token · 生效于 ${fmt.full(prices.effective_at)}`, actions: btn("改价目…", () => editPrices(rows, prices, reload), { kind: "primary", disabled: !can("price.manage") || !rows.length, title: needs("price.manage") ?? (rows.length ? undefined : "还没有模型别名：先在“模型别名”里添加") }) },
-    ),
-    panel(
-      "版本历史",
-      (d.price_history ?? []).length
-        ? dataTable({ state: { sort: "version", asc: false }, rows: d.price_history, columns: [{ key: "version", label: "版本", num: true, render: (x) => `v${x.version}` }, { key: "effective_at", label: "生效于", render: (x) => fmt.full(x.effective_at) }, { key: "by", label: "修改人", render: (x) => mono(x.by ?? "—") }] })
-        : emptyBlock("还没有历史版本"),
-      { sub: "账本行记价目版本；历史版本全部保留" },
-    ),
-  );
-}
-
-function editPrices(rows, prices, reload) {
-  const inputs = {};
-  const table = h(
-    "table",
-    { class: "tbl price-edit" },
-    h("thead", {}, h("tr", {}, h("th", {}, "别名"), PRICE_COLS.map(([, l]) => h("th", { class: "num" }, l)))),
-    h(
-      "tbody",
-      {},
-      rows.map((r) =>
-        h(
-          "tr",
-          {},
-          h("td", {}, mono(r.alias)),
-          PRICE_COLS.map(([k, l]) => {
-            const i = h("input", { type: "number", min: 0, step: "0.0001", inputmode: "decimal", class: "num-input", value: r[k] ?? "", placeholder: "未定价", "aria-label": `${r.alias} ${l}` });
-            (inputs[r.alias] ??= {})[k] = i;
-            return h("td", { class: "num" }, i);
-          }),
-        ),
-      ),
-    ),
-  );
-  const err = h("p", { class: "form-error", role: "alert" });
-  const form = h(
-    "form",
-    { class: "drawer-form", novalidate: true },
-    h("p", { class: "muted small" }, "单位：元 / 百万 token（1 元 / 百万 token = 1 微元 / token）。留空 = 未定价（界面与账单显示“未定价”，不按 0 计）。"),
-    h("div", { class: "table-wrap" }, table),
-    err,
-    h("div", { class: "drawer-foot" }, h("span", { class: "spacer" }), h("button", { type: "button", class: "btn", onclick: () => dr.close() }, "取消"), h("button", { type: "submit", class: "btn primary" }, "生成新版本…")),
-  );
-  const dr = openDrawer({ title: "改价目表", subtitle: `当前 v${prices.version ?? "—"}`, body: form, wide: true });
-  form.addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    err.textContent = "";
-    const items = {};
-    const changes = [];
-    for (const r of rows) {
-      items[r.alias] = {};
-      for (const [k, l] of PRICE_COLS) {
-        const s = inputs[r.alias][k].value.trim();
-        const v = s === "" ? null : Number(s);
-        if (v !== null && !(Number.isFinite(v) && v >= 0 && v <= 100000)) return void (err.textContent = `${r.alias} 的“${l}”须为 0–100000 的数字或留空`);
-        items[r.alias][k] = v;
-        const old = r[k] ?? null;
-        if (old !== v) changes.push(`${r.alias} ${l}：${fmt.price(old)} → ${fmt.price(v)}`);
-      }
-    }
-    if (!changes.length) return void (err.textContent = "没有改动");
-    const ok = await confirmAction({
-      title: "生成新价目版本",
-      danger: true,
-      lead: h("ul", { class: "diff-list" }, changes.slice(0, 12).map((c) => h("li", {}, c)), changes.length > 12 ? h("li", {}, `……共 ${changes.length} 项`) : null),
-      consequences: [`生成价目表 v${(Number(prices.version) || 0) + 1}，约 15 秒后网关按新价计量；之前的请求仍按原版本记账；`, "金额额度（cny）的律所：同样的用量扣得多或少，本期百分比随之变化；", "账单的用量价值与成本按每行的价目版本算。"],
-      confirmLabel: "生成新版本",
-      run: () => api.put("/v1/ops/routing/prices", { items }),
-    });
-    if (ok) {
-      toast(`已生成价目表 v${ok.version ?? ""}`);
       dr.close();
       reload();
     }

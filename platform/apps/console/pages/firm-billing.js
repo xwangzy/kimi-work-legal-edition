@@ -4,7 +4,7 @@
  */
 import * as api from "../api.js";
 import { pageHead } from "../domain.js";
-import { bjMonth, clear, facts, fmt, h, load, monthShift, panel, selectEl, stat } from "../ui.js";
+import { bjMonth, clear, facts, fmt, h, icon, load, monthShift, panel, selectEl, stat } from "../ui.js";
 
 const st = { period: bjMonth() };
 
@@ -23,12 +23,12 @@ function draw(box, raw) {
   const plan = d.plan ?? {};
   clear(
     box,
-    d.priced === false ? h("div", { class: "banner warn" }, "价目未配齐：未定价的项显示“未定价”，合计只含已定价部分。") : null,
-    d.basis === "current_estimate" ? h("div", { class: "banner warn" }, "这个月的席位费与加量费按现在的套餐与席位估算（当月结束时没有留下记录），以账单为准。") : null,
+    d.priced === false ? h("div", { class: "banner warn" }, icon("alert"), h("span", {}, "价目未配齐：未定价的项显示“未定价”，合计只含已定价部分。")) : null,
+    d.basis === "current_estimate" ? h("div", { class: "banner warn" }, icon("alert"), h("span", {}, "这个月的席位费与加量费按现在的套餐与席位估算（当月结束时没有留下记录），以账单为准。")) : null,
     h(
       "div",
       { class: "kpis" },
-      stat("应收", fmt.cny(d.revenue_cny), `席位费 ${fmt.cny(d.seat_fee_cny)} + 加量费 ${fmt.cny(d.boost_fee_cny)}`),
+      stat("应收", fmt.cny(d.revenue_cny), `席位费 ${fmt.cny(d.seat_fee_cny)} + 加量费 ${fmt.cny(d.boost_fee_cny)}`, { hero: true }),
       stat("席位费", fmt.cny(d.seat_fee_cny), `${fmt.int(d.seats)} 席 × ${fmt.cny(d.seat_price_cny)}`),
       stat("加量费", fmt.cny(d.boost_fee_cny), d.boost_pct ? `本期加量 +${d.boost_pct}%` : "本期未加量"),
       stat("用量价值", fmt.cny(d.value_cny), "按价目计的实际用量（不另收费）"),

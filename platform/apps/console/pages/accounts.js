@@ -113,27 +113,10 @@ export function openAccount(aid) {
     const u = d.usage ?? {};
     dr.setTitle(a.name ? `${a.name}` : a.email ?? aid);
     const A = api.A(aid);
+    // 第 62 批：危险操作（停用）放在最后，常用的客服动作在前
     const actions = h(
       "div",
       { class: "btn-row" },
-      a.status === "disabled"
-        ? btn("启用", async () => {
-            const ok = await confirmAction({ title: "启用账号", consequences: ["本人可再次登录；之前吊销的会话不恢复，须重新登录。"], confirmLabel: "启用", run: () => api.post(`${A}/enable`) });
-            if (ok) (toast("已启用"), reload(), ctx.reload());
-          }, { disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") })
-        : btn("停用…", async () => {
-            const ok = await confirmAction({
-              title: `停用 ${a.email}`,
-              danger: true,
-              consequences: ["立即吊销该账号的全部会话：所有设备 15 秒内在网关暂停（AI 停用，本机功能照常）；", "本人不能再登录，直到运营启用；", "用量与审计记录保留。"],
-              fields: [{ name: "reason", label: "停用原因（记入审计，本人可见）", type: "textarea", required: true, maxlength: 200 }],
-              typeToConfirm: a.email,
-              typeLabel: "再输入一次邮箱以确认：",
-              confirmLabel: "停用账号",
-              run: (v) => api.post(`${A}/disable`, { reason: v.reason }),
-            });
-            if (ok) (toast("已停用"), reload(), ctx.reload());
-          }, { kind: "danger", disabled: !can("account.manage"), title: needs("account.manage") }),
       btn("发重置码", async () => {
         const r = await confirmAction({ title: "发密码重置码", consequences: ["生成一次性重置码（30 分钟）；本人凭码设新密码后，全部会话吊销、须重新登录。"], confirmLabel: "生成", run: () => api.post(`${A}/reset-code`) });
         if (r?.reset_code) await showSecret({ title: `重置码 · ${a.email}`, secret: r.reset_code, expiresAt: r.expires_at });
@@ -161,7 +144,26 @@ export function openAccount(aid) {
         });
         if (r) (toast("已保存"), reload());
       }, { disabled: !can("account.manage"), title: needs("account.manage") }),
+      a.status === "disabled"
+        ? btn("启用", async () => {
+            const ok = await confirmAction({ title: "启用账号", consequences: ["本人可再次登录；之前吊销的会话不恢复，须重新登录。"], confirmLabel: "启用", run: () => api.post(`${A}/enable`) });
+            if (ok) (toast("已启用"), reload(), ctx.reload());
+          }, { disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") })
+        : btn("停用…", async () => {
+            const ok = await confirmAction({
+              title: `停用 ${a.email}`,
+              danger: true,
+              consequences: ["立即吊销该账号的全部会话：所有设备 15 秒内在网关暂停（AI 停用，本机功能照常）；", "本人不能再登录，直到运营启用；", "用量与审计记录保留。"],
+              fields: [{ name: "reason", label: "停用原因（记入审计，本人可见）", type: "textarea", required: true, maxlength: 200 }],
+              typeToConfirm: a.email,
+              typeLabel: "再输入一次邮箱以确认：",
+              confirmLabel: "停用账号",
+              run: (v) => api.post(`${A}/disable`, { reason: v.reason }),
+            });
+            if (ok) (toast("已停用"), reload(), ctx.reload());
+          }, { kind: "danger", disabled: !can("account.manage"), title: needs("account.manage") }),
     );
+
     clear(
       body,
       h("div", { class: "drawer-hero" }, h("div", {}, h("div", { class: "hero-email" }, a.email), h("div", { class: "badges" }, accountBadge(a), h("span", { class: "muted small" }, `${roleText(a.role)} · `, h("button", { type: "button", class: "link", onclick: () => go(`tenants/${encodeURIComponent(a.tid)}`) }, a.tenant_name ?? a.tid)))), actions),

@@ -3,14 +3,15 @@
  * 统一云端控制台本机开发（第 46 批）：先打包 dist/（scripts/build-console.mjs），再一条命令拉起“进程内控制面 + 控制台静态页”。
  * **只用于开发**：平台人员、律所、成员账号、套餐、上游都是本脚本经真实接口造的开发数据；价格是示例价格；网关路由密钥临时生成。
  *
- *   node scripts/dev-console.mjs [--port 5480] [--empty]
+ *   node scripts/dev-console.mjs [--port 5480] [--empty] [--no-usage]
  *
  * - 控制台与控制面同源（/v1/* 反向代理到进程内的控制面），不必配 CORS；静态页只发 dist/ 里的文件，CSP 与生产同口径；
  * - 平台人员用控制面的 devStaff 选项建（系统管理员、客户运营、财务），与生产同口径：邮箱 + 密码即登录（D-218 起没有第二步验证），
  *   密码每次启动随机生成并打印；不再有运营私钥与名册；危险操作的复核只要密码；
  * - 开发数据**只经控制面的真实接口写入**（客户运营与系统管理员的会话令牌，与浏览器同一条路）：开通律所、代建负责人账号
  *   （拿设置码经 /v1/auth/password-reset/confirm 设好密码，用来以律所管理员身份登录“本所”）、上游（密钥用临时路由公钥在本机加密）、
- *   别名路由、加量与上限、停用一个账号。逐请求用量不造：没有真实设备时用量页显示空状态。--empty 只建平台人员。
+ *   别名路由、加量与上限、停用一个账号；第 62 批起另模拟网关回报近 30 日逐请求用量与上游健康（走网关同一条服务间接口，见
+ *   seedGatewayReports；--no-usage 不造，用量页显示空状态）。--empty 只建平台人员。
  */
 import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -23,6 +24,8 @@ import { buildConsole } from "./build-console.mjs";
 const args = process.argv.slice(2);
 const PORT = Number(args[args.indexOf("--port") + 1]) || 5480;
 const EMPTY = args.includes("--empty");
+const NO_USAGE = args.includes("--no-usage");
+const SERVICE_SECRET = "dev-console-service-secret-000";
 
 const { createControlPlane, devControlPlaneKeys, UsageBook } = await import("../services/control-plane/src/index.ts");
 const { sealUpstreamKey, keyHint } = await import("../apps/console/seal-key.js");
@@ -47,7 +50,7 @@ const ROUTING_KID = createHash("sha256").update(spki).digest("hex").slice(0, 16)
 
 const cp = createControlPlane({
   keys: devControlPlaneKeys(),
-  serviceSecret: "dev-console-service-secret-000",
+  serviceSecret: SERVICE_SECRET,
   devStaff: STAFF,
   dataDir: join(dir, "cp"),
   opsAccessLog: () => {},
@@ -161,6 +164,74 @@ if (!EMPTY) {
     }),
   );
   await tryDo("路由 legal/k3", () => as(SYS, "PUT", `/v1/ops/routing/models/${encodeURIComponent("legal/k3")}`, { label: "主任务模型", enabled: true, is_default: true, targets: [{ provider: "csi-maas", model: "kimi-k3.1-pro", priority: 1 }, { provider: "csi-maas-b", model: "kimi-k3.1-pro", priority: 2 }], allow_cross_vendor: false, default_max_tokens: 8192 }));
+  if (!NO_USAGE) await seedGatewayReports(firms);
+}
+
+/**
+ * 第 62 批（界面走查用）：模拟网关回报近 30 日的逐请求用量与上游健康——走网关同一条服务间接口
+ * （POST /v1/quota/settle、POST /v1/feed/routing-health，服务凭据），控制面照常按请求编号去重、按价目版本重算、触发告警。
+ * 数字是虚构的开发数据（固定随机种子，截图可复现）；--no-usage 不造。
+ */
+async function seedGatewayReports(firms) {
+  const svc = (path, body) => http("POST", path, body, SERVICE_SECRET);
+  let seed = 20261124;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const DAY = 86_400_000;
+  const nowMs = Date.now();
+  // 每家：近 30 日请求数、平均输入、成员（有账号的 + 未建账号的）、legal/k2.6（未定价）占比
+  const plan = {
+    ten_chengming: { n: 2600, input: 82_000, uids: ["chenyu", "lawyer-02", "lawyer-03", "lawyer-04"], sub: 0.18 },
+    ten_hengshi: { n: 1500, input: 118_000, uids: ["sunli", "lawyer-02", "lawyer-05"], sub: 0.1 },
+    ten_qinghe: { n: 760, input: 116_000, uids: ["fengxi", "lawyer-02"], sub: 0.05 },
+  };
+  for (const f of firms) {
+    const p = plan[f.tid];
+    if (!p) continue;
+    const records = [];
+    for (let i = 0; i < p.n; i++) {
+      // 越近的日子越多（产品在推开），工作日比周末多
+      const back = Math.floor(Math.pow(rnd(), 1.35) * 30);
+      const at = nowMs - back * DAY - Math.floor(rnd() * 10 * 3600_000);
+      const wd = new Date(at + 8 * 3600_000).getUTCDay();
+      if ((wd === 0 || wd === 6) && rnd() < 0.6) continue;
+      const sub = rnd() < p.sub;
+      const input = Math.round(p.input * (0.35 + rnd() * 1.3));
+      const roll = rnd();
+      const outcome = roll < 0.012 ? "upstream_error" : roll < 0.02 ? "timeout" : roll < 0.035 ? "client_gone" : "ok";
+      const failed = outcome === "upstream_error" || outcome === "timeout";
+      const uid = `usr_${f.tid.slice(4)}_${p.uids[Math.floor(rnd() * p.uids.length)]}`;
+      const switched = !failed && rnd() < 0.02;
+      records.push({
+        request_id: `dev-${f.tid.slice(4)}-${i.toString(36)}-${Math.floor(rnd() * 1e9).toString(36)}`,
+        at: new Date(at).toISOString(),
+        started_at: new Date(at - 4000 - Math.floor(rnd() * 40_000)).toISOString(),
+        uid,
+        sid: `seat_dev_${uid.slice(-8)}`,
+        alias: sub ? "legal/k2.6" : "legal/k3",
+        provider: switched ? "csi-maas-b" : "csi-maas",
+        upstream_model: sub ? "kimi-k3.1-pro-highspeed" : "kimi-k3.1-pro",
+        stream: true,
+        status: failed ? (outcome === "timeout" ? 504 : 502) : 200,
+        outcome,
+        usage: failed ? null : { input, cached: Math.round(input * (0.2 + rnd() * 0.35)), output: Math.round(1200 + rnd() * 5200), reasoning: 0 },
+        usage_source: failed ? "none" : outcome === "client_gone" ? "estimated" : "upstream",
+        latency_ms: Math.round(failed ? 30_000 + rnd() * 30_000 : 6000 + rnd() * 50_000),
+        attempts: switched ? [{ provider: "csi-maas", status: 503, error: "upstream_5xx", ms: 1200 }, { provider: "csi-maas-b", status: 200, ms: 22_000 }] : [],
+      });
+    }
+    records.sort((a, b) => a.at.localeCompare(b.at));
+    for (let i = 0; i < records.length; i += 200) await tryDo(`用量回报 ${f.tid}`, () => svc("/v1/quota/settle", { tid: f.tid, holder: "gw-dev-01", records: records.slice(i, i + 200) }));
+  }
+  const at = new Date().toISOString();
+  await tryDo("上游健康回报", () =>
+    svc("/v1/feed/routing-health", {
+      holder: "gw-dev-01",
+      providers: {
+        "csi-maas": { state: "up", latency_ms: 820, last_ok_at: at, consecutive_failures: 0, inflight: 6, probed_at: at },
+        "csi-maas-b": { state: "degraded", latency_ms: 2900, last_ok_at: at, last_error: "upstream_429", consecutive_failures: 2, inflight: 1, probed_at: at },
+      },
+    }),
+  );
 }
 // 开发数据写完：脚本自己的会话退出（浏览器里重新登录）
 for (const [email, t] of Object.entries(sessions)) await http("POST", "/v1/auth/logout", {}, t).catch(() => skipped.push(`退出 ${email}`));

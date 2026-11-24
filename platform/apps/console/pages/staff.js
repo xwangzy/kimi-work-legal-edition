@@ -7,7 +7,7 @@
  */
 import * as api from "../api.js";
 import { isMe, pageHead, PERM_LABEL, PLATFORM_ROLES } from "../domain.js";
-import { badge, btn, clear, confirmAction, dataTable, facts, fmt, h, icon, load, matches, mono, openDrawer, panel, readForm, searchInput, showSecret, toast } from "../ui.js";
+import { badge, btn, clear, confirmAction, dataTable, facts, fmt, fold, h, icon, load, matches, mono, openDrawer, panel, readForm, searchInput, showSecret, toast } from "../ui.js";
 
 const st = { q: "", table: { sort: "name", asc: true }, roles: PLATFORM_ROLES };
 const S = (aid) => `/v1/ops/staff/${api.seg(aid)}`;
@@ -57,7 +57,7 @@ export function render(page) {
           { key: "created_at", label: "添加于", render: (x) => fmt.date(x.created_at) },
         ],
       }),
-      panel("角色说明", h("div", { class: "role-grid" }, st.roles.map((r) => h("div", { class: "role-card" }, h("b", {}, r.label ?? r.id), h("p", {}, r.note ?? r.description ?? ""), h("div", { class: "badges wrap" }, (r.perms ?? []).map((p) => h("span", { class: "perm", title: p }, PERM_LABEL[p] ?? p)))))), { sub: "一人 1–3 个角色；客户运营与开通专员互斥" }),
+      fold("角色说明", `${st.roles.length} 个角色 · 一人 1–3 个；客户运营与开通专员互斥`, h("div", { class: "role-grid" }, st.roles.map((r) => h("div", { class: "role-card" }, h("b", {}, r.label ?? r.id), h("p", {}, r.note ?? r.description ?? ""), h("div", { class: "badges wrap" }, (r.perms ?? []).map((p) => h("span", { class: "perm", title: p }, PERM_LABEL[p] ?? p))))))),
     );
   };
   page.append(pageHead("人员与权限", "中软平台人员都用邮箱 + 密码登录", btn("添加人员", () => createStaff(reload), { kind: "primary", icon: icon("plus") })), tools, box);
@@ -161,7 +161,7 @@ function openStaff(x, { reload, activeSysadmins }) {
       { class: "stack" },
       h(
         "div",
-        { class: "btn-row" },
+        { class: "action-bar" },
         btn("改角色", editRoles, { size: "sm" }),
         x.status === "disabled" ? btn("启用", enable, { size: "sm" }) : btn("停用", disable, { size: "sm", kind: "danger", disabled: self || lastSys, title: self ? "不能停用自己" : lastSys ? "至少保留一名有效的系统管理员" : undefined }),
         btn("重置密码与设置码", reset, { size: "sm", disabled: self, title: self ? "改自己的密码请到“账号与安全”" : undefined }),

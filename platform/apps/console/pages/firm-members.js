@@ -105,13 +105,14 @@ function openMember(m, reload) {
       { class: "stack" },
       h(
         "div",
-        { class: "btn-row" },
-        m.status === "disabled" ? act("启用", {}, enable) : act("停用", { notSelf: true, kind: "danger" }, disable),
+        { class: "action-bar" },
         act("下线全部登录", { notSelf: true }, revoke),
         m.role === "admin" && !self
           ? btn("发重置码", reset, { size: "sm", disabled: true, title: "管理员的重置码由中软客服核验身份后发放（拿到码即可接管对方账号）" })
           : act("发重置码", { notSelf: true }, reset),
         act("个人上限", {}, limits),
+        // 第 62 批：危险操作（停用）放在最后
+        m.status === "disabled" ? act("启用", {}, enable) : act("停用", { notSelf: true, kind: "danger" }, disable),
       ),
       ro ? h("p", { class: "muted small" }, "合伙人只读：管理操作请本所管理员完成。") : null,
       panel(

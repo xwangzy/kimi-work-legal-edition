@@ -190,9 +190,9 @@ export function deviceTable(rows, { state, after, showTenant = true, empty } = {
   return dataTable({ columns: cols, rows, state: state ?? { sort: "last_seen_on", asc: false }, empty: empty ?? "没有设备", rowClass: (d) => (d.revoked_at ? "dim" : (d.flags ?? []).length ? "flagged" : "") });
 }
 
-/** 页头：标题 + 说明 + 右侧操作 */
+/** 页头：标题 + 说明（文字或元信息行 metaLine）+ 右侧操作 */
 export function pageHead(title, sub, actions) {
-  return h("header", { class: "page-head" }, h("div", { class: "page-titles" }, h("h1", {}, title), sub ? h("p", { class: "page-sub" }, sub) : null), actions ? h("div", { class: "page-actions" }, actions) : null);
+  return h("header", { class: "page-head" }, h("div", { class: "page-titles" }, h("h1", {}, title), sub ? h(typeof sub === "string" ? "p" : "div", { class: "page-sub" }, sub) : null), actions ? h("div", { class: "page-actions" }, actions) : null);
 }
 /** 是不是本人（审计、人员表里标“我”） */
 export const isMe = (who) => !!who && (who === ctx.operatorId || (ctx.operatorEmail && String(who).toLowerCase() === ctx.operatorEmail.toLowerCase()));

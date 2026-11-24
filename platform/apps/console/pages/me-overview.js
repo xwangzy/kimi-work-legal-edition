@@ -22,7 +22,8 @@ const burstBlock = (b) =>
     "div",
     { class: "burst" },
     meter({ label: `${b.hours ?? 5} 小时频率限制`, ratio: b.used_ratio, resetsAt: b.resets_at, compact: true }),
-    h("small", { class: "muted" }, `任意 ${b.hours ?? 5} 小时内最多用本期额度的 ${b.pct ?? "—"}%${fmt.resets(b.resets_at) ? ` · ${fmt.resets(b.resets_at)} 起逐步恢复` : ""}`),
+    // 控制面 /v1/me/usage 的 burst 不带 pct（只给已用比例与恢复时刻）：没有就不写“—%”
+    h("small", { class: "muted" }, [b.pct === null || b.pct === undefined ? `任意 ${b.hours ?? 5} 小时窗口` : `任意 ${b.hours ?? 5} 小时内最多用本期额度的 ${b.pct}%`, fmt.resets(b.resets_at) ? `${fmt.resets(b.resets_at)} 起逐步恢复` : null].filter(Boolean).join(" · ")),
   );
 
 export function render(page) {
@@ -87,7 +88,7 @@ function draw(box, u) {
     h(
       "div",
       { class: "grid-2-1" },
-      panel("近 30 日", daily.length ? trendChart({ labels: daily.map((d) => d.day), series: [{ name: "输入 token", values: daily.map((d) => Number(d.tokens_in) || 0), kind: "bar" }, { name: "输出 token", values: daily.map((d) => Number(d.tokens_out) || 0), kind: "bar", cls: "s2" }], format: (v) => fmt.tokens(v), tick: (l) => l.slice(5) }) : emptyBlock("这段时间没有用量", "在 Windows 客户端发起任务后，这里按北京时间日显示"), { sub: "实际消耗（token）" }),
+      panel("近 30 日", daily.length ? trendChart({ labels: daily.map((d) => d.day), series: [{ name: "输入 token", values: daily.map((d) => Number(d.tokens_in) || 0), kind: "bar", stack: true }, { name: "输出 token", values: daily.map((d) => Number(d.tokens_out) || 0), kind: "bar", stack: true, cls: "s2" }], format: (v) => fmt.tokens(v), tick: (l) => l.slice(5), height: 200 }) : emptyBlock("这段时间没有用量", "在 Windows 客户端发起任务后，这里按北京时间日显示"), { sub: "实际消耗（token）" }),
       panel("按模型", hbars((u.by_model ?? []).map((m) => ({ label: m.label ?? m.alias, value: Number(m.tokens) || 0, note: `${fmt.pct(m.share)} · ${fmt.int(m.requests)} 次`, title: m.alias })), { format: (v) => `${fmt.tokens(v)} token`, empty: "本期还没有模型用量" })),
     ),
   );
