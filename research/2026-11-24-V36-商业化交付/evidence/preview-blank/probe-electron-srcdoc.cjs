@@ -1,0 +1,28 @@
+const { app, BrowserWindow, protocol } = require("electron");
+const path = require("node:path"); const fs = require("node:fs");
+protocol.registerSchemesAsPrivileged([{ scheme: "kwl", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, codeCache: true } }]);
+const CSP = ["default-src 'none'","script-src 'self'","style-src 'self' 'unsafe-inline'","img-src 'self' data: blob:","font-src 'self' data:","connect-src 'none'","frame-src 'self'","base-uri 'none'","form-action 'none'","object-src 'none'"].join("; ");
+const PREV = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; media-src data:; form-action 'none'; base-uri 'none'";
+const doc = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${PREV}"><meta charset="utf-8"><style>body{background:#fffdf9;font-size:28px}</style></head><body><p>民事起诉状 PROBE 正文</p></body></html>`;
+const html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${CSP}"><meta charset="utf-8"></head><body style="margin:0;background:#ddd"><div id="host"></div><script src="kwl://app/app.js"></script></body></html>`;
+const js = `window.inplace = (n, gap) => { const mk = (k) => ${JSON.stringify(doc)}.replace('PROBE', 'PROBE'+k); const f = document.createElement('iframe'); f.setAttribute('sandbox',''); f.style.cssText='width:600px;height:300px;border:0;background:#fff'; f.srcdoc = mk(0); document.getElementById('host').replaceChildren(f); for (let i=1;i<=n;i++) { if (gap===0) f.srcdoc = mk(i); else setTimeout(()=>{ f.srcdoc = mk(i); }, gap*i); } };
+window.replaceEach = (n, gap) => { const mk = (k) => ${JSON.stringify(doc)}.replace('PROBE', 'PROBE'+k); const put = (k) => { const f = document.createElement('iframe'); f.setAttribute('sandbox',''); f.style.cssText='width:600px;height:300px;border:0;background:#fff'; f.srcdoc = mk(k); document.getElementById('host').replaceChildren(f); }; put(0); for (let i=1;i<=n;i++) { if (gap===0) put(i); else setTimeout(()=>put(i), gap*i); } };
+window.addIframe = () => { const f = document.createElement('iframe'); f.setAttribute('sandbox',''); f.style.cssText='width:600px;height:300px;border:0;background:#fff'; f.srcdoc = ${JSON.stringify(doc)}; document.getElementById('host').replaceChildren(f); };`;
+const mode = process.env.MODE;
+app.whenReady().then(async () => {
+  protocol.handle("kwl", (req) => { const u = new URL(req.url); if (u.pathname.endsWith(".js")) return new Response(js, { headers: { "content-type": "text/javascript" } }); return new Response(html, { headers: { "content-type": "text/html" } }); });
+  const win = new BrowserWindow({ width: 700, height: 400, show: true, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  await win.loadURL("kwl://app/index.html");
+  await new Promise((r) => setTimeout(r, 800));
+  if (mode === "hide") win.hide(); if (mode === "min") win.minimize();
+  await new Promise((r) => setTimeout(r, 800));
+  await win.webContents.executeJavaScript(process.env.CALL || "addIframe()");
+  await new Promise((r) => setTimeout(r, 1500));
+  if (mode === "hide") win.show(); if (mode === "min") win.restore();
+  await new Promise((r) => setTimeout(r, 2000));
+  const img = await win.webContents.capturePage({ x: 0, y: 0, width: 600, height: 300 });
+  fs.writeFileSync(path.join(__dirname, `shot2-${mode}-${(process.env.CALL||'').replace(/[^a-z0-9]/gi,'_')}.png`), img.toPNG());
+  const bmp = img.toBitmap(); let dark = 0; for (let i = 0; i < bmp.length; i += 4) if (bmp[i] < 100 && bmp[i+1] < 100 && bmp[i+2] < 100) dark++;
+  console.log(JSON.stringify({ call: process.env.CALL, mode, darkPixels: dark, visible: win.isVisible() }));
+  app.quit();
+});

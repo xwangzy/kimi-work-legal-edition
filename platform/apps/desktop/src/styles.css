@@ -1815,3 +1815,10 @@ button.sidebar-empty:hover { color: var(--text-primary); }
 .model-label-btn { display: inline-flex; align-items: center; gap: 2px; border: 0; background: transparent; height: 32px; border-radius: var(--r-full); padding: 0 10px; cursor: pointer; }
 .model-label-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .model-popover { right: 0; bottom: calc(100% + 8px); width: 280px; }
+
+/* 第 62 批：预览说明行右侧“重新载入预览”；Office 预览生成失败的说明与重试 */
+.sp-note { display: flex; align-items: center; gap: 8px; }
+.sp-note > span { flex: 1; min-width: 0; }
+.sp-note .sp-reload { flex: none; font-size: var(--fs-xs); color: var(--text-secondary); }
+.sp-error { padding: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.sp-error p { margin: 0; }

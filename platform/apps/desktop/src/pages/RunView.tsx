@@ -12,7 +12,7 @@ import { ApprovalCardView, QuestionCardView } from "../components/Cards.tsx";
 import { DataFlowCard, reasonLabel } from "../components/DataFlow.tsx";
 import { Icon } from "../components/Icons.tsx";
 import { Markdown, tokens as renderTokens } from "../components/Markdown.tsx";
-import { SafePreview } from "../components/SafePreview.tsx";
+import { PreviewError, SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
 import { ARTIFACT_STATUS_LABELS, CITE_STATE_LABELS, fileListName, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, jurisdictionLabel, MODE_LABELS, RUN_STATUS_LABELS, runName, stanceLabel, stepTime, stripMarkdownInline, TERMINAL_STATUSES } from "../lib/labels.ts";
 import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
@@ -29,7 +29,7 @@ import { FileTypeTag } from "../components/ArtifactRow.tsx";
 import { previewCites, previewFactMarks, type ArtifactCitations, type FactMarkView } from "../lib/citation-review.ts";
 import { CitationClaims } from "../components/CitationClaims.tsx";
 import { Breadcrumb } from "../components/Breadcrumb.tsx";
-import { KimiPulse, useElapsed } from "../components/Loading.tsx";
+import { KimiPulse, useElapsed, WaitBlock } from "../components/Loading.tsx";
 import { KimiMark } from "../components/Brand.tsx";
 import { fmtWait } from "../lib/waiting.ts";
 // 滚动到新卡片：系统要求减少动效时直接跳到位（盘点：此前平滑滚动不受“减少动效”控制）
@@ -107,7 +107,11 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const [matter, setMatter] = useState<any>(null);
   const [tab, setTab] = useState<RightTab>("artifact");
   const [selected, setSelected] = useState<string | null>(null);
-  const [preview, setPreview] = useState<{ filename: string; text: string; office?: boolean } | null>(null);
+  // 预览记下属于哪个成果版本（第 62 批）：切换成果时先显示“正在载入”，不再把上一份的预览留在新选项下；失败给原因与重试
+  const [preview, setPreview] = useState<{ id: string; filename: string; text: string; office?: boolean } | null>(null);
+  const [previewErr, setPreviewErr] = useState<{ id: string; message: string } | null>(null);
+  const [previewNonce, setPreviewNonce] = useState(0);
+  const [previewSince, setPreviewSince] = useState<number | null>(null);
   // 本任务提交的风险卡（按合同分组）；打开审查工作台时整页切换
   const [risk, setRisk] = useState<{ total: number; highOpen: number; decided: number; docs: string[]; unlinked: number; bySeverity: { high: number; mid: number; low: number }; top: { severity: string; issue: string }[] } | null>(null);
   // 中栏“审查意见”入口带主按钮时，同屏其余动作都降为次按钮（每屏最多一个主按钮，Y4 V-5）
@@ -319,23 +323,47 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
     if (!selected) return;
     const a = artifacts.find((x) => x.artifact_version_id === selected);
     if (!a) return;
+    // 成果列表随任务事件刷新时也会重取（内容相同则预览框架不重挂，见 SafePreview）；过时的回复不覆盖新选项
+    let live = true;
+    const id = selected;
+    setPreviewSince((t) => (preview?.id === id && t != null ? t : Date.now()));
     if (/\.(docx|xlsx)$/i.test(a.filename)) {
       // Office 成果：内核渲染为白名单 HTML（修订显示为插入/删除），在隔离框架中预览
       api
-        .artifactHtml(selected)
-        .then((r) => setPreview({ filename: a.filename, text: r.html, office: true }))
-        .catch(() => setPreview({ filename: a.filename, text: "" }));
-      return;
+        .artifactHtml(id)
+        .then((r) => {
+          if (!live) return;
+          setPreviewErr(null);
+          setPreview({ id, filename: a.filename, text: r.html, office: true });
+        })
+        .catch((e) => {
+          if (!live) return;
+          setPreviewErr({ id, message: String(e?.message ?? "") });
+        });
+      return () => {
+        live = false;
+      };
     }
     if (!/\.(md|txt|markdown|html?|json)$/i.test(a.filename)) {
-      setPreview({ filename: a.filename, text: "" });
+      setPreview({ id, filename: a.filename, text: "" });
       return;
     }
     api
-      .artifactText(selected)
-      .then((r) => setPreview({ filename: a.filename, text: new TextDecoder().decode(Uint8Array.from(atob(r.data_base64), (c) => c.charCodeAt(0))) }))
-      .catch((e) => setErr(e.message));
-  }, [selected, artifacts]);
+      .artifactText(id)
+      .then((r) => {
+        if (!live) return;
+        setPreviewErr(null);
+        setPreview({ id, filename: a.filename, text: new TextDecoder().decode(Uint8Array.from(atob(r.data_base64), (c) => c.charCodeAt(0))) });
+      })
+      .catch((e) => {
+        if (!live) return;
+        setPreviewErr({ id, message: String(e?.message ?? "") });
+      });
+    return () => {
+      live = false;
+    };
+    // preview 只用来判断是否同一成果的刷新（定已用时起点），不作依赖、不触发重取
+  }, [selected, artifacts, previewNonce]);
   // 论断—依据（v9.4 第 20 批 C-03）：选中成果的逐处引用；预览加角标、右栏“引用”列对照
   const [claims, setClaims] = useState<{ id: string; c: ArtifactCitations | null; facts?: FactMarkView[] } | null>(null);
   useEffect(() => {
@@ -1313,7 +1341,11 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                   options={options.map((o) => ({ value: o.row.artifact_version_id, label: optionLabel(o) }))}
                 />
               )}
-              {selected && preview && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} {...(previewMarks ? { cites: previewMarks } : {})} />}
+              {selected && preview?.id === selected && <SafePreview filename={preview.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} {...(previewMarks ? { cites: previewMarks } : {})} />}
+              {selected && preview?.id !== selected && previewErr?.id === selected && <PreviewError message={previewErr.message} onRetry={() => setPreviewNonce((n) => n + 1)} />}
+              {selected && preview?.id !== selected && previewErr?.id !== selected && artifacts.some((a) => a.artifact_version_id === selected) && (
+                <WaitBlock variant="inline" title="正在生成预览…" since={previewSince} longHint="文件较大时排版要多等一会儿；也可以先下载后在 Word 里打开。" />
+              )}
               {/* 旧版与过程文件只给下载，不给“提交复核”（V18 A2）；提交复核对着的仍是那一个版本 */}
               {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} restore={(t) => restoredPlain(t, tokenMap)} onError={setErr} primary={!hasRiskEntry} review={options.some((o) => o.row.artifact_version_id === selected && o.group === "file")} />}
               {artifacts.length > 1 && (

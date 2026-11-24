@@ -4,7 +4,7 @@ import { nav } from "../App.tsx";
 import { AuthorizationTrail } from "../components/AuthorizationTrail.tsx";
 import { Icon } from "../components/Icons.tsx";
 import { downloadPlan } from "../lib/download.ts";
-import { SafePreview } from "../components/SafePreview.tsx";
+import { PreviewError, SafePreview } from "../components/SafePreview.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { artifactName, fmtTime } from "../lib/labels.ts";
 import { blankPagesText, partialPagesText } from "../lib/citation-review.ts";
@@ -89,7 +89,8 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
   // 论点未经确认就签发的理由（10-23 拍板）：签发必过项，写进签发记录
   const [outlineReason, setOutlineReason] = useState("");
   const [checked, setChecked] = useState<Set<number>>(new Set());
-  const [preview, setPreview] = useState<{ text: string; office: boolean } | null>(null);
+  const [preview, setPreview] = useState<{ text: string; office: boolean; error?: string } | null>(null);
+  const [previewNonce, setPreviewNonce] = useState(0);
   const [tokenMap, setTokenMap] = useState<Map<string, string | null>>(new Map());
   // 律师看得懂的标题（内容标题在本机还原代号；取不到时用固定名称）
   const [title, setTitle] = useState<string | null>(null);
@@ -203,8 +204,9 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
         setPreview({ text, office });
         if (text.includes("〔") && data.matter_id) setTokenMap(await restoreTokens(data.matter_id, text));
       })
-      .catch(() => setPreview({ text: "", office }));
-  }, [data?.artifact_version_id]);
+      // Office 渲染失败不再当成“不能预览”（第 62 批）：记下原因，界面给重试
+      .catch((e) => setPreview({ text: "", office, error: String(e?.message ?? "") || "内核未返回原因" }));
+  }, [data?.artifact_version_id, previewNonce]);
 
   const items: string[] = data?.lawyer_checklist?.items ?? [];
   // 成果里不在本机法规库的引用（第 13 批）：系统核对不了，律师逐条人工核对后勾选才能签发
@@ -364,6 +366,14 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                 <WaitBlock variant="inline" title="正在载入预览…" since={previewSince} longHint="文件较大时排版要多等一会儿；也可以先下载后在 Word 里打开。" />
               ) : preview.text ? (
                 <SafePreview filename={data.filename} text={preview.text} tokenMap={tokenMap} office={preview.office} {...(cites ? { cites } : {})} />
+              ) : preview.error ? (
+                <PreviewError
+                  message={preview.error}
+                  onRetry={() => {
+                    setPreview(null);
+                    setPreviewNonce((n) => n + 1);
+                  }}
+                />
               ) : (
                 <div className="muted">这种文件不能在应用内预览，请下载后打开。</div>
               )}

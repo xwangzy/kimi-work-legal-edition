@@ -15,7 +15,27 @@ import { scanMarks } from "./cite-scan.ts";
 
 export { scrubCss };
 
-export const PREVIEW_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; media-src data:; form-action 'none'; base-uri 'none'";
+/**
+ * 预览框架的身份（第 62 批“安装包里 Word 预览空白”根因修复）：内容一变就换一个新的 iframe 元素，绝不在同一个框架上改 srcdoc。
+ *
+ * 根因（Electron 44.5.1 / Chromium，已在已安装的正式包与最小复现里证实）：sandbox="" 的 srcdoc 框架是不透明来源，
+ * 由独立渲染进程承载（跨进程框架）。框架插入后首次导航提交前（实测约 50 毫秒内）再改 srcdoc 触发第二次导航，
+ * 该框架此后永远不再出图——文档已完整载入（可查到正文与样式），但父页面合成里一片空白，再改 srcdoc 也救不回来；
+ * 换成新元素立即正常。安装包里内核走 IPC，代号表与引用角标在 HTML 到达后几毫秒内就到，srcDoc 随之连变两三次，正好落进这个窗口；
+ * 开发形态走 HTTP 开发桥、到得慢，所以只在安装包里稳定出现。
+ * 做法：用内容摘要作 React key——内容不变不重挂（不闪烁），内容一变就是新框架、各自只做一次初始导航。
+ */
+export function previewFrameKey(srcDoc: string): string {
+  // FNV-1a 32 位（只作身份区分，不作安全用途）+ 长度，碰撞概率可忽略
+  let h = 0x811c9dc5;
+  for (let i = 0; i < srcDoc.length; i++) {
+    h ^= srcDoc.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `${h.toString(16).padStart(8, "0")}-${srcDoc.length}`;
+}
+
+export const PREVIEW_CSP ="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; media-src data:; form-action 'none'; base-uri 'none'";
 
 const DROP_ELEMENTS = [
   "script", "noscript", "iframe", "frame", "frameset", "object", "embed", "applet", "base", "link", "meta", "form", "portal", "template", "audio", "video", "source", "track",
