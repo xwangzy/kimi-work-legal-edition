@@ -793,7 +793,7 @@ export interface QuotaStatus {
   boosts?: { at: string; pct: number }[];
   unreconciled_leases?: number;
   /** 本人的使用明细（第 47 批）：本期最近 20 条，新的在前；不含请求内容。旧控制面没有该字段。 */
-  own_recent?: { at: string; kind: "qa" | "task"; alias: string | null; label: string | null; tokens_in: number; tokens_cached: number; tokens_out: number; charge: number; unit: "tokens" | "cny"; value_cny: number | null; outcome: string; partial: boolean; estimated: boolean }[];
+  own_recent?: { at: string; kind: "qa" | "task"; alias: string | null; label: string | null; tokens_in: number; tokens_cached: number; tokens_out: number; charge: number; /** 第 62 批：这一条占本人分母的比例（控制面算；客户端不用 charge 折算金额）。旧控制面没有。 */ charge_ratio?: number; unit: "tokens" | "cny"; value_cny: number | null; outcome: string; partial: boolean; estimated: boolean; /** 第 62 批：上游没给真实用量、按估算——不计入额度，待核对。 */ pending?: boolean }[];
 }
 
 /** 账号状态（第 44 批）：这台电脑上登录的是谁、是否要重新登录。 */

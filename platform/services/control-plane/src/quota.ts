@@ -66,7 +66,11 @@ export interface QuotaState {
   period_from: string;
   period_to: string;
   boosts: BoostRecord[];
-  legacy: { period_key: string; used_ratio: number } | null;
+  /**
+   * 迁移前的已用（只在 period_key 那一期有效）。第 44 批：旧单位的已用冻结为比例 used_ratio；第 62 批（额度改按金额）另记绝对量
+   * used_units（内部单位，优先于比例：之后加量、改席位不改变这部分）与按成员的 members（成员个人上限用）。旧版代码只读 used_ratio。
+   */
+  legacy: { period_key: string; used_ratio: number; used_units?: number; members?: Record<string, number>; source?: string } | null;
   history: QuotaHistoryRow[];
   leases: Record<string, LeaseRecord>;
   /** 本期已发过的提醒（键：期:对象:阈值），跨期清空。 */
@@ -169,7 +173,7 @@ export function ensurePeriod(q: QuotaState, ctx: QuotaCtx): void {
   const old = ctx.book.tenant(ctx.tid, q.period_from, q.period_to);
   const tot = totalsOf(q, ctx).total;
   const unit = ctx.plan.quota_unit;
-  const legacyUnits = q.legacy && q.legacy.period_key === q.period_key ? q.legacy.used_ratio * tot : 0;
+  const legacyUnits = legacyUnitsOf(q, tot);
   const used = usedIn(unit, old) + legacyUnits;
   const billing = { boost_pct: q.boosts.reduce((s2, x) => s2 + x.pct, 0), plan_id: ctx.plan.id, plan_label: ctx.plan.label, seats: ctx.seats, seat_price_cny: ctx.plan.seat_price_cny, boost_price_factor: ctx.plan.boost_price_factor };
   q.history = [...q.history, { period: q.period_key, used_ratio: ratio(used, tot), legacy: legacyUnits > 0, unit, used: unitOut(unit, Math.round(used)), total: unitOut(unit, tot), ...billing }].slice(-12);
@@ -182,12 +186,17 @@ export function ensurePeriod(q: QuotaState, ctx: QuotaCtx): void {
   if (q.legacy && q.legacy.period_key !== b.key) q.legacy = null;
 }
 
-/** 本期已用（内部单位）：账本 + 迁移冻结的旧比例折到本期总额度。 */
+/** 迁移前的已用（内部单位）：有绝对量按绝对量，否则按冻结的比例折到本期总额度。 */
+export function legacyUnitsOf(q: QuotaState, total: number): number {
+  if (!q.legacy || q.legacy.period_key !== q.period_key) return 0;
+  return typeof q.legacy.used_units === "number" ? q.legacy.used_units : Math.round(q.legacy.used_ratio * total);
+}
+
+/** 本期已用（内部单位）：账本 + 迁移前的已用。 */
 export function usedOf(q: QuotaState, ctx: QuotaCtx, uid?: string): number {
   const unit = ctx.plan.quota_unit;
-  if (uid !== undefined) return usedIn(unit, ctx.book.member(ctx.tid, uid, q.period_from, q.period_to));
-  const legacy = q.legacy && q.legacy.period_key === q.period_key ? Math.round(q.legacy.used_ratio * totalsOf(q, ctx).total) : 0;
-  return usedIn(unit, ctx.book.tenant(ctx.tid, q.period_from, q.period_to)) + legacy;
+  if (uid !== undefined) return usedIn(unit, ctx.book.member(ctx.tid, uid, q.period_from, q.period_to)) + (q.legacy && q.legacy.period_key === q.period_key ? (q.legacy.members?.[uid] ?? 0) : 0);
+  return usedIn(unit, ctx.book.tenant(ctx.tid, q.period_from, q.period_to)) + legacyUnitsOf(q, totalsOf(q, ctx).total);
 }
 
 export function windowUsed(ctx: QuotaCtx, uid: string | null): number {
@@ -371,7 +380,7 @@ export function quotaView(q: QuotaState, ctx: QuotaCtx, o: { detail: boolean; ui
     const agg = ctx.book.member(ctx.tid, o.uid, q.period_from, q.period_to);
     const ml = memberLimitOf(ctx, o.uid);
     const denom = ml.limit ?? seatQuotaUnits(ctx.plan);
-    const u = usedIn(unit, agg);
+    const u = usedIn(unit, agg) + (q.legacy && q.legacy.period_key === q.period_key ? (q.legacy.members?.[o.uid] ?? 0) : 0);
     own = { used_ratio: ratio(u, denom), denominator: ml.limit !== null ? ml.source : "seat_quota", enforced: ml.limit !== null, used: unitOut(unit, u), total: unitOut(unit, denom), requests: agg.requests, tokens: agg.tokens_in + agg.tokens_out, value_cny: agg.unpriced && !agg.value_micro ? null : Math.round(agg.value_micro / 100) / 10_000, estimated_rows: agg.estimated };
   }
   const models = [...ctx.book.group("model", ctx.tid, q.period_from, q.period_to)].map(([alias, a]) => ({ alias, used: unitOut(unit, usedIn(unit, a)), share: ratio(usedIn(unit, a), Math.max(1, usedIn(unit, ctx.book.tenant(ctx.tid, q.period_from, q.period_to)))), requests: a.requests })).sort((x, y) => y.share - x.share);
@@ -387,7 +396,7 @@ export function quotaView(q: QuotaState, ctx: QuotaCtx, o: { detail: boolean; ui
       cap_pct: q.cap_pct,
       cap_set_at: q.cap_set_at,
       boost_pct: tot.boost_pct,
-      legacy_used_ratio: q.legacy && q.legacy.period_key === q.period_key ? q.legacy.used_ratio : null,
+      legacy_used_ratio: q.legacy && q.legacy.period_key === q.period_key ? ratio(legacyUnitsOf(q, tot.total), tot.total) : null,
       used: o.detail ? unitOut(unit, used) : null,
       total: o.detail ? unitOut(unit, tot.total) : null,
       seats: ctx.seats,
@@ -402,7 +411,7 @@ export function quotaView(q: QuotaState, ctx: QuotaCtx, o: { detail: boolean; ui
           by_member: [...ctx.book.group("member", ctx.tid, q.period_from, q.period_to)]
             .map(([k, a]) => {
               const uid = k.split("\u0000")[1] || null;
-              const u = usedIn(unit, a);
+              const u = usedIn(unit, a) + (uid && q.legacy && q.legacy.period_key === q.period_key ? (q.legacy.members?.[uid] ?? 0) : 0);
               return { uid, name: uid ? o.memberName(uid) : null, used: unitOut(unit, u), used_ratio_of_firm: ratio(u, tot.total), requests: a.requests };
             })
             .sort((x, y) => y.used_ratio_of_firm - x.used_ratio_of_firm),

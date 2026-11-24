@@ -44,7 +44,41 @@ export interface Catalog {
   plans: PlanSpec[];
   default_plan: string;
   settings: RegistrationSettings;
+  /**
+   * 状态迁移记录（第 62 批起）：键为迁移编号。缺 b62_billing = 第 62 批之前写下的状态（读回时迁移一次）；
+   * status：native（第 62 批起新建的状态，无需迁移）、applied（已迁移，带原值可还原）、reverted（已还原，不再自动迁移）。
+   */
+  migrations?: Record<string, B62MigrationRecord>;
 }
+
+/** 第 62 批“额度改按金额”迁移的记录（原值留存，可还原；见 server.ts runB62Migration / revertB62Migration）。 */
+export interface B62MigrationRecord {
+  status: "native" | "applied" | "reverted";
+  at: string;
+  /** 折算系数：元 / 百万 token（tokens 额度 × 系数 = 金额额度）。 */
+  coefficient_cny_per_mtok?: number;
+  price_version_from?: number | null;
+  price_version_to?: number | null;
+  plans?: { id: string; quota_unit: QuotaUnit; seat_quota: number; note: string | null }[];
+  tenants?: { tid: string; plan: string; allowance_override: number | null; legacy_before: unknown; revoked_leases: number; legacy_used_units: number }[];
+  accounts?: { aid: string; tid: string; quota_limit: number | null }[];
+  reverted_at?: string;
+  reverted_by?: string | null;
+}
+
+/**
+ * tokens 额度 → 金额额度的折算系数（第 62 批，用户拍板“额度按价目加权扣减、月额度按等价金额换算”）：
+ * 线上账本 607 行实测（2026-11-24 只读查询）：输入 6,049 万 token（其中缓存命中 5,362 万）、输出 148 万；按 v2 价目
+ * （legal/k3：未命中 13、命中 1.3、输出 68 元/百万 token）= (687 万×13 + 5,362 万×1.3 + 148 万×68) / 10⁶ = 89.31 + 69.71 + 100.64
+ * = 259.66 元，折合 259.66 ÷ 6,197 万 token = 4.19 元/百万 token；取 4.2（向上取整到一位小数：换算后的额度不少于原额度的等价金额）。
+ * 标准 5,000 万 → 210 元；专业 1.25 亿 → 525 元；旗舰 3 亿 → 1,260 元；试用 2,000 万 → 84 元。
+ */
+export const B62_CNY_PER_MTOK = 4.2;
+
+/** tokens → 元（保留到分）。 */
+export const tokensToCny = (tokens: number, k = B62_CNY_PER_MTOK): number => Math.round((tokens * k) / 10_000) / 100;
+/** tokens → 微元（内部单位）。 */
+export const tokensToMicro = (tokens: number, k = B62_CNY_PER_MTOK): number => Math.round(tokens * k);
 
 export class PlanError extends Error {
   readonly status: number;
@@ -67,6 +101,21 @@ const money = (v: unknown): v is number => typeof v === "number" && Number.isFin
  * 也按 1 个 token 计（真实数据，不折算），所以同样的单数，tokens 套餐比金额套餐“显得贵”；定价后建议改金额套餐。
  * 试用原为 600 万 token、5 小时窗口 40%：真实任务做到第 24 次请求即被窗口拦下（11-14 验收），改为 2,000 万、窗口 50%（约 5 单）。
  */
+/**
+ * 金额套餐目录（第 62 批起的生产缺省：配置给了 billing 段而没写 plans，或补试用套餐时用它）：额度 = 每席位每月若干元，按价目售价 × 实际用量扣
+ * （缓存命中按命中价）；律师端只看百分比。数额由 DEFAULT_CATALOG 的 token 额度 × 4.2 元/百万 token 折算（见 B62_CNY_PER_MTOK），说明里的“约多少单”沿用实测。
+ */
+export const CNY_CATALOG: Catalog = {
+  plans: [
+    plan({ id: "standard", label: "标准", note: "每席位每月 210 元额度（按价目计），约 25 单常规任务", quota_unit: "cny", seat_quota: 210, origin: "default" }),
+    plan({ id: "pro", label: "专业", note: "每席位每月 525 元额度（按价目计），约 65 单常规任务", quota_unit: "cny", seat_quota: 525, origin: "default" }),
+    plan({ id: "max", label: "旗舰", note: "每席位每月 1,260 元额度（按价目计），约 160 单常规任务", quota_unit: "cny", seat_quota: 1260, origin: "default" }),
+    plan({ id: "trial", label: "试用", note: "自助注册试用 14 天，84 元额度（按价目计），约 10 单常规任务", quota_unit: "cny", seat_quota: 84, burst: { hours: 5, pct: 50 }, device_limit: 1, origin: "default" }),
+  ],
+  default_plan: "standard",
+  settings: { registration: "open", trial_plan: "trial", trial_days: 14, trial_seats: 1, default_device_limit: 2 },
+};
+
 export const DEFAULT_CATALOG: Catalog = {
   plans: [
     plan({ id: "standard", label: "标准", note: "每席位每月 5,000 万 token，约 25 单常规任务", quota_unit: "tokens", seat_quota: 50_000_000, origin: "default" }),
@@ -144,14 +193,20 @@ export function validateSettings(raw: unknown, plans: PlanSpec[], prev: Registra
  * 注册方式缺省（第 46 批，契约 §2.6）：未给 billing（开发与测试的进程内调用）仍为 open；给了 billing 段（生产入口一律给，缺省 {}）缺省 code——
  * 凭开通码 / 邀请码注册，open 要运营显式打开。只影响新状态：读回的旧状态保持原值。
  */
+/**
+ * 第 62 批：同一先例（注册方式），未给 billing（开发与测试的进程内调用）仍是 tokens 目录（DEFAULT_CATALOG，既有用例按 token 写）；
+ * 给了 billing 段（生产入口一律给）而没写 plans 时用金额目录 CNY_CATALOG。配置里显式写了 tokens 套餐的照写（运营的选择）。
+ * 新建的目录都带迁移标记 native（不再走第 62 批的读回迁移）。
+ */
 export function catalogFromConfig(raw: unknown): Catalog {
-  if (raw === undefined || raw === null) return structuredClone(DEFAULT_CATALOG);
+  const native = (c: Catalog): Catalog => ({ ...c, migrations: { ...(c.migrations ?? {}), b62_billing: { status: "native", at: new Date(0).toISOString() } } });
+  if (raw === undefined || raw === null) return native(structuredClone(DEFAULT_CATALOG));
   if (typeof raw !== "object") throw new Error("billing 须为对象");
   const b = raw as Record<string, any>;
-  const strict = { ...DEFAULT_CATALOG.settings, registration: "code" as const };
+  const strict = { ...CNY_CATALOG.settings, registration: "code" as const };
   if (b.plans === undefined) {
-    const c = structuredClone(DEFAULT_CATALOG);
-    return { ...c, settings: validateSettings(b.registration ?? {}, c.plans, strict) };
+    const c = structuredClone(CNY_CATALOG);
+    return native({ ...c, settings: validateSettings(b.registration ?? {}, c.plans, strict) });
   }
   if (!Array.isArray(b.plans) || b.plans.length === 0 || b.plans.length > 20) throw new Error("billing.plans 须为 1–20 个套餐");
   const plans: PlanSpec[] = [];
@@ -168,9 +223,9 @@ export function catalogFromConfig(raw: unknown): Catalog {
   }
   const def = typeof b.default_plan === "string" ? b.default_plan : plans[0]!.id;
   if (!plans.some((p) => p.id === def)) throw new Error(`billing.default_plan 不在目录里：${def}`);
-  if (!plans.some((p) => p.id === "trial")) plans.push(structuredClone(DEFAULT_CATALOG.plans.find((p) => p.id === "trial")!));
+  if (!plans.some((p) => p.id === "trial")) plans.push(structuredClone(CNY_CATALOG.plans.find((p) => p.id === "trial")!));
   const settings = validateSettings(b.registration ?? {}, plans, strict);
-  return { plans, default_plan: def, settings };
+  return native({ plans, default_plan: def, settings });
 }
 
 export function migrateCatalog(raw: unknown, fallback: Catalog): Catalog {

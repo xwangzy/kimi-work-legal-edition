@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { api, type CpAuditRow, type QuotaStatus } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
-import { atLabel, recordChargeText, auditDetailLabel, auditFetchErrorText, auditFilter, auditResultShort, auditSentence, auditTime, type AuditFilter, fmtAmount, fmtCount, fmtPct, legacyNote, modelLabel, ownDenominatorText, pausedText, periodLabel, periodRange, ratioTone, remainingLine, resetLabel, usageTone, warnText } from "../lib/firm-usage.ts";
+import { atLabel, recordChargeText, showAmounts, auditDetailLabel, auditFetchErrorText, auditFilter, auditResultShort, auditSentence, auditTime, type AuditFilter, fmtAmount, fmtCount, fmtPct, legacyNote, modelLabel, ownDenominatorText, pausedText, periodLabel, periodRange, ratioTone, remainingLine, resetLabel, usageTone, warnText } from "../lib/firm-usage.ts";
 import { BusyLabel, ListSkeleton, LoadError } from "../components/Loading.tsx";
 
 /** 月度上限的常用档位（本期总额度的百分比）。 */
@@ -108,7 +108,7 @@ export function UsagePanel({ admin = false }: { admin?: boolean }) {
         <div className="usage-big">
           <span className={`usage-hero-v tone-${tone}`}>{fmtPct(f.used_ratio)}</span>
           <span className="muted">已用</span>
-          {f.used !== null && f.total !== null && (
+          {f.used !== null && f.total !== null && showAmounts(q) && (
             <span className="usage-big-sub">
               {fmtAmount(f.used, q.unit, q.unit_label)} / {fmtAmount(f.total, q.unit, q.unit_label)}
             </span>
@@ -148,15 +148,17 @@ export function UsagePanel({ admin = false }: { admin?: boolean }) {
           <>
             <div className="usage-big">
               <span className={`usage-hero-s tone-${ratioTone(own.used_ratio)}`}>{fmtPct(own.used_ratio)}</span>
-              <span className="usage-big-sub">
-                {fmtAmount(own.used, q.unit, q.unit_label)} / {fmtAmount(own.total, q.unit, q.unit_label)}
-              </span>
+              {showAmounts(q) && (
+                <span className="usage-big-sub">
+                  {fmtAmount(own.used, q.unit, q.unit_label)} / {fmtAmount(own.total, q.unit, q.unit_label)}
+                </span>
+              )}
             </div>
             <UsageBar size="md" ratio={own.used_ratio} tone={own.enforced ? ratioTone(own.used_ratio) : "ok"} label="本人用量占分母" />
             <div className="muted usage-meta">
               {fmtCount(own.requests)} 次 AI 调用
               {q.unit === "tokens" && own.value_cny !== null && own.value_cny > 0 ? ` · 约合 ${fmtAmount(own.value_cny, "cny")}` : ""}
-              {own.estimated_rows > 0 ? ` · 其中 ${own.estimated_rows} 次 AI 服务没给出用量、按已收到的内容估算` : ""}
+              {own.estimated_rows > 0 ? ` · 其中 ${own.estimated_rows} 次 AI 服务没给出用量（未计入，待核对）` : ""}
               {own.enforced ? " · 用满即暂停你本人的 AI 处理" : " · 只用来看用量，不单独限制"}
             </div>
           </>
@@ -214,7 +216,8 @@ export function UsagePanel({ admin = false }: { admin?: boolean }) {
               <UsageBar size="sm" ratio={m.share} tone="ok" label={`${(m.label ?? modelLabel(m.alias))}占本所用量`} />
               <span className="num">{fmtPct(m.share)}</span>
               <span className="muted num">
-                {fmtAmount(m.used, q.unit, q.unit_label)} · {fmtCount(m.requests)} 次
+                {showAmounts(q) ? `${fmtAmount(m.used, q.unit, q.unit_label)} · ` : ""}
+                {fmtCount(m.requests)} 次
               </span>
             </li>
           ))}
@@ -260,7 +263,7 @@ export function UsagePanel({ admin = false }: { admin?: boolean }) {
                 <tr>
                   <th>成员</th>
                   <th>占本所额度</th>
-                  <th className="num">用量</th>
+                  {showAmounts(q) && <th className="num">用量</th>}
                   <th className="num">调用次数</th>
                 </tr>
               </thead>
@@ -274,7 +277,7 @@ export function UsagePanel({ admin = false }: { admin?: boolean }) {
                         <span className="num">{fmtPct(m.used_ratio_of_firm)}</span>
                       </div>
                     </td>
-                    <td className="num">{fmtAmount(m.used, q.unit, q.unit_label)}</td>
+                    {showAmounts(q) && <td className="num">{fmtAmount(m.used, q.unit, q.unit_label)}</td>}
                     <td className="num">{fmtCount(m.requests)}</td>
                   </tr>
                 ))}

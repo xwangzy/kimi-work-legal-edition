@@ -85,14 +85,17 @@ test("首页“推荐”：最近用过的场景在前（至多 3 个），其�
   assert.deepEqual(recommendedCards([{ scenario: "a1.agent_task", skill: null }]).map((c) => c.id), [...RECOMMENDED_DEFAULT]);
 });
 
-test("使用明细：中断未计入、失败未计入、估算标出；元单位按微元折成金额", async () => {
+test("使用明细：中断未计入、失败未计入、估算标出；元单位（第 62 批）只写占本人额度的比例（控制面给 charge_ratio，客户端不折算金额）", async () => {
   const { recordChargeText } = await import("../src/lib/firm-usage.ts");
   const row = { at: "2026-11-19T10:00:00Z", kind: "task" as const, alias: "legal/k3", label: "K3", tokens_in: 1000, tokens_cached: 800, tokens_out: 200, charge: 1200, unit: "tokens" as const, value_cny: 0.01, outcome: "ok", partial: false, estimated: false };
   assert.equal(recordChargeText(row), "1,200 token");
   assert.equal(recordChargeText({ ...row, estimated: true }), "1,200 token（估算）");
   assert.equal(recordChargeText({ ...row, partial: true, charge: 0 }), "中途中断，未计入");
   assert.equal(recordChargeText({ ...row, outcome: "upstream_error", charge: 0 }), "未成功，未计入");
-  assert.equal(recordChargeText({ ...row, unit: "cny", charge: 1_653_748 }), "1.65 元");
+  assert.equal(recordChargeText({ ...row, unit: "cny", charge: 1_653_748, charge_ratio: 0.0079 }), "占本人额度 0.8%");
+  assert.equal(recordChargeText({ ...row, unit: "cny", charge: 1_653_748 }), "已计入", "旧控制面没给比例：不拿 charge 折算金额");
+  assert.doesNotMatch(recordChargeText({ ...row, unit: "cny", charge: 1_653_748, charge_ratio: 0.0079 }), /元/);
+  assert.equal(recordChargeText({ ...row, charge: 0, estimated: true, pending: true }), "未取得用量，未计入（待核对）");
 });
 
 test("侧栏（Kimi Work 信息架构）：Work / Chat 切换、新建任务 ⌘K、成果 / 期限提醒 / 方法库、事项与任务两个可折叠分组、Chat 模式的问答记录", () => {

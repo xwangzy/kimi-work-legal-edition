@@ -21,9 +21,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { StateStore } from "./state-store.ts";
 import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
 import { availability, boostPct as quotaBoost, chargeLease, closeLease, emptyQuota, ensurePeriod, forecastExhaust, leaseQuota, memberLimitOf, migrateQuota, outstanding, pausedOf, QuotaError, quotaView, ratio, setCap as quotaSetCap, sweepLeases, totalsOf, usedOf, type QuotaCtx, type QuotaState, revokeLeases } from "./quota.ts";
-import { catalogFromConfig, microToCny, migrateCatalog, periodBill, periodBounds, planOf, PlanError, seatQuotaUnits, unitOut, validatePlan, validateSettings, type Catalog, type PlanSpec } from "./billing.ts";
-import { bootstrapRouting, chargeOf, currentPrices, deleteModel, deleteProvider, migrateRouting, priceTableOf, recordHealth, requestProbe, routingFeedBody, RoutingError, routingView, setPrices, upsertModel, upsertProvider, type RoutingState, unpricedAliases, validatePrices } from "./routing.ts";
-import { addAgg, dayOf, emptyAgg, UsageBook, usedIn, type Agg, type UsageRow } from "./usage-ledger.ts";
+import { B62_CNY_PER_MTOK, catalogFromConfig, microToCny, migrateCatalog, periodBill, periodBounds, planOf, PlanError, seatQuotaUnits, tokensToCny, tokensToMicro, unitOut, validatePlan, validateSettings, type B62MigrationRecord, type Catalog, type PlanSpec } from "./billing.ts";
+import { amountOf, billedOf, bootstrapRouting, currentPrices, deleteModel, deleteProvider, migratePricingToModels, migrateRouting, moneyOf, priceTableOf, pricingView, recordHealth, requestProbe, reserveRates, resolvePrice, routingFeedBody, RoutingError, routingView, setPrices, setPricing, upsertModel, upsertProvider, type RoutingState, unpricedAliasesIn, validatePrices, type PriceTable } from "./routing.ts";
+import { addAgg, dayOf, emptyAgg, rowAgg, UsageBook, usedIn, type Agg, type UsageRow, type UsageTokens } from "./usage-ledger.ts";
 import {
   accountDeviceId,
   accountDeviceIndex,
@@ -176,7 +176,8 @@ export interface ActivationRecord {
 export interface AlertRecord {
   id: string;
   at: string;
-  kind: "threshold" | "cap" | "exhausted" | "anomaly" | "route_down" | "device_flag";
+  /** usage_missing（第 62 批）：上游没给真实用量、按估算记的请求（不计入额度，待对账）——持续出现说明上游或网关的用量采集有问题，额度会被绕过。 */
+  kind: "threshold" | "cap" | "exhausted" | "anomaly" | "route_down" | "device_flag" | "usage_missing";
   level: "info" | "warn" | "critical";
   tid: string | null;
   aid: string | null;
@@ -440,7 +441,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const emailTaken = (e: string) => accountByEmail.has(e) || staffByEmail.has(e);
   const catalogDefault = catalogFromConfig(o.billing);
   let catalog: Catalog = structuredClone(catalogDefault);
-  let routing: RoutingState = bootstrapRouting(now(), o.routing?.bootstrap);
+  // 第 62 批：生产入口（给了 billing 段，与注册方式同一先例）新建的路由按上游型号、官方价起步——缺省目录是金额套餐，没有价目就全部 503
+  const routingBootstrap = o.billing !== undefined && !o.routing?.bootstrap?.prices ? { ...(o.routing?.bootstrap ?? {}), pricing: "official" as const } : o.routing?.bootstrap;
+  let routing: RoutingState = bootstrapRouting(now(), routingBootstrap);
   let alerts: AlertRecord[] = [];
   const book = o.usageBook ?? new UsageBook({ now });
   const startedAt = iso();
@@ -531,7 +534,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     staffByEmail.clear();
     clients = { ...clientsDefault };
     catalog = structuredClone(catalogDefault);
-    routing = bootstrapRouting(now(), o.routing?.bootstrap);
+    routing = bootstrapRouting(now(), routingBootstrap);
     alerts = [];
     feedVersion = 1;
     if (withNonces) nonces.clear();
@@ -539,7 +542,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const st = JSON.parse(raw) as { v: number; feedVersion: number; nonces?: [string, number][]; tenants: any[]; accounts?: AccountRecord[]; sessions?: SessionRecord[]; codes?: OneTimeCode[]; catalog?: Catalog; routing?: RoutingState; alerts?: AlertRecord[]; staff?: StaffRecord[]; clients?: { min_version: string | null } };
     // 第 44 批之前的状态没有这些：套餐从配置导入、路由按配置初始化、账号为空
     catalog = migrateCatalog(st.catalog, structuredClone(catalogDefault));
-    routing = migrateRouting(st.routing, now(), o.routing?.bootstrap);
+    routing = migrateRouting(st.routing, now(), routingBootstrap);
     alerts = Array.isArray(st.alerts) ? st.alerts : [];
     for (const a of st.accounts ?? []) {
       accounts.set(a.aid, a);
@@ -585,12 +588,134 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       });
     }
   };
+  /**
+   * 第 62 批读回迁移（额度改按金额；价目改按上游型号）：只对第 62 批之前写下的状态做一次（catalog.migrations.b62_billing 缺省），幂等，原值留存可还原。
+   * ① 价目：按别名的当前版本 → 按上游型号的新版本（官方价作成本缺省；原别名售价落到目标型号上，与 成本 × 1.0 一致的不另设覆盖）；
+   * ② 套餐：tokens 额度 × 4.2 元/百万 token → 金额额度（B62_CNY_PER_MTOK）；律所的自定额度、账号的个人上限同一系数；
+   * ③ 本期已用：账本里价目生效前（未定价）的行没有金额——按同一系数折成“迁移前已用”（legacy.used_units，按成员另记），不改写账本；
+   *    已定价的行按它们的售价计入（照常）；在途租约（tokens 单位）一律收回，网关下次按金额重领。
+   * 先让各律所按旧（tokens）套餐跨期，再换单位：历史期的比例按旧口径记下。
+   */
+  const runB62Migration = (): B62MigrationRecord | null => {
+    if (catalog.migrations?.b62_billing) return null;
+    const t = now();
+    const k = B62_CNY_PER_MTOK;
+    const rec: B62MigrationRecord = { status: "applied", at: iso(t), coefficient_cny_per_mtok: k, price_version_from: currentPrices(routing).version, price_version_to: null, plans: [], tenants: [], accounts: [] };
+    const pm = migratePricingToModels(routing, t);
+    rec.price_version_to = currentPrices(routing).version;
+    const tokenPlans = new Set(catalog.plans.filter((p) => p.quota_unit === "tokens").map((p) => p.id));
+    // 跨期按旧口径；记下旧口径下的迁移前已用（第 44 批冻结的比例）
+    const before = new Map<string, { legacyTokens: number }>();
+    for (const tr of tenants.values()) {
+      if (!tokenPlans.has(planFor(tr).id)) continue;
+      const { q, ctx } = qOf(tr);
+      const tot = totalsOf(q, ctx).total;
+      before.set(tr.tid, { legacyTokens: q.legacy && q.legacy.period_key === q.period_key ? (typeof q.legacy.used_units === "number" ? q.legacy.used_units : Math.round(q.legacy.used_ratio * tot)) : 0 });
+    }
+    for (const p of catalog.plans) {
+      if (p.quota_unit !== "tokens") continue;
+      rec.plans!.push({ id: p.id, quota_unit: p.quota_unit, seat_quota: p.seat_quota, note: p.note });
+      const wan = p.seat_quota >= 10_000 ? `${Math.round(p.seat_quota / 1_000) / 10} 万` : String(p.seat_quota);
+      p.quota_unit = "cny";
+      p.seat_quota = Math.max(0.01, tokensToCny(p.seat_quota, k));
+      p.note = `原每席位 ${wan} token，按 ${k} 元/百万 token 折算`.slice(0, 60);
+    }
+    for (const tr of tenants.values()) {
+      const b0 = before.get(tr.tid);
+      if (!b0) continue;
+      const q = tr.quota;
+      const legacyBefore = q.legacy ? structuredClone(q.legacy) : null;
+      // 价目生效前的行（有 usage、没有售价）：按系数折成金额，记作迁移前已用；第 44 批冻结的旧单位已用同样折算
+      const rows = book.scan(q.period_from, q.period_to, (r) => r.tid === tr.tid && r.usage !== null && r.value_micro === null);
+      const members: Record<string, number> = {};
+      let tokens = b0.legacyTokens;
+      for (const r of rows) {
+        const n = r.usage!.input + r.usage!.output;
+        tokens += n;
+        if (r.uid) members[r.uid] = (members[r.uid] ?? 0) + n;
+      }
+      const override = typeof tr.allowance_override === "number" ? tr.allowance_override : null;
+      if (override !== null) tr.allowance_override = tokensToMicro(override, k);
+      const revoked = revokeLeases(q, t);
+      q.last_denied = null;
+      const usedUnits = tokensToMicro(tokens, k);
+      if (usedUnits > 0) {
+        const ctx = ctxOf(tr);
+        const total = totalsOf(q, ctx).total;
+        q.legacy = { period_key: q.period_key, used_ratio: total > 0 ? Math.min(1, Math.round((usedUnits / total) * 10_000) / 10_000) : 0, used_units: usedUnits, members: Object.fromEntries(Object.entries(members).map(([u, n]) => [u, tokensToMicro(n, k)])), source: "b62" };
+      }
+      rec.tenants!.push({ tid: tr.tid, plan: tr.plan, allowance_override: override, legacy_before: legacyBefore, revoked_leases: revoked, legacy_used_units: usedUnits });
+    }
+    for (const a of accounts.values()) {
+      if (!before.has(a.tid) || typeof a.quota_limit !== "number") continue;
+      rec.accounts!.push({ aid: a.aid, tid: a.tid, quota_limit: a.quota_limit });
+      a.quota_limit = Math.max(0.01, tokensToCny(a.quota_limit, k));
+    }
+    catalog.migrations = { ...(catalog.migrations ?? {}), b62_billing: rec };
+    console.warn(`[control-plane] 第 62 批迁移：价目 ${pm ? `第 ${pm.from} 版（按别名）→ 第 ${pm.to} 版（按上游型号）` : "已按上游型号"}；${rec.plans!.length} 个 tokens 套餐、${rec.tenants!.length} 家律所、${rec.accounts!.length} 个个人上限按 ${k} 元/百万 token 改为金额额度`);
+    return rec;
+  };
+  /**
+   * 还原第 62 批迁移（POST /v1/ops/billing/migrations/b62/revert）：套餐、律所自定额度、个人上限回到 tokens 原值，迁移前已用回到迁移前的样子，
+   * 在途租约收回；**只还原仍是迁移值的项**（迁移后运营又改过的不动，列在 skipped）。价目不还原（按型号的版本对 tokens 套餐不影响额度；旧版代码读派生的按别名格式）。
+   * 还原后标 reverted，读回不再自动迁移。
+   */
+  const revertB62Migration = (by: string | null) => {
+    const rec = catalog.migrations?.b62_billing;
+    if (!rec || rec.status !== "applied") throw new CpError(409, "migration_not_applied", "没有可还原的第 62 批迁移（未迁移、新建的状态或已还原）");
+    const k = rec.coefficient_cny_per_mtok ?? B62_CNY_PER_MTOK;
+    const skipped: string[] = [];
+    const restoredPlans: string[] = [];
+    // 先按现在的（金额）套餐跨期
+    for (const x of rec.tenants ?? []) if (tenants.has(x.tid)) qOf(tenants.get(x.tid)!);
+    for (const x of rec.plans ?? []) {
+      const p = catalog.plans.find((y) => y.id === x.id);
+      if (!p || p.quota_unit !== "cny" || p.seat_quota !== Math.max(0.01, tokensToCny(x.seat_quota, k))) {
+        skipped.push(`plan:${x.id}`);
+        continue;
+      }
+      p.quota_unit = x.quota_unit;
+      p.seat_quota = x.seat_quota;
+      p.note = x.note;
+      restoredPlans.push(x.id);
+    }
+    for (const x of rec.tenants ?? []) {
+      const tr = tenants.get(x.tid);
+      if (!tr) continue;
+      if (x.allowance_override !== null) {
+        if (tr.allowance_override === tokensToMicro(x.allowance_override, k)) tr.allowance_override = x.allowance_override;
+        else skipped.push(`tenant:${x.tid}:allowance`);
+      }
+      const q = tr.quota;
+      if (q.legacy?.source === "b62" || (q.legacy === null && x.legacy_before === null)) q.legacy = (x.legacy_before as QuotaState["legacy"]) ?? null;
+      revokeLeases(q, now());
+      q.last_denied = null;
+    }
+    for (const x of rec.accounts ?? []) {
+      const a = accounts.get(x.aid);
+      if (!a || x.quota_limit === null) continue;
+      if (a.quota_limit === Math.max(0.01, tokensToCny(x.quota_limit, k))) a.quota_limit = x.quota_limit;
+      else skipped.push(`account:${x.aid}`);
+    }
+    rec.status = "reverted";
+    rec.reverted_at = iso();
+    rec.reverted_by = by;
+    feedVersion += 1;
+    return { restored_plans: restoredPlans, skipped, migration: rec };
+  };
   if (o.stateStore) {
     const raw = o.stateStore.load();
     if (raw !== null) {
       applySnapshot(raw, true);
       lastSaved = raw;
       lastSavedState = stateOnly();
+      // 第 62 批读回迁移：迁完立即写盘（写不进去即启动失败——不能带着“内存已迁、盘上未迁”的状态运行：出错回滚会回到未迁的样子）
+      if (runB62Migration()) {
+        const json = snapshot();
+        o.stateStore.save(json);
+        lastSaved = json;
+        lastSavedState = stateOnly();
+      }
     }
   }
   /** 状态有变化（或 force 且 nonce 有变化）即写盘；失败则回滚到上次写成的状态并抛 500。 */
@@ -1469,19 +1594,31 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const strOr = (v: unknown, re: RegExp): string | null => (typeof v === "string" && re.test(v) ? v : null);
   const rowOf = (t: TenantRecord, r: Record<string, any>, plan: PlanSpec): UsageRow => {
     if (!r || typeof r !== "object" || typeof r.request_id !== "string" || !REQ_ID_RE.test(r.request_id)) throw new QuotaError(400, "records_invalid", "用量记录缺少请求编号");
-    const usage0 = r.usage && typeof r.usage === "object" ? { input: nnInt(r.usage.input), cached: Math.min(nnInt(r.usage.cached), nnInt(r.usage.input)), output: nnInt(r.usage.output), reasoning: nnInt(r.usage.reasoning) } : null;
-    // 第 46 批（契约 §4）：流中途中断且已写出内容——不扣额度、不计售价，成本按估算照算（对账）；只认超时 / 上游错误两种结果
+    const usage0 = usageOf(r.usage);
+    // 第 46 批（契约 §4）：流中途中断且已写出内容——不扣额度、不计售价，只记成本（对账）；只认超时 / 上游错误两种结果
     const partial = r.partial === true && usage0 !== null && (r.outcome === "timeout" || r.outcome === "upstream_error");
     if (r.partial !== undefined && typeof r.partial !== "boolean") throw new QuotaError(400, "records_invalid", "partial 须为 true 或 false");
     if (r.retry_of !== undefined && r.retry_of !== null && !(typeof r.retry_of === "string" && REQ_ID_RE.test(r.retry_of))) throw new QuotaError(400, "records_invalid", "retry_of 须为请求编号");
-    const usage = partial ? null : usage0;
+    // 第 62 批：上游没给真实 usage、网关按已转发内容估算的——估算不当作实测：不扣额度、不计售价与成本，另记估算与折算金额，待对账
+    const estimated = usage0 !== null && r.usage_source === "estimated";
+    const usage = partial || estimated ? null : usage0;
     const atMs = Number.isFinite(Date.parse(r.at)) ? Math.min(Date.parse(r.at), now() + 60_000) : now();
     const uid = strOr(r.uid, /^[A-Za-z0-9_-]{1,160}$/);
     const alias = strOr(r.alias, /^[a-z0-9][a-z0-9._/-]{1,47}$/);
+    const upstreamModel = strOr(r.upstream_model, /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,95}$/);
+    // 价目版本：网关发起这次请求时所持的版本（至多晚 15 秒）；计价键：按型号的版本取实际服务的上游型号，按别名的旧版本取别名
     const priceTable = priceTableOf(routing, r.price_version);
-    const money = usage ? chargeOf(alias ? priceTable.items[alias] : undefined, usage) : partial ? { value_micro: 0, cost_micro: chargeOf(alias ? priceTable.items[alias] : undefined, usage0!).cost_micro } : { value_micro: null, cost_micro: null };
+    const res = resolvePrice(priceTable, routing, alias, upstreamModel);
+    const billed = usage0 ? billedOf(usage0) : null;
+    const m = billed ? moneyOf(res?.rates, billed) : { value_micro: null, cost_micro: null };
+    let value: number | null;
+    let cost: number | null;
+    if (usage) [value, cost] = [m.value_micro, m.cost_micro];
+    else if (partial && !estimated) [value, cost] = [0, m.cost_micro]; // 中断但拿到了真实 usage：成本是真的
+    else if (usage0) [value, cost] = [0, null]; // 估算：售价不计、成本待对账
+    else [value, cost] = [null, null];
     const unit = plan.quota_unit;
-    const charge = usage ? (unit === "tokens" ? usage.input + usage.output : (money.value_micro ?? 0)) : 0;
+    const charge = usage ? (unit === "tokens" ? usage.input + usage.output : (value ?? 0)) : 0;
     const acc = uid ? accountOfMember(t.tid, uid) : undefined;
     return {
       v: 1,
@@ -1498,7 +1635,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       dev: strOr(r.dev, /^[A-Za-z0-9_-]{1,128}$/),
       alias,
       provider: strOr(r.provider, /^[a-z][a-z0-9-]{1,31}$/),
-      upstream_model: strOr(r.upstream_model, /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,95}$/),
+      upstream_model: upstreamModel,
       stream: r.stream === true,
       qa: r.qa === true,
       status: Number.isSafeInteger(r.status) ? r.status : null,
@@ -1507,8 +1644,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       usage_source: SOURCES.has(r.usage_source) ? r.usage_source : usage ? "upstream" : "none",
       unit,
       charge,
-      value_micro: money.value_micro,
-      cost_micro: money.cost_micro,
+      value_micro: value,
+      cost_micro: cost,
       price_version: priceTable.version,
       latency_ms: Number.isSafeInteger(r.latency_ms) && r.latency_ms >= 0 ? r.latency_ms : null,
       attempts: Array.isArray(r.attempts) ? r.attempts.slice(0, 5).map((x: any) => ({ provider: strOr(x?.provider, /^[a-z][a-z0-9-]{1,31}$/), status: Number.isSafeInteger(x?.status) ? x.status : null, error: strOr(x?.error, /^[a-z0-9_:.-]{1,64}$/i), ms: Number.isSafeInteger(x?.ms) ? x.ms : null })) : [],
@@ -1516,7 +1653,20 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       lease_id: strOr(r.lease_id, /^ls_[0-9a-f]{24}$/),
       ...(partial ? { partial: true as const, partial_usage: usage0! } : {}),
       ...(typeof r.retry_of === "string" ? { retry_of: r.retry_of } : {}),
+      ...(res ? { price_basis: res.basis, price_key: res.key, markup: res.rates.markup } : {}),
+      ...(billed && !estimated ? { billed } : {}),
+      ...(estimated ? { est_usage: usage0!, est_value_micro: m.value_micro, est_cost_micro: m.cost_micro, reconcile: "pending" as const } : {}),
     };
+  };
+  /** 网关回报的 usage → 账本口径（整数、夹到不超过输入；缓存写入为 0 时不写字段，与第 61 批之前的行同形）。 */
+  const usageOf = (u: unknown): UsageTokens | null => {
+    if (!u || typeof u !== "object") return null;
+    const x = u as Record<string, unknown>;
+    const input = nnInt(x.input);
+    const cached = Math.min(nnInt(x.cached), input);
+    const cw = Math.min(nnInt(x.cache_write), input - cached);
+    const cw1 = Math.min(nnInt(x.cache_write_1h), cw);
+    return { input, cached, output: nnInt(x.output), reasoning: nnInt(x.reasoning), ...(cw > 0 ? { cache_write: cw } : {}), ...(cw1 > 0 ? { cache_write_1h: cw1 } : {}) };
   };
   /** 入账后的提醒：租户与成员跨过阈值、到上限、用完；成员 1 小时消耗异常。 */
   const checkAlerts = (t: TenantRecord, uids: Set<string>): void => {
@@ -1568,10 +1718,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const output = nnInt(e.output);
     if (plan.quota_unit === "tokens") return Math.max(1, input + output);
     const alias = typeof e.alias === "string" ? e.alias : "";
-    const item = currentPrices(routing).items[alias];
-    const m = chargeOf(item, { input, cached: 0, output });
-    if (m.value_micro === null) throw new QuotaError(503, "price_unconfigured", "这个模型还没有定价：按金额计的套餐暂不可用，请联系管理员");
-    return Math.max(1, m.value_micro);
+    // 第 62 批：按上游型号计价时取别名各目标里最贵的一档（请求可能切到备用目标）；预估一律按未命中输入价（不假设命中缓存）
+    const rates = reserveRates(currentPrices(routing), routing, alias);
+    const v = rates ? amountOf(rates, billedOf({ input, cached: 0, output })) : null;
+    if (v === null) throw new QuotaError(503, "price_unconfigured", "这个模型还没有定价：按金额计的套餐暂不可用，请联系管理员");
+    return Math.max(1, v);
   };
 
   // ─── 运营接口（v9.3 A-10；第 46 批改为平台人员会话 + 角色权限）：写操作经运维包装（审计执行者 = 人员编号），另记内部访问审计 ───
@@ -1642,7 +1793,17 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const { q } = qOf(t);
     const rows = book.monthRows(month).filter((r) => r.tid === t.tid);
     const agg = emptyAgg();
-    for (const r of rows) addAgg(agg, { requests: 1, tokens_in: r.usage?.input ?? 0, tokens_cached: r.usage?.cached ?? 0, tokens_out: r.usage?.output ?? 0, value_micro: r.value_micro ?? 0, cost_micro: r.cost_micro ?? 0, errors: 0, estimated: 0, unpriced: r.usage && r.value_micro === null ? 1 : 0, uncosted: r.usage && r.cost_micro === null ? 1 : 0 });
+    // 第 62 批：价目生效前（未定价）的行另按现行价估算（只读，不计入用量价值与成本）；待对账的估算另列
+    let unpricedValue = 0;
+    let unpricedCost = 0;
+    for (const r of rows) {
+      addAgg(agg, rowAgg(r));
+      if (r.usage && r.value_micro === null) {
+        const m = repriceNow(r);
+        unpricedValue += m.value_micro ?? 0;
+        unpricedCost += m.cost_micro ?? 0;
+      }
+    }
     // 加量只有本期有记录（跨期清零）。历史月份按该期结束时记下的套餐、席位、单价与加量算（第 56 批，云端审计 1-A：原先一律按“现在”的
     // 套餐与席位、加量恒为 0）；没有记录的更早月份（或按周计期的套餐）仍按当前值，并标 basis = current_estimate，界面写明是估算
     const cur = periodBounds("month", now()).key === month;
@@ -1651,7 +1812,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const billPlan: PlanSpec = h ? { ...plan, id: h.plan_id ?? plan.id, label: h.plan_label ?? plan.label, seat_price_cny: h.seat_price_cny ?? null, boost_price_factor: h.boost_price_factor ?? plan.boost_price_factor } : plan;
     const billSeats = h?.seats ?? t.seats;
     const basis = cur ? "current" : h ? "period_end" : "current_estimate";
-    return { tid: t.tid, name: t.name ?? t.tid.replace(/^ten_/, ""), plan: { id: billPlan.id, label: billPlan.label }, seats: billSeats, basis, ...periodBill({ plan: billPlan, seats: billSeats, boost_pct: boost, value_micro: agg.value_micro, cost_micro: agg.cost_micro, unpriced: agg.unpriced, uncosted: agg.uncosted, requests: agg.requests }), requests: agg.requests, tokens: agg.tokens_in + agg.tokens_out, unpriced_rows: agg.unpriced };
+    return { tid: t.tid, name: t.name ?? t.tid.replace(/^ten_/, ""), plan: { id: billPlan.id, label: billPlan.label }, seats: billSeats, basis, ...periodBill({ plan: billPlan, seats: billSeats, boost_pct: boost, value_micro: agg.value_micro, cost_micro: agg.cost_micro, unpriced: agg.unpriced, uncosted: agg.uncosted, requests: agg.requests }), requests: agg.requests, tokens: agg.tokens_in + agg.tokens_out, unpriced_rows: agg.unpriced, unpriced_note: agg.unpriced ? "价目生效前" : null, unpriced_est_value_cny: agg.unpriced ? cny(unpricedValue) : null, unpriced_est_cost_cny: agg.unpriced ? cny(unpricedCost) : null, pending_reconcile: agg.pending ?? 0, est_value_cny: cny(agg.est_value_micro ?? 0), est_cost_cny: cny(agg.est_cost_micro ?? 0) };
   };
   const deviceRow = (t: TenantRecord, d: DeviceRecord) => {
     const a = accountOfMember(t.tid, d.cert.memberId);
@@ -1763,8 +1924,30 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   const alertView = (x: AlertRecord) => ({ ...x, tenant_name: x.tid ? (tenants.get(x.tid)?.name ?? x.tid.replace(/^ten_/, "")) : null, email: x.aid ? (accounts.get(x.aid)?.email ?? null) : null });
   /** 账本行的计费说明（用量明细与 CSV 显示）。 */
-  const billingNote = (r: UsageRow): string => (r.partial ? "服务出错（已产生成本，不计费）" : r.backfill ? "历史补录" : r.retry_of ? "重试" : "");
-  const usageRowView = (r: UsageRow) => ({ ...r, billing_note: billingNote(r), tenant_name: tenants.get(r.tid)?.name ?? r.tid.replace(/^ten_/, ""), email: r.aid ? (accounts.get(r.aid)?.email ?? null) : null, value_cny: r.value_micro === null ? null : cny(r.value_micro), cost_cny: r.cost_micro === null ? null : cny(r.cost_micro) });
+  const billingNote = (r: UsageRow): string =>
+    r.reconcile === "pending" ? (r.partial ? "服务出错，用量按估算（不计费，成本待对账）" : "上游未给出用量，按估算（不计费，待对账）") : r.partial ? "服务出错（已产生成本，不计费）" : r.backfill ? "历史补录" : r.usage && r.value_micro === null ? "价目生效前（未定价）" : r.retry_of ? "重试" : "";
+  /** 按现行价目重算一行（只给“价目生效前”的行做只读估算；不写回账本）。 */
+  const repriceNow = (r: UsageRow): { value_micro: number | null; cost_micro: number | null } => {
+    const u = r.usage ?? r.est_usage ?? r.partial_usage;
+    if (!u) return { value_micro: null, cost_micro: null };
+    return moneyOf(resolvePrice(currentPrices(routing), routing, r.alias, r.upstream_model)?.rates, billedOf(u));
+  };
+  const usageRowView = (r: UsageRow) => {
+    const est = r.usage && r.value_micro === null ? repriceNow(r) : null;
+    return {
+      ...r,
+      billing_note: billingNote(r),
+      tenant_name: tenants.get(r.tid)?.name ?? r.tid.replace(/^ten_/, ""),
+      email: r.aid ? (accounts.get(r.aid)?.email ?? null) : null,
+      value_cny: r.value_micro === null ? null : cny(r.value_micro),
+      cost_cny: r.cost_micro === null ? null : cny(r.cost_micro),
+      // 第 62 批：待对账行的估算金额；价目生效前的行按现行价的只读估算（都不计入合计）
+      est_value_cny: typeof r.est_value_micro === "number" ? cny(r.est_value_micro) : null,
+      est_cost_cny: typeof r.est_cost_micro === "number" ? cny(r.est_cost_micro) : null,
+      unpriced_est_value_cny: est && est.value_micro !== null ? cny(est.value_micro) : null,
+      unpriced_est_cost_cny: est && est.cost_micro !== null ? cny(est.cost_micro) : null,
+    };
+  };
   const dayParam = (qs: URLSearchParams, k: string, dflt: string): string => {
     const v = qs.get(k);
     if (v === null || v === "") return dflt;
@@ -1895,13 +2078,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const hidden: string[] = [];
     if (!who.perms.includes("billing.read")) {
       hidden.push("billing");
-      for (const k of ["value_cny", "cost_cny", "revenue_cny", "margin_cny", "unpriced_rows"]) delete o.totals[k];
+      for (const k of ["value_cny", "cost_cny", "revenue_cny", "margin_cny", "unpriced_rows", "est_value_cny", "est_cost_cny"]) delete o.totals[k];
       for (const d of o.daily) for (const k of ["value_cny", "cost_cny"]) delete d[k];
       for (const m of o.by_model) delete m.value_cny;
     }
     if (!who.perms.includes("usage.read")) {
       hidden.push("usage");
-      for (const k of ["requests", "tokens_in", "tokens_cached", "tokens_out", "errors", "estimated_rows"]) delete o.totals[k];
+      for (const k of ["requests", "tokens_in", "tokens_cached", "tokens_out", "errors", "estimated_rows", "tokens_cache_write", "pending_reconcile"]) delete o.totals[k];
       o.daily = [];
       o.by_model = [];
     }
@@ -1927,7 +2110,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       generated_at: iso(),
       period: { kind: "month", key: b.key, start: b.start, resets_at: b.resets_at },
       // 有用量却全部未定价：显示“未定价”（null），不显示 0
-      totals: { requests: sum.requests, tokens_in: sum.tokens_in, tokens_cached: sum.tokens_cached, tokens_out: sum.tokens_out, value_cny: sum.unpriced && !sum.value_micro ? null : cny(sum.value_micro), cost_cny: sum.uncosted && !sum.cost_micro ? null : cny(sum.cost_micro), revenue_cny: revenue, margin_cny: revenue === null || (sum.uncosted && !sum.cost_micro) ? null : Math.round((revenue - cny(sum.cost_micro)) * 100) / 100, errors: sum.errors, estimated_rows: sum.estimated, unpriced_rows: sum.unpriced },
+      totals: { requests: sum.requests, tokens_in: sum.tokens_in, tokens_cached: sum.tokens_cached, tokens_out: sum.tokens_out, value_cny: sum.unpriced && !sum.value_micro ? null : cny(sum.value_micro), cost_cny: sum.uncosted && !sum.cost_micro ? null : cny(sum.cost_micro), revenue_cny: revenue, margin_cny: revenue === null || (sum.uncosted && !sum.cost_micro) ? null : Math.round((revenue - cny(sum.cost_micro)) * 100) / 100, errors: sum.errors, estimated_rows: sum.estimated, unpriced_rows: sum.unpriced, tokens_cache_write: sum.tokens_cache_write ?? 0, pending_reconcile: sum.pending ?? 0, est_value_cny: cny(sum.est_value_micro ?? 0), est_cost_cny: cny(sum.est_cost_micro ?? 0) },
       accounts: { total: allAcc.length, active_7d: allAcc.filter((a) => a.last_login_at && a.last_login_at >= since7).length, new_7d: allAcc.filter((a) => a.created_at >= since7).length, disabled: allAcc.filter((a) => a.status === "disabled").length },
       tenants: { total: tenants.size, active: [...tenants.values()].filter((t) => tenantStatus(t) === "active").length, pending: [...tenants.values()].filter((t) => tenantStatus(t) === "pending").length, expiring_30d: [...tenants.values()].filter((t) => Date.parse(t.subscription_until) > now() && Date.parse(t.subscription_until) < now() + 30 * DAY_MS).length },
       devices: { total: allDev.length, active_7d: allDev.filter((d) => d.last_seen_on && d.last_seen_on >= dayOf(now() - 7 * DAY_MS)).length, flagged: allDev.filter((d) => d.flags.length > 0).length },
@@ -1957,7 +2140,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           const next = validatePlan(pl[1]!, b, "ops", prev);
           // 第 56 批（D-222）：按金额计费的套餐，可用模型必须先有售价——否则用这个套餐的律所每次调用都被网关以 price_unconfigured 拒绝
           if (next.quota_unit === "cny") {
-            const miss = unpricedAliases(routing, currentPrices(routing).items, next.models);
+            const miss = unpricedAliasesIn(routing, currentPrices(routing), next.models);
             if (miss.length) throw new CpError(409, "plan_models_unpriced", `按金额计费须先给这些模型定价（未缓存输入价与输出价）：${miss.join("、")}`, { aliases: miss });
           }
           if (prev) {
@@ -2181,6 +2364,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (method === "DELETE") return { perm: "route.manage", action: "routing.model_delete", tid: none, target: () => alias, run: (_b, who) => (deleteModel(routing, alias, now(), who.operator), { ok: true, routing: routingView(routing, routingKeyId) }) };
       return null;
     }
+    /** 第 56 批（D-222）：新价目不能让在用的金额套餐失去售价（否则这些律所的调用全部被拒）；要撤价先把套餐改回 token 单位或限定可用模型。 */
+    const requirePlanPrices = (table: PriceTable) => {
+      for (const pl2 of catalog.plans) {
+        if (pl2.quota_unit !== "cny") continue;
+        const miss = unpricedAliasesIn(routing, table, pl2.models);
+        if (miss.length) throw new CpError(409, "prices_required_by_plan", `套餐“${pl2.label}”按金额计费，这些模型不能没有售价：${miss.join("、")}`, { plan: pl2.id, aliases: miss });
+      }
+    };
     if (method === "PUT" && p === "/v1/ops/routing/prices")
       return {
         perm: "price.manage",
@@ -2188,49 +2379,91 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         tid: none,
         target: none,
         run: (b, who) => {
-          // 第 56 批（D-222）：新价目不能让在用的金额套餐失去售价（否则这些律所的调用全部被拒）；要撤价先把套餐改回 token 单位或限定可用模型
+          // 第 62 批：按别名的旧接口只在当前价目仍按别名时可用——已按上游型号管理时再用它会把计价悄悄改回按别名（别名切到 highspeed 价不跟着走）
+          if (currentPrices(routing).basis === "model") throw new CpError(409, "pricing_basis_model", "价目已按上游型号管理：请用新版价目接口 PUT /v1/ops/pricing（控制台“价目”页）");
           const items = validatePrices(b.items);
-          for (const pl2 of catalog.plans) {
-            if (pl2.quota_unit !== "cny") continue;
-            const miss = unpricedAliases(routing, items, pl2.models);
-            if (miss.length) throw new CpError(409, "prices_required_by_plan", `套餐“${pl2.label}”按金额计费，这些模型不能没有售价：${miss.join("、")}`, { plan: pl2.id, aliases: miss });
-          }
+          requirePlanPrices({ version: 0, effective_at: iso(), by: null, items, basis: "alias" });
           return { ok: true, version: setPrices(routing, items, now(), who.operator), routing: routingView(routing, routingKeyId) };
         },
       };
+    // ─── 价目（第 62 批，契约 contract-b62-pricing.md §2）：按上游型号的成本价、加价倍率与售价；变更即新版本，下一请求起生效，历史行不改写 ───
+    if (method === "GET" && p === "/v1/ops/pricing") return read("pricing.read", () => pricingView(routing), "route.read");
+    if (method === "PUT" && p === "/v1/ops/pricing")
+      return {
+        perm: "price.manage",
+        action: "pricing.update",
+        tid: none,
+        target: none,
+        run: (b, who) => {
+          let probe: RoutingState;
+          try {
+            // 先在副本上建版本，过 D-222 检查再落到正式状态（被拒的改价不产生新版本）
+            probe = structuredClone(routing);
+            setPricing(probe, b, now(), who.operator);
+          } catch (e) {
+            if (e instanceof RoutingError) throw new CpError(e.status, e.code, e.message);
+            throw e;
+          }
+          requirePlanPrices(currentPrices(probe));
+          const version = setPricing(routing, b, now(), who.operator);
+          return { ok: true, version, pricing: pricingView(routing) };
+        },
+      };
+    // ─── 第 62 批迁移（额度改按金额、价目改按上游型号）：查看与还原 ───
+    if (method === "GET" && p === "/v1/ops/billing/migrations") return read("billing.migrations", () => ({ b62_billing: catalog.migrations?.b62_billing ?? null }), "billing.read");
+    if (method === "POST" && p === "/v1/ops/billing/migrations/b62/revert")
+      return { perm: "plan.manage", danger: true, action: "billing.migration_revert", tid: none, target: () => "b62_billing", run: (_b, who) => ({ ok: true, ...revertB62Migration(who.operator) }) };
     // ─── 用量 ───
     if (method === "GET" && p === "/v1/ops/usage/summary")
       return read("usage.summary", () => {
         const f = usageQuery(qs, 200);
         const group = qs.get("group") ?? "day";
-        if (!["day", "model", "tenant", "account"].includes(group)) throw new CpError(400, "group_invalid", "group 须为 day / model / tenant / account");
-        const out = (key: string, label: string, a: Agg) => ({ key, label, requests: a.requests, tokens_in: a.tokens_in, tokens_cached: a.tokens_cached, tokens_out: a.tokens_out, value_cny: cny(a.value_micro), cost_cny: cny(a.cost_micro), errors: a.errors, estimated: a.estimated, unpriced: a.unpriced });
-        let rows: ReturnType<typeof out>[] = [];
+        if (!["day", "model", "upstream", "tenant", "account"].includes(group)) throw new CpError(400, "group_invalid", "group 须为 day / model / upstream / tenant / account");
+        // 第 62 批：价目生效前（未定价）的行没有金额——不改写，另按现行价估算一列（只读，标明是估算）；键与分组同一口径
         const tidF = f.tid ?? null;
-        if (f.aid) {
-          const a = accountOf(f.aid);
-          const uid = uidOfAccount(a);
-          rows = group === "day" ? lastDaysBetween(f.from, f.to).map((day) => out(day, day, book.member(a.tid, uid, day, day))) : [out(a.aid, a.email, book.member(a.tid, uid, f.from, f.to))];
+        const acc0 = f.aid ? accountOf(f.aid) : null;
+        const uid0 = acc0 ? uidOfAccount(acc0) : null;
+        const keyOfRow = (r: UsageRow): string => (acc0 && group !== "day" ? acc0.aid : group === "day" ? r.day : group === "model" ? (r.alias ?? "") : group === "upstream" ? (r.upstream_model ?? "") : group === "tenant" ? r.tid : (accountOfMember(r.tid, r.uid ?? "")?.aid ?? `${r.tid}\u0000${r.uid ?? ""}`));
+        const est = new Map<string, { rows: number; value: number; cost: number; still: number }>();
+        for (const r of book.scan(f.from, f.to, (x) => x.usage !== null && x.value_micro === null && (!tidF || x.tid === tidF) && (!acc0 || (x.tid === acc0.tid && x.uid === uid0)))) {
+          const k = keyOfRow(r);
+          const e = est.get(k) ?? { rows: 0, value: 0, cost: 0, still: 0 };
+          const m = repriceNow(r);
+          e.rows += 1;
+          if (m.value_micro === null) e.still += 1;
+          else e.value += m.value_micro;
+          e.cost += m.cost_micro ?? 0;
+          est.set(k, e);
+        }
+        const out = (key: string, label: string, a: Agg) => {
+          const e = est.get(key);
+          return { key, label, requests: a.requests, tokens_in: a.tokens_in, tokens_cached: a.tokens_cached, tokens_cache_write: a.tokens_cache_write ?? 0, tokens_out: a.tokens_out, value_cny: cny(a.value_micro), cost_cny: cny(a.cost_micro), errors: a.errors, estimated: a.estimated, unpriced: a.unpriced, pending_reconcile: a.pending ?? 0, est_value_cny: cny(a.est_value_micro ?? 0), est_cost_cny: cny(a.est_cost_micro ?? 0), unpriced_note: a.unpriced ? "价目生效前" : null, unpriced_est_value_cny: e ? cny(e.value) : null, unpriced_est_cost_cny: e ? cny(e.cost) : null, unpriced_still: e?.still ?? 0 };
+        };
+        let pairs: [string, string, Agg][] = [];
+        if (acc0) {
+          pairs = group === "day" ? lastDaysBetween(f.from, f.to).map((day) => [day, day, book.member(acc0.tid, uid0!, day, day)]) : [[acc0.aid, acc0.email, book.member(acc0.tid, uid0!, f.from, f.to)]];
         } else if (group === "day") {
           const d = book.daily(tidF, f.from, f.to);
-          rows = lastDaysBetween(f.from, f.to).map((day) => out(day, day, d.get(day) ?? emptyAgg()));
-        } else if (group === "model") {
+          pairs = lastDaysBetween(f.from, f.to).map((day) => [day, day, d.get(day) ?? emptyAgg()]);
+        } else if (group === "model" || group === "upstream") {
           const m = new Map<string, Agg>();
-          for (const t of tenants.values()) if (!tidF || t.tid === tidF) for (const [alias, a] of book.group("model", t.tid, f.from, f.to)) addAgg(m.get(alias) ?? (m.set(alias, emptyAgg()), m.get(alias)!), a);
-          rows = [...m].map(([alias, a]) => out(alias, routing.models.find((x) => x.alias === alias)?.label ?? alias, a));
+          for (const t of tenants.values()) if (!tidF || t.tid === tidF) for (const [k, a] of book.group(group, t.tid, f.from, f.to)) addAgg(m.get(k) ?? (m.set(k, emptyAgg()), m.get(k)!), a);
+          pairs = [...m].map(([k, a]) => [k, group === "model" ? (routing.models.find((x) => x.alias === k)?.label ?? k) : k || "（未到达上游）", a]);
         } else if (group === "tenant") {
-          rows = [...book.group("tenant", tidF, f.from, f.to)].map(([tid, a]) => out(tid, tenants.get(tid)?.name ?? tid.replace(/^ten_/, ""), a));
+          pairs = [...book.group("tenant", tidF, f.from, f.to)].map(([tid, a]) => [tid, tenants.get(tid)?.name ?? tid.replace(/^ten_/, ""), a]);
         } else {
-          rows = [...book.group("member", tidF, f.from, f.to)].map(([k, a]) => {
+          pairs = [...book.group("member", tidF, f.from, f.to)].map(([k, a]) => {
             const [tid, uid] = k.split("\u0000") as [string, string];
             const acc = uid ? accountOfMember(tid, uid) : undefined;
-            return out(acc?.aid ?? k, acc?.email ?? uid ?? "（无账号）", a);
+            return [acc?.aid ?? k, acc?.email ?? uid ?? "（无账号）", a];
           });
         }
-        if (group !== "day") rows.sort((x, y) => y.tokens_in + y.tokens_out - (x.tokens_in + x.tokens_out));
+        if (group !== "day") pairs.sort((x, y) => y[2].tokens_in + y[2].tokens_out - (x[2].tokens_in + x[2].tokens_out));
         const sum = emptyAgg();
-        for (const r of rows) addAgg(sum, { requests: r.requests, tokens_in: r.tokens_in, tokens_cached: r.tokens_cached, tokens_out: r.tokens_out, value_micro: Math.round(r.value_cny * 1e6), cost_micro: Math.round(r.cost_cny * 1e6), errors: r.errors, estimated: r.estimated, unpriced: r.unpriced, uncosted: 0 });
-        return { from: f.from, to: f.to, group, rows, totals: out("total", "合计", sum) };
+        for (const [, , a] of pairs) addAgg(sum, a);
+        const all = [...est.values()].reduce((x, e) => ({ rows: x.rows + e.rows, value: x.value + e.value, cost: x.cost + e.cost, still: x.still + e.still }), { rows: 0, value: 0, cost: 0, still: 0 });
+        est.set("total", all);
+        return { from: f.from, to: f.to, group, rows: pairs.map(([k, l, a]) => out(k, l, a)), totals: out("total", "合计", sum), price_version: currentPrices(routing).version, notes: { unpriced: "价目生效前的行没有金额（未改写）；“按现行价估算”一列按当前价目重算，只读、仅供参考", pending_reconcile: "上游没给真实用量、按已转发内容估算的行：不计入额度与金额，估算另列，待与上游账单对账" } };
       }, "usage.read");
     // 历史用量补录（主文 §4.6）：升级前网关预写日志里的 settle 行（有上游给的真实 token 数）→ 账本行，按请求编号去重；
     // clear_legacy = 运营确认已交齐全部网关实例本期的日志，清掉该律所本期“旧口径冻结比例”，改按补录的真实用量算
@@ -2283,8 +2516,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (!r.next) break;
           cursor = r.next;
         }
-        const head = ["时间", "请求编号", "客户端请求编号", "上游请求编号", "律所", "账号", "成员", "设备", "模型别名", "上游", "上游型号", "结果", "状态码", "输入token", "缓存token", "输出token", "用量来源", "售价金额(元)", "成本(元)", "价目版本", "耗时(毫秒)", "尝试次数", "计费说明", "估算token(不计费)", "重试自"];
-        return { __csv: csv(head, rows.map((r) => [r.at, r.request_id, r.client_request_id, r.upstream_request_id, tenants.get(r.tid)?.name ?? r.tid, r.aid ? (accounts.get(r.aid)?.email ?? r.aid) : "", r.uid, r.dev, r.alias, r.provider, r.upstream_model, r.outcome, r.status, r.usage?.input ?? "", r.usage?.cached ?? "", r.usage?.output ?? "", r.usage_source, r.value_micro === null ? "" : cny(r.value_micro), r.cost_micro === null ? "" : cny(r.cost_micro), r.price_version, r.latency_ms, r.attempts.length, billingNote(r), r.partial_usage ? r.partial_usage.input + r.partial_usage.output : "", r.retry_of ?? ""])), filename: `usage-${f.from}-${f.to}.csv` };
+        const head = ["时间", "请求编号", "客户端请求编号", "上游请求编号", "律所", "账号", "成员", "设备", "模型别名", "上游", "上游型号", "结果", "状态码", "输入token", "缓存token", "输出token", "用量来源", "售价金额(元)", "成本(元)", "价目版本", "耗时(毫秒)", "尝试次数", "计费说明", "估算token(不计费)", "重试自", "计价依据", "计价键", "加价倍率", "未命中输入token", "缓存写入token(5分钟)", "缓存写入token(1小时)", "推理token", "估算售价(元,待对账)", "估算成本(元,待对账)"];
+        return { __csv: csv(head, rows.map((r) => [r.at, r.request_id, r.client_request_id, r.upstream_request_id, tenants.get(r.tid)?.name ?? r.tid, r.aid ? (accounts.get(r.aid)?.email ?? r.aid) : "", r.uid, r.dev, r.alias, r.provider, r.upstream_model, r.outcome, r.status, r.usage?.input ?? "", r.usage?.cached ?? "", r.usage?.output ?? "", r.usage_source, r.value_micro === null ? "" : cny(r.value_micro), r.cost_micro === null ? "" : cny(r.cost_micro), r.price_version, r.latency_ms, r.attempts.length, billingNote(r), (r.partial_usage ?? r.est_usage) ? (r.partial_usage ?? r.est_usage)!.input + (r.partial_usage ?? r.est_usage)!.output : "", r.retry_of ?? "", r.price_basis ?? "", r.price_key ?? "", r.markup ?? "", r.billed?.uncached ?? "", r.billed?.cache_write_5m ?? "", r.billed?.cache_write_1h ?? "", r.billed?.reasoning ?? r.usage?.reasoning ?? "", typeof r.est_value_micro === "number" ? cny(r.est_value_micro) : "", typeof r.est_cost_micro === "number" ? cny(r.est_cost_micro) : ""])), filename: `usage-${f.from}-${f.to}.csv` };
       }, "usage.read");
     // ─── 计费 ───
     if (method === "GET" && (p === "/v1/ops/billing" || p === "/v1/ops/billing.csv")) {
@@ -3258,6 +3491,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (b.final === true && l) closed = closeLease(q, leaseId, b.holder, now());
       sweepLeases(q, now());
       if (fresh.length) checkAlerts(t, new Set(fresh.map((r) => r.uid).filter((x): x is string => !!x)));
+      // 第 62 批：估算的行不扣额度——按上游每小时至多一条告警，让运营知道有用量没有采到（持续出现即用量采集坏了）
+      for (const r of fresh) {
+        if (r.reconcile !== "pending") continue;
+        quotaCount("usage_missing");
+        const key = `usage_missing:${r.provider ?? ""}`;
+        if (now() - (routeAlertSent.get(key) ?? 0) < 3600_000) continue;
+        routeAlertSent.set(key, now());
+        addAlert({ kind: "usage_missing", level: "warn", tid: t.tid, aid: r.aid, provider: r.provider, pct: null, message: `上游${r.provider ? `“${routing.providers.find((x) => x.id === r.provider)?.label ?? r.provider}”` : ""}有请求没给出用量，已按估算记为待对账（不计入额度）` });
+      }
       quotaCount("settle_ok");
       return send(res, 200, { ok: true, accepted: fresh.length, duplicates: rows.length - fresh.length, closed, ...(l?.revoked ? { revoked: true } : {}) });
     }
@@ -3330,20 +3572,24 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 模型显示名取路由登记里的（运营改了路由，客户端跟着变）
       const models = view.models.map((m) => ({ ...m, label: routing.models.find((x) => x.alias === m.alias)?.label ?? m.alias }));
       // 本人的使用明细（第 47 批，对照 Kimi“我的额度”下的使用明细）：本期最近 20 条，只有本人的行；只给时间、问答或任务、模型、token、金额与结果，不含请求内容
+      // 第 62 批：charge_ratio = 这一条占本人分母的比例（律师端只显示百分比，不在客户端用 charge 折算金额）；估算的行不计入（pending）
+      const ownDenom = memberLimitOf(ctx, dev.cert.memberId).limit ?? seatQuotaUnits(plan);
       const ownRecent = book.query({ tid: t.tid, uid: dev.cert.memberId, from: q.period_from, to: q.period_to, limit: 20 }).rows.map((r) => ({
         at: r.at,
         kind: r.qa ? ("qa" as const) : ("task" as const),
         alias: r.alias,
         label: r.alias ? (routing.models.find((x) => x.alias === r.alias)?.label ?? r.alias) : null,
-        tokens_in: r.usage?.input ?? 0,
-        tokens_cached: r.usage?.cached ?? 0,
-        tokens_out: r.usage?.output ?? 0,
+        tokens_in: (r.usage ?? r.est_usage)?.input ?? 0,
+        tokens_cached: (r.usage ?? r.est_usage)?.cached ?? 0,
+        tokens_out: (r.usage ?? r.est_usage)?.output ?? 0,
         charge: r.charge,
+        charge_ratio: ratio(r.charge, ownDenom),
         unit: r.unit,
         value_cny: r.value_micro === null ? null : cny(r.value_micro),
         outcome: r.outcome,
         partial: r.partial === true,
         estimated: r.usage_source === "estimated",
+        pending: r.reconcile === "pending",
       }));
       return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), plan: { id: plan.id, label: plan.label }, account: me ? { aid: me.aid, email: me.email, name: me.name } : null, accounts_required: t.accounts_required === true, ...view, models, own_recent: ownRecent }));
     }

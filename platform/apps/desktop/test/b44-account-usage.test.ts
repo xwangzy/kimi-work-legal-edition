@@ -110,6 +110,8 @@ test("用量 v2：单位只有 tokens 与元（过万写万、过亿写亿；元
   assert.equal(fmtAmount(null, "cny"), "—");
   assert.equal(remainingLine(base), "剩余 58%（约 580 万 tokens）");
   assert.equal(remainingLine({ ...base, firm: { ...base.firm!, used: null, total: null } }), "剩余 58%", "成员看不到总额：只写比例");
+  // 第 62 批：额度按价目（元）计——律师端只看百分比，管理员也不显示金额约数
+  assert.equal(remainingLine({ ...base, unit: "cny", unit_label: "元", firm: { ...base.firm!, used: 88.2, total: 210 } }), "剩余 58%");
   assert.equal(periodLabel(base.period), "2026 年 11 月");
   assert.equal(periodRange(base.period), "11 月 1 日 – 11 月 30 日");
   assert.equal(periodLabel({ kind: "week", key: "2026-W46", start: "2026-11-08T16:00:00.000Z", resets_at: "2026-11-15T16:00:00.000Z" }), "本周（11 月 9 日起）");
