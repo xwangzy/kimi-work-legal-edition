@@ -1,0 +1,77 @@
+[
+ {
+  "page": "ops/overview",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/alerts",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/tenants",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/accounts",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/devices",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/registration/policy",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/registration/invites",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/registration/sms",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/plans",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/pricing",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/billing",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/usage",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/routing",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/staff",
+  "title": "登录",
+  "errors": []
+ },
+ {
+  "page": "ops/system",
+  "title": "登录",
+  "errors": []
+ }
+]
