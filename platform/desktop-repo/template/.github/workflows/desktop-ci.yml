@@ -55,6 +55,13 @@ jobs:
             .cache/win-runtime
           key: kwl-dl-win-${{ hashFiles('scripts/fetch-ocr-models.mjs', 'scripts/win-runtime.lock.json') }}
       - run: npm ci
+      # 依赖安全审查（第 62 批发布配置核对 §4）：先只报告、不阻断——高危以上漏洞与包签名/来源证明校验结果写进作业摘要
+      - name: 依赖审查（npm audit，只报告）
+        shell: bash
+        continue-on-error: true
+        run: |
+          { echo "### npm audit（生产依赖，high 及以上）"; echo '```'; npm audit --omit=dev --audit-level=high 2>&1 | tail -40 || true; echo '```';
+            echo "### npm audit signatures"; echo '```'; npm audit signatures 2>&1 | tail -20 || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - run: npm run fetch:ocr-models
       # w-runtime-bundle 用例在 runner 上组随包运行时，要用 Windows 版 node.exe 与原生包（按锁文件核验）
       - name: Windows 随包运行时（按锁文件核验）

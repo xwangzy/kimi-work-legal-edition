@@ -31,6 +31,10 @@ extraResources:
   - from: electron/lawdb
     to: lawdb
     filter: ["**/*"]
+  # 第三方许可声明（第 62 批）：package-desktop.mjs 生成到 .stage/notices（主进程、内核与界面依赖清单，Electron 与 Chromium 许可原文）
+  - from: .stage/notices
+    to: notices
+    filter: ["**/*"]
 npmRebuild: false
 nodeGypRebuild: false
 buildDependenciesFromSource: false

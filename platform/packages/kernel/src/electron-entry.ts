@@ -144,6 +144,13 @@ function waitForInit(timeoutMs: number): Promise<{ dbKey: string | undefined } |
 
 async function main(): Promise<void> {
   const init = await waitForInit(10_000);
+  // 安装包形态（主进程固定 ZR_AT_REST=required，环境变量不可覆盖）收不到主密钥即拒绝启动，绝不以明文库启动
+  // （第 62 批发布配置核对 §2：原先 10 秒等不到就以明文开发库启动，只适合开发形态）
+  if (!init?.dbKey && process.env.ZR_AT_REST === "required") {
+    port.postMessage({ type: "kernel.event", event: "kernel.db_key_missing", fatal: true, message: "未收到数据库主密钥：安装包形态不以明文库启动" });
+    setTimeout(() => process.exit(78), 50);
+    return;
+  }
   if (!init?.dbKey) {
     port.postMessage({
       type: "kernel.event",

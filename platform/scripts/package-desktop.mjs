@@ -168,7 +168,8 @@ writeFileSync(join(sqliteDest, "package.json"), JSON.stringify({ ...sqlitePkg, d
 
 cpSync(join(desktop, "dist"), join(stage, "dist"), { recursive: true });
 // 主进程：入口与本地模块、electron-updater 打成一个文件（electron 与原生模块 external）
-await build({
+const mainBuild = await build({
+  metafile: true,
   entryPoints: [join(desktop, "electron/main.cjs")],
   outfile: join(stage, "electron/main.cjs"),
   bundle: true,
@@ -203,6 +204,31 @@ if (trial) {
   log(`试用构建：本机网关 → ${trial.upstreamBase}（${trial.model}）${trial.expires ? `，${trial.expires} 到期` : ""}；密钥已封装`);
 }
 for (const f of ["preload.cjs", "kernel.bundle.cjs"]) cpSync(join(desktop, "electron", f), join(stage, "electron", f));
+// 第三方许可声明（第 62 批）：主进程 + 内核/解析/闸门制品按打包清单列出；渲染进程由 vite build.license 生成；
+// 放在安装目录的 Resources/notices 下（用户可直接打开，不在 asar 里）
+{
+  const { renderNotices } = await import("./lib/third-party-notices.mjs");
+  const km = join(desktop, "electron/.kernel-metafiles.json");
+  if (!existsSync(km)) throw new Error("缺少内核打包清单 electron/.kernel-metafiles.json：先运行 build:kernel");
+  const kmeta = JSON.parse(readFileSync(km, "utf8"));
+  const mainNotice = renderNotices("Kimi Work 法律版 —— 应用与后台服务使用的第三方组件", [mainBuild.metafile], process.cwd());
+  const kernelNotice = renderNotices("Kimi Work 法律版 —— 后台服务（内核、解析、出站闸门）使用的第三方组件", kmeta.metas, kmeta.cwd);
+  // Agent 宿主嵌入的 Kimi Code（kap-embed，Apache-2.0）：按其构建清单列组件（许可原文在 runtime/kap-host/main.mjs 末尾）
+  const kapInputs = JSON.parse(readFileSync(join(root, "packages/kap-host/vendor/kap-embed/inputs.json"), "utf8"));
+  const kapNotice = renderNotices("Kimi Work 法律版 —— Agent 宿主（Kimi Code 私有嵌入，Apache-2.0）使用的第三方组件", [{ inputs: Object.fromEntries(kapInputs.map((x) => [x.file, 1])) }], root);
+  const noticesDir = join(desktop, ".stage/notices");
+  rmSync(noticesDir, { recursive: true, force: true });
+  mkdirSync(noticesDir, { recursive: true });
+  writeFileSync(join(noticesDir, "THIRD_PARTY_NOTICES.txt"), `${mainNotice.text}\n${kernelNotice.text}\n${kapNotice.text}`);
+  const ui = join(desktop, "dist/third-party-licenses.md");
+  if (!existsSync(ui)) throw new Error("缺少渲染进程许可清单 dist/third-party-licenses.md（vite build.license）");
+  cpSync(ui, join(noticesDir, "THIRD_PARTY_NOTICES-界面.md"));
+  for (const f of ["LICENSE", "LICENSES.chromium.html"]) {
+    const src = join(root, "node_modules/electron/dist", f);
+    if (existsSync(src)) cpSync(src, join(noticesDir, f === "LICENSE" ? "LICENSE.electron.txt" : f));
+  }
+  log(`第三方许可声明：主进程 ${mainNotice.count} 个、后台服务 ${kernelNotice.count} 个、Agent 宿主 ${kapNotice.count} 个组件${[...mainNotice.unknown, ...kernelNotice.unknown].length ? `（许可证未标注：${[...new Set([...mainNotice.unknown, ...kernelNotice.unknown])].join("、")}）` : ""}`);
+}
 // 随包运行时的期望摘要放进 asar（主进程按它核对 resources/runtime，见 runtime-paths.cjs trustedManifestFile）；
 // 另记 asar.unpacked 里原生模块的摘要（内核进程装载它，asar 完整性不覆盖 unpacked；复核 B4-A01）
 {

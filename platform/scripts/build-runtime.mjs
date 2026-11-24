@@ -136,6 +136,10 @@ function copyClosure(pkgName, fromDir, destNodeModules, seen = new Set()) {
       const inPkg = src.slice(pkgDir.length);
       // 点文件/点目录（.eslintrc、.travis.yml、.gitkeep、.bin 等）一律不随包：全是开发工具配置或垫片，
       // 且 electron-builder 的 extraResources glob `**/*` 本就不拷贝点文件——暂存即剪除，保持"清单=发货内容"（run 38678772986）
+      // 第 62 批（发布配置核对 §6）：类型声明与 TypeScript 源（运行只用编译好的 .js）、说明文档（README/CHANGELOG 等）不随包；
+      // 许可与声明文件（LICENSE、NOTICE、COPYING 及其 .md 形式）照常保留
+      if (/\.d\.[cm]?ts$/.test(src) || (/\.[cm]?ts$/.test(src) && !/\.d\./.test(src))) return false;
+      if (/\.(md|markdown)$/i.test(src) && !/(?:^|[\\/])(licen[cs]e|notice|copying|third[-_]party)[^\\/]*$/i.test(src)) return false;
       return !/(?:^|[\\/])\./.test(inPkg) && !/[\\/](test|tests|__tests__|docs|\.github)([\\/]|$)/.test(inPkg) && !src.endsWith(".map") && pathWanted(pkgName, inPkg);
     },
   });

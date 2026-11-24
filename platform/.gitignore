@@ -35,6 +35,8 @@ apps/desktop/runtime/
 
 # 安装包构建（scripts/package-desktop.mjs）
 apps/desktop/.stage/
+# 第 62 批：内核打包清单（生成第三方许可声明用，构建产物）
+apps/desktop/electron/.kernel-metafiles.json
 apps/desktop/release/
 
 # 真实上游验收报告（scripts/upstream-acceptance.mjs 缺省输出目录；--keep-outputs 时含成果全文）

@@ -50,6 +50,7 @@ export default defineConfig(async ({ command }) => {
     base: "./",
     define,
     server: { host: "127.0.0.1", port: WEB_PORT, strictPort: true },
-    build: { outDir: "dist", target: "es2022" },
+    // 第 62 批：生成渲染进程打包依赖的许可清单（package-desktop.mjs 放进安装包 Resources/notices）
+    build: { outDir: "dist", target: "es2022", license: { fileName: "third-party-licenses.md" } },
   };
 });

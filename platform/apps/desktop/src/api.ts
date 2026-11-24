@@ -108,7 +108,7 @@ function browserDownload(dataBase64: string, filename: string, type: string): vo
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-const BRIDGE = `http://127.0.0.1:${(import.meta as any).env?.VITE_KWL_BRIDGE_PORT ?? "7720"}/invoke`;
+const BRIDGE = (import.meta as any).env?.DEV ? `http://127.0.0.1:${(import.meta as any).env?.VITE_KWL_BRIDGE_PORT ?? "7720"}/invoke` : "";
 /** 开发桥令牌（vite 注入；生产不经开发桥）。 */
 const BRIDGE_TOKEN: string = (import.meta as any).env?.VITE_KWL_BRIDGE_TOKEN ?? "";
 
@@ -131,6 +131,8 @@ async function invoke<T = any>(method: string, params: Record<string, unknown> =
       throw new KernelError(err.message, err.code ?? "internal", err.detail);
     }
   }
+  // 开发桥只在开发形态（vite 开发服务）存在；生产构建里这段整体被剔除（第 62 批发布配置核对 §1：不在安装包里留开发桥地址）
+  if (!(import.meta as any).env?.DEV) throw new KernelError("应用后台接口不可用，请关闭后重新打开应用", "kernel_unavailable");
   const res = await fetch(BRIDGE, {
     method: "POST",
     headers: { "content-type": "application/json", ...(BRIDGE_TOKEN ? { "x-kwl-token": BRIDGE_TOKEN } : {}) },
@@ -160,7 +162,7 @@ export function onKernelEvent(cb: (msg: any) => void): () => void {
 const devListeners = new Set<(msg: any) => void>();
 let devEventsOpen = false;
 function openDevEvents(): void {
-  if (devEventsOpen) return;
+  if (devEventsOpen || !BRIDGE) return;
   devEventsOpen = true;
   void (async () => {
     try {

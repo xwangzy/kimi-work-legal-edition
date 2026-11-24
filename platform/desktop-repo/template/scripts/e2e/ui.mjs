@@ -14,6 +14,8 @@
  *   task <卡片 JSON 文件>              新建事项、加材料（真实文件输入框）、开始面板、确认计划、等任务到终态
  *   export                             对上一个任务的每份 Word/Excel 成果点“下载”，经系统保存对话框存到 $KWL_E2E_OUT/exports，核对文件
  *   usage                              “套餐与用量”页与额度状态（quota.status）
+ *   preview                            第 62 批：上一个任务每份 Word/Excel 成果（含旧版本）在复核页与任务页右栏的预览是否真的出图
+ *                                      （按框架区域截图数深色像素，文档载入了但没画出来也判失败），截图存证
  *   shot <名字>                        截主窗口到 $KWL_E2E_OUT/<名字>.png
  * 保存对话框：Windows 上由 scripts/e2e/win-save-dialog.ps1 按 $KWL_E2E_OUT/next-save-path.txt 填路径并点“保存”；
  * macOS 上没有辅助功能权限时由人点“存储”（脚本等文件出现，最多 5 分钟）。
@@ -22,7 +24,7 @@ import { createRequire } from "node:module";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
-import { inflateRawSync } from "node:zlib";
+import { inflateRawSync, inflateSync } from "node:zlib";
 import { basename, join, resolve } from "node:path";
 
 const require = createRequire(import.meta.url);
@@ -104,6 +106,61 @@ const go = async (hash) => {
 };
 const btnExact = (label) => page.locator("button:visible").filter({ hasText: new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`) });
 const mask = (s) => String(s ?? "").replace(/[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3,}/g, "<码>");
+
+
+// ── 预览出图核对（第 62 批）：截隔离框架所在区域，解 PNG 数深色像素（框架里文书正文是深色字、纸面浅底） ──
+function decodePng(buf) {
+  let off = 8;
+  let w = 0, h = 0, ct = 0, bd = 0;
+  const idat = [];
+  while (off < buf.length) {
+    const len = buf.readUInt32BE(off);
+    const type = buf.toString("ascii", off + 4, off + 8);
+    const data = buf.subarray(off + 8, off + 8 + len);
+    if (type === "IHDR") [w, h, bd, ct] = [data.readUInt32BE(0), data.readUInt32BE(4), data[8], data[9]];
+    if (type === "IDAT") idat.push(data);
+    off += 12 + len;
+  }
+  if (bd !== 8 || (ct !== 6 && ct !== 2)) throw new Error(`不支持的 PNG（位深 ${bd}、颜色类型 ${ct}）`);
+  const bpp = ct === 6 ? 4 : 3;
+  const raw = inflateSync(Buffer.concat(idat));
+  const stride = w * bpp;
+  const out = Buffer.alloc(h * stride);
+  for (let y = 0; y < h; y++) {
+    const f = raw[y * (stride + 1)];
+    const src = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
+    for (let x = 0; x < stride; x++) {
+      const a = x >= bpp ? out[y * stride + x - bpp] : 0;
+      const b = y > 0 ? out[(y - 1) * stride + x] : 0;
+      const c = x >= bpp && y > 0 ? out[(y - 1) * stride + x - bpp] : 0;
+      const pa = Math.abs(b - c), pb = Math.abs(a - c), pc = Math.abs(a + b - 2 * c);
+      const pred = f === 0 ? 0 : f === 1 ? a : f === 2 ? b : f === 3 ? (a + b) >> 1 : pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      out[y * stride + x] = (src[x] + pred) & 0xff;
+    }
+  }
+  return { w, h, bpp, data: out };
+}
+function darkPixels(png) {
+  const { w, h, bpp, data } = decodePng(png);
+  let n = 0;
+  for (let i = 0; i < w * h; i++) {
+    const [r, g, b] = [data[i * bpp], data[i * bpp + 1], data[i * bpp + 2]];
+    if (0.299 * r + 0.587 * g + 0.114 * b < 110) n++;
+  }
+  return n;
+}
+async function framePainted(label) {
+  const frame = page.locator("iframe.sp-frame").first();
+  await frame.waitFor({ state: "visible", timeout: 60_000 });
+  await sleep(2500);
+  const box = await frame.boundingBox();
+  if (!box || box.width < 50 || box.height < 50) return { label, ok: false, dark: 0, why: "框架尺寸异常" };
+  const png = await page.screenshot({ clip: { x: box.x, y: box.y, width: box.width, height: Math.min(box.height, 600) } });
+  const dark = darkPixels(png);
+  const name = `预览-${label}`.replace(/[\\/:*?"<>|\s]/g, "_");
+  writeFileSync(join(OUT, `${name}.png`), png);
+  return { label, ok: dark >= 300, dark, shot: `${name}.png` };
+}
 
 // ── 阶段 ──────────────────────────────────────────────────────────────
 async function ready() {
@@ -484,6 +541,7 @@ async function task(cardFile) {
   const mine = arts.filter((a) => a.run_id === runId);
   state.artifacts = mine.map((a) => ({ id: a.artifact_version_id, filename: a.filename, kind: a.kind, status: a.status, version: a.version, is_latest: a.is_latest }));
   state.run_status = run?.run?.status;
+  state.run_hash = await page.evaluate(() => location.hash);
   state.run_minutes = Math.round((Date.now() - started) / 60000);
   saveState();
   log(`任务终态 ${run?.run?.status}，用时约 ${state.run_minutes} 分钟；成果 ${mine.length} 份：`);
@@ -593,6 +651,44 @@ async function exportAll() {
   if (!results.length || bad.length) throw new Error(`导出未全部完成：${bad.map((x) => x.file).join("、") || "没有可导出的 Word/Excel"}`);
 }
 
+/** 第 62 批：每份 Office 成果（含旧版本）在复核页预览，再到任务页右栏看缺省选中的那份；任何一处没出图即失败。 */
+async function preview() {
+  if (!state.artifacts?.length) throw new Error("没有上一个任务的成果（先跑 task）");
+  const office = state.artifacts.filter((x) => /\.(docx|xlsx)$/i.test(x.filename));
+  const results = [];
+  for (const a of office) {
+    await go(`#/review/${a.id}`);
+    results.push(await framePainted(`复核页-${a.filename}-v${a.version ?? "?"}`).catch((e) => ({ label: a.filename, ok: false, dark: 0, why: e.message })));
+    log(JSON.stringify(results[results.length - 1]));
+  }
+  const runHash = state.run_hash ?? (state.run_id && state.matter_id ? `#/run/${state.run_id}/${state.matter_id}` : null);
+  if (runHash) {
+    await go(runHash);
+    await sleep(3000);
+    results.push(await framePainted("任务页右栏-缺省选中").catch((e) => ({ label: "任务页右栏", ok: false, dark: 0, why: e.message })));
+    log(JSON.stringify(results[results.length - 1]));
+    // 右栏下拉里逐个切换（版本切换时预览要跟着换、不残留上一份）
+    const trigger = page.locator(".artifact-select").first();
+    const n = await page.evaluate(() => document.querySelectorAll(".artifact-select").length);
+    if (n > 0) {
+      await trigger.click();
+      const opts = await page.locator('[role="option"]').allInnerTexts();
+      await page.keyboard.press("Escape");
+      for (let i = 0; i < opts.length; i++) {
+        if (!/\.(docx|xlsx)|Word|Excel|起诉状|律师函|意见|修订|清单|目录|备忘录/.test(opts[i])) continue;
+        await trigger.click();
+        await page.locator('[role="option"]').nth(i).click();
+        results.push(await framePainted(`任务页右栏-${opts[i].slice(0, 24)}`).catch((e) => ({ label: opts[i], ok: false, dark: 0, why: e.message })));
+        log(JSON.stringify(results[results.length - 1]));
+      }
+    }
+  }
+  writeFileSync(join(OUT, "preview-check.json"), JSON.stringify(results, null, 1));
+  const bad = results.filter((r) => !r.ok);
+  log(`预览核对：${results.length - bad.length}/${results.length} 出图`);
+  if (bad.length) throw new Error(`预览没出图：${bad.map((b) => b.label).join("；")}`);
+}
+
 async function usage() {
   const q = await inv("quota.status", {});
   writeFileSync(join(OUT, "quota-status.json"), JSON.stringify(q, null, 1));
@@ -606,7 +702,7 @@ async function usage() {
 }
 
 const [phase, ...args] = process.argv.slice(2);
-const phases = { ready, register, login, "await-approval": awaitApproval, diagnose, qa, task, export: exportAll, usage, shot: (n) => shot(n ?? "shot") };
+const phases = { ready, register, login, "await-approval": awaitApproval, diagnose, qa, task, export: exportAll, preview, usage, shot: (n) => shot(n ?? "shot") };
 if (!phases[phase]) {
   console.error(`未知阶段：${phase}`);
   process.exit(2);

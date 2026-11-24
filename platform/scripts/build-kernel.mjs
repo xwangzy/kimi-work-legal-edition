@@ -130,8 +130,10 @@ if (process.argv.includes("--watch")) {
   await Promise.all([ctx.watch(), workerCtx.watch(), gateCtx.watch()]);
   console.log("[build-kernel] watching…");
 } else {
-  await build(options);
-  await build(parseWorkerOptions);
-  await build(gateOptions);
+  // 第 62 批：留下打包清单（metafile），package-desktop.mjs 据此生成第三方许可声明
+  const metas = [];
+  for (const o of [options, parseWorkerOptions, gateOptions]) metas.push((await build({ ...o, metafile: true })).metafile);
+  const { writeFileSync: wf } = await import("node:fs");
+  wf(`${root}apps/desktop/electron/.kernel-metafiles.json`, JSON.stringify({ cwd: process.cwd(), metas: metas.map((m) => ({ inputs: Object.fromEntries(Object.keys(m.inputs).map((k) => [k, 1])) })) }));
   console.log("[build-kernel] done → apps/desktop/electron/kernel.bundle.cjs + parse-worker.bundle.cjs + egress-gate.bundle.mjs");
 }
