@@ -7,7 +7,7 @@
 
 | 项 | 现值 | 说明 |
 |---|---|---|
-| 接口版本 | `kwl-cp/2` | `GET /v1/meta` 返回 `{api, min_client_version, registration}`（第 53 批 D-218 起不再有 `staff_mfa`：平台人员两步验证已取消；客户端从未读这一项） |
+| 接口版本 | `kwl-cp/2` | `GET /v1/meta` 返回 `{api, min_client_version, registration}`；第 62 批起另有 `registration_policy`、`sms_available`、`features`（客户端据此判断是否显示手机号与邀请码，缺这些字段即按旧流程）。第 53 批 D-218 起不再有 `staff_mfa` |
 | 客户端最低版本 | 控制面配置 `clients.min_version`（缺省不限） | 低于它的客户端登录、注册、取席位令牌得 426 `client_outdated`，客户端提示“请升级到 x.y.z 或以上” |
 | 共享契约包 | `packages/firm-trust`、`packages/seat-token`、`packages/keys`、`packages/design-tokens` | 两端共用同一份源码（来源 monorepo，见 `SOURCE.json`）；CI 的 `npm run verify:source` 确认这里没被单独改过 |
 
