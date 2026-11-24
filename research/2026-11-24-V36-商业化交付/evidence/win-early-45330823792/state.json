@@ -1,0 +1,58 @@
+{
+ "matter_id": "mat_d0a59835-40ed-4c82-a738-a9183d6578c2",
+ "run_id": "run_a00015ea-063d-4fc4-be6e-20bd083b886c",
+ "card": "pleading",
+ "artifacts": [
+  {
+   "id": "artv_693039eb-f197-4794-bc86-a14dae76bffe",
+   "filename": "草稿-2026-11-24.md",
+   "kind": "a1_agent_draft",
+   "status": "draft",
+   "version": 1,
+   "is_latest": true
+  },
+  {
+   "id": "artv_f7404de3-3e08-4009-b4ae-1ec8d679e2be",
+   "filename": "独立复核意见-民事起诉状.md",
+   "kind": "a1_review_note",
+   "status": "draft",
+   "version": 1,
+   "is_latest": true
+  },
+  {
+   "id": "artv_bcec7a3f-9175-463e-9408-241b60e1936d",
+   "filename": "民事起诉状.docx",
+   "kind": "agent_report",
+   "status": "draft",
+   "version": 1,
+   "is_latest": true
+  },
+  {
+   "id": "artv_0bd3b7bd-a5da-4fe0-8f8c-cd50e50acbe6",
+   "filename": "提交前核对清单-锐川诉禾丰设备买卖合同纠纷.xlsx",
+   "kind": "agent_table",
+   "status": "draft",
+   "version": 1,
+   "is_latest": true
+  },
+  {
+   "id": "artv_e92effeb-a19d-4e08-a882-4d0e0ffd53bb",
+   "filename": "证据目录-锐川诉禾丰设备买卖合同纠纷.xlsx",
+   "kind": "agent_table",
+   "status": "draft",
+   "version": 1,
+   "is_latest": true
+  },
+  {
+   "id": "artv_088fc78e-29f1-4b1e-a390-15080b14c46e",
+   "filename": "计算明细-锐川诉禾丰设备货款-截至2026-11-30.xlsx",
+   "kind": "agent_table",
+   "status": "draft",
+   "version": 1,
+   "is_latest": true
+  }
+ ],
+ "run_status": "succeeded",
+ "run_hash": "#/run/run_a00015ea-063d-4fc4-be6e-20bd083b886c/mat_d0a59835-40ed-4c82-a738-a9183d6578c2",
+ "run_minutes": 14
+}

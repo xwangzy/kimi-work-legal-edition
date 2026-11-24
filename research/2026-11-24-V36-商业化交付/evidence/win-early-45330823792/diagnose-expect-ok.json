@@ -1,0 +1,108 @@
+{
+ "checked_at": "2026-11-24T05:30:30.167Z",
+ "gate": "running",
+ "tone": "ok",
+ "conclusion": "连接正常：各项云端服务都能连上，证书核对通过",
+ "rows": [
+  {
+   "upstream": "control_plane",
+   "name": "账号与授权",
+   "class": "ok",
+   "label": "正常",
+   "host": "legal.matetrip.cn",
+   "port": 8443,
+   "elapsed_ms": 586,
+   "detail": null,
+   "pins": [
+    "sha256/VqxKS+dPG4ye…",
+    "sha256/6h66361wAXGV…"
+   ],
+   "presented": [],
+   "cloud_ca": false
+  },
+  {
+   "upstream": "model",
+   "name": "AI 服务",
+   "class": "ok",
+   "label": "正常",
+   "host": "legal.matetrip.cn",
+   "port": 8444,
+   "elapsed_ms": 570,
+   "detail": null,
+   "pins": [
+    "sha256/VqxKS+dPG4ye…",
+    "sha256/6h66361wAXGV…"
+   ],
+   "presented": [],
+   "cloud_ca": false
+  },
+  {
+   "upstream": "search",
+   "name": "联网检索",
+   "class": "ok",
+   "label": "正常",
+   "host": "legal.matetrip.cn",
+   "port": 8445,
+   "elapsed_ms": 577,
+   "detail": null,
+   "pins": [
+    "sha256/VqxKS+dPG4ye…",
+    "sha256/6h66361wAXGV…"
+   ],
+   "presented": [],
+   "cloud_ca": false
+  },
+  {
+   "upstream": "dist",
+   "name": "法规库与模板更新",
+   "class": "not_configured",
+   "label": "未配置",
+   "host": null,
+   "port": null,
+   "elapsed_ms": 0,
+   "detail": null,
+   "pins": [],
+   "presented": [],
+   "cloud_ca": false
+  },
+  {
+   "upstream": "support",
+   "name": "技术支持",
+   "class": "not_configured",
+   "label": "未配置",
+   "host": null,
+   "port": null,
+   "elapsed_ms": 0,
+   "detail": null,
+   "pins": [],
+   "presented": [],
+   "cloud_ca": false
+  },
+  {
+   "upstream": "notify",
+   "name": "期限提醒",
+   "class": "not_configured",
+   "label": "未配置",
+   "host": null,
+   "port": null,
+   "elapsed_ms": 0,
+   "detail": null,
+   "pins": [],
+   "presented": [],
+   "cloud_ca": false
+  },
+  {
+   "upstream": "relay",
+   "name": "同事之间同步",
+   "class": "not_configured",
+   "label": "未配置",
+   "host": null,
+   "port": null,
+   "elapsed_ms": 0,
+   "detail": null,
+   "pins": [],
+   "presented": [],
+   "cloud_ca": false
+  }
+ ]
+}
