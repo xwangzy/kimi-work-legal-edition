@@ -38,6 +38,11 @@ fi
 install -m 0644 deploy/systemd/kwl@.service /etc/systemd/system/kwl@.service
 # 纯公网 IP 部署（有 /etc/kwl/tls-ip.env）：续期定时器单元也随版本更新
 if [ -f /etc/kwl/tls-ip.env ]; then install -m 0644 deploy/systemd/kwl-cert-renew.service deploy/systemd/kwl-cert-renew.timer /etc/systemd/system/; fi
+# 第 63 批（线上事故 2026-11-25）：装着域名证书却还留着纯 IP 部署的续期配置——停用续期定时器（否则它会用 IP 证书覆盖域名证书，客户端全部连不上）
+if [ -f /etc/kwl/tls-ip.env ] && [ -f /etc/kwl/tls/cp.crt ] && openssl x509 -in /etc/kwl/tls/cp.crt -noout -ext subjectAltName 2>/dev/null | grep -q "DNS:"; then
+  systemctl disable --now kwl-cert-renew.timer 2>/dev/null || true
+  echo "⚠ 本机是域名部署却留着纯 IP 部署的续期配置：已停用 kwl-cert-renew.timer；请把 /etc/kwl/tls-ip.env 移走（运维手册“排障”）"
+fi
 systemctl daemon-reload
 if [ -f /etc/nginx/sites-available/kwl-console.conf ] && command -v nginx >/dev/null; then
   DOMAIN=$(awk '/server_name/ {gsub(";",""); print $2; exit}' /etc/nginx/sites-available/kwl-console.conf)

@@ -90,9 +90,19 @@ write_extra_trust() {
   systemctl daemon-reload
 }
 
+# 第 63 批（线上事故 2026-11-25）：这台机器已改成域名部署（装着带 DNS 名的证书）时，纯 IP 部署留下的续期任务不得覆盖它——
+# 否则域名证书与私钥被 IP 证书换掉，按域名连接、钉住域名证书公钥的客户端全部连不上。改成域名部署后应停用定时器并移走 tls-ip.env。
+refuse_if_domain_deployment() {
+  [ -f "$TLS/cp.crt" ] || return 0
+  if openssl x509 -in "$TLS/cp.crt" -noout -ext subjectAltName 2>/dev/null | grep -q "DNS:"; then
+    die "当前装的是域名证书（$(openssl x509 -in "$TLS/cp.crt" -noout -ext subjectAltName 2>/dev/null | grep -o 'DNS:[^,]*' | head -1)），本机已是域名部署：拒绝用 IP 证书覆盖。请停用续期：systemctl disable --now kwl-cert-renew.timer && mv $ETC/tls-ip.env $ETC/tls-ip.env.disabled"
+  fi
+}
+
 # 装证书：同一张证书与私钥装成四个名字（配置与域名模式相同，以后换域名只换文件）。先核对证书公钥 = 当前私钥公钥。
 install_cert() {
   local chain="$1" kp cp
+  refuse_if_domain_deployment
   kp=$(pin_of_key "$IPDIR/server.key"); cp=$(pin_of_cert "$chain")
   [ "$kp" = "$cp" ] || die "新证书的公钥（sha256/$cp）不是当前私钥（sha256/$kp）：拒绝安装，否则已装好的客户端全部连不上。检查 lego 是否换了密钥"
   install -m 0644 "$chain" "$IPDIR/server.crt"
@@ -244,6 +254,7 @@ cmd_deploy() {
 cmd_renew() {
   local force=""; [ "${1:-}" = --force ] && force=force
   load_env
+  refuse_if_domain_deployment
   case "$KWL_TLS_MODE" in
     acme) need_lego; lego_run "$force" ;;
     demo-ca)

@@ -12,7 +12,7 @@
  *   login-sms                          第 63 批：手机号验证码登录（KWL_PHONE；验证码由人转交：KWL_SMS_RELAY_LOGIN，缺省同 KWL_SMS_RELAY）。
  *                                      在开通页（这台电脑还没有身份）或已激活电脑的“设置 · 账号”就地登录框里都可用；新电脑会停在“等待批准这台电脑”
  *   logout                             第 63 批：设置 · 账号 → 退出登录（确认对话框），核对出现就地登录框
- *   approve-join                       第 63 批：管理员电脑上“设置 · 成员”里按 KWL_CHECK_CODE 找到待批准申请、逐位一致才批准
+ *   approve-join                       第 63 批：管理员电脑上“设置 · 管理 · 成员”里按 KWL_CHECK_CODE 找到待批准申请、逐位一致才批准
  *   await-approval [分钟]              等管理员批准；出现“本所识别码”后与 KWL_FIRM_CODE 逐位比对，一致才点“一致，打开”
  *   diagnose [expect-ok|expect-fail]   设置里的“检测连接”（connection.diagnose），打印各服务结论
  *   qa <问题>                          问答页真实提问，等回答，打印前 800 字与引用条数
@@ -377,9 +377,14 @@ async function approveJoin() {
   const want = (process.env.KWL_CHECK_CODE || "").replace(/\s+/g, "");
   if (!/^\d{6,}$/.test(want)) throw new Error("approve-join 需要 KWL_CHECK_CODE（新电脑屏幕上的入组核对码）");
   await ready();
-  await go("#/connections/members");
+  // 成员与待批准申请在“设置 · 管理”（#/connections/admin，缺省子标签“成员”）
+  await go("#/connections/admin");
   const row = await until(
     async () => {
+      // 别的阶段（例如同时在跟的任务）可能把页面切走：每轮确认还在成员页
+      if (!(await page.evaluate(() => location.hash)).startsWith("#/connections/admin")) await go("#/connections/admin");
+      const membersTab = page.getByRole("tab", { name: "成员" });
+      if ((await membersTab.count()) && (await membersTab.first().getAttribute("aria-selected")) !== "true") await membersTab.first().click();
       for (const tr of await page.locator("tr").all()) {
         const t = (await tr.innerText()).replace(/\s+/g, "");
         if (t.includes(want)) return tr;
