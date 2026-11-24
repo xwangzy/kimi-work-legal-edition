@@ -81,7 +81,8 @@ test("新云端：策略要求手机号且仅凭码——不填手机号注册�
   const invite = batch.codes[0].code as string;
   const k = await boot(mkdtempSync(join(tmpdir(), "kwl-b62-new-")));
   const m = (await k.invoke("account.registration_meta", {})) as any;
-  assert.deepEqual(m, { legacy: false, mode: "code", invite_required: true, require_phone: true, sms_available: true, phone_reset: true, phone_login: true, phone_bind: true, sms: { code_length: 6, resend_seconds: 60, ttl_minutes: 10 } });
+  // 第 63 批安全审查：dry-run 只回注册验证码——找回、验证码登录、绑定在 dry-run 下视为不可用
+  assert.deepEqual(m, { legacy: false, mode: "code", invite_required: true, require_phone: true, sms_available: true, phone_reset: false, phone_login: false, phone_bind: false, sms: { code_length: 6, resend_seconds: 60, ttl_minutes: 10 } });
   await assert.rejects(k.invoke("account.register", { email: "new-cloud@example.cn", password: PW, name: "新云端律师", code: invite }), (e: any) => e.message === "请填写手机号并获取短信验证码");
   await assert.rejects(k.invoke("account.sms_send", { phone: "1380013800", purpose: "register" }), (e: any) => e.code === "validation" && /手机号格式不对/.test(e.message));
   const s = (await k.invoke("account.sms_send", { phone: "+86 139-0013-9000", purpose: "register" })) as any;

@@ -74,7 +74,7 @@ before(async () => {
   });
   await new Promise<void>((r) => submail.listen(0, "127.0.0.1", () => r()));
   submailBase = `http://127.0.0.1:${(submail.address() as AddressInfo).port}`;
-  cp = createControlPlane({ keys, serviceSecret: SECRET, now, stateStore: store, devStaff: devStaffOf({ op_6201: ["sysadmin"], op_6202: ["operator"], op_6203: ["support"], op_6204: ["finance"] }), opsAccessLog: (r) => void access.push(r), sms: { base: submailBase, timeoutMs: 800 } });
+  cp = createControlPlane({ keys, serviceSecret: SECRET, now, stateStore: store, devStaff: devStaffOf({ op_6201: ["sysadmin"], op_6202: ["operator"], op_6203: ["support"], op_6204: ["finance"] }), opsAccessLog: (r) => void access.push(r), sms: { base: submailBase, timeoutMs: 800, dryRunRevealAll: true } });
   prod = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: SECRET, devStaff: devStaffOf({ op_6299: ["sysadmin"] }), sms: { allowDryRun: false, base: submailBase } });
   for (const c of [cp, prod]) await new Promise<void>((r) => c.server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(cp.server.address() as AddressInfo).port}`;
@@ -205,8 +205,9 @@ test("真实发送（假的赛邮云）：手机号注册 → 登录；验证码
   assert.equal((await pub("POST", "/v1/auth/login", { email: "phone1@example.cn", password: PW, client: { platform: "web" } })).status, 200);
   // 同一个码不能再用；手机号已注册
   tick();
+  // 第 63 批安全审查：“手机号已注册”放到核对验证码之后——用过的码（或拿不到码的人）在这里只看到“验证码已过期”，探不出是否注册
   const again = await reg({ email: "phone1b@example.cn", phone: "13700137000", sms_code: code });
-  assert.deepEqual([again.status, again.json.error.code], [409, "phone_taken"]);
+  assert.deepEqual([again.status, again.json.error.code], [400, "sms_code_expired"]);
   assert.equal((await sendCode("13700137000")).json.error.code, "phone_taken");
   // 发送失败：余额不足 → 可排查代码，记录作废（不占重发间隔），发送记录写明
   behaviour = { kind: "error", code: "904" };

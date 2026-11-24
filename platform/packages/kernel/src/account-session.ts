@@ -150,6 +150,8 @@ export function accountErrorText(code: string, fallback?: string): string {
       return "这个手机号已经绑定在你的账号上";
     case "sms_probe_limit":
       return "获取验证码过于频繁，请一小时后再试";
+    case "sms_dry_run_restricted":
+      return "短信服务处于测试模式，暂时不能用验证码登录、找回密码或绑定手机号，请联系中软客服";
     case "member_only":
       return "这是中软平台人员账号，不能在律师端使用";
     case "sms_purpose_invalid":
@@ -205,7 +207,7 @@ export function clientOutdatedText(minVersion?: string | null): string {
 
 /** 第 62 批：短信频控类（429）与短信服务类（502，云端或短信平台的问题）的代码。 */
 const SMS_THROTTLE_CODES: ReadonlySet<string> = new Set(["sms_too_frequent", "sms_daily_limit", "sms_ip_limit", "sms_daily_total_limit", "sms_provider_throttled", "sms_probe_limit"]);
-const SMS_SERVICE_CODES: ReadonlySet<string> = new Set(["sms_disabled", "sms_not_configured", "sms_login_disabled", "sms_auth_failed", "sms_ip_blocked", "sms_balance_insufficient", "sms_sign_invalid", "sms_template_invalid", "sms_provider_error", "sms_timeout", "sms_network_error"]);
+const SMS_SERVICE_CODES: ReadonlySet<string> = new Set(["sms_disabled", "sms_not_configured", "sms_login_disabled", "sms_dry_run_restricted", "sms_auth_failed", "sms_ip_blocked", "sms_balance_insufficient", "sms_sign_invalid", "sms_template_invalid", "sms_provider_error", "sms_timeout", "sms_network_error"]);
 
 /**
  * 账号接口失败 → HTTP 状态、错误类别与律师话（第 46 批：待激活模式 onboarding.accountCall 与正常模式 account.* 共用这一处，口径不再分叉）。

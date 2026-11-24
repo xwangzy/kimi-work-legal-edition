@@ -215,7 +215,7 @@ test("密码锁定不挡验证码登录且成功后清零；停用账号不发�
   assert.deepEqual([d.status, d.json.error.code, sent.length], [403, "account_disabled", n0]);
 });
 
-test("绑定手机号：老账号（只有邮箱）登录后绑定；要会话；被占用 / 同号；换绑要当前密码（错了不耗验证码）；换绑后旧号不能登录", async () => {
+test("绑定手机号：老账号（只有邮箱）登录后绑定；要会话；绑定与换绑都要当前密码（错了不耗验证码）；被占用只在核码后说；同号；换绑后旧号不能登录", async () => {
   tick();
   const r = await pub("POST", "/v1/auth/register", { email: "oldmail@example.cn", password: PW, name: "老用户", client: { platform: "web" } });
   assert.equal(r.status, 200, r.text);
@@ -231,10 +231,19 @@ test("绑定手机号：老账号（只有邮箱）登录后绑定；要会话�
   assert.equal(s.status, 200, s.text);
   assert.equal(sent.at(-1)!.project, "ProjReg63", "绑定模板不填沿用注册模板");
   const bc = lastCode();
-  // 绑定码不能拿来登录（还没绑定时手机号也没有账号）
+  // 绑定码不能拿来登录；手机号没有账号时登录接口与“没有有效验证码”同样回答（是否注册只在发码时说）
   tick();
-  assert.equal((await loginPhone("13900139005", bc)).json.error.code, "phone_not_registered");
-  const b = await pub("POST", "/v1/auth/phone", { phone: "13900139005", sms_code: bc }, bearer(tok));
+  assert.equal((await loginPhone("13900139005", bc)).json.error.code, "sms_code_expired");
+  // 安全审查：首次绑定也要当前密码（偷到会话不能给账号加上可登录的手机号）；密码错不耗验证码
+  tick();
+  const nb = await pub("POST", "/v1/auth/phone", { phone: "13900139005", sms_code: bc }, bearer(tok));
+  assert.deepEqual([nb.status, nb.json.error.code, nb.json.error.message], [401, "auth_invalid", "当前密码不正确"]);
+  // 拿别人的号：没有那台手机上的绑定码，只看到“验证码已过期”，探不出是否被占用
+  tick();
+  const probe = await pub("POST", "/v1/auth/phone", { phone: "13900139003", sms_code: "123456", password: PW }, bearer(tok));
+  assert.deepEqual([probe.status, probe.json.error.code], [400, "sms_code_expired"]);
+  tick();
+  const b = await pub("POST", "/v1/auth/phone", { phone: "13900139005", sms_code: bc, password: PW }, bearer(tok));
   assert.equal(b.status, 200, b.text);
   assert.equal(b.json.account.phone, "139****9005");
   // 同号再绑
@@ -259,7 +268,7 @@ test("绑定手机号：老账号（只有邮箱）登录后绑定；要会话�
   assert.equal(old.json.error.code, "phone_not_registered", "旧号已解除");
   assert.equal((await send("13900139005", "register")).status, 200, "旧号可以给别人注册");
   // 平台人员不能绑定
-  const st = await call(base, "POST", "/v1/auth/phone", { phone: "13900139007", sms_code: "123456" }, { authorization: `Bearer ${await tokenOf("op_6303")}` });
+  const st = await call(base, "POST", "/v1/auth/phone", { phone: "13900139007", sms_code: "123456", password: PW }, { authorization: `Bearer ${await tokenOf("op_6303")}` });
   assert.deepEqual([st.status, st.json.error.code], [403, "member_only"]);
   const stSend = await send("13900139007", "bind", { authorization: `Bearer ${await tokenOf("op_6303")}` });
   assert.deepEqual([stSend.status, stSend.json.error.code], [403, "member_only"]);
@@ -275,6 +284,9 @@ test("来源每小时查询上限（防批量探测手机号是否注册）；�
     else assert.equal(r.json.error.code, "sms_probe_limit");
   }
   assert.equal(last, 429);
+  // 安全审查：上限只挡“会泄露是否注册”的应答——同一出口下已注册的手机号照常收到登录码（不再整栋楼一小时收不到验证码）
+  const legit = await send("13900139006", "login");
+  assert.equal(legit.status, 200, legit.text);
   // 发送失败计入失败原因
   nextHour();
   failNext = "420";
@@ -332,5 +344,44 @@ test("重启读回：登录开关与模板、绑定的手机号、每日统计�
   } finally {
     c3.server.closeAllConnections();
     await new Promise<void>((r) => c3.server.close(() => r()));
+  }
+});
+
+test("安全审查：开着验证码登录时验证码强度不能调弱；dry-run 只回注册验证码（登录、找回、绑定视为不可用）", async () => {
+  // 强度：开着验证码登录时不能 4 位码 / 单码 10 次；关掉验证码登录才可以
+  const weak = await smsPut({ code_length: 4 });
+  assert.deepEqual([weak.status, weak.json.error.code], [400, "sms_login_too_weak"]);
+  assert.equal((await smsPut({ max_attempts: 10 })).json.error.code, "sms_login_too_weak");
+  const offWeak = await smsPut({ login_enabled: false, code_length: 4 });
+  assert.equal(offWeak.status, 200, offWeak.text);
+  assert.equal((await smsPut({ login_enabled: true })).json.error.code, "sms_login_too_weak", "调弱后不能再打开验证码登录");
+  assert.equal((await smsPut({ code_length: 6, login_enabled: true })).status, 200);
+  // dry-run（允许 dry-run 的部署，但没有放开全部回码）：注册码照常回，登录 / 找回 / 绑定不可用
+  const dev = createControlPlane({ keys: devControlPlaneKeys(), serviceSecret: SECRET, now, devStaff: devStaffOf({ op_6399: ["sysadmin"] }), sms: { allowDryRun: true, base: submailBase } });
+  await new Promise<void>((r) => dev.server.listen(0, "127.0.0.1", () => r()));
+  const db = `http://127.0.0.1:${(dev.server.address() as AddressInfo).port}`;
+  try {
+    const tk = await staffToken(db, staffEmail("op_6399"));
+    const put = await call(db, "PUT", "/v1/ops/registration/sms", { enabled: true, dry_run: true }, { authorization: `Bearer ${tk}` });
+    assert.equal(put.status, 200, put.text);
+    const m = (await call(db, "GET", "/v1/meta")).json.registration_policy;
+    assert.deepEqual([m.sms_available, m.phone_login, m.phone_reset, m.phone_bind], [true, false, false, false]);
+    const r1 = await call(db, "POST", "/v1/auth/sms/send", { phone: "13900139100", purpose: "register" });
+    assert.deepEqual([r1.status, r1.json.dry_run, /^\d{6}$/.test(r1.json.debug_code)], [200, true, true]);
+    tick();
+    const reg1 = await call(db, "POST", "/v1/auth/register", { email: "dry@example.cn", password: PW, name: "测试", phone: "13900139100", sms_code: r1.json.debug_code, client: { platform: "web" } });
+    assert.equal(reg1.status, 200, reg1.text);
+    tick();
+    for (const purpose of ["login", "reset"]) {
+      const r = await call(db, "POST", "/v1/auth/sms/send", { phone: "13900139100", purpose });
+      assert.equal(r.json.debug_code, undefined, `${purpose} 不回码`);
+      assert.equal(r.status === 503 || (purpose === "reset" && r.status === 200 && r.json.debug_code === undefined), true, `${purpose}：${r.text}`);
+      tick();
+    }
+    const lg = await call(db, "POST", "/v1/auth/login", { phone: "13900139100", sms_code: "123456", client: { platform: "web" } });
+    assert.deepEqual([lg.status, lg.json.error.code], [503, "sms_login_disabled"]);
+  } finally {
+    dev.server.closeAllConnections();
+    await new Promise<void>((r) => dev.server.close(() => r()));
   }
 });

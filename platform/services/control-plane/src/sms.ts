@@ -227,6 +227,8 @@ export function validateSmsPatch(raw: unknown, prev: SmsSettings, o: { sealKey: 
     if ((next as unknown as Record<string, number>)[k] !== v) changed.push(k);
     (next as unknown as Record<string, number>)[k] = v;
   }
+  if (next.enabled && next.login_enabled && !smsLoginStrongEnough(next))
+    throw new RegError(400, "sms_login_too_weak", `开着手机号验证码登录时，验证码至少 ${LOGIN_MIN_CODE_LENGTH} 位、单个验证码最多校验 ${LOGIN_MAX_ATTEMPTS} 次（或先关掉验证码登录）`, { min_code_length: LOGIN_MIN_CODE_LENGTH, max_attempts: LOGIN_MAX_ATTEMPTS });
   if (next.dry_run && !o.allowDryRun) throw new RegError(409, "sms_dry_run_forbidden", "生产部署不能打开 dry-run（验证码不经短信、随应答返回）：请配置真实短信通道");
   if (next.enabled && !next.dry_run) {
     const miss = smsMissing(next, "register");
@@ -246,9 +248,17 @@ export function smsMode(s: SmsSettings, allowDryRun: boolean, purpose: SmsPurpos
   return smsMissing(s, purpose).length ? { ok: false, code: "sms_not_configured" } : { ok: true, mode: "live" };
 }
 
-/** 手机号验证码登录是否可用（第 63 批）：总开关、登录开关都开，且登录用途能发送。 */
+/**
+ * 验证码登录对验证码强度的最低要求（第 63 批安全审查）：至少 6 位、单码至多校验 5 次。验证码登录不改任何东西、本人察觉不到，
+ * 位数与次数调弱（4 位 × 10 次 × 每日 50 条）每天被猜中的概率可达约 5%；注册、找回不受这条约束。
+ */
+export const LOGIN_MIN_CODE_LENGTH = 6;
+export const LOGIN_MAX_ATTEMPTS = 5;
+export const smsLoginStrongEnough = (s: Pick<SmsSettings, "code_length" | "max_attempts">): boolean => s.code_length >= LOGIN_MIN_CODE_LENGTH && s.max_attempts <= LOGIN_MAX_ATTEMPTS;
+
+/** 手机号验证码登录是否可用（第 63 批）：总开关、登录开关都开，验证码强度够，且登录用途能发送。 */
 export function smsLoginAvailable(s: SmsSettings, allowDryRun: boolean): boolean {
-  return s.login_enabled && smsMode(s, allowDryRun, "login").ok;
+  return s.login_enabled && smsLoginStrongEnough(s) && smsMode(s, allowDryRun, "login").ok;
 }
 
 /** 运营视图（不含 AppKey，只给是否已设与末 4 位）。 */

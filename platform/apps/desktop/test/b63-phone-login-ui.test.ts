@@ -91,7 +91,8 @@ test("绑定 / 更换手机号：账号卡显示打码号码或“未绑定”�
   assert.equal(phoneLabel("138****8000"), "138****8000");
   for (const v of [null, undefined, "", "  "]) assert.equal(phoneLabel(v), "未绑定");
   const bind = phoneBindForm(null, true);
-  assert.deepEqual([bind.change, bind.title, bind.needPassword, bind.phoneField], [false, "绑定手机号", false, "手机号"]);
+  // 第 63 批安全审查：首次绑定也要当前密码
+  assert.deepEqual([bind.change, bind.title, bind.needPassword, bind.phoneField], [false, "绑定手机号", true, "手机号"]);
   assert.equal(bind.done, "已绑定，之后可以用手机号验证码登录。");
   const change = phoneBindForm("138****8000", true);
   assert.deepEqual([change.change, change.title, change.needPassword, change.phoneField], [true, "更换手机号", true, "新手机号"]);

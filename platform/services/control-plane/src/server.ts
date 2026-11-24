@@ -312,7 +312,11 @@ export interface ControlPlaneOptions {
    * 短信通道（第 62 批）：allowDryRun = 部署允许 dry-run（进程内调用缺省允许；生产入口 cloud-serve 只在配置显式允许且部署标识不是生产时允许）；
    * fetchImpl / base / timeoutMs 只给用例与联调（换赛邮云地址或注入假的上游）。
    */
-  sms?: { allowDryRun?: boolean } & Pick<SubmailOptions, "fetchImpl" | "base" | "timeoutMs">;
+  /**
+   * dryRunRevealAll（第 63 批安全审查）：dry-run 时缺省只把**注册**验证码随应答返回——登录、找回、绑定的码一旦回给请求方，
+   * 知道手机号就能登进或改掉别人的账号。只有用例与本机联调栈可以打开它；生产入口不提供这一项。
+   */
+  sms?: { allowDryRun?: boolean; dryRunRevealAll?: boolean } & Pick<SubmailOptions, "fetchImpl" | "base" | "timeoutMs">;
 }
 
 /** 控制面运营访问审计（中软内部，不进律所可见的流水）：只有运营编号、密钥编号、动作、租户与目标编号、结果。 */
@@ -1436,11 +1440,24 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   // ─── 第 62 批：短信验证码（注册、找回密码）与注册策略 ───
   /** 每个来源地址每小时发了几条（只在内存：重启清零，按小时窗口；与 authAllowed 同样按 TCP 来源）。 */
   const smsIpWindow = new Map<string, { hour: number; n: number }>();
-  const smsIpCount = (src: string): number => {
+  /**
+   * 第 63 批安全审查：短信相关的来源计数按 IPv6 /64 聚合（同一前缀下换地址取之不尽）；IPv4 与 IPv4 映射地址照原样。
+   */
+  const smsSrc = (src: string): string => {
+    if (!src.includes(":") || /^::ffff:\d+\.\d+\.\d+\.\d+$/i.test(src)) return src;
+    const [head, tail] = src.split("%")[0]!.split("::");
+    const h = head ? head.split(":") : [];
+    const t = tail !== undefined ? (tail ? tail.split(":") : []) : [];
+    const full = tail !== undefined ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
+    return `${full.slice(0, 4).map((x) => x.toLowerCase().replace(/^0+(?=.)/, "")).join(":")}::/64`;
+  };
+  const smsIpCount = (src0: string): number => {
+    const src = smsSrc(src0);
     const w = smsIpWindow.get(src);
     return w && w.hour === Math.floor(now() / 3600_000) ? w.n : 0;
   };
-  const smsIpNote = (src: string): void => {
+  const smsIpNote = (src0: string): void => {
+    const src = smsSrc(src0);
     const hour = Math.floor(now() / 3600_000);
     if (smsIpWindow.size > 50_000) for (const [k, w] of smsIpWindow) if (w.hour !== hour) smsIpWindow.delete(k);
     const w = smsIpWindow.get(src);
@@ -1471,27 +1488,34 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (all.filter((c) => dayOf(Date.parse(c.created_at)) === today).length >= sms.daily_total_limit) throw new CpError(429, "sms_daily_total_limit", "今天的验证码发送量已达上限，请明天再试或联系中软客服");
   };
   /**
-   * 第 63 批：“查询型”拒绝（登录发码时手机号没注册 / 账号停用，注册、绑定发码时手机号已被占用）按来源每小时计数，
-   * 超过 SMS_PROBE_LIMIT 即 429 sms_probe_limit——防批量探测手机号是否注册（不发短信的拒绝不占发送额度，要另外限）。只在内存。
+   * 第 63 批：“查询型”拒绝（登录发码时手机号没注册 / 账号停用，注册、绑定发码时手机号已被占用）按来源（IPv6 按 /64）每小时计数，
+   * 超过 SMS_PROBE_LIMIT 后这类拒绝一律改回 429 sms_probe_limit——防批量探测手机号是否注册。只拦“会泄露是否注册”的应答，
+   * 正常发码不受影响（安全审查：原先先查上限再查号，同一出口 IP 下有人刷满后，整栋楼的人一小时内都收不到验证码）。只在内存。
    */
   const SMS_PROBE_LIMIT = 30;
   const smsProbeWindow = new Map<string, { hour: number; n: number }>();
-  const smsProbeGate = (src: string): void => {
-    const w = smsProbeWindow.get(src);
-    if (w && w.hour === Math.floor(now() / 3600_000) && w.n >= SMS_PROBE_LIMIT) {
-      smsStats.blocked(now(), "sms_probe_limit");
-      throw new CpError(429, "sms_probe_limit", "获取验证码过于频繁，请一小时后再试");
-    }
-  };
-  /** 记一次查询型拒绝并原样返回错误（调用方 throw）。 */
-  const smsProbeNote = (src: string, err: CpError): CpError => {
+  /** 返回调用方要 throw 的错误：没超上限时记一次并原样返回，超了返回 429。 */
+  const smsProbeReject = (src0: string, err: CpError): CpError => {
+    const src = smsSrc(src0);
     const hour = Math.floor(now() / 3600_000);
     if (smsProbeWindow.size > 50_000) for (const [k, w] of smsProbeWindow) if (w.hour !== hour) smsProbeWindow.delete(k);
     const w = smsProbeWindow.get(src);
+    if (w && w.hour === hour && w.n >= SMS_PROBE_LIMIT) {
+      smsStats.blocked(now(), "sms_probe_limit");
+      return new CpError(429, "sms_probe_limit", "获取验证码过于频繁，请一小时后再试");
+    }
     if (!w || w.hour !== hour) smsProbeWindow.set(src, { hour, n: 1 });
     else w.n += 1;
     return err;
   };
+  /** dry-run 时这个用途的验证码能不能随应答返回（只有注册；用例与本机联调栈可放开全部）。 */
+  const dryRunReveals = (purpose: SmsPurpose): boolean => purpose === "register" || o.sms?.dryRunRevealAll === true;
+  /** 某用途此刻能不能用：能发送，且（真实发送，或 dry-run 下这个用途允许回码）。 */
+  const smsPurposeUsable = (purpose: SmsPurpose): boolean => {
+    const m = smsMode(sms, smsAllowDryRun, purpose);
+    return m.ok && (m.mode === "live" || dryRunReveals(purpose));
+  };
+  const loginUsable = (): boolean => smsLoginAvailable(sms, smsAllowDryRun) && smsPurposeUsable("login");
   const PHONE_NOT_REGISTERED = "这个手机号还没有注册账号。新用户请先注册；已用邮箱注册的，请用密码登录后在“设置 → 账号”绑定手机号";
   /** 发送记录 + 每日统计（第 63 批：统计另记，记录只留最近 500 条）。 */
   const logSms = (e: Parameters<RegistrationBook["logSend"]>[0]): void => {
@@ -1544,10 +1568,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       invite_required: set.registration === "code",
       require_phone: set.phone_required === true,
       sms_available: reg0.ok,
-      phone_reset: reset0.ok,
-      // 第 63 批：手机号验证码登录、登录后绑定手机号
-      phone_login: smsLoginAvailable(sms, smsAllowDryRun),
-      phone_bind: smsMode(sms, smsAllowDryRun, "bind").ok,
+      phone_reset: reset0.ok && smsPurposeUsable("reset"),
+      // 第 63 批：手机号验证码登录、登录后绑定手机号（dry-run 下不回码的用途视为不可用）
+      phone_login: loginUsable(),
+      phone_bind: smsPurposeUsable("bind"),
       sms: { code_length: sms.code_length, resend_seconds: sms.resend_seconds, ttl_minutes: sms.ttl_minutes },
     };
   };
@@ -2371,7 +2395,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           const { next, changed } = validateSmsPatch(b, sms, { sealKey, allowDryRun: smsAllowDryRun, by: who.operator, at: iso() });
           if (catalog.settings.phone_required === true && !smsMode(next, smsAllowDryRun, "register").ok) throw new CpError(409, "sms_required_by_policy", "注册策略要求验证手机号，不能停用短信或清掉注册所需的配置：请先在注册策略里关闭“必须验证手机号”");
           sms = next;
-          if (changed.length) regNote(who, "sms.settings_update", null, { fields: changed.join(","), enabled: next.enabled, dry_run: next.dry_run, app_key_hint: changed.includes("app_key") ? next.app_key_hint : null });
+          if (changed.length) regNote(who, "sms.settings_update", null, { fields: changed.join(","), enabled: next.enabled, login_enabled: next.login_enabled, dry_run: next.dry_run, app_key_hint: changed.includes("app_key") ? next.app_key_hint : null });
           return { ok: true, changed, sms: smsView(sms, smsAllowDryRun) };
         },
       };
@@ -3419,25 +3443,23 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       }
       const phone = normalizePhone(b.phone);
       if (!phone) throw new CpError(400, "phone_invalid", "手机号格式不对：请填写 11 位中国大陆手机号");
-      if (purpose === "login" && sms.enabled && !sms.login_enabled) throw new CpError(503, "sms_login_disabled", "手机号验证码登录暂未开放，请用邮箱和密码登录");
+      if (purpose === "login" && sms.enabled && !smsLoginAvailable(sms, smsAllowDryRun)) throw new CpError(503, "sms_login_disabled", "手机号验证码登录暂未开放，请用邮箱和密码登录");
       const mode = smsMode(sms, smsAllowDryRun, purpose);
       if (!mode.ok) throw smsFail(mode.code);
+      if (mode.mode === "dry_run" && !dryRunReveals(purpose)) throw new CpError(503, "sms_dry_run_restricted", "测试模式只用于注册验证：登录、找回密码与绑定手机号要先配置真实短信通道");
       const pm = phoneMacOf(phone);
       if (purpose === "register") {
         if (catalog.settings.registration === "closed") throw new CpError(403, "registration_closed", "暂不开放注册，请联系中软开通");
-        smsProbeGate(src);
-        if (accountByPhone.has(pm)) throw smsProbeNote(src, new CpError(409, "phone_taken", "这个手机号已注册，请直接登录（忘记密码可用手机号找回）"));
+        if (accountByPhone.has(pm)) throw smsProbeReject(src, new CpError(409, "phone_taken", "这个手机号已注册，请直接登录（忘记密码可用手机号找回）"));
       } else if (purpose === "login") {
         // 没注册的手机号不发登录码（不花短信费，律师立刻知道要先注册）；注册发码本来就会回 phone_taken，这里不额外泄露，另有来源每小时查询上限
-        smsProbeGate(src);
         const holder = accounts.get(accountByPhone.get(pm) ?? "");
-        if (!holder) throw smsProbeNote(src, new CpError(404, "phone_not_registered", PHONE_NOT_REGISTERED));
-        if (holder.status !== "active") throw smsProbeNote(src, new CpError(403, "account_disabled", "账号已停用，请联系管理员"));
+        if (!holder) throw smsProbeReject(src, new CpError(404, "phone_not_registered", PHONE_NOT_REGISTERED));
+        if (holder.status !== "active") throw smsProbeReject(src, new CpError(403, "account_disabled", "账号已停用，请联系管理员"));
       } else if (purpose === "bind") {
         if (binder!.phone?.mac === pm) throw new CpError(409, "phone_same", "这个手机号已经绑定在你的账号上");
-        smsProbeGate(src);
         const other = accountByPhone.get(pm);
-        if (other && other !== binder!.aid) throw smsProbeNote(src, new CpError(409, "phone_taken", "这个手机号已绑定在别的账号上：请换一个手机号"));
+        if (other && other !== binder!.aid) throw smsProbeReject(src, new CpError(409, "phone_taken", "这个手机号已绑定在别的账号上：请换一个手机号"));
       }
       smsBudget(pm, src);
       smsIpNote(src);
@@ -3488,7 +3510,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const phone = phoneIn === null ? null : normalizePhone(phoneIn);
       if (phoneIn !== null && !phone) throw new CpError(400, "phone_invalid", "手机号格式不对：请填写 11 位中国大陆手机号");
       const pm = phone ? phoneMacOf(phone) : null;
-      if (pm && accountByPhone.has(pm)) throw new CpError(409, "phone_taken", "这个手机号已注册，请直接登录（忘记密码可用手机号找回）");
+      // 第 63 批安全审查：“手机号已注册”放到核对验证码之后——注册验证码只会发给没注册的号，拿不到码的人从这里探不出手机号是否注册
       if (phone && !(typeof b.sms_code === "string" && b.sms_code.trim() !== "")) throw new CpError(400, "sms_code_required", "请填写短信验证码");
       const name = String(b.name).trim();
       let t: TenantRecord;
@@ -3529,8 +3551,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           inv = c;
         }
       } else if (set.registration === "code") throw new CpError(403, "code_required", "请输入邀请码或律所发给你的开通码");
-      // 短信验证码：通过即作废（一次性）
+      // 短信验证码：通过即作废（一次性）；核对通过之后才说手机号是否已被占用（发码之后被别人抢先注册的少见情形）
       if (phone) consumeSmsCode("register", phone, b.sms_code);
+      if (pm && accountByPhone.has(pm)) throw new CpError(409, "phone_taken", "这个手机号已注册，请直接登录（忘记密码可用手机号找回）");
       if (act) {
         const { ht, r } = act;
         t = ht;
@@ -3610,13 +3633,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const byPhone = b.email === undefined && typeof b.phone === "string";
       let a: AccountRecord;
       if (byPhone) {
-        if (!smsLoginAvailable(sms, smsAllowDryRun)) throw new CpError(503, "sms_login_disabled", "手机号验证码登录暂未开放，请用邮箱和密码登录");
+        if (!loginUsable()) throw new CpError(503, "sms_login_disabled", "手机号验证码登录暂未开放，请用邮箱和密码登录");
         const phone = normalizePhone(b.phone);
         if (!phone) throw new CpError(400, "phone_invalid", "手机号格式不对：请填写 11 位中国大陆手机号");
         if (!(typeof b.sms_code === "string" && b.sms_code.trim() !== "")) throw new CpError(400, "sms_code_required", "请填写短信验证码");
-        smsProbeGate(src);
+        // 安全审查：手机号没有账号时与“没有有效验证码”同样回答（是否注册只在发码时说，那里有查询上限）
         const pa = accounts.get(accountByPhone.get(phoneMacOf(phone)) ?? "");
-        if (!pa) throw smsProbeNote(src, new CpError(404, "phone_not_registered", PHONE_NOT_REGISTERED));
+        if (!pa) throw new CpError(400, "sms_code_expired", "验证码已过期或已使用，请重新获取");
         // 一次性：通过即作废；输错计入本码次数（用完作废）。密码锁定不挡验证码登录（持有手机即本人，成功后清零失败计数）
         consumeSmsCode("login", phone, b.sms_code);
         a = pa;
@@ -3794,20 +3817,22 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       accountMark(res, a, "account.password_change");
       return send(res, 200, { ok: true, other_sessions_revoked: n });
     }
-    // 第 63 批：绑定 / 更换手机号（先经 /v1/auth/sms/send purpose=bind 取验证码）。换绑另要当前密码：先核密码再核验证码（密码错不耗掉验证码）
+    // 第 63 批：绑定 / 更换手机号（先经 /v1/auth/sms/send purpose=bind 取验证码）。
+    // 安全审查：绑定与换绑都要当前密码（凭据变更一律要密码——否则偷到一次会话就能给账号加上一个可登录、可找回密码的手机号）；
+    // 先核密码、再核验证码（密码错不耗验证码），最后才说手机号是否被占用（绑定码只发给没被占用的号，拿不到码的人从这里探不出来）
     if (method === "POST" && p === "/v1/auth/phone") {
       const b = parseJson(raw);
-      const mode = smsMode(sms, smsAllowDryRun, "bind");
-      if (!mode.ok) throw smsFail(mode.code);
+      if (!smsPurposeUsable("bind")) {
+        const mode = smsMode(sms, smsAllowDryRun, "bind");
+        throw mode.ok ? new CpError(503, "sms_dry_run_restricted", "测试模式只用于注册验证：绑定手机号要先配置真实短信通道") : smsFail(mode.code);
+      }
       const phone = normalizePhone(b.phone);
       if (!phone) throw new CpError(400, "phone_invalid", "手机号格式不对：请填写 11 位中国大陆手机号");
       const pm = phoneMacOf(phone);
       if (a.phone?.mac === pm) throw new CpError(409, "phone_same", "这个手机号已经绑定在你的账号上");
-      const other = accountByPhone.get(pm);
-      if (other && other !== a.aid) throw new CpError(409, "phone_taken", "这个手机号已绑定在别的账号上：请换一个手机号");
       if (!(typeof b.sms_code === "string" && b.sms_code.trim() !== "")) throw new CpError(400, "sms_code_required", "请填写短信验证码");
       const replacing = !!a.phone;
-      if (replacing) {
+      if (a.pw) {
         const lk = locked(a, now());
         if (lk) throw new CpError(423, "account_locked", `密码错误次数过多，请 ${Math.ceil(lk / 60)} 分钟后再试`, { retry_after_s: lk });
         if (!verifyPassword(b.password, a.pw)) {
@@ -3817,10 +3842,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         }
       }
       consumeSmsCode("bind", phone, b.sms_code);
+      const other = accountByPhone.get(pm);
+      if (other && other !== a.aid) throw new CpError(409, "phone_taken", "这个手机号已绑定在别的账号上：请换一个手机号");
       if (a.phone) accountByPhone.delete(a.phone.mac);
       a.phone = { mac: pm, masked: maskPhone(phone), sealed: sealText(sealKey, phone, `kwl-account-phone/1\n${a.aid}`), verified_at: iso() };
       accountByPhone.set(pm, a.aid);
-      if (replacing) a.failed = { count: 0, first_at: null, locked_until: null };
+      if (a.pw) a.failed = { count: 0, first_at: null, locked_until: null };
       accountMark(res, a, replacing ? "account.phone_change" : "account.phone_bind");
       return send(res, 200, { ok: true, account: accountView(a, { org: orgOf(a.tid) }) });
     }

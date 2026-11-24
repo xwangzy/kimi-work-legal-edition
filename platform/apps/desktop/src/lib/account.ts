@@ -173,9 +173,10 @@ export function phoneBindForm(current: string | null | undefined, phoneLogin = f
     : {
         change,
         title: "绑定手机号",
-        needPassword: false,
+        // 第 63 批安全审查：首次绑定也要当前密码（云端同样要求）——手机号可以登录、找回密码，属于凭据变更
+        needPassword: true,
         phoneField: "手机号",
-        lead: phoneLogin ? "绑定后，在登录页可以用手机号和短信验证码登录，不用记密码；邮箱和密码照常可用。" : "绑定后，这个手机号与你的账号关联；邮箱和密码照常可用。",
+        lead: phoneLogin ? "绑定后，在登录页可以用手机号和短信验证码登录，不用记密码；邮箱和密码照常可用。为确认是你本人，请输入当前密码。" : "绑定后，这个手机号与你的账号关联；邮箱和密码照常可用。为确认是你本人，请输入当前密码。",
         done: phoneLogin ? "已绑定，之后可以用手机号验证码登录。" : "已绑定手机号。",
       };
 }

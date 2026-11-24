@@ -78,7 +78,8 @@ test("纯函数：策略归一（旧云端 legacy；新云端 phone_login / phon
 });
 
 test("待激活：验证码登录策略；没注册的号说清原因；手机号注册开通 → 已激活：验证码登录恢复席位；换绑要当前密码；第二台电脑用验证码登录照设备上限处理", { timeout: 300_000 }, async () => {
-  cloud = await startCloudCp({ tenant: "ten_b63-unused", cp: { devStaff: [STAFF] } });
+  // 短信用控制面 dry-run；登录、绑定的码要随应答返回才能自动化（只给用例开 dryRunRevealAll，生产入口没有这一项）
+  cloud = await startCloudCp({ tenant: "ten_b63-unused", cp: { devStaff: [STAFF], sms: { dryRunRevealAll: true } } });
   const ops = await staff();
   await ops("PUT", "/v1/ops/registration/sms", { enabled: true, dry_run: true });
   const dirA = mkdtempSync(join(tmpdir(), "kwl-b63-a-"));
