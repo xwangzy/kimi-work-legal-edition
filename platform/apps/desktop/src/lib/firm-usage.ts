@@ -102,12 +102,20 @@ export function ratioTone(r: number | null | undefined): "ok" | "high" | "full" 
   return x >= 1 ? "full" : x >= 0.8 ? "high" : "ok";
 }
 
-/** “剩余 x%（约 N）”：总额度看得到时（管理员与合伙人）带上约数。 */
+/**
+ * 律师端是否显示用量数（第 62 批：额度按价目加权扣减、单位为元之后，律师端只看百分比——金额由云端核算，客户端不显示、不折算）。
+ * tokens 单位照旧显示 token 数。
+ */
+export function showAmounts(q: Pick<QuotaStatus, "unit">): boolean {
+  return q.unit !== "cny";
+}
+
+/** “剩余 x%（约 N）”：总额度看得到时（管理员与合伙人）带上约数；按金额计的额度只写比例。 */
 export function remainingLine(q: QuotaStatus): string {
   const f = q.firm;
   if (!f) return "";
   const rem = `剩余 ${fmtLeft(f.remaining_ratio)}`;
-  if (f.total === null || f.used === null) return rem;
+  if (f.total === null || f.used === null || !showAmounts(q)) return rem;
   return `${rem}（约 ${fmtAmount(Math.max(0, f.total - f.used), q.unit, q.unit_label)}）`;
 }
 
@@ -462,10 +470,14 @@ function shortId(id: string): string {
   return id.length > 18 ? `${id.slice(0, 8)}…${id.slice(-6)}` : id;
 }
 
-/** 一条使用明细计入额度的说法：中断未扣、服务出错不计、估算的标出来；tokens 单位写 token 数，元单位写金额。 */
+/**
+ * 一条使用明细计入额度的说法：中断未扣、服务出错不计、估算的标出来；tokens 单位写 token 数；
+ * 元单位（第 62 批）只写占本人额度的比例（charge_ratio 由控制面算，客户端不拿 charge 折算金额）。
+ */
 export function recordChargeText(r: NonNullable<QuotaStatus["own_recent"]>[number]): string {
   if (r.partial) return "中途中断，未计入";
+  if (r.pending) return "未取得用量，未计入（待核对）";
   if (r.outcome !== "ok" && r.charge === 0) return "未成功，未计入";
-  const v = r.unit === "cny" ? fmtAmount(r.charge / 1_000_000, "cny") : `${fmtCount(r.charge)} token`;
+  const v = r.unit === "cny" ? (typeof r.charge_ratio === "number" ? `占本人额度 ${fmtPct(r.charge_ratio)}` : "已计入") : `${fmtCount(r.charge)} token`;
   return r.estimated ? `${v}（估算）` : v;
 }

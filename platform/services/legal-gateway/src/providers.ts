@@ -19,7 +19,8 @@ export interface ChatProvider {
 }
 
 /** 上游响应里网关会读取的头：内容类型、上游请求编号（计量对账）、限流的 Retry-After。 */
-const KEEP_HEADERS = ["content-type", "x-request-id", "x-oneapi-request-id", "retry-after"] as const;
+// 第 62 批：Kimi 在响应头里给缓存写入按 TTL 的拆分（Msh-Usage-Cache-Write-Tokens-5m / -1h；流式也在头里），计价用
+const KEEP_HEADERS = ["content-type", "x-request-id", "x-oneapi-request-id", "retry-after", "msh-usage-cache-write-tokens-5m", "msh-usage-cache-write-tokens-1h"] as const;
 
 /** 通用 OpenAI 兼容上游（月之暗面开放平台、中软 MaaS 等）。 */
 export class OpenAICompatProvider implements ChatProvider {

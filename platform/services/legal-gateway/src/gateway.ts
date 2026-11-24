@@ -27,7 +27,7 @@ import { completionTexts, OutputTextTap, requestTexts, safetySummary, type Conte
 import { LeaseQuota, MapQuota, type MeterPos, type QuotaHold, type QuotaSource } from "./quota.ts";
 import { DEFAULT_ROUTES, LOCAL_PROVIDER, staticRouting, type ModelRoute, type ProviderEntry, type RoutingSnapshot, type RoutingView } from "./routing.ts";
 import { UpstreamHealth, type UpstreamTicket } from "./upstreams.ts";
-import { estimateInputTokens, estimateOutputTokens, extractFinishReason, extractUsage, unitsOf, upstreamRequestIdOf, type QuotaUnit, type UsageAttempt, type UsageOutcome, type UsageRecord, type UsageSource, type UsageTokens } from "./usage.ts";
+import { cacheWriteHeaders, estimateInputTokens, estimateOutputTokens, extractFinishReason, extractUsage, requestedCacheTtl, reserveRatesFor, saleRatesFor, unitsOf, upstreamRequestIdOf, UsageTap, type QuotaUnit, type UsageAttempt, type UsageOutcome, type UsageRecord, type UsageSource, type UsageTokens } from "./usage.ts";
 
 export * from "./usage.ts";
 
@@ -361,7 +361,12 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
     }
     const stream = body.stream === true;
     const est = { input: estimateInputTokens(body), output: estimateOutputTokens(body, route.defaultMaxTokens) };
-    const priceItem = snap.prices?.items[alias] ?? null;
+    // 第 62 批：按上游型号计价——预占按各候选型号里最贵的一档（可能切到备用目标），结算按实际服务的型号（见下方 charge）
+    const candModels = (() => {
+      const ms = candidatesOf(route, snap).map((c) => c.model);
+      return ms.length ? ms : route.targets.map((t) => t.model);
+    })();
+    const reserveRates = reserveRatesFor(snap.prices, alias, candModels);
     const priceVersion = snap.prices?.version ?? null;
     // 客户端断开（闸门撤销、宿主取消）：响应未写完即算断开（审查 S4-01：req 'close' 在读完请求体后已触发，不能用它判断）。
     // 监听在预占之前注册（复核 S9A-07：预占可能要等账本，等待期间断开也要察觉，不再发往上游、不按预占计费）
@@ -374,7 +379,7 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
       goneAc.abort();
       onGone?.();
     });
-    const rr = await quota.reserve({ tid: seat.tid, sid: seat.sid, alias, estimate: est }, (unit) => unitsOf(unit, { input: est.input, cached: 0, output: est.output }, priceItem));
+    const rr = await quota.reserve({ tid: seat.tid, sid: seat.sid, alias, estimate: est }, (unit) => unitsOf(unit, { input: est.input, cached: 0, output: est.output }, reserveRates));
     if (!rr.ok) return reject(rr.status, rr.code, rr.message, alias);
     const hold: QuotaHold = rr.hold;
     let releaseTenant: () => void;
@@ -415,6 +420,7 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
     let drainTimer: ReturnType<typeof setTimeout> | undefined;
     let streamError = false;
     let usage: ReturnType<typeof extractUsage> = null;
+    let usageTap: UsageTap | null = null;
     let finishReason: string | null = null;
     let upstreamReqId: string | null = null;
     let outChars = 0;
@@ -555,6 +561,8 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
       const tap = cs && stream ? new OutputTextTap() : null;
       // 已转发的输出文字（正文、推理、工具参数）计数：拿不到 usage 时据此估算
       const countTap = stream ? new OutputTextTap() : null;
+      // 第 62 批：流式全程逐行取 usage（含 choices[].usage），不只看尾部 64 KiB；流中途出错时已收到的 usage 也不丢
+      usageTap = stream ? new UsageTap() : null;
       // 按通道（正文、推理文字、各工具调用参数）分别累积全文与跨块窗口（复核 B4-R05）
       const outTexts = new Map<string, string>();
       const windows = new Map<string, string>();
@@ -577,6 +585,7 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
       try {
         for await (const c of chunks()) {
           const piece = dec.decode(c, { stream: true });
+          usageTap?.feed(piece);
           tail = (tail + piece).slice(-65_536);
           if (head.length < 4096) head += piece.slice(0, 4096 - head.length);
           if (clientGone || blockedOut) {
@@ -650,7 +659,7 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
         if (timedOut === "idle" && !blockedOut) res.destroy();
         else if (!res.writableEnded) res.end();
       }
-      usage = extractUsage(tail);
+      usage = usageTap?.end() ?? extractUsage(tail);
       finishReason = extractFinishReason(tail);
       upstreamReqId = upstreamRequestIdOf(upr.headers, head);
     } finally {
@@ -663,6 +672,16 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
         else ticket.success(attemptMs);
       }
       releaseTenant();
+      // 流中途出错（throw 跳过了上面的取 usage）：已逐行收到的 usage 仍算数
+      if (!usage && usageTap) usage = usageTap.end();
+      // 第 62 批：缓存写入按 TTL 拆分——响应头 Msh-Usage-Cache-Write-Tokens-1h 优先；没有头时按请求的 prompt_cache_options.ttl（缺省 5 分钟）
+      const withTtl = (x: NonNullable<typeof usage>): UsageTokens => {
+        const cwh = up ? cacheWriteHeaders(up.headers) : null;
+        const writes = x.cache_write ?? (cwh ? cwh.w5m + cwh.w1h : 0);
+        const w1h = Math.min(writes, cwh ? cwh.w1h : requestedCacheTtl(body) === "1h" ? writes : 0);
+        return { input: x.input, cached: x.cached, output: x.output, reasoning: x.reasoning, ...(writes > 0 ? { cache_write: writes } : {}), ...(w1h > 0 ? { cache_write_1h: w1h } : {}) };
+      };
+      const real: UsageTokens | null = usage ? withTtl(usage) : null;
       // ─── 逐请求记录 ───
       let outcome: UsageOutcome;
       let source: UsageSource = "none";
@@ -674,8 +693,8 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
       const markPartial = () => {
         if (!stream || outChars <= 0) return;
         partial = true;
-        source = usage ? "upstream" : "estimated";
-        u = usage ?? estimated();
+        source = real ? "upstream" : "estimated";
+        u = real ?? estimated();
       };
       if (!up) outcome = clientGone ? "client_gone" : failure?.timeout ? "timeout" : "upstream_error";
       else if (streamError) {
@@ -684,9 +703,9 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
       }
       else if (clientGone || blockedOut) {
         outcome = blockedOut ? "blocked" : "client_gone";
-        if (usage) {
+        if (real) {
           source = draining ? "drained" : "upstream";
-          u = usage;
+          u = real;
         } else {
           source = "estimated";
           u = estimated();
@@ -696,17 +715,18 @@ export function createLegalGateway(o: GatewayOptions): Server & { metrics(): Gat
         markPartial();
       } else {
         outcome = "ok";
-        if (usage) {
+        if (real) {
           source = "upstream";
-          u = usage;
+          u = real;
         } else {
           source = "estimated";
           u = estimated();
         }
       }
-      // 上游错误、超时：不扣；流中途出错（partial）也不扣，只把估算 usage 交给控制面记成本
-      const charge = u && source !== "none" && !partial ? (unitsOf(hold.unit, u, priceItem) ?? 0) : 0;
+      // 上游错误、超时：不扣；流中途出错（partial）也不扣，只把 usage 交给控制面记成本。
+      // 第 62 批：估算的用量（上游没给真实 usage）不当作实测——不扣（控制面同一口径：另记估算、待对账）；按实际服务的上游型号的售价折算
       const served = chosen ?? lastTried;
+      const charge = u && source !== "none" && source !== "estimated" && !partial ? (unitsOf(hold.unit, u, saleRatesFor(snap.prices, alias, served?.model ?? null)) ?? 0) : 0;
       const record: UsageRecord = {
         request_id: requestId,
         client_request_id: clientRequestId,

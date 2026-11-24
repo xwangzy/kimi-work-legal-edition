@@ -417,7 +417,7 @@ describe("网关动态路由与逐请求计量", () => {
     assert.equal((await chat("legal/rl")).status, 200, "限流解除后立即可用（改前：熔断打开，30 秒内 503 upstream_unavailable）");
   });
 
-  test("客户端断开后读不到 usage（读满时限）：按已转发的输出字符数 / 2 + 输入估算记 estimated", async () => {
+  test("客户端断开后读不到 usage（读满时限）：按已转发的输出字符数 / 2 + 输入估算记 estimated；第 62 批起估算不当作实测、不扣额度（交控制面待对账）", async () => {
     ups.p1!.mode = "slow";
     const url = new URL(`${base}/v1/chat/completions`);
     await new Promise<void>((resolve, reject) => {
@@ -438,7 +438,7 @@ describe("网关动态路由与逐请求计量", () => {
     const input = Math.ceil(JSON.stringify({ messages: [{ role: "user", content: "慢" }] }).length / 2);
     assert.equal(rec.usage!.input, input);
     assert.equal(rec.usage!.output, Math.ceil("慢慢写来".length / 2), "只转发了第一块");
-    assert.equal(rec.charge_units, input + 2);
+    assert.equal(rec.charge_units, 0, "估算不扣额度（第 62 批：缺真实 usage 时估算只作待对账）");
     ups.p1!.mode = "ok";
   });
 

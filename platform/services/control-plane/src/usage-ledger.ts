@@ -10,8 +10,25 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, rea
 import { join } from "node:path";
 
 export interface UsageTokens {
+  /** 上游 prompt_tokens（含缓存命中与缓存写入）。 */
   input: number;
+  /** 缓存命中。 */
   cached: number;
+  /** 上游 completion_tokens（含推理）。 */
+  output: number;
+  reasoning: number;
+  /** 第 62 批：缓存写入总数（prompt_tokens_details.cache_write_tokens；为 0 时不写这个字段）。 */
+  cache_write?: number;
+  /** 第 62 批：其中 1 小时 TTL 的写入（为 0 时不写）。 */
+  cache_write_1h?: number;
+}
+
+/** 第 62 批：计费 token 明细（与 routing.ts BilledTokens 同形；四档互斥，相加 = prompt_tokens）。 */
+export interface BilledRow {
+  uncached: number;
+  cached: number;
+  cache_write_5m: number;
+  cache_write_1h: number;
   output: number;
   reasoning: number;
 }
@@ -59,6 +76,22 @@ export interface UsageRow {
   partial_usage?: UsageTokens;
   /** 网关标注的重试（同一客户端请求编号的首个请求编号）；可选，只展示。 */
   retry_of?: string;
+  /**
+   * 第 62 批：计价追溯。price_basis = model 时 price_key 是实际服务的上游型号（kimi-k3.1-pro…），alias 时是别名（第 62 批之前的价目版本）；
+   * billed 是计费 token 明细（未命中 / 命中 / 5 分钟写入 / 1 小时写入 / 输出 / 推理）；markup 是这一行适用的加价倍率。
+   */
+  price_basis?: "model" | "alias";
+  price_key?: string;
+  markup?: number | null;
+  billed?: BilledRow;
+  /**
+   * 第 62 批：上游没给真实 usage（网关按已转发内容估算）——估算**不当作实测**：usage 记 null、不扣额度、不计售价与成本；
+   * 估算的用量与按当时价目折的金额另记（est_*），标 reconcile = pending（待与上游账单对账）。第 46 批的 partial 行里按估算记的成本同此处理。
+   */
+  est_usage?: UsageTokens;
+  est_value_micro?: number | null;
+  est_cost_micro?: number | null;
+  reconcile?: "pending";
 }
 
 export interface Agg {
@@ -73,9 +106,15 @@ export interface Agg {
   /** 有 usage 但售价未定价 / 成本价未定价的行数（这些行的金额不计入，界面标“未定价”）。 */
   unpriced: number;
   uncosted: number;
+  /** 第 62 批：缓存写入 token（含 1 小时）。 */
+  tokens_cache_write?: number;
+  /** 第 62 批：待对账（估算用量）的行数与按估算折的售价、成本（微元；不计入 value_micro / cost_micro）。 */
+  pending?: number;
+  est_value_micro?: number;
+  est_cost_micro?: number;
 }
 
-export const emptyAgg = (): Agg => ({ requests: 0, tokens_in: 0, tokens_cached: 0, tokens_out: 0, value_micro: 0, cost_micro: 0, errors: 0, estimated: 0, unpriced: 0, uncosted: 0 });
+export const emptyAgg = (): Agg => ({ requests: 0, tokens_in: 0, tokens_cached: 0, tokens_out: 0, value_micro: 0, cost_micro: 0, errors: 0, estimated: 0, unpriced: 0, uncosted: 0, tokens_cache_write: 0, pending: 0, est_value_micro: 0, est_cost_micro: 0 });
 
 export function addAgg(a: Agg, b: Agg): Agg {
   a.requests += b.requests;
@@ -88,12 +127,20 @@ export function addAgg(a: Agg, b: Agg): Agg {
   a.estimated += b.estimated;
   a.unpriced += b.unpriced;
   a.uncosted += b.uncosted;
+  a.tokens_cache_write = (a.tokens_cache_write ?? 0) + (b.tokens_cache_write ?? 0);
+  a.pending = (a.pending ?? 0) + (b.pending ?? 0);
+  a.est_value_micro = (a.est_value_micro ?? 0) + (b.est_value_micro ?? 0);
+  a.est_cost_micro = (a.est_cost_micro ?? 0) + (b.est_cost_micro ?? 0);
   return a;
 }
 
-function rowAgg(r: UsageRow): Agg {
+export function rowAgg(r: UsageRow): Agg {
   const u = r.usage;
   return {
+    tokens_cache_write: u?.cache_write ?? 0,
+    pending: r.reconcile === "pending" ? 1 : 0,
+    est_value_micro: r.est_value_micro ?? 0,
+    est_cost_micro: r.est_cost_micro ?? 0,
     requests: 1,
     tokens_in: u?.input ?? 0,
     tokens_cached: u?.cached ?? 0,
@@ -152,6 +199,8 @@ export class UsageBook {
   private readonly byModelDay = new Map<string, DayMap>();
   /** 成员 × 模型（键：租户 \0 成员 \0 别名）。 */
   private readonly byMemberModelDay = new Map<string, DayMap>();
+  /** 第 62 批：按实际服务的上游型号（键：租户 \0 上游型号）——成本按真实型号对账。 */
+  private readonly byUpstreamDay = new Map<string, DayMap>();
   /** 小时桶：tid → 小时序号 → {tokens, value}；成员同理（滚动窗口用，保留 8 天）。 */
   private readonly hourT = new Map<string, Map<number, { tokens: number; value: number }>>();
   private readonly hourM = new Map<string, Map<number, { tokens: number; value: number }>>();
@@ -218,6 +267,7 @@ export class UsageBook {
     bump(this.byMemberDay, `${r.tid}\u0000${r.uid ?? ""}`, r.day, a);
     bump(this.byModelDay, `${r.tid}\u0000${r.alias ?? ""}`, r.day, a);
     bump(this.byMemberModelDay, `${r.tid}\u0000${r.uid ?? ""}\u0000${r.alias ?? ""}`, r.day, a);
+    bump(this.byUpstreamDay, `${r.tid}\u0000${r.upstream_model ?? ""}`, r.day, a);
     const h = hourIndex(Date.parse(r.at));
     const tok = a.tokens_in + a.tokens_out;
     for (const [m, k] of [[this.hourT, r.tid], [this.hourM, `${r.tid}\u0000${r.uid ?? ""}`]] as const) {
@@ -272,12 +322,12 @@ export class UsageBook {
   }
 
   /** 分组汇总：按模型 / 租户 / 成员（键里租户与成员用 \0 分隔）。 */
-  group(kind: "model" | "tenant" | "member", tid: string | null, from: string, to: string): Map<string, Agg> {
-    const src = kind === "tenant" ? this.byTenantDay : kind === "model" ? this.byModelDay : this.byMemberDay;
+  group(kind: "model" | "tenant" | "member" | "upstream", tid: string | null, from: string, to: string): Map<string, Agg> {
+    const src = kind === "tenant" ? this.byTenantDay : kind === "model" ? this.byModelDay : kind === "upstream" ? this.byUpstreamDay : this.byMemberDay;
     const out = new Map<string, Agg>();
     for (const [k, d] of src) {
       if (tid !== null && (kind === "tenant" ? k !== tid : !k.startsWith(`${tid}\u0000`))) continue;
-      const key = kind === "tenant" ? k : kind === "model" ? k.split("\u0000")[1]! : k;
+      const key = kind === "tenant" ? k : kind === "model" || kind === "upstream" ? k.split("\u0000")[1]! : k;
       const s = this.sumMap(d, from, to);
       if (s.requests > 0) addAgg(out.get(key) ?? (out.set(key, emptyAgg()), out.get(key)!), s);
     }
@@ -330,6 +380,14 @@ export class UsageBook {
         }
       }
     }
+    return out;
+  }
+
+  /** 日期范围内的全部行（已载入的走内存，更早的读月份文件；汇总里“价目生效前的行按现行价估算”用）。 */
+  scan(from: string, to: string, pred: (r: UsageRow) => boolean): UsageRow[] {
+    const out = this.rows.filter((r) => r.day >= from && r.day <= to && pred(r));
+    const loadedFrom = this.rows.length ? this.rows.reduce((m, r) => (r.day < m ? r.day : m), "9999") : "9999";
+    if (this.dir && from < loadedFrom) for (const r of this.readMonths(from, loadedFrom)) if (r.day <= to && pred(r)) out.push(r);
     return out;
   }
 

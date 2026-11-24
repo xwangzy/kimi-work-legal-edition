@@ -63,12 +63,81 @@ export interface PriceItem {
   cost_output: number | null;
 }
 
+/**
+ * 一组单价（第 62 批；元 / 百万 token；null = 未定价）。计费 token 四档互斥、相加等于上游 prompt_tokens + completion_tokens：
+ * 未命中输入、缓存命中、缓存写入（按 TTL 分 5 分钟 / 1 小时）、输出（含推理）。缺价的回退：缓存命中价、5 分钟写入价缺 → 按未命中输入价；
+ * 1 小时写入价缺 → 按 5 分钟写入价（再缺按未命中输入价）。依据：Kimi 官方定价“K3 系列缓存写入按 TTL 单独计费；缓存命中的输入只按命中价、
+ * 不再重复收写入费”，TTL 缺省 5 分钟（请求 prompt_cache_options.ttl = "5m" | "1h"）。
+ */
+export interface Rates {
+  input: number | null;
+  cached_input: number | null;
+  cache_write: number | null;
+  cache_write_1h: number | null;
+  output: number | null;
+}
+
+/** 按上游真实型号的价目一行（第 62 批）：成本价（缺省取官方价）+ 加价倍率或显式售价。 */
+export interface ModelPrice {
+  label: string | null;
+  cost: Rates;
+  /** 成本价来源（官方价写明网址与抓取日期；运营改过写“运营录入”）。 */
+  cost_source: string | null;
+  /** 按型号覆盖的加价倍率；null = 用整表的 markup。 */
+  markup: number | null;
+  /** 显式售价（逐项覆盖：给了的项按它，没给的项按 成本 × 倍率）；null = 全按倍率。 */
+  sale: Rates | null;
+}
+
 export interface PriceTable {
   version: number;
   effective_at: string;
   by: string | null;
+  /**
+   * 按别名的价目（第 44 批起）。basis = "alias" 的版本（第 62 批之前的全部版本、旧接口 PUT /v1/ops/routing/prices）按它计价；
+   * basis = "model" 的版本里它由 models 按各别名的首选目标派生，**只给旧版网关与回滚后的旧版控制面读**，新版不按它计价。
+   */
   items: Record<string, PriceItem>;
+  /** 第 62 批：计价依据（缺省 = alias，即旧版本）。 */
+  basis?: "alias" | "model";
+  /** 第 62 批：整表缺省加价倍率（售价 = 成本 × 倍率；缺省 1.0）。 */
+  markup?: number;
+  /** 第 62 批：按上游真实型号（kimi-k3.1-pro、kimi-k3.1-pro-highspeed…）的价目。 */
+  models?: Record<string, ModelPrice>;
+  note?: string | null;
 }
+
+/** 某次请求实际适用的单价（售价与成本）。 */
+export interface EffectiveRates {
+  sale: Rates;
+  cost: Rates;
+  /** 本型号的加价倍率（按别名计价的旧版本为 null）。 */
+  markup: number | null;
+}
+
+/** 计价结果：按哪种依据、哪个键（上游型号或别名）。 */
+export interface PriceResolution {
+  basis: "alias" | "model";
+  key: string;
+  rates: EffectiveRates;
+}
+
+/**
+ * 官方价（成本价缺省值；第 62 批）。来源：Kimi 开放平台定价页 https://platform.kimi.com/docs/pricing/chat ，2026-11-24 抓取；
+ * 元 / 百万 token；K3 系列缓存写入按 TTL 计（5 分钟 = 未命中输入价，1 小时 = 2 倍）；K2 系列没有单列的写入价（上游也不报写入 token）。
+ * Batch（60%）本产品不用。K2 系列 2026 年 12 月底下线。运营可在控制台逐项改（改了即记“运营录入”）。
+ */
+export const OFFICIAL_PRICE_SOURCE = "Kimi 官方定价 https://platform.kimi.com/docs/pricing/chat（2026-11-24 抓取）";
+export const OFFICIAL_PRICES: Readonly<Record<string, Readonly<Rates & { label: string }>>> = Object.freeze({
+  "kimi-k3.1-pro": { label: "Kimi K3.1 Pro", input: 13, cached_input: 1.3, cache_write: 13, cache_write_1h: 26, output: 68 },
+  "kimi-k3.1-pro-highspeed": { label: "Kimi K3.1 Pro 高速", input: 26, cached_input: 1.3, cache_write: 26, cache_write_1h: 52, output: 136 },
+  "kimi-k3": { label: "Kimi K3", input: 20, cached_input: 2, cache_write: 20, cache_write_1h: 40, output: 100 },
+  "kimi-k2.7-code": { label: "Kimi K2.7 Code", input: 6.5, cached_input: 1.3, cache_write: null, cache_write_1h: null, output: 27 },
+  "kimi-k2.7-code-highspeed": { label: "Kimi K2.7 Code 高速", input: 13, cached_input: 2.6, cache_write: null, cache_write_1h: null, output: 54 },
+  "kimi-k2.6": { label: "Kimi K2.6", input: 6.5, cached_input: 1.1, cache_write: null, cache_write_1h: null, output: 27 },
+});
+export const RATE_FIELDS = ["input", "cached_input", "cache_write", "cache_write_1h", "output"] as const;
+export const DEFAULT_MARKUP = 1;
 
 export interface ProviderHealth {
   state: "up" | "degraded" | "down" | "blocked_by_allowlist" | "key_unusable" | "disabled";
@@ -134,7 +203,7 @@ export function emptyRouting(t: number): RoutingState {
  * 初始路由（控制面首次启动、状态里还没有 routing 时）：按配置 `routing.bootstrap` 导入一个上游（密钥用网关本机文件）与两个内置别名。
  * 没有配置 = 只有内置别名、没有目标（网关用本机兜底上游，直到运营在控制台配好）。
  */
-export function bootstrapRouting(t: number, b?: { provider?: { id?: string; label?: string; vendor?: string; base_url?: string }; models?: Record<string, string>; prices?: Record<string, Partial<PriceItem>> }): RoutingState {
+export function bootstrapRouting(t: number, b?: { provider?: { id?: string; label?: string; vendor?: string; base_url?: string }; models?: Record<string, string>; prices?: Record<string, Partial<PriceItem>>; /** 第 62 批：新部署按上游型号、官方价起步（生产入口给）。 */ pricing?: "official" }): RoutingState {
   const r = emptyRouting(t);
   const at = new Date(t).toISOString();
   const p = b?.provider;
@@ -147,6 +216,7 @@ export function bootstrapRouting(t: number, b?: { provider?: { id?: string; labe
     r.models.push({ alias, label: alias === "legal/k3" ? "主任务模型" : "子任务模型", enabled: true, is_default: alias === "legal/k3", targets: base && MODEL_RE.test(model) ? [{ provider: pid, model, priority: 1 }] : [], allow_cross_vendor: false, default_max_tokens: 8192, updated_at: at });
   }
   if (b?.prices) r.prices[0]!.items = validatePrices(b.prices);
+  else if (b?.pricing === "official") r.prices[0] = officialPricingTable(r, 1, t);
   return r;
 }
 
@@ -185,6 +255,7 @@ export function validatePrices(raw: unknown): Record<string, PriceItem> {
  * 按金额计费的套餐要用到的别名里，哪些还没有售价（第 56 批，D-222）。
  * 金额额度 = 售价 × 实际用量：未缓存输入价与输出价缺一不可；缓存命中价可以不单列（按未缓存输入价计，chargeOf 同一口径）。
  * models 为 null 表示“全部启用的别名”。停用的别名不算（网关不路由它）。
+ * 本函数是按别名的旧口径（items）；按上游型号计价的版本用 unpricedAliasesIn。
  */
 export function unpricedAliases(r: Pick<RoutingState, "models">, items: Record<string, PriceItem>, models: readonly string[] | null): string[] {
   const enabled = r.models.filter((m) => m.enabled).map((m) => m.alias);
@@ -192,13 +263,319 @@ export function unpricedAliases(r: Pick<RoutingState, "models">, items: Record<s
   return need.filter((a) => typeof items[a]?.input !== "number" || typeof items[a]?.output !== "number").sort();
 }
 
-/** 新价目版本（整表替换）。 */
+/**
+ * 同上，按一个价目版本判断（第 62 批）：按上游型号计价时，别名的**每一个**目标型号都要有售价——请求可能切到备用目标，
+ * 备用目标没价就会按 0 元放行（金额套餐）。
+ */
+export function unpricedAliasesIn(r: Pick<RoutingState, "models">, table: PriceTable, models: readonly string[] | null): string[] {
+  if (table.basis !== "model") return unpricedAliases(r, table.items, models);
+  const enabled = r.models.filter((m) => m.enabled);
+  const need = models === null ? enabled : enabled.filter((m) => models.includes(m.alias));
+  return need
+    .filter((m) => m.targets.length === 0 || m.targets.some((x) => !salePriced(table, x.model)))
+    .map((m) => m.alias)
+    .sort();
+}
+
+const salePriced = (table: PriceTable, model: string): boolean => {
+  const e = modelRates(table, model);
+  return !!e && typeof e.sale.input === "number" && typeof e.sale.output === "number";
+};
+
+/** 新价目版本（整表替换；按别名的旧口径——第 62 批起只为旧控制台与旧用例保留，见 setPricing）。 */
 export function setPrices(r: RoutingState, items: unknown, t: number, by: string | null): number {
-  const table: PriceTable = { version: currentPrices(r).version + 1, effective_at: new Date(t).toISOString(), by, items: validatePrices(items) };
+  const table: PriceTable = { version: currentPrices(r).version + 1, effective_at: new Date(t).toISOString(), by, items: validatePrices(items), basis: "alias" };
+  pushTable(r, table, t, by);
+  return table.version;
+}
+
+function pushTable(r: RoutingState, table: PriceTable, t: number, by: string | null): void {
   r.prices.push(table);
   if (r.prices.length > 200) r.prices.splice(0, r.prices.length - 200);
   bump(r, t, by);
+}
+
+const round4 = (n: number) => Math.round(n * 10_000) / 10_000;
+const MARKUP_OK = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0.01 && v <= 100;
+
+function ratesOf(raw: unknown, where: string): Rates {
+  const x = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const out = {} as Rates;
+  for (const f of RATE_FIELDS) {
+    const n = x[f];
+    if (n === undefined || n === null) out[f] = null;
+    else if (money(n)) out[f] = round4(n);
+    else throw new RoutingError(400, "pricing_invalid", `${where} 的 ${f} 须为 0–100000 的数（元/百万 token）或留空`);
+  }
+  return out;
+}
+
+const officialCost = (model: string): Rates | null => {
+  const o = OFFICIAL_PRICES[model];
+  return o ? { input: o.input, cached_input: o.cached_input, cache_write: o.cache_write, cache_write_1h: o.cache_write_1h, output: o.output } : null;
+};
+
+/**
+ * 校验按上游型号的价目（第 62 批，PUT /v1/ops/pricing）：{ markup?, note?, models: { 型号: { label?, cost?, cost_source?, markup?, sale? } } }。
+ * - cost 不给：官方价表里有的型号取官方价（cost_source 写官方来源与日期），没有的全部留空（未定价）；给了即按给的（逐项，留空 = 未定价）。
+ * - sale 不给或 null：售价全按 成本 × 倍率；给了即逐项覆盖（留空的项仍按倍率）。
+ * - markup：0.01–100；型号的 markup 留空 = 用整表的。
+ */
+export function validatePricing(raw: unknown): { markup: number; note: string | null; models: Record<string, ModelPrice> } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new RoutingError(400, "pricing_invalid", "价目须为 { markup, models } 对象");
+  const b = raw as Record<string, unknown>;
+  const markup = b.markup === undefined || b.markup === null ? DEFAULT_MARKUP : b.markup;
+  if (!MARKUP_OK(markup)) throw new RoutingError(400, "pricing_invalid", "加价倍率须为 0.01–100 的数");
+  if (b.note !== undefined && b.note !== null && (typeof b.note !== "string" || b.note.length > 200)) throw new RoutingError(400, "pricing_invalid", "说明至多 200 个字符");
+  const ms = b.models;
+  if (!ms || typeof ms !== "object" || Array.isArray(ms)) throw new RoutingError(400, "pricing_invalid", "models 须为“上游型号 → 价目”对象");
+  const entries = Object.entries(ms as Record<string, unknown>);
+  if (entries.length > 64) throw new RoutingError(400, "pricing_invalid", "价目条目过多（至多 64 个型号）");
+  const models: Record<string, ModelPrice> = {};
+  for (const [model, v] of entries) {
+    if (!MODEL_RE.test(model)) throw new RoutingError(400, "pricing_invalid", `上游型号不合法：${model.slice(0, 48)}`);
+    const x = (v && typeof v === "object" && !Array.isArray(v) ? v : {}) as Record<string, unknown>;
+    if (x.label !== undefined && x.label !== null && !text(x.label, 1, 40)) throw new RoutingError(400, "pricing_invalid", `${model} 的名称须为 1–40 个字符`);
+    if (x.markup !== undefined && x.markup !== null && !MARKUP_OK(x.markup)) throw new RoutingError(400, "pricing_invalid", `${model} 的加价倍率须为 0.01–100 的数`);
+    if (x.cost_source !== undefined && x.cost_source !== null && !text(x.cost_source, 1, 200)) throw new RoutingError(400, "pricing_invalid", `${model} 的成本来源至多 200 个字符`);
+    const off = officialCost(model);
+    const cost = x.cost === undefined ? (off ?? ratesOf({}, model)) : ratesOf(x.cost, `${model} 的成本价`);
+    const costSource = typeof x.cost_source === "string" ? x.cost_source.trim() : x.cost === undefined ? (off ? OFFICIAL_PRICE_SOURCE : null) : off && RATE_FIELDS.every((f) => cost[f] === off[f]) ? OFFICIAL_PRICE_SOURCE : "运营录入";
+    const sale = x.sale === undefined || x.sale === null ? null : ratesOf(x.sale, `${model} 的售价`);
+    models[model] = { label: typeof x.label === "string" ? x.label.trim() : (OFFICIAL_PRICES[model]?.label ?? null), cost, cost_source: costSource, markup: typeof x.markup === "number" ? round4(x.markup) : null, sale: sale && RATE_FIELDS.some((f) => sale[f] !== null) ? sale : null };
+  }
+  return { markup: round4(markup as number), note: typeof b.note === "string" ? b.note : null, models };
+}
+
+/** 某型号在某价目版本下的售价与成本（按上游型号计价的版本；没有这一行 = null）。 */
+export function modelRates(table: PriceTable, model: string): EffectiveRates | null {
+  const mp = table.models?.[model];
+  if (!mp) return null;
+  const k = mp.markup ?? table.markup ?? DEFAULT_MARKUP;
+  const sale = {} as Rates;
+  for (const f of RATE_FIELDS) {
+    const o = mp.sale?.[f];
+    sale[f] = typeof o === "number" ? o : mp.cost[f] === null ? null : round4(mp.cost[f]! * k);
+  }
+  return { sale, cost: { ...mp.cost }, markup: k };
+}
+
+const fromItem = (it: PriceItem): EffectiveRates => ({
+  sale: { input: it.input, cached_input: it.cached_input, cache_write: null, cache_write_1h: null, output: it.output },
+  cost: { input: it.cost_input, cached_input: it.cost_cached_input, cache_write: null, cache_write_1h: null, output: it.cost_output },
+  markup: null,
+});
+
+/** 别名的首选目标型号（按当前路由）。 */
+export function primaryModelOf(r: Pick<RoutingState, "models">, alias: string | null): string | null {
+  const m = alias ? r.models.find((x) => x.alias === alias) : undefined;
+  return m && m.targets.length ? [...m.targets].sort((a, b) => a.priority - b.priority)[0]!.model : null;
+}
+
+/**
+ * 一次请求按哪一行计价（第 62 批）：
+ * - 按上游型号的版本：键 = 实际服务的上游型号（网关记录的 upstream_model；没有时取别名当前的首选目标）。别名切到 highspeed，售价与成本跟着型号走。
+ * - 按别名的旧版本：键 = 别名（与第 44～61 批相同）。
+ * 找不到 = null（未定价）。
+ */
+export function resolvePrice(table: PriceTable, r: Pick<RoutingState, "models">, alias: string | null, upstreamModel: string | null): PriceResolution | null {
+  if (table.basis === "model") {
+    const key = upstreamModel ?? primaryModelOf(r, alias);
+    const rates = key ? modelRates(table, key) : null;
+    return key && rates ? { basis: "model", key, rates } : null;
+  }
+  const it = alias ? table.items[alias] : undefined;
+  return alias && it ? { basis: "alias", key: alias, rates: fromItem(it) } : null;
+}
+
+/** 计费 token 明细（第 62 批）：四档互斥，未命中 + 命中 + 写入（5 分钟 + 1 小时）= 上游 prompt_tokens；输出含推理。 */
+export interface BilledTokens {
+  uncached: number;
+  cached: number;
+  cache_write_5m: number;
+  cache_write_1h: number;
+  output: number;
+  reasoning: number;
+}
+
+const nn = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : 0);
+
+/**
+ * 上游 usage → 计费明细。usage.input = prompt_tokens（含命中与写入，Kimi Chat Completions 口径：三者之和等于总输入）；
+ * cached = 命中；cache_write = 写入总数（prompt_tokens_details.cache_write_tokens），其中 cache_write_1h 为 1 小时 TTL 的部分
+ * （响应头 Msh-Usage-Cache-Write-Tokens-1h，或请求带 ttl=1h）。不一致的数按“命中 → 1 小时写入 → 5 分钟写入”依次夹到不超过输入。
+ */
+export function billedOf(u: { input: number; cached?: number; output: number; reasoning?: number; cache_write?: number; cache_write_1h?: number }): BilledTokens {
+  const input = nn(u.input);
+  const cached = Math.min(input, nn(u.cached));
+  const writes = Math.min(input - cached, nn(u.cache_write));
+  const w1h = Math.min(writes, nn(u.cache_write_1h));
+  return { uncached: input - cached - writes, cached, cache_write_5m: writes - w1h, cache_write_1h: w1h, output: nn(u.output), reasoning: Math.min(nn(u.reasoning), nn(u.output)) };
+}
+
+/**
+ * 金额（微元；1 元/百万 token = 1 微元/token）= 未命中 × 输入价 + 命中 × 命中价 + 5 分钟写入 × 写入价 + 1 小时写入 × 1 小时写入价 + 输出 × 输出价。
+ * 输入价或输出价缺 = null（未定价）；其余缺价按 Rates 注释回退。
+ */
+export function amountOf(p: Rates, b: BilledTokens): number | null {
+  if (p.input === null || p.output === null) return null;
+  const ci = p.cached_input ?? p.input;
+  const w5 = p.cache_write ?? p.input;
+  const w1 = p.cache_write_1h ?? w5;
+  return Math.round(b.uncached * p.input + b.cached * ci + b.cache_write_5m * w5 + b.cache_write_1h * w1 + b.output * p.output);
+}
+
+/** 按“这一行”的售价与成本算金额。 */
+export function moneyOf(e: EffectiveRates | null | undefined, b: BilledTokens): { value_micro: number | null; cost_micro: number | null } {
+  if (!e) return { value_micro: null, cost_micro: null };
+  return { value_micro: amountOf(e.sale, b), cost_micro: amountOf(e.cost, b) };
+}
+
+/** 别名的全部目标型号（按优先级）。 */
+const targetModels = (r: Pick<RoutingState, "models">, alias: string): string[] => [...(r.models.find((m) => m.alias === alias)?.targets ?? [])].sort((a, b) => a.priority - b.priority).map((x) => x.model);
+
+/**
+ * 预占用的单价（第 62 批）：按上游型号计价时取别名各目标型号里最贵的一档（逐项取大）——请求可能切到更贵的备用目标；
+ * 有目标没定价即 null（金额套餐据此 price_unconfigured，不按 0 元放行）。
+ */
+export function reserveRates(table: PriceTable, r: Pick<RoutingState, "models">, alias: string): Rates | null {
+  if (table.basis !== "model") {
+    const it = table.items[alias];
+    return it ? fromItem(it).sale : null;
+  }
+  const ms = targetModels(r, alias);
+  if (!ms.length) return null;
+  const out: Rates = { input: 0, cached_input: 0, cache_write: 0, cache_write_1h: 0, output: 0 };
+  for (const m of ms) {
+    const e = modelRates(table, m);
+    if (!e || e.sale.input === null || e.sale.output === null) return null;
+    for (const f of RATE_FIELDS) out[f] = Math.max(out[f]!, e.sale[f] ?? e.sale.input);
+  }
+  return out;
+}
+
+/** 由按型号的价目派生“按别名”的旧格式（别名 → 首选目标型号的售价与成本），给旧版网关与回滚后的旧版控制面读。 */
+export function deriveAliasItems(r: Pick<RoutingState, "models">, table: PriceTable): Record<string, PriceItem> {
+  const out: Record<string, PriceItem> = {};
+  for (const m of r.models) {
+    const model = primaryModelOf(r, m.alias);
+    const e = model ? modelRates(table, model) : null;
+    if (!e) continue;
+    out[m.alias] = { input: e.sale.input, cached_input: e.sale.cached_input, output: e.sale.output, cost_input: e.cost.input, cost_cached_input: e.cost.cached_input, cost_output: e.cost.output };
+  }
+  return out;
+}
+
+/** 新价目版本（按上游型号；整表替换）。 */
+export function setPricing(r: RoutingState, raw: unknown, t: number, by: string | null): number {
+  const v = validatePricing(raw);
+  const table: PriceTable = { version: currentPrices(r).version + 1, effective_at: new Date(t).toISOString(), by, items: {}, basis: "model", markup: v.markup, models: v.models, note: v.note };
+  table.items = deriveAliasItems(r, table);
+  pushTable(r, table, t, by);
   return table.version;
+}
+
+/** 别名改了目标（如切到 highspeed）：当前按型号的版本里派生的旧格式跟着重算（计价本身按型号，不受影响；不产生新版本）。 */
+export function syncDerivedItems(r: RoutingState): void {
+  const cur = currentPrices(r);
+  if (cur.basis === "model") cur.items = deriveAliasItems(r, cur);
+}
+
+/**
+ * 迁移（第 62 批）：按别名的当前版本 → 按上游型号的新版本。官方价表里的型号成本取官方价；原表里别名的售价落到它的各目标型号上——
+ * 与“成本 × 1.0”一致的不另设覆盖（以后别名切换型号即跟着型号的价走）；不一致的记为该型号的显式售价；原表给了成本价的记为该型号的成本（来源“迁移自第 N 版”）。
+ * 几个别名指向同一型号而售价不同：以“把它当首选目标”的别名为准，其余写进 note。幂等：当前版本已按型号即不动，返回 null。
+ */
+export function migratePricingToModels(r: RoutingState, t: number): { from: number; to: number; note: string } | null {
+  const cur = currentPrices(r);
+  if (cur.basis === "model") return null;
+  const models: Record<string, ModelPrice> = {};
+  for (const [m, o] of Object.entries(OFFICIAL_PRICES)) models[m] = { label: o.label, cost: officialCost(m)!, cost_source: OFFICIAL_PRICE_SOURCE, markup: null, sale: null };
+  const conflicts: string[] = [];
+  const owner = new Map<string, string>();
+  // 首选目标的别名先占位
+  const order = [...r.models].sort((a, b) => Number(BUILTIN_ALIASES.includes(b.alias as never)) - Number(BUILTIN_ALIASES.includes(a.alias as never)));
+  for (const pass of ["primary", "other"] as const) {
+    for (const m of order) {
+      const it = cur.items[m.alias];
+      if (!it) continue;
+      const all = targetModels(r, m.alias);
+      for (const model of pass === "primary" ? all.slice(0, 1) : all.slice(1)) {
+        const prev = owner.get(model);
+        const e = fromItem(it);
+        if (prev) {
+          if (prev !== m.alias) conflicts.push(`${m.alias}→${model}（沿用 ${prev} 的价）`);
+          continue;
+        }
+        owner.set(model, m.alias);
+        const row = models[model] ?? { label: null, cost: { input: null, cached_input: null, cache_write: null, cache_write_1h: null, output: null }, cost_source: null, markup: null, sale: null };
+        if (e.cost.input !== null || e.cost.output !== null) row.cost = { ...row.cost, input: e.cost.input, cached_input: e.cost.cached_input, output: e.cost.output };
+        if (e.cost.input !== null || e.cost.output !== null) row.cost_source = `迁移自第 ${cur.version} 版（按别名 ${m.alias}）`;
+        const sale: Rates = { input: null, cached_input: null, cache_write: null, cache_write_1h: null, output: null };
+        let differs = false;
+        // 旧口径：缓存命中价留空 = 按未命中输入价；缓存写入不单列 = 按未命中输入价（与 K3 的 5 分钟写入价同一口径）——迁移后照旧口径记
+        const want = { input: e.sale.input, cached_input: e.sale.cached_input ?? e.sale.input, cache_write: e.sale.input, output: e.sale.output };
+        for (const f of ["input", "cached_input", "cache_write", "output"] as const) {
+          const w = want[f];
+          // 写入价没单列（K2 系列）：金额本就按售价的未命中输入价回退，不必另记
+          if (w === null || (f === "cache_write" && row.cost.cache_write === null)) continue;
+          if (row.cost[f] === null || round4(row.cost[f]!) !== w) {
+            sale[f] = w;
+            differs = true;
+          }
+        }
+        // 原表只有售价（没有成本）、而这个型号也没有官方价：售价全部显式记下
+        if (row.cost.input === null && row.cost.output === null) for (const f of ["input", "cached_input", "cache_write", "output"] as const) sale[f] = want[f];
+        row.sale = differs || (row.cost.input === null && row.cost.output === null) ? sale : null;
+        models[model] = row;
+      }
+    }
+  }
+  const note = `第 62 批迁移：由第 ${cur.version} 版（按别名）转为按上游型号；成本缺省取官方价${conflicts.length ? `；同一型号多个别名售价不同：${conflicts.join("、")}` : ""}`.slice(0, 200);
+  const table: PriceTable = { version: cur.version + 1, effective_at: new Date(t).toISOString(), by: "migration:b62", items: {}, basis: "model", markup: DEFAULT_MARKUP, models, note };
+  table.items = deriveAliasItems(r, table);
+  r.prices.push(table);
+  if (r.prices.length > 200) r.prices.splice(0, r.prices.length - 200);
+  r.version += 1;
+  r.updated_at = new Date(t).toISOString();
+  return { from: cur.version, to: table.version, note };
+}
+
+/** 新部署（生产入口）的初始价目：按上游型号、官方价、倍率 1.0。 */
+export function officialPricingTable(r: Pick<RoutingState, "models">, version: number, t: number): PriceTable {
+  const models: Record<string, ModelPrice> = {};
+  for (const [m, o] of Object.entries(OFFICIAL_PRICES)) models[m] = { label: o.label, cost: officialCost(m)!, cost_source: OFFICIAL_PRICE_SOURCE, markup: null, sale: null };
+  const table: PriceTable = { version, effective_at: new Date(t).toISOString(), by: "bootstrap:official", items: {}, basis: "model", markup: DEFAULT_MARKUP, models, note: "初始价目：成本取官方价，售价 = 成本 × 1.0" };
+  table.items = deriveAliasItems(r, table);
+  return table;
+}
+
+/** 运营视图（第 62 批）：当前版本按型号展开（成本、倍率、售价、生效值、被哪些别名用），另给官方价参考。 */
+export function pricingView(r: RoutingState) {
+  const cur = currentPrices(r);
+  const usedBy = (model: string) => r.models.filter((m) => m.targets.some((x) => x.model === model)).map((m) => ({ alias: m.alias, primary: primaryModelOf(r, m.alias) === model }));
+  const referenced = new Set(r.models.flatMap((m) => m.targets.map((x) => x.model)));
+  const keys = cur.basis === "model" ? [...new Set([...Object.keys(cur.models ?? {}), ...referenced])] : [...referenced];
+  return {
+    version: cur.version,
+    effective_at: cur.effective_at,
+    by: cur.by,
+    basis: cur.basis ?? "alias",
+    markup: cur.basis === "model" ? (cur.markup ?? DEFAULT_MARKUP) : null,
+    note: cur.note ?? null,
+    models: keys.sort().map((model) => {
+      const mp = cur.models?.[model] ?? null;
+      const e = cur.basis === "model" ? modelRates(cur, model) : null;
+      return { model, label: mp?.label ?? OFFICIAL_PRICES[model]?.label ?? null, cost: mp?.cost ?? null, cost_source: mp?.cost_source ?? null, markup: mp?.markup ?? null, sale_override: mp?.sale ?? null, effective: e ? { sale: e.sale, cost: e.cost, markup: e.markup } : null, priced: !!e && e.sale.input !== null && e.sale.output !== null, used_by: usedBy(model), official: OFFICIAL_PRICES[model] ? { ...officialCost(model)!, source: OFFICIAL_PRICE_SOURCE } : null };
+    }),
+    aliases: r.models.map((m) => {
+      const model = primaryModelOf(r, m.alias);
+      const res = resolvePrice(cur, r, m.alias, null);
+      return { alias: m.alias, enabled: m.enabled, primary_model: model, targets: m.targets.map((x) => x.model), effective: res ? { basis: res.basis, key: res.key, sale: res.rates.sale, cost: res.rates.cost } : null };
+    }),
+    official: { source: OFFICIAL_PRICE_SOURCE, models: Object.fromEntries(Object.keys(OFFICIAL_PRICES).map((m) => [m, { label: OFFICIAL_PRICES[m]!.label, ...officialCost(m)! }])) },
+    history: r.prices.map((x) => ({ version: x.version, effective_at: x.effective_at, by: x.by, basis: x.basis ?? "alias", note: x.note ?? null })).reverse(),
+  };
 }
 
 function bump(r: RoutingState, t: number, by: string | null): void {
@@ -321,6 +698,8 @@ export function upsertModel(r: RoutingState, alias: string, b: Record<string, un
     if (r.models.length >= 32) throw new RoutingError(409, "too_many_models", "模型别名过多（至多 32 个）");
     r.models.push(rec);
   }
+  // 第 62 批：计价按型号，别名改目标即跟着型号的价走；给旧版网关的派生格式同步重算
+  syncDerivedItems(r);
   bump(r, t, by);
   return !cur;
 }
@@ -330,6 +709,7 @@ export function deleteModel(r: RoutingState, alias: string, t: number, by: strin
   const i = r.models.findIndex((m) => m.alias === alias);
   if (i < 0) throw new RoutingError(404, "model_unknown", "没有这个模型别名");
   r.models.splice(i, 1);
+  syncDerivedItems(r);
   bump(r, t, by);
 }
 
@@ -382,7 +762,8 @@ export function routingFeedBody(r: RoutingState, t: number) {
     issued_at: new Date(t).toISOString(),
     providers: r.providers.map((x) => ({ id: x.id, label: x.label, vendor: x.vendor, base_url: x.base_url, enabled: x.enabled, key_sealed: x.key_sealed, key_hint: x.key_hint, use_local_key: x.use_local_key, max_concurrency: x.max_concurrency, header_timeout_ms: x.header_timeout_ms, idle_timeout_ms: x.idle_timeout_ms, probe_requested_at: x.probe_requested_at })),
     models: r.models.map((m) => ({ alias: m.alias, label: m.label, enabled: m.enabled, is_default: m.is_default, targets: m.targets, allow_cross_vendor: m.allow_cross_vendor, default_max_tokens: m.default_max_tokens })),
-    prices: { version: p.version, effective_at: p.effective_at, items: p.items },
+    // 第 62 批：basis = model 时另给按上游型号的生效价（售价已按倍率算好）；items 是派生的旧格式（旧版网关读它）
+    prices: { version: p.version, effective_at: p.effective_at, items: p.items, basis: p.basis ?? "alias", ...(p.basis === "model" ? { models: Object.fromEntries(Object.keys(p.models ?? {}).map((m) => [m, modelRates(p, m)!])) } : {}) },
   };
 }
 
@@ -396,8 +777,8 @@ export function routingView(r: RoutingState, keyId: string | null) {
     routing_key_id: keyId,
     providers: r.providers.map((x) => ({ id: x.id, label: x.label, vendor: x.vendor, base_url: x.base_url, enabled: x.enabled, key_set: x.key_sealed !== null, use_local_key: x.use_local_key, key_hint: x.key_hint, key_set_at: x.key_set_at, max_concurrency: x.max_concurrency, header_timeout_ms: x.header_timeout_ms, idle_timeout_ms: x.idle_timeout_ms, probe_requested_at: x.probe_requested_at, health: mergedHealth(r, x.id) })),
     models: r.models.map((m) => ({ ...m, builtin: (BUILTIN_ALIASES as readonly string[]).includes(m.alias) })),
-    prices: { version: p.version, effective_at: p.effective_at, items: p.items },
-    price_history: r.prices.map((x) => ({ version: x.version, effective_at: x.effective_at, by: x.by })).reverse(),
+    prices: { version: p.version, effective_at: p.effective_at, items: p.items, basis: p.basis ?? "alias" },
+    price_history: r.prices.map((x) => ({ version: x.version, effective_at: x.effective_at, by: x.by, basis: x.basis ?? "alias" })).reverse(),
   };
 }
 
@@ -412,11 +793,5 @@ export function migrateRouting(raw: unknown, t: number, bootstrap?: Parameters<t
  * 缓存输入未单列价的按未缓存输入价计。
  */
 export function chargeOf(item: PriceItem | undefined, u: { input: number; cached: number; output: number }): { value_micro: number | null; cost_micro: number | null } {
-  const calc = (pin: number | null, pc: number | null, pout: number | null): number | null => {
-    if (pin === null || pout === null) return null;
-    const cached = Math.min(Math.max(0, u.cached), u.input);
-    return Math.round((u.input - cached) * pin + cached * (pc ?? pin) + u.output * pout);
-  };
-  if (!item) return { value_micro: null, cost_micro: null };
-  return { value_micro: calc(item.input, item.cached_input, item.output), cost_micro: calc(item.cost_input, item.cost_cached_input, item.cost_output) };
+  return moneyOf(item ? fromItem(item) : null, billedOf(u));
 }

@@ -288,7 +288,7 @@ test("本所接口：admin 读写、partner 只读、律师 403；不能停自�
   assert.ok("revenue_cny" in bill.json && !("cost_cny" in bill.json) && !("margin_cny" in bill.json), "本所账单不含成本与毛利");
 });
 
-test("账本 partial / retry_of：服务出错的行不扣额度、售价 0、成本照记；本人用量、本所逐请求与 CSV、运营明细都标“服务出错（已产生成本，不计费）”", async () => {
+test("账本 partial / retry_of：服务出错的行不扣额度、售价 0；估算的成本另记待对账（第 62 批：估算不当作实测）；本人用量、本所逐请求与 CSV、运营明细都标“服务出错，用量按估算（不计费，成本待对账）”", async () => {
   const at = new Date().toISOString();
   const rec = (id: string, u: { input: number; output: number }, extra: Record<string, unknown> = {}) => ({ request_id: id, client_request_id: `c-${id}`, at, sid: F.seat, uid: F.memberId, dev: F.deviceId, alias: "legal/k3", provider: "maas", stream: true, status: 200, outcome: "ok", usage: { input: u.input, cached: 0, output: u.output, reasoning: 0 }, usage_source: "upstream", attempts: [], ...extra });
   // 价目（成本价）：partial 行按估算记成本
@@ -300,7 +300,9 @@ test("账本 partial / retry_of：服务出错的行不扣额度、售价 0、�
   const rows = cp2.usageBook.query({ tid: F.tid }).rows;
   const part = rows.find((r) => r.request_id === "kwlgw_part1")!;
   assert.deepEqual([part.partial, part.usage, part.charge, part.value_micro, part.partial_usage?.input], [true, null, 0, 0, 3000]);
-  assert.ok((part.cost_micro ?? 0) > 0, "成本按估算照记（对账）");
+  // 第 62 批：估算的用量不当作实测——成本不进实测成本（cost_micro 为 null），按估算折的成本另记 est_cost_micro，标待对账
+  assert.equal(part.cost_micro, null, "估算成本不混进实测成本");
+  assert.deepEqual([part.reconcile, part.est_usage?.input, part.est_cost_micro], ["pending", 3000, 3000 * 2 + 2000 * 8], "估算成本另记（对账）");
   assert.equal(rows.find((r) => r.request_id === "kwlgw_retry1")!.retry_of, "kwlgw_ok1");
   // 本人用量：只算 ok + retry 两行的 token
   const boss = { token: await login2("boss@firmweb.cn") };
@@ -312,15 +314,16 @@ test("账本 partial / retry_of：服务出错的行不扣额度、售价 0、�
   assert.equal((await call(base2, "GET", "/v1/ops/tenants/" + F.tid + "/usage", undefined, bearer(boss.token))).json.error.code, "staff_required");
   const fr = await call(base2, "GET", "/v1/firm/usage/records", undefined, bearer(boss.token));
   const pr = fr.json.records.find((r: any) => r.request_id === "kwlgw_part1");
-  assert.deepEqual([pr.partial, pr.note, pr.tokens_in, pr.member], [true, "服务出错（已产生成本，不计费）", 0, "王主任"]);
+  assert.deepEqual([pr.partial, pr.note, pr.tokens_in, pr.member], [true, "服务出错，用量按估算（不计费，成本待对账）", 0, "王主任"]);
   assert.equal(fr.json.records.find((r: any) => r.request_id === "kwlgw_retry1").note, "重试");
   const csv = await fetch(`${base2}/v1/firm/usage/records.csv`, { headers: bearer(boss.token) });
   assert.match(csv.headers.get("content-type") ?? "", /text\/csv/);
-  assert.ok((await csv.text()).includes("服务出错（已产生成本，不计费）"));
+  assert.ok((await csv.text()).includes("服务出错，用量按估算（不计费，成本待对账）"));
   const sum = await call(base2, "GET", "/v1/firm/usage/summary?days=7", undefined, bearer(boss.token));
   assert.deepEqual([sum.json.totals.tokens, sum.json.totals.requests, sum.json.by_member[0].name], [1650, 3, "王主任"]);
   const opsRec = (await ops("GET", `/v1/ops/usage/records?${new URLSearchParams({ tid: F.tid })}`)).json.records.find((r: any) => r.request_id === "kwlgw_part1");
-  assert.equal(opsRec.billing_note, "服务出错（已产生成本，不计费）");
+  assert.equal(opsRec.billing_note, "服务出错，用量按估算（不计费，成本待对账）");
+  assert.deepEqual([opsRec.cost_cny, opsRec.est_cost_cny], [null, 0.022]);
   const opsCsv = await fetch(`${base2}/v1/ops/usage/records.csv?${new URLSearchParams({ tid: F.tid })}`, { headers: bearer(await opsToken()) });
   assert.ok((await opsCsv.text()).includes("估算token(不计费)"));
 });

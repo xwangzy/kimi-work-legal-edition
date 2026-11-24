@@ -11,7 +11,7 @@
 import { createCipheriv, createDecipheriv, createHash, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes, type KeyObject } from "node:crypto";
 import { openEnvelope } from "@zr-legal/firm-trust";
 import { OpenAICompatProvider, type ChatProvider } from "./providers.ts";
-import type { PriceItem, PriceTable } from "./usage.ts";
+import type { PriceItem, PriceTable, Rates } from "./usage.ts";
 
 // ─── 上游密钥封装 ───
 
@@ -463,7 +463,22 @@ export class RoutingFeedSubscriber implements RoutingView {
         const x = v as Record<string, unknown>;
         items[alias] = { input: priceNum(x.input), cached_input: priceNum(x.cached_input), output: priceNum(x.output), cost_input: priceNum(x.cost_input), cost_cached_input: priceNum(x.cost_cached_input), cost_output: priceNum(x.cost_output) };
       }
-      prices = { version: pr.version, effective_at: typeof pr.effective_at === "string" ? pr.effective_at : null, items };
+      // 第 62 批：按上游型号的生效价（basis = model）；形状不对的型号跳过（按未定价处理，金额套餐即 price_unconfigured，不按 0 元放行）
+      const rates = (v: unknown): Rates | null => {
+        if (!v || typeof v !== "object") return null;
+        const x = v as Record<string, unknown>;
+        return { input: priceNum(x.input), cached_input: priceNum(x.cached_input), cache_write: priceNum(x.cache_write), cache_write_1h: priceNum(x.cache_write_1h), output: priceNum(x.output) };
+      };
+      const models: Record<string, { sale: Rates; cost: Rates }> = {};
+      if (pr.basis === "model" && pr.models && typeof pr.models === "object") {
+        for (const [m, v] of Object.entries(pr.models as Record<string, unknown>)) {
+          if (!MODEL_RE.test(m) || !v || typeof v !== "object") continue;
+          const sale = rates((v as Record<string, unknown>).sale);
+          const cost = rates((v as Record<string, unknown>).cost);
+          if (sale && cost) models[m] = { sale, cost };
+        }
+      }
+      prices = { version: pr.version, effective_at: typeof pr.effective_at === "string" ? pr.effective_at : null, items, ...(pr.basis === "model" ? { basis: "model" as const, models } : {}) };
     }
     return { version, source: "feed", issuedAt: typeof b.issued_at === "string" ? b.issued_at : null, providers, models, prices };
   }
