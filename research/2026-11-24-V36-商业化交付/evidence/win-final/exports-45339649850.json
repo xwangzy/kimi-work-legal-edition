@@ -1,0 +1,26 @@
+[
+ {
+  "file": "研究备忘录-设备检验期、质保期与付款抗辩.docx",
+  "kind": "agent_report",
+  "saved": true,
+  "bytes": 16546,
+  "sha256": "b9d3dcc27d87480444e996b503a0fb5804cc110c3d158b51c6a8196c5796201d",
+  "zip_entries": 8,
+  "paragraphs": 292,
+  "ins": 0,
+  "del": 0,
+  "comments": 0,
+  "authors": [],
+  "text_chars": 11561,
+  "has_token_residue": true
+ },
+ {
+  "file": "来源目录-设备检验期、质保期与付款抗辩.xlsx",
+  "kind": "agent_table",
+  "saved": true,
+  "bytes": 6751,
+  "sha256": "d3cdf4c12487a46195622fff8f479a50eb9beba8350cd68ba5fd59ea431bef3d",
+  "zip_entries": 6,
+  "sheets": 1
+ }
+]
