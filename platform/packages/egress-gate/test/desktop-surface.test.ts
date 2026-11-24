@@ -137,7 +137,8 @@ test("Agent 产物预览：sandbox=\"\" 隔离框架 + 注入只允许内联样�
   assert.match(sp, /export const PREVIEW_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; media-src data:; form-action 'none'; base-uri 'none'"/);
   for (const tag of ["script", "iframe", "object", "embed", "base", "link", "meta", "form"]) assert.match(sp, new RegExp(`"${tag}"`), tag);
   const comp = read("src/components/SafePreview.tsx");
-  assert.match(comp, /<iframe title=\{filename\} sandbox="" srcDoc=\{srcDoc\} referrerPolicy="no-referrer"/);
+  // 第 62 批：框架按内容摘要换新元素（key 在前），隔离属性不变
+  assert.match(comp, /<iframe key=\{`\$\{frameKey\}:\$\{reloads\}`\} title=\{filename\} sandbox="" srcDoc=\{srcDoc\} referrerPolicy="no-referrer"/);
 });
 
 test("预加载脚本只暴露最小接口；渲染进程源码里只有 api.ts 接触内核通道与开发桥", () => {

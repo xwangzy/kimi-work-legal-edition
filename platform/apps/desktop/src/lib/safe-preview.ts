@@ -35,7 +35,7 @@ export function previewFrameKey(srcDoc: string): string {
   return `${h.toString(16).padStart(8, "0")}-${srcDoc.length}`;
 }
 
-export const PREVIEW_CSP ="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; media-src data:; form-action 'none'; base-uri 'none'";
+export const PREVIEW_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; media-src data:; form-action 'none'; base-uri 'none'";
 
 const DROP_ELEMENTS = [
   "script", "noscript", "iframe", "frame", "frameset", "object", "embed", "applet", "base", "link", "meta", "form", "portal", "template", "audio", "video", "source", "track",
