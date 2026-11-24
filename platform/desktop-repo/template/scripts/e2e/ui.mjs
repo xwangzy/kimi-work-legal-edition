@@ -153,9 +153,15 @@ async function framePainted(label) {
   const frame = page.locator("iframe.sp-frame").first();
   await frame.waitFor({ state: "visible", timeout: 60_000 });
   await sleep(2500);
+  await frame.scrollIntoViewIfNeeded().catch(() => {});
   const box = await frame.boundingBox();
+  const vp = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
   if (!box || box.width < 50 || box.height < 50) return { label, ok: false, dark: 0, why: "框架尺寸异常" };
-  const png = await page.screenshot({ clip: { x: box.x, y: box.y, width: box.width, height: Math.min(box.height, 600) } });
+  // 只截框架在视口内的部分（框架下沿可能超出窗口）
+  const y0 = Math.max(0, box.y);
+  const clip = { x: Math.max(0, box.x), y: y0, width: Math.min(box.width, vp.w - Math.max(0, box.x)), height: Math.min(box.height, 600, vp.h - y0) };
+  if (clip.width < 50 || clip.height < 50) return { label, ok: false, dark: 0, why: "框架不在视口内" };
+  const png = await page.screenshot({ clip });
   const dark = darkPixels(png);
   const name = `预览-${label}`.replace(/[\\/:*?"<>|\s]/g, "_");
   writeFileSync(join(OUT, `${name}.png`), png);
@@ -676,6 +682,7 @@ async function preview() {
     results.push(await framePainted("任务页右栏-缺省选中").catch((e) => ({ label: "任务页右栏", ok: false, dark: 0, why: e.message })));
     log(JSON.stringify(results[results.length - 1]));
     // 右栏下拉里逐个切换（版本切换时预览要跟着换、不残留上一份）
+    // 自绘下拉（components/Select.tsx，listbox 语义、键盘可用）：用键盘逐项选，避开列表滚动与遮挡
     const trigger = page.locator(".artifact-select").first();
     const n = await page.evaluate(() => document.querySelectorAll(".artifact-select").length);
     if (n > 0) {
@@ -683,9 +690,13 @@ async function preview() {
       const opts = await page.locator('[role="option"]').allInnerTexts();
       await page.keyboard.press("Escape");
       for (let i = 0; i < opts.length; i++) {
-        if (!/\.(docx|xlsx)|Word|Excel|起诉状|律师函|意见|修订|清单|目录|备忘录/.test(opts[i])) continue;
-        await trigger.click();
-        await page.locator('[role="option"]').nth(i).click();
+        if (!/\.(docx|xlsx)|Word|Excel|起诉状|律师函|意见|修订|清单|目录|备忘录|申请书|明细/.test(opts[i])) continue;
+        await trigger.focus();
+        await page.keyboard.press("Enter");
+        await sleep(300);
+        await page.keyboard.press("Home");
+        for (let k = 0; k < i; k++) await page.keyboard.press("ArrowDown");
+        await page.keyboard.press("Enter");
         results.push(await framePainted(`任务页右栏-${opts[i].slice(0, 24)}`).catch((e) => ({ label: opts[i], ok: false, dark: 0, why: e.message })));
         log(JSON.stringify(results[results.length - 1]));
       }
