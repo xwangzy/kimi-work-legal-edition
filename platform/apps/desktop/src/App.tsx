@@ -183,7 +183,7 @@ export function App() {
           setBoot({
             onboarding: st?.onboarding ?? null,
             restoredAt: st?.restored_from_backup_at ?? null,
-            login: needsLogin(st) ? { reason: st.account?.reason ?? null, email: st.account?.email ?? "" } : null,
+            login: needsLogin(st) ? { reason: st.account?.reason ?? null, email: st.account?.email ?? st.account?.last_email ?? "" } : null,
             firm: st?.firm ?? null,
             user: st?.user ?? null,
             // 第 64 批：重新登录页上称呼“「某所」· 某律师”

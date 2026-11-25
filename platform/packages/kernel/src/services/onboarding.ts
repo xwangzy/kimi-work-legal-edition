@@ -37,7 +37,7 @@ import { activationFilePath, PENDING_WORKSPACE_SLUG, type ActivationFile, type K
 import { configureSecretSealing, generateJoinDeviceKeys, getFirmRootPrivateKey, keysDirOf, readSecretFile, writeStagedSecret, type FirmIdentityRow } from "../devices.ts";
 import type { KernelDb } from "../db.ts";
 import type { Identity } from "../identity.ts";
-import { accountErrorText, accountFailure, onboardingStateText, writeAccountSession } from "../account-session.ts";
+import { accountErrorText, accountFailure, dropLoginRequired, onboardingStateText, writeAccountSession } from "../account-session.ts";
 import { cloudFailureText } from "./cloud-connection.ts";
 
 type CpRelay = (req: { method: string; path: string; headers: Record<string, string>; body: string }) => Promise<{ ok: true; status: number; body: string } | { ok: false; reason: string }>;
@@ -400,7 +400,15 @@ export class OnboardingService {
     const keysDir = this.keysDirFor(firmSlug);
     // 会话令牌：能在这台电脑上继续时才暂存（入组等待期间也算已登录；重启后按新身份读回）；不能继续的不留会话文件
     const proceed = state === "needs_founder_setup" || state === "needs_device_join";
-    if (proceed) writeAccountSession(keysDir, { token: j.session_token, ...account });
+    if (proceed) {
+      writeAccountSession(keysDir, { token: j.session_token, ...account });
+      // 第 64 批：同一工作区留有“要重新登录”的旧记录时一并删掉（开通 / 入组之后按新会话打开）
+      try {
+        dropLoginRequired(keysDir);
+      } catch {
+        // 启动时会话比记录新，记录也会作废
+      }
+    }
     const view = { account: { email: account.email, name: account.name, role }, firm: { name: firmName }, state };
     if (state === "needs_founder_setup") {
       const c = onb.claim ?? {};
@@ -931,7 +939,8 @@ export function registrationMetaOf(json: Record<string, unknown> | null): Record
 export async function fetchRegistrationMeta(get: () => Promise<{ ok: true; json: Record<string, unknown> } | { ok: false; code: string; status?: number }>): Promise<Record<string, unknown>> {
   const t0 = Date.now();
   const r = await get();
-  if (r.ok || r.code === "http_404") {
+  // 很旧的云端没有 /v1/meta：控制面对未知路径回 not_found（部分代理回纯 404）
+  if (r.ok || r.code === "http_404" || r.code === "not_found") {
     const meta = registrationMetaOf(r.ok ? r.json : null);
     slog.event("KERNEL_REGISTRATION_META", { outcome: meta.legacy ? "legacy" : "ok", ms: Date.now() - t0 });
     return meta;

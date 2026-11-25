@@ -400,6 +400,8 @@ export class KernelGate {
       // 第 64 批：流式计算（约 100 MB 的 Node 可执行文件）——此前同步整读整算，内核事件循环要卡住这段时间，界面的调用（含登录页）都得等
       const digest = bin ? await sha256OfFile(bin) : null;
       if (digest !== this.d.runtimeSha256.toLowerCase()) throw new Error(`出站闸门运行时摘要不符（${bin ?? this.d.runtime}）：不拉起闸门，模型与联网步骤不可用`);
+      // 摘要计算期间内核可能已在关闭：不再对账、不再拉起
+      if (this.closed) throw new Error("出站闸门已关闭");
     }
     const { db, secret, revoked, tokens } = this.d;
     // 上一个闸门进程留下的未补全预写：结果不明，进入对账（复核 S4-21）
@@ -455,6 +457,11 @@ export class KernelGate {
       },
     })
       .then((h) => {
+        // 等运行时核对 / 拉起期间内核关闭了：立即关掉刚起来的闸门
+        if (this.closed) {
+          void h.close().catch(() => {});
+          throw new Error("出站闸门已关闭");
+        }
         this.stats.starts += 1;
         this.restartBackoffMs = 0;
         this.handle = h;
@@ -625,7 +632,8 @@ export class KernelGate {
     this.closed = true;
     if (this.restartTimer) clearTimeout(this.restartTimer);
     this.restartTimer = null;
-    const h = this.handle ?? (this.starting ? await this.starting.catch(() => null) : null);
+    // 第 64 批：闸门可能还在等运行时核对（核对不符时永远等不到）——关闭最多等 3 秒，不把内核退出卡住
+    const h = this.handle ?? (this.starting ? await Promise.race([this.starting.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 3000).unref())]) : null);
     this.handle = null;
     await h?.close().catch(() => {});
   }

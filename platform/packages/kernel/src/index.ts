@@ -332,7 +332,19 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   let accountSession: AccountSessionFile | null = config.onboarding ? null : readAccountSession(keysDir);
   // 第 64 批：“要重新登录”落在本机（keys/account-login-required.json，封装、不含令牌）——重启应用、内核自动恢复、断网时都停在登录页，
   // 不再要等下一次同步撞上 session_required 才补上（此前这段时间里界面会把工作区露出来）
-  const persistedProblem = config.onboarding ? null : readLoginRequired(keysDir);
+  // 会话文件比记录新（例如旧版本登录过、没删记录）：以会话为准，记录作废
+  const persistedProblem = (() => {
+    const p = config.onboarding ? null : readLoginRequired(keysDir);
+    if (p && accountSession && Date.parse(accountSession.saved_at) > Date.parse(p.at)) {
+      try {
+        dropLoginRequired(keysDir);
+      } catch {
+        // 删不掉也不采用
+      }
+      return null;
+    }
+    return p;
+  })();
   let accountProblem: string | null = persistedProblem?.reason ?? null;
   /** 上次重新登录成功（清掉 accountProblem）的时刻：刚登录后网关可能还按旧的暂停名单拒绝（见 SESSION_REJECTION_GRACE_MS）。 */
   let accountClearedAt = Number.NEGATIVE_INFINITY;
@@ -366,7 +378,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     clearProblem: () => {
       accountProblem = null;
       accountClearedAt = Date.now();
-      dropLoginRequired(keysDir);
+      // 删不掉（Windows 上文件被占用）不让登录报失败：下次启动时会话比记录新，记录作废
+      try {
+        dropLoginRequired(keysDir);
+      } catch (e) {
+        slog.event("KERNEL_ACCOUNT_MARK_FAILED", errFields(e));
+      }
     },
     setProblem: (code: string) => {
       accountProblem = code;
@@ -425,7 +442,11 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
           onEnrolled: () => dropActivationClaim(keysDir),
           // 第 44 批：控制面请求附账号会话；控制面说要重新登录 → 记原因、清掉本机席位令牌（AI 停用）、通知界面出登录框
           sessionToken: () => accountSession?.token ?? null,
-          onSessionProblem: (code) => markAccountProblem(code, "sync"),
+          // 第 64 批：只认“这次请求带的会话就是现在的会话”——退出登录时发出的同步，答复在重新登录之后才回来，不能把刚登录的人再踢回登录页
+          onSessionProblem: (code, sent) => {
+            if ((accountSession?.token ?? null) !== sent) return;
+            markAccountProblem(code, "sync");
+          },
           // 退出模式下启动时暂停的任务：退出模式解除后（同步取得许可）入队（复核 S6-B34）
           onSynced: () => {
             if (governance.exitMode()) return;

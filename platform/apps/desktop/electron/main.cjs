@@ -1215,6 +1215,9 @@ app.whenReady().then(() => {
   if (!smoke.out) {
     void verifyRuntimeInBackground(rt.manifest).then((problems) => {
       if (problems.length === 0) return;
+      // 第 64 批：先撤回放行（闸门闭包先核通过时已放行闸门），内核被重拉也不会再拉起闸门
+      gateVerifiedOk = false;
+      runtimeVerifiedOk = false;
       slog.event("MAIN_RUNTIME_PROBLEM", { count: problems.length, stage: "background" });
       void stopKernel().then(() => {
         dialog.showErrorBox(

@@ -56,7 +56,8 @@ export interface ControlPlaneClientDeps {
   /** 第 44 批：本机保存的账号会话令牌（附在 x-kwl-session 头里；没有 = 不附）。 */
   sessionToken?: () => string | null;
   /** 控制面答复“要重新登录”（会话无效、过期、账号停用）时回调（内核据此提示重新登录）。 */
-  onSessionProblem?: (code: string) => void;
+  /** 第 64 批：第二个参数是这次请求带的会话令牌（没带为 null）——答复回来时本机已换了会话（刚重新登录），就不是现在这次登录的问题。 */
+  onSessionProblem?: (code: string, sentSession: string | null) => void;
 }
 
 /**
@@ -202,7 +203,7 @@ export class ControlPlaneClient {
       // 本机时钟偏差超过 5 分钟：控制面拒绝签名请求，同步、续期都会失败——告警写明原因（复核 S6-B37）
       if (code === "device_auth_stale") this.clockAlert(json.server_time);
       // 第 44 批：会话无效、过期或账号停用 → 提示重新登录（席位令牌不再续期，网关按订阅暂停本设备）
-      if (SESSION_PROBLEMS.has(code)) this.d.onSessionProblem?.(code);
+      if (SESSION_PROBLEMS.has(code)) this.d.onSessionProblem?.(code, session);
       // 第 46 批：客户端版本低于控制面要求（426）——记下最低版本，发起任务前与诊断据此提示升级
       if (code === "client_outdated") {
         const mv = (json.error as { min_version?: unknown } | undefined)?.min_version;

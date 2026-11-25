@@ -22,7 +22,7 @@ export type MetaState =
 
 const META_BACKOFF_S = [5, 10, 20, 40, 60];
 
-export function useRegistrationMetaState(): MetaState {
+export function useRegistrationMetaState({ autoRetry = true }: { autoRetry?: boolean } = {}): MetaState {
   const [st, setSt] = useState<{ status: "loading" | "ready" | "error"; meta?: RegistrationMeta; error?: string; attempt: number; retryAt: number | null }>({ status: "loading", attempt: 0, retryAt: null });
   const [, tick] = useState(0);
   const live = useRef(true);
@@ -37,8 +37,9 @@ export function useRegistrationMetaState(): MetaState {
       .catch((e) => {
         if (!live.current) return;
         const wait = META_BACKOFF_S[Math.min(attempt, META_BACKOFF_S.length - 1)]!;
-        setSt({ status: "error", error: (e as Error).message || "暂时连不上 Kimi Work 服务，请检查网络后重试。", attempt, retryAt: Date.now() + wait * 1000 });
-        timer.current = setTimeout(() => live.current && load(attempt + 1), wait * 1000);
+        setSt({ status: "error", error: (e as Error).message || "暂时连不上 Kimi Work 服务，请检查网络后重试。", attempt, retryAt: autoRetry ? Date.now() + wait * 1000 : null });
+        // 可有可无的入口（账号卡上的“绑定手机号”）不自动再试：离线时不定期发请求
+        if (autoRetry) timer.current = setTimeout(() => live.current && load(attempt + 1), wait * 1000);
       });
   };
   useEffect(() => {
@@ -64,7 +65,7 @@ export function useRegistrationMetaState(): MetaState {
  * 只要“取到的策略”（取策略中、取不到都为 null）：账号卡上“绑定手机号”按钮这类可有可无的入口用它（取不到就先不显示）。
  */
 export function useRegistrationMeta(): RegistrationMeta | null {
-  const s = useRegistrationMetaState();
+  const s = useRegistrationMetaState({ autoRetry: false });
   return s.status === "ready" ? s.meta : null;
 }
 

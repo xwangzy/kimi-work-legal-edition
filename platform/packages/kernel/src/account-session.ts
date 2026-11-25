@@ -71,7 +71,9 @@ export function readLoginRequired(keysDir: string): LoginRequiredFile | null {
   if (!existsSync(p)) return null;
   try {
     const s = readSecretFile<LoginRequiredFile>(p);
-    return s && s.v === 1 && typeof s.reason === "string" && SESSION_PROBLEM_CODES.has(s.reason) ? s : null;
+    // 字段逐项按类型与长度核对（被改过的记录宁可不认，也不让登录页因为怪值出错）
+    const str = (v: unknown, max: number) => typeof v === "string" && v.length <= max;
+    return s && s.v === 1 && typeof s.reason === "string" && SESSION_PROBLEM_CODES.has(s.reason) && str(s.email, 254) && str(s.name, 80) && str(s.role, 40) && str(s.at, 40) && Number.isFinite(Date.parse(s.at)) ? s : null;
   } catch {
     return null;
   }
