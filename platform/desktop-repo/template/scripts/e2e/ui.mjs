@@ -100,9 +100,42 @@ async function until(fn, ms, step = 1000, what = "条件") {
     await sleep(step);
   }
 }
+/**
+ * 截图（第 64 批隐私修复）：截图会作为构件上传，公开仓库里任何人可下载——截图前把手机号、验证码、密码与邮箱输入框遮成圆点
+ * （只改显示，不改值；截完即撤），页面里出现的完整手机号文字也换成打码形式。此前“登录-验证码已填”等截图里有完整手机号。
+ */
+const SHOT_MASK_CSS = 'input[type="tel"],input[autocomplete="one-time-code"],input[type="password"],input[type="email"]{-webkit-text-security:disc !important;}';
 const shot = async (name) => {
   const p = join(OUT, `${name}.png`);
+  const masked = await page
+    .evaluate((css) => {
+      const st = document.createElement("style");
+      st.id = "kwl-e2e-shot-mask";
+      st.textContent = css;
+      document.head.appendChild(st);
+      // 正文里的完整大陆手机号（例如“验证码已发送到 …”若带全号）换成打码
+      const changed = [];
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const v = n.nodeValue;
+        if (v && /1[3-9]\d{9}/.test(v)) {
+          changed.push([n, v]);
+          n.nodeValue = v.replace(/(1[3-9]\d)\d{4}(\d{4})/g, "$1****$2");
+        }
+      }
+      window.__kwlShotRestore = changed;
+      return true;
+    }, SHOT_MASK_CSS)
+    .catch(() => false);
   await page.screenshot({ path: p });
+  if (masked)
+    await page
+      .evaluate(() => {
+        document.getElementById("kwl-e2e-shot-mask")?.remove();
+        for (const [n, v] of window.__kwlShotRestore ?? []) n.nodeValue = v;
+        window.__kwlShotRestore = [];
+      })
+      .catch(() => {});
   log("截图", basename(p));
 };
 const go = async (hash) => {
