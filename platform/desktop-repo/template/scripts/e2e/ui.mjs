@@ -847,8 +847,14 @@ async function preview() {
     await go(runHash);
     await sleep(3000);
     // 合同审查一类任务右栏缺省是“审查摘要”页签：先切到“成果”再看预览
-    const tab = page.getByRole("tab", { name: "成果" });
-    if (await tab.count()) await tab.first().click().catch(() => {});
+    // 右栏页签是 .exec-right .tabs 里的普通按钮（不是 role=tab）；风险卡晚到时界面会自动切到“审查摘要”，所以等按钮出现再点、点完核对
+    const tab = page.locator(".exec-right .tabs button").filter({ hasText: /^\s*成果(\s*\d+)?\s*$/ });
+    await tab.first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
+    for (let i = 0; i < 3 && (await tab.count()); i++) {
+      await tab.first().click().catch(() => {});
+      await sleep(1200);
+      if (/\bactive\b/.test((await tab.first().getAttribute("class")) ?? "")) break;
+    }
     await sleep(1500);
     results.push(await framePainted("任务页右栏-缺省选中").catch((e) => ({ label: "任务页右栏", ok: false, dark: 0, why: e.message })));
     log(JSON.stringify(results[results.length - 1]));
