@@ -350,8 +350,8 @@ export interface StartGateOptions {
 
 /** 拉起闸门进程（环境变量不继承内核；只经 IPC）。闸门退出时调用方应视为“唯一出口不可用”：模型与联网步骤排队。 */
 export async function startEgressGate(o: StartGateOptions): Promise<GateHandle> {
-  // 随包运行时全量摘要核验通过之前不拉起（复核 B4-R15）
-  await runtimeReady();
+  // 随包运行时摘要核验通过之前不拉起（复核 B4-R15）。第 64 批：闸门只等它自己的 Node 与入口核对通过（gate 范围），不等全量
+  await runtimeReady("gate");
   return startEgressGateNow(o);
 }
 

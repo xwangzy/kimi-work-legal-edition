@@ -26,11 +26,12 @@ test("发起前检查的提示：从估价结果或发起错误里取出，入�
   assert.deepEqual(startHintTarget(hint as never), { path: "/connections/usage", anchor: "#sec-usage" });
   const login = startHintOf({ kind: "login", code: "session_expired", message: "登录已失效：请先在页面顶部重新登录，再开始任务", action: "login" })!;
   assert.equal(startHintActionLabel(login), "去登录");
-  assert.deepEqual(startHintTarget(login), { path: null, anchor: ".login-banner input" });
+  // 第 64 批：登录失效改为整窗重新登录页——“去登录”让外壳重新取登录状态并定位到那一页的输入框
+  assert.deepEqual(startHintTarget(login), { path: null, anchor: '[data-auth-page="relogin"] input', refreshAccount: true });
   assert.equal(startHintActionLabel({ ...login, action: null }), null);
   // 用量页上真有这个锚点；登录横幅里真有登录框
   assert.match(src("pages/Connections.tsx"), /id="sec-usage"/);
-  assert.match(src("App.tsx"), /className="banner banner-orange login-banner"/);
+  assert.match(src("App.tsx"), /if \(login\)\s*return \(\s*<>\s*<ReloginPage/);
 });
 
 test("开始前确认与开始面板：登录、额度拦下时显示橙色可操作提示，不当红色报错", () => {

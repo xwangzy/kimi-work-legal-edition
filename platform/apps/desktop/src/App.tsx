@@ -6,8 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { account, api, members, onKernelEvent, recovery, updates, type UpdateStatus } from "./api.ts";
-import { ACCOUNT_CHANGED, LoginBox } from "./components/AccountPanel.tsx";
-import { loginRequiredText, needsLogin } from "./lib/account.ts";
+import { ACCOUNT_CHANGED } from "./components/AccountPanel.tsx";
+import { needsLogin } from "./lib/account.ts";
 import { Home } from "./pages/Home.tsx";
 import { MattersPage } from "./pages/Matters.tsx";
 import { MatterPage } from "./pages/Matter.tsx";
@@ -23,6 +23,8 @@ import { NotOpenPage } from "./pages/NotOpen.tsx";
 import { RemindersPage } from "./pages/Reminders.tsx";
 import { ActivatePage } from "./pages/Activate.tsx";
 import { WelcomePage } from "./pages/Welcome.tsx";
+import { ReloginPage } from "./pages/Relogin.tsx";
+import { AuthCard, AuthPage } from "./components/AuthShell.tsx";
 import { updateBannerView } from "./lib/update-banner.ts";
 import { SearchPalette } from "./components/SearchPalette.tsx";
 import { AskHost } from "./components/AskHost.tsx";
@@ -31,7 +33,6 @@ import { GuideTour } from "./components/GuideTour.tsx";
 import { guideSeenKey, markGuideSeen } from "./lib/guide-steps.ts";
 import { newTaskHref } from "./lib/nav-target.ts";
 import { useElapsed, WaitBlock } from "./components/Loading.tsx";
-import { BrandLockup } from "./components/Brand.tsx";
 import { waitLevel } from "./lib/waiting.ts";
 
 /** 再看一遍上手指南（设置 · 通用里的按钮发这个事件）。 */
@@ -164,7 +165,7 @@ export function nav(path: string): void {
 export function App() {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   // 首次启动激活（第 13 批）：这台电脑还没有激活时整个应用只显示激活页
-  const [boot, setBoot] = useState<{ onboarding: any; restoredAt?: string | null; login?: { reason: string | null; email: string } | null; firm?: string | null; user?: string | null } | null>(null);
+  const [boot, setBoot] = useState<{ onboarding: any; restoredAt?: string | null; login?: { reason: string | null; email: string } | null; firm?: string | null; user?: string | null; firmName?: string | null; memberName?: string | null } | null>(null);
   // 取不到状态时不当作“已激活”（复核 B13-K01）：首次启动内核较慢，按退避重试（lib/boot-gate.ts）；约两分钟仍取不到才给出说明与“重试”
   const [bootFailed, setBootFailed] = useState(false);
   // 启动等待从何时算起（第 51 批：冷启动显示真实已用时间）；点“重试”重新计时
@@ -176,7 +177,20 @@ export function App() {
     const tryOnce = () =>
       void api
         .kernelStatus()
-        .then((st: any) => setBoot({ onboarding: st?.onboarding ?? null, restoredAt: st?.restored_from_backup_at ?? null, login: needsLogin(st) ? { reason: st.account?.reason ?? null, email: st.account?.email ?? "" } : null, firm: st?.firm ?? null, user: st?.user ?? null }))
+        .then((st: any) => {
+          // 第 64 批：登录状态与启动状态同一次渲染生效——否则第一帧会先露出工作区，再切到重新登录页
+          setLogin(needsLogin(st) ? { reason: st.account?.reason ?? null, email: st.account?.email ?? st.account?.last_email ?? "" } : null);
+          setBoot({
+            onboarding: st?.onboarding ?? null,
+            restoredAt: st?.restored_from_backup_at ?? null,
+            login: needsLogin(st) ? { reason: st.account?.reason ?? null, email: st.account?.email ?? "" } : null,
+            firm: st?.firm ?? null,
+            user: st?.user ?? null,
+            // 第 64 批：重新登录页上称呼“「某所」· 某律师”
+            firmName: st?.activation?.firm?.name ?? null,
+            memberName: st?.activation?.member?.name ?? null,
+          });
+        })
         .catch(() => {
           attempt += 1;
           const delay = bootRetryDelay(attempt);
@@ -221,8 +235,9 @@ export function App() {
       .then((s) => setRevokedPersonal(s.prompt_clear ? { writing_prefs: s.writing_prefs, qa_conversations: s.qa_conversations } : null))
       .catch(() => setRevokedPersonal(null));
   }, [boot]);
-  // 登录失效（第 44 批，主文 §2.5）：内核报 login_required 或广播 account.login_required → 顶部横幅 + 就地登录；
-  // 主进程（main.cjs）与开发桥（dev/bridge.ts）都转发这条广播；另按 30 秒查一次兜底（本机调用，不联网；广播在界面就绪前发出时也能补上），退出登录时立即刷新
+  // 登录失效（第 44 批，主文 §2.5）：内核报 login_required 或广播 account.login_required → 第 64 批起整窗显示重新登录页（不再是顶部横幅 + 就地登录）；
+  // 主进程（main.cjs）与开发桥（dev/bridge.ts）都转发这条广播；另按 30 秒查一次兜底（本机调用，不联网；广播在界面就绪前发出时也能补上），退出登录时立即刷新。
+  // 首帧以启动时的 kernel.status 为准（boot.login），不会先露出工作区；“要重新登录”内核记在本机，重启后照样停在登录页
   const [login, setLogin] = useState<{ reason: string | null; email: string } | null>(null);
   // 退出登录后内核不再留邮箱：记住这次打开期间最后看到的那个，就地登录时预先填好
   const lastEmail = useRef("");
@@ -290,7 +305,7 @@ export function App() {
   const [searching, setSearching] = useState(false);
   // 开通向导里不响应（面板只在主界面渲染；否则在向导里按过快捷键，进主界面会自己弹出来）
   const onboardingRef = useRef(true);
-  onboardingRef.current = boot === null || !!boot.onboarding;
+  onboardingRef.current = boot === null || !!boot.onboarding || !!login;
   const routeRef = useRef(route);
   routeRef.current = route;
   useEffect(() => {
@@ -355,15 +370,10 @@ export function App() {
   const routeKey = route.page === "run" ? `run:${route.runId}` : route.page === "matter" ? `matter:${route.matterId}` : route.page;
   if (boot === null) {
     return (
-      <div className="activate" aria-busy={!bootFailed}>
-        <div className="activate-card">
-          {/* 第 51 批：启动页也是第一眼——与登录页同一品牌组合。第 55 批：正在启动时由等待块自己的标识（蓝点呼吸）担当，不再上下各放一个标识；
-              启动失败时才显示静态的品牌组合 */}
-          {bootFailed && (
-            <div className="brand">
-              <BrandLockup size="lg" />
-            </div>
-          )}
+      <AuthPage kind="boot" busy={!bootFailed}>
+        {/* 第 51 批：启动页也是第一眼——与登录页同一品牌组合。第 55 批：正在启动时由等待块自己的标识（蓝点呼吸）担当，不再上下各放一个标识；
+            启动失败时才显示静态的品牌组合。第 64 批：与登录页同一外壳（整窗可拖动） */}
+        <AuthCard brand={bootFailed}>
           {/* 主进程的“后台服务已停止”在启动占位页也看得到（复核 R2B-25） */}
           {kernelNotice?.status === "stopped" && <p className="activate-error" role="alert">{kernelNotice.message}</p>}
           {bootFailed ? (
@@ -374,12 +384,14 @@ export function App() {
             <BootWait since={bootSince} />
           )}
           {bootFailed && (
-            <button className="btn-primary" onClick={loadBoot}>
-              重试
-            </button>
+            <div className="activate-actions">
+              <button className="btn-primary" onClick={loadBoot}>
+                重试
+              </button>
+            </div>
           )}
-        </div>
-      </div>
+        </AuthCard>
+      </AuthPage>
     );
   }
   if (boot.onboarding)
@@ -390,18 +402,26 @@ export function App() {
         <AskHost />
       </>
     );
+  // 第 64 批：退出登录、登录失效 → 整窗重新登录页；工作区整个不渲染（卸载，不是遮挡）。登录后回到原来那一页（地址不变）
+  if (login)
+    return (
+      <>
+        <ReloginPage
+          reason={login.reason}
+          email={login.email}
+          firm={boot.firmName ?? null}
+          member={boot.memberName ?? null}
+          notice={kernelNotice?.status === "stopped" ? (kernelNotice.message ?? "后台服务已停止") : ""}
+          onDone={() => setLogin(null)}
+        />
+        <AskHost />
+      </>
+    );
   return (
     <div className="shell">
       <Sidebar route={route} />
       <div className="shell-main">
         {kernelNotice && <div className={`banner ${kernelNotice.status === "stopped" ? "banner-red" : "banner-orange"} kernel-banner`}>{kernelNotice.message ?? "后台服务正在恢复…"}</div>}
-        {login && (
-          <div className="banner banner-orange login-banner" role="alert">
-            <div>{loginRequiredText(login.reason)}</div>
-            {/* 设置 · 账号与团队页上已有登录框：横幅只提示，不再放第二个 */}
-            {route.page === "connections" && route.tab === "account" ? <div className="muted">请在下方“账号”一栏登录。</div> : <LoginBox compact email={login.email} onDone={() => setLogin(null)} />}
-          </div>
-        )}
         {update && !updateDismissed && route.page !== "run" && route.page !== "review" && <UpdateBanner status={update} onDismiss={() => setUpdateDismissed(true)} />}
         {revokedPersonal && (
           <div className="banner banner-orange" role="status">

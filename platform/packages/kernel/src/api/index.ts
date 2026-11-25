@@ -5,7 +5,7 @@
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
 import { accountErrorText, accountFailure, controlPlaneErrorText, CP_RULE_REJECTIONS, onboardingStateText, seatBlockReason } from "../account-session.ts";
-import { loginBody, registrationMetaOf, smsPhoneInput, smsSendResult } from "../services/onboarding.ts";
+import { fetchRegistrationMeta, loginBody, smsPhoneInput, smsSendResult } from "../services/onboarding.ts";
 import { diagnoseView } from "../services/cloud-connection.ts";
 import { launchCheck, QUOTA_VIEW_MAX_AGE_MS, type LaunchHint } from "../services/launch-check.ts";
 import { calcDeadline } from "../tools/tools/deadline.ts";
@@ -3111,7 +3111,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         account: (() => {
           const s = deps.account?.session() ?? null;
           const problem = deps.account?.problem() ?? null;
-          return deps.account ? { logged_in: !!s && !problem, email: s?.email ?? null, name: s?.name ?? null, login_required: !!problem, reason: problem } : null;
+          // 第 64 批：退出登录后会话已删，last_email 给重新登录页预填（不含令牌）
+          return deps.account ? { logged_in: !!s && !problem, email: s?.email ?? null, name: s?.name ?? null, login_required: !!problem, reason: problem, last_email: deps.account.last?.()?.email ?? null } : null;
         })(),
         egress_gate: gate
           ? {
@@ -3866,11 +3867,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // ─── 第 63 批：已激活的电脑上的注册 / 登录策略、短信验证码（登录、找回、绑定）与绑定手机号 ───
     "account.registration_meta": async () => {
       const cp = requireCpAccount();
-      try {
-        return registrationMetaOf(await cp.meta());
-      } catch {
-        return { legacy: true, mode: null };
-      }
+      // 第 64 批：取不到如实报错（界面显示“取不到登录方式 · 重试”），不再当成旧云端
+      return fetchRegistrationMeta(() => cp.meta());
     },
     "account.sms_send": async (p) => {
       const cp = requireCpAccount();

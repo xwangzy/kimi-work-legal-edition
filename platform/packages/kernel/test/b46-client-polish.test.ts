@@ -29,7 +29,7 @@ test("发起前检查：要重新登录、账号停用、客户端过旧——�
   const login = launchCheck({ ...base, accountProblem: "session_expired" });
   assert.equal(login?.kind, "login");
   assert.equal(login?.action, "login");
-  assert.match(login!.message, /^登录已失效：请先在页面顶部重新登录/);
+  assert.match(login!.message, /^登录已失效：请先重新登录/);
   const disabled = launchCheck({ ...base, accountProblem: "account_disabled" });
   assert.match(disabled!.message, /账号已停用.*律所管理员/);
   assert.equal(disabled!.action, null, "停用的账号重新登录也没用，不给登录入口");
@@ -133,7 +133,7 @@ test("任务失败文案：429、5xx、兜底不再拼原始错误；网关 401 
   assert.doesNotMatch(agentFailureText(null, "TypeError: Cannot read properties of undefined"), /TypeError/);
   assert.match(agentFailureText(null, "材料里没有找到合同正文"), /^任务没有完成：材料里没有找到合同正文/, "宿主给的中文说明照写");
   // 401：登录失效 / 没有授权（闸门 503 seat_unavailable 同样）
-  assert.match(agentFailureText(null, "401 登录已失效，请重新登录 [kwl:seat_session_inactive]"), /^登录已失效，任务没有完成：请在页面顶部重新登录/);
+  assert.match(agentFailureText(null, "401 登录已失效，请重新登录 [kwl:seat_session_inactive]"), /^登录已失效，任务没有完成：请重新登录/);
   assert.match(agentFailureText(null, "401 缺少席位令牌 [kwl:seat_token_missing]"), /暂时没有取得 AI 使用授权/);
   assert.match(agentFailureText(null, "503 这台电脑暂时没有取得 AI 使用授权（还没登录，或联网续期还没完成）：AI 请求没有发出"), /暂时没有取得 AI 使用授权.*重新运行/);
   assert.doesNotMatch(agentFailureText(null, "503 这台电脑暂时没有取得 AI 使用授权：AI 请求没有发出"), /连不上/);

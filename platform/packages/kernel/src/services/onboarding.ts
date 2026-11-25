@@ -441,8 +441,31 @@ export class OnboardingService {
    * 一律回 legacy（注册页照旧流程：不要求手机号，码可填可不填）。只回界面要用的几项，不透传云端原文。
    */
   async registrationMeta(): Promise<Record<string, unknown>> {
-    const r = await cpPost(this.d.relay, "/v1/meta", undefined, "GET");
-    return registrationMetaOf(r.ok ? r.json : null);
+    // 第 64 批：同一时刻只发一个请求（开通页首屏与内核启动时的预取共用）；取到的结果记 20 秒（只为让开机预取与界面第一次调用共用一次结果；运营改了策略，重新打开登录页即生效），取不到不记（下次点“重试”重新取）
+    const now = Date.now();
+    if (this.metaCache && now - this.metaCache.at < 20_000) return this.metaCache.value;
+    this.metaInflight ??= fetchRegistrationMeta(async () => {
+      const r = await cpPost(this.d.relay, "/v1/meta", undefined, "GET");
+      return r.ok ? { ok: true as const, json: r.json } : { ok: false as const, code: r.code };
+    })
+      .then((value) => {
+        this.metaCache = { at: Date.now(), value };
+        return value;
+      })
+      .finally(() => {
+        this.metaInflight = null;
+      });
+    return this.metaInflight;
+  }
+  private metaInflight: Promise<Record<string, unknown>> | null = null;
+  private metaCache: { at: number; value: Record<string, unknown> } | null = null;
+
+  /**
+   * 第 64 批：内核一启动就预取注册 / 登录策略（顺带把出站闸门拉起来）——开通页首屏要用它决定显示哪几种登录方式；
+   * 界面的第一次调用接上这个请求，不用从头等闸门拉起。失败不在这里报（界面调用时如实显示“取不到 · 重试”）。
+   */
+  prefetchRegistrationMeta(): void {
+    void this.registrationMeta().catch(() => {});
   }
 
   /** 发短信验证码（第 62 批；register = 注册、reset = 找回密码；第 63 批 login = 验证码登录）。手机号只经闸门的控制面通道发给中软，本机不保存、不记日志。 */
@@ -897,6 +920,25 @@ export function registrationMetaOf(json: Record<string, unknown> | null): Record
     phone_bind: features.includes("phone_bind") && pol.phone_bind === true,
     sms: { code_length: int(sms.code_length, 4, 8, 6), resend_seconds: int(sms.resend_seconds, 30, 600, 60), ttl_minutes: int(sms.ttl_minutes, 1, 30, 10) },
   };
+}
+
+/**
+ * 取注册 / 登录策略（第 64 批；开通页与已激活电脑的重新登录页共用）：
+ * - 云端答了 → registrationMetaOf（没有 registration_policy 的旧云端照旧回 legacy）；很旧的云端没有 /v1/meta（404）也按 legacy；
+ * - 取不到（连不上、超时、证书不符、云端 5xx）→ 抛错（reason 带原因代码），界面显示“取不到登录方式 · 重试”。
+ *   此前一律回 legacy：界面会把“暂时连不上”当成“云端没开验证码登录”，只显示邮箱密码登录且这次打开不再变。
+ */
+export async function fetchRegistrationMeta(get: () => Promise<{ ok: true; json: Record<string, unknown> } | { ok: false; code: string; status?: number }>): Promise<Record<string, unknown>> {
+  const t0 = Date.now();
+  const r = await get();
+  if (r.ok || r.code === "http_404") {
+    const meta = registrationMetaOf(r.ok ? r.json : null);
+    slog.event("KERNEL_REGISTRATION_META", { outcome: meta.legacy ? "legacy" : "ok", ms: Date.now() - t0 });
+    return meta;
+  }
+  const reason = /^[a-z0-9_]{1,40}$/.test(r.code) ? r.code : "other";
+  slog.event("KERNEL_REGISTRATION_META", { outcome: "unavailable", ms: Date.now() - t0, reason });
+  throw new DomainError("provider_unavailable", cloudFailureText(r.code) ?? "连不上 Kimi Work 服务。请检查网络或代理设置后点“重试”；网络恢复后这里会自动再试。", 503, { reason });
 }
 
 /** 手机号输入（本机先粗查格式，最终以云端为准）：不合格即 phone_invalid。 */

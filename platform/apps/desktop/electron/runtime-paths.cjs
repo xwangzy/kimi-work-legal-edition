@@ -179,24 +179,49 @@ function unpackedProblems(unpackedRoot, manifest) {
  * 全部文件的摘要比对（异步、逐个读取并让出事件循环；启动后后台执行，复核 B4-A01）。返回问题列表（空 = 通过）。
  * 启动时同步核对的是入口文件摘要与全部文件的存在性和大小；这里补上依赖闭包、原生模块、wasm 与模型的内容比对。
  */
-async function verifyRuntimeDigests(runtimeRoot, manifest) {
+async function verifyRuntimeDigests(runtimeRoot, manifest, { first = [], onFirst = null } = {}) {
   const out = [];
-  for (const ent of Array.isArray(manifest.all) ? manifest.all : []) {
+  const all = Array.isArray(manifest.all) ? manifest.all : [];
+  // 第 64 批：先核对 first 列出的文件（出站闸门的闭包：它自己的 Node 与入口），通过即 onFirst()——闸门可以先拉起，
+  // 登录页要的注册策略、验证码都经它取；其余文件随后照常逐个核对，不符照旧有序关闭内核
+  const firstSet = new Set(first);
+  const ordered = [...all.filter((e) => e && firstSet.has(e.path)), ...all.filter((e) => !(e && firstSet.has(e.path)))];
+  const nFirst = all.filter((e) => e && firstSet.has(e.path)).length;
+  let firstDone = nFirst === 0;
+  for (let i = 0; i < ordered.length; i++) {
+    const ent = ordered[i];
     const abs = ent && typeof ent.sha256 === "string" ? inside(runtimeRoot, ent.path) : null;
     if (!abs) {
       out.push(`清单项不合法：${String(ent && ent.path).slice(0, 80)}`);
-      continue;
+    } else {
+      try {
+        const h = crypto.createHash("sha256");
+        for await (const chunk of fs.createReadStream(abs, { highWaterMark: 1 << 20 })) h.update(chunk);
+        if (h.digest("hex") !== ent.sha256) out.push(`摘要不符：${ent.path}`);
+      } catch {
+        out.push(`缺少文件：${ent.path}`);
+      }
     }
-    try {
-      const h = crypto.createHash("sha256");
-      for await (const chunk of fs.createReadStream(abs, { highWaterMark: 1 << 20 })) h.update(chunk);
-      if (h.digest("hex") !== ent.sha256) out.push(`摘要不符：${ent.path}`);
-    } catch {
-      out.push(`缺少文件：${ent.path}`);
+    if (!firstDone && i === nFirst - 1) {
+      firstDone = true;
+      // 闭包里任何一项不符都不放行（全量核对结束时照常按问题关闭内核）
+      if (out.length === 0 && onFirst) onFirst();
     }
     if (out.length >= 20) break;
   }
   return out;
 }
 
-module.exports = { resolveBundledRuntime, verifyRuntimeDigests, sha256File, MANIFEST, REQUIRED_FILES };
+/**
+ * 出站闸门的运行时闭包（第 64 批）：闸门进程只装载它自己的 Node（files.nodeEgress）与入口所在目录（egress-gate/ 下全部文件）。
+ * 运行时目录的“清单外文件”在启动时已同步核对（treeProblems），闸门目录里不会有清单之外的东西。
+ */
+function gateClosure(manifest) {
+  const gate = manifest && manifest.files && manifest.files.gate && manifest.files.gate.path;
+  const node = manifest && manifest.files && manifest.files.nodeEgress && manifest.files.nodeEgress.path;
+  if (typeof gate !== "string" || typeof node !== "string") return [];
+  const dir = gate.includes("/") ? gate.slice(0, gate.lastIndexOf("/") + 1) : null;
+  return (Array.isArray(manifest.all) ? manifest.all : []).map((e) => e && e.path).filter((p) => typeof p === "string" && (p === node || p === gate || (dir !== null && p.startsWith(dir))));
+}
+
+module.exports = { resolveBundledRuntime, verifyRuntimeDigests, gateClosure, sha256File, MANIFEST, REQUIRED_FILES };

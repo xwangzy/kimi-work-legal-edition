@@ -9,7 +9,9 @@ function go(h: StartHint): void {
   const t = startHintTarget(h);
   if (!t) return;
   if (t.path) nav(t.path);
-  // 换页后等页面画出来再定位；登录框在页面顶部的横幅里
+  // 第 64 批：要重新登录 → 外壳重新取一次登录状态，切到整窗重新登录页（与 AccountPanel 的 ACCOUNT_CHANGED 同一事件）
+  if (t.refreshAccount) window.dispatchEvent(new Event("kwl:account-changed"));
+  // 换页后等页面画出来再定位
   setTimeout(() => {
     const el = document.querySelector<HTMLElement>(t.anchor);
     el?.scrollIntoView({ block: "center" });

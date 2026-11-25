@@ -66,10 +66,20 @@ export function startParentHeartbeat(child: ChildProcess): void {
 let verifiedResolve: (() => void) | null = null;
 const verified: Promise<void> =
   process.env.KWL_RUNTIME_VERIFY_PENDING === "1" ? new Promise<void>((resolve) => (verifiedResolve = resolve)) : Promise.resolve();
-export function runtimeReady(): Promise<void> {
-  return verified;
+/**
+ * 第 64 批：出站闸门只装载它自己的 Node 与入口——主进程先核对这两项（gate 范围）即放行闸门，其余随包子进程照旧等全量核对。
+ * 登录页的注册策略、短信验证码都经闸门取；此前闸门要等全量核对（Windows 约 680 MB、3,665 个文件），首启登录页的验证码登录因此迟迟不出现。
+ */
+let gateResolve: (() => void) | null = null;
+const gateVerified: Promise<void> =
+  process.env.KWL_RUNTIME_VERIFY_PENDING === "1" ? Promise.race([verified, new Promise<void>((resolve) => (gateResolve = resolve))]) : Promise.resolve();
+export function runtimeReady(scope: "all" | "gate" = "all"): Promise<void> {
+  return scope === "gate" ? gateVerified : verified;
 }
-export function markRuntimeVerified(): void {
+export function markRuntimeVerified(scope: "all" | "gate" = "all"): void {
+  gateResolve?.();
+  gateResolve = null;
+  if (scope === "gate") return;
   verifiedResolve?.();
   verifiedResolve = null;
 }

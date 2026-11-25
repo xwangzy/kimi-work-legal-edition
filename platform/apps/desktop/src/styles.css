@@ -1633,13 +1633,7 @@ table.data.visibility-table th:first-child, table.data.visibility-table td:first
 .auth-devices li { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); }
 .login-box { display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
 .login-box-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.login-banner { display: flex; flex-direction: column; gap: 8px; }
-.login-banner .login-box.compact { flex-direction: row; flex-wrap: wrap; align-items: flex-end; max-width: none; gap: 8px 12px; }
-.login-banner .login-box.compact .field { flex: 1 1 200px; max-width: 280px; }
-.login-banner .login-box.compact .activate-error { flex-basis: 100%; margin: 0; }
-.login-banner .login-box.compact .auth-method { flex-basis: 100%; border-bottom: 0; }
-.login-banner .login-box.compact .auth-unreg { flex-basis: 100%; }
-.login-banner .login-box.compact .field:has(.sms-row) { max-width: 360px; }
+/* 第 64 批：顶部“登录失效”横幅已撤（改为整窗重新登录页，styles-auth.css） */
 .account-card { display: flex; align-items: flex-start; gap: 12px; }
 .account-card .pill { margin-left: 8px; }
 .account-card-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

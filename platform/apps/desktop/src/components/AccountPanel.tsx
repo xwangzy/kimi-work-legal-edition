@@ -11,7 +11,8 @@ import { ConfirmButton } from "./ConfirmButton.tsx";
 import { Modal } from "./Modal.tsx";
 import { PasswordField } from "./PasswordField.tsx";
 import { SettingRow } from "./SettingRow.tsx";
-import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta } from "./SmsCodeFields.tsx";
+import { MetaGate } from "./AuthShell.tsx";
+import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta, useRegistrationMetaState } from "./SmsCodeFields.tsx";
 
 /** 账号状态变了（登录、退出）：App 顶部横幅据此立即刷新。 */
 export const ACCOUNT_CHANGED = "kwl:account-changed";
@@ -21,7 +22,7 @@ export const notifyAccountChanged = () => window.dispatchEvent(new Event(ACCOUNT
  * 就地登录（会话失效、退出登录之后）：只登这台电脑已登记的那位成员的账号。第 63 批：云端开了验证码登录时可选两种方式，
  * 先显示上次用过的（没有记录先显示验证码登录）；手机号没有对应账号时只给“改用密码登录”（这里不能注册新账号）。
  */
-export function LoginBox({ email: initialEmail = "", onDone, compact = false }: { email?: string; onDone: () => void; compact?: boolean }) {
+export function LoginBox({ email: initialEmail = "", onDone, compact = false, page = false }: { email?: string; onDone: () => void; compact?: boolean; page?: boolean }) {
   const [email, setEmail] = useState(initialEmail);
   const [pw, setPw] = useState("");
   const [phone, setPhone] = useState("");
@@ -30,7 +31,9 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false }: 
   const [err, setErr] = useState("");
   const [unreg, setUnreg] = useState(false);
   const [forgot, setForgot] = useState(false);
-  const meta = useRegistrationMeta();
+  // 第 64 批：登录方式三态（取策略中 / 取不到 / 取到）——整页重新登录时取到才显示表单；设置页里的小登录框取不到时按密码登录显示
+  const metaState = useRegistrationMetaState();
+  const meta = metaState.status === "ready" ? metaState.meta : null;
   const lm = useLoginMethod(meta);
   const f = registrationFields(meta);
   const byPhone = lm.method === "phone";
@@ -60,16 +63,17 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false }: 
       setBusy(false);
     }
   };
-  if (forgot) return <ResetBox email={email} onBack={() => setForgot(false)} />;
+  if (forgot) return <ResetBox email={email} onBack={() => setForgot(false)} page={page} />;
+  if (page && metaState.status !== "ready") return <MetaGate state={metaState}>{() => null}</MetaGate>;
   return (
     <form
-      className={`login-box${compact ? " compact" : ""}`}
+      className={`login-box${compact ? " compact" : ""}${page ? " page" : ""}`}
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      {lm.methods.phone && <LoginMethodTabs value={lm.method} onChange={switchTo} />}
+      {lm.methods.phone ? <LoginMethodTabs value={lm.method} onChange={switchTo} /> : page ? <div className="auth-method-single">账号密码登录</div> : null}
       {byPhone ? (
         <SmsCodeFields
           phone={phone}
@@ -92,22 +96,42 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false }: 
         <>
           <label className="field">
             <span>邮箱</span>
-            <input className="auth-input" type="email" value={email} onChange={(e) => (lm.lock(), setEmail(e.target.value))} autoComplete="username" spellCheck={false} />
+            <input className="auth-input" type="email" value={email} onChange={(e) => (lm.lock(), setEmail(e.target.value))} autoComplete="username" spellCheck={false} placeholder={page ? "请输入邮箱" : undefined} />
           </label>
-          <PasswordField label="密码" value={pw} onChange={(v) => (lm.lock(), setPw(v))} autoFocus={!!initialEmail} />
+          <PasswordField label="密码" value={pw} onChange={(v) => (lm.lock(), setPw(v))} autoFocus={!!initialEmail} {...(page ? { placeholder: "请输入密码" } : {})} />
         </>
       )}
-      <div className="login-box-actions">
-        <button type="submit" className="btn-primary btn-sm" disabled={!ready || busy}>
-          {busy ? "正在登录…" : "登录"}
-        </button>
-        {!byPhone && (
-          <button type="button" className="btn-link" onClick={() => setForgot(true)}>
-            忘记密码？
+      {page && err && (
+        <p className="activate-error" role="alert">
+          {err}
+        </p>
+      )}
+      {page ? (
+        <>
+          <button type="submit" className="btn-primary activate-submit" disabled={!ready || busy}>
+            {busy ? "正在登录…" : "登录"}
           </button>
-        )}
-      </div>
-      {err && (
+          {!byPhone && (
+            <div className="auth-links">
+              <button type="button" className="btn-link auth-links-end" onClick={() => setForgot(true)}>
+                忘记密码？
+              </button>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="login-box-actions">
+          <button type="submit" className="btn-primary btn-sm" disabled={!ready || busy}>
+            {busy ? "正在登录…" : "登录"}
+          </button>
+          {!byPhone && (
+            <button type="button" className="btn-link" onClick={() => setForgot(true)}>
+              忘记密码？
+            </button>
+          )}
+        </div>
+      )}
+      {!page && err && (
         <p className="activate-error" role="alert">
           {err}
         </p>
@@ -126,7 +150,7 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false }: 
 }
 
 /** 找回密码（已激活的电脑上）：发验证码或用管理员给的重置码 → 新密码。 */
-function ResetBox({ email: initialEmail, onBack }: { email: string; onBack: () => void }) {
+function ResetBox({ email: initialEmail, onBack, page = false }: { email: string; onBack: () => void; page?: boolean }) {
   const [email, setEmail] = useState(initialEmail);
   const [hint, setHint] = useState("");
   const [code, setCode] = useState("");
@@ -147,7 +171,7 @@ function ResetBox({ email: initialEmail, onBack }: { email: string; onBack: () =
   };
   if (done)
     return (
-      <div className="login-box">
+      <div className={`login-box${page ? " page" : ""}`}>
         <p className="muted">密码已重设，别的电脑上的登录都已退出。请用新密码登录。</p>
         <button className="btn-primary btn-sm" onClick={onBack}>
           去登录
@@ -155,10 +179,11 @@ function ResetBox({ email: initialEmail, onBack }: { email: string; onBack: () =
       </div>
     );
   return (
-    <div className="login-box">
+    <div className={`login-box${page ? " page" : ""}`}>
+      {page && <div className="auth-method-single">找回密码</div>}
       <label className="field">
         <span>邮箱</span>
-        <input className="auth-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" spellCheck={false} />
+        <input className="auth-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" spellCheck={false} placeholder={page ? "注册时的邮箱" : undefined} />
       </label>
       {hint ? (
         <>

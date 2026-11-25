@@ -56,7 +56,9 @@ test("品牌：侧栏与登录页用官方 Logomark（路径不带颜色，颜�
   assert.match(brand, /className="logo-mark-dot"/);
   assert.match(src("components/Sidebar.tsx"), /<BrandLockup \/>/);
   // 第 55 批：登录页用大号组合（比例同侧栏）
-  assert.match(src("pages/Activate.tsx"), /<BrandLockup size="lg" \/>/);
+  // 第 64 批：登录类页面统一用 AuthShell（品牌条里是大号组合），开通页经它出卡片
+  assert.match(src("components/AuthShell.tsx"), /<BrandLockup size="lg" \/>/);
+  assert.match(src("pages/Activate.tsx"), /<AuthCard /);
   const css = src("styles.css");
   assert.match(css, /\.logo-mark-dot \{ fill: var\(--brand-mark-dot\); \}/);
   // 第 55 批：版本名是黑底小标（与首页中央字标的小标同一图形），不再是灰色小字

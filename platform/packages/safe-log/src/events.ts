@@ -54,6 +54,10 @@ export const EVENTS = {
   /** 我方账号（第 44 批）：只记原因代码，不记邮箱、密码与令牌。 */
   KERNEL_ACCOUNT_CALL_FAILED: { level: "warn", fields: { reason: "ident" } },
   KERNEL_ACCOUNT_LOGIN_REQUIRED: { level: "warn", fields: { reason: "ident" } },
+  // 第 64 批：“要重新登录”写进本机记录失败（只影响重启后的表现）
+  KERNEL_ACCOUNT_MARK_FAILED: { level: "warn", fields: { ...ERR } },
+  // 第 64 批：注册 / 登录策略取到了没有、用了多久（登录页首屏的证据；outcome：ok = 新云端策略，legacy = 旧云端，unavailable = 取不到）
+  KERNEL_REGISTRATION_META: { level: "info", fields: { outcome: ["ok", "legacy", "unavailable"], ms: "ms", "reason?": "ident" } },
   /** 恢复与备份（第 14 批）：只记文件数，不记路径与内容。 */
   KERNEL_RESTORED_FROM_BACKUP: { level: "info", fields: { files: "int" } },
   KERNEL_BACKUP_DONE: { level: "info", fields: { files: "int", copied: "int" } },
@@ -81,6 +85,8 @@ export const EVENTS = {
   TOOLS_DOCX_EDIT_OUTCOME: { level: "info", fields: { tool: ["docx_edit_draft", "docx_revise", "xlsx_edit_cells"], status: ["applied", "partial", "not_applied", "preview"], patches: "int", applied: "int", not_found: "int", ambiguous: "int", unknown_token: "int", other: "int" } },
   GATE_RECORD_WRITE_FAILED: { level: "error", fields: { ...ERR } },
   // 闸门拉不起来（第 50 批）：只记封闭枚举的原因码；调用方照旧报 gate_unavailable
+  // 第 64 批：闸门拉起（ms = 本次启动耗时，含等待运行时核对与进程拉起；since_boot_ms = 内核进程启动以来）
+  KERNEL_GATE_STARTED: { level: "info", fields: { ms: "ms", since_boot_ms: "ms" } },
   KERNEL_GATE_START_FAILED: { level: "error", fields: { reason: ["closed", "runtime_digest", "runtime_missing", "spawn_denied", "start_timeout", "exited_early", "listen_failed", "tls_relaxed", "other"], ...ERR } },
   // 第 52 批：随包子进程自检（安装冒烟逐个真拉起闸门、解析进程、Agent 宿主、W 执行域；值为 ok 或原因码）
   KERNEL_CHILD_SELFTEST: { level: "info", fields: { gate: "ident", parse: "ident", kap: "ident", w: "ident" } },
@@ -118,6 +124,8 @@ export const EVENTS = {
   MAIN_NOTIFY_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_CRASH_DIR_FAILED: { level: "warn", fields: { ...ERR } },
   MAIN_RUNTIME_PROBLEM: { level: "error", fields: { count: "int", stage: ["startup", "background"] } },
+  // 第 64 批：随包运行时摘要核对完成（scope：gate = 出站闸门闭包先核完即放行闸门；all = 全部文件）；ms 自主进程开始核对算起
+  MAIN_RUNTIME_VERIFIED: { level: "info", fields: { scope: ["gate", "all"], files: "int", ms: "ms" } },
   MAIN_SMOKE_FAILED: { level: "error", fields: { reason: "ident" } },
   MAIN_SAVE_FAILED: { level: "warn", fields: { ...ERR } },
   // v9.4 第 21 批：用系统默认程序打开刚保存的成果失败

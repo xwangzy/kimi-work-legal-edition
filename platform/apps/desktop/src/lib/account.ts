@@ -252,7 +252,7 @@ export function sessionLine(s: AccountSession, now = Date.now()): { title: strin
   return { title, meta };
 }
 
-/** 登录失效的原因代码 → 横幅文字（AI 暂停，本机资料照常可用）。 */
+/** 登录失效的原因代码 → 一句说明（设置 · 账号一栏用；整窗重新登录页另用 reloginView）。 */
 export function loginRequiredText(reason: string | null | undefined): string {
   const why =
     reason === "account_disabled"
@@ -263,6 +263,18 @@ export function loginRequiredText(reason: string | null | undefined): string {
           ? "你已退出登录"
           : "登录已失效";
   return `${why}，请重新登录（本机资料照常可用，AI 暂停）`;
+}
+
+/**
+ * 整窗重新登录页的标题与说明（第 64 批：退出登录、登录失效后不再在工作区顶部嵌横幅）。
+ * 标题按原因：主动退出 → “你已退出登录”；账号停用 → 写明联系谁；这台电脑登记的是别人 → 写明用谁的账号；其余 → “登录已失效”。纯函数。
+ */
+export function reloginView(reason: string | null | undefined): { title: string; lead: string } {
+  const keep = "这台电脑上的事项、材料和成果都还在；登录后 AI 恢复可用。";
+  if (reason === "account_disabled") return { title: "账号已停用", lead: `请联系律所管理员或客服启用账号，启用后在这里重新登录。${keep}` };
+  if (reason === "session_member_mismatch") return { title: "请用这台电脑登记的成员登录", lead: `这台电脑登记的是本所另一位成员，只能用那位成员的账号登录。${keep}` };
+  if (reason === "session_required") return { title: "你已退出登录", lead: `请重新登录。${keep}` };
+  return { title: "登录已失效", lead: `为了账号安全，请重新登录。${keep}` };
 }
 
 /** kernel.status / account.status 里是否要求重新登录。 */

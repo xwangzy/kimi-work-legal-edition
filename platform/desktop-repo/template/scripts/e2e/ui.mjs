@@ -212,7 +212,8 @@ async function register() {
   // KWL_CODE 可不给：云端 registration=open 时自助注册（自动开试用律所，本人为律所管理员；第 59 批 116 云端改为开放注册）
   if (!email || !pw || !name) throw new Error("register 需要 KWL_EMAIL / KWL_PASSWORD / KWL_NAME（凭码注册再给 KWL_CODE）");
   await ready();
-  await page.getByRole("tab", { name: "注册" }).click();
+  // 第 64 批：注册从外层页签改为登录卡片下方的“还没有账号？注册”（旧版本仍是页签，两种都认）；表单要等登录方式取到才出现
+  await openRegister();
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').first().fill(pw);
   await page.locator('input[placeholder="同事和客户看到的名字"]').fill(name);
@@ -277,10 +278,40 @@ async function register() {
   }
 }
 
+/** 开通页上切到注册（第 64 批是表单下方的链接按钮，第 63 批及以前是页签）。 */
+async function openRegister() {
+  await authFormReady();
+  const tab = page.getByRole("tab", { name: "注册", exact: true });
+  if (await tab.count()) return tab.click();
+  await page.locator('[data-auth-page="activate"] button.btn-link').filter({ hasText: /^\s*注册\s*$/ }).first().click();
+}
+
+/** 第 64 批：登录页先显示“正在取得登录方式”的骨架，取到才出表单；取不到会显示“暂时取不到登录方式”（如实失败，不再等到超时）。 */
+async function authFormReady(ms = 60000) {
+  await until(
+    async () => {
+      if (await page.locator(".auth-unavailable").count()) throw new Error(`登录页取不到登录方式：${mask(await page.locator(".auth-unavailable").innerText())}`);
+      return (await page.locator('[data-auth-page] form, .auth-seg, .login-box').count()) > 0 && !(await page.locator(".auth-skeleton").count()) ? true : null;
+    },
+    ms,
+    500,
+    "登录表单",
+  );
+}
+
+/** 开通页上回到登录（第 64 批：注册页的“已有账号？登录”；旧版本是页签）。 */
+async function openLogin() {
+  await authFormReady();
+  const tab = page.getByRole("tab", { name: "登录", exact: true });
+  if (await tab.count()) return tab.click();
+  const back = page.locator('[data-auth-page="activate"] .auth-title-row button.btn-link').filter({ hasText: /^\s*登录\s*$/ });
+  if (await back.count()) await back.first().click();
+}
+
 async function login() {
   const { KWL_EMAIL: email, KWL_PASSWORD: pw } = process.env;
   await ready();
-  await page.getByRole("tab", { name: "登录" }).click();
+  await openLogin();
   // 第 63 批：云端开了验证码登录时登录页缺省是“验证码登录”（或上次用过的方式）——密码登录要先切过去
   await sleep(1500);
   const pwTab = page.getByRole("tab", { name: "密码登录" });
@@ -306,8 +337,11 @@ async function loginSms() {
   const phone = process.env.KWL_PHONE;
   if (!phone) throw new Error("login-sms 需要 KWL_PHONE 与 KWL_SMS_RELAY_LOGIN（或 KWL_SMS_RELAY）");
   await ready();
-  const onActivate = (await page.getByRole("tablist", { name: "登录或注册" }).count()) > 0;
-  if (onActivate) await page.getByRole("tab", { name: "登录", exact: true }).click();
+  // 第 64 批：开通页与整窗重新登录页都带 data-auth-page（旧版本开通页是“登录或注册”页签、重新登录在顶部横幅）
+  const onActivate = (await page.locator('[data-auth-page="activate"]').count()) > 0 || (await page.getByRole("tablist", { name: "登录或注册" }).count()) > 0;
+  const onRelogin = (await page.locator('[data-auth-page="relogin"]').count()) > 0;
+  if (onActivate) await openLogin();
+  else if (onRelogin) await authFormReady();
   else {
     // 就地登录框只在打开时取一次登录方式：先离开再回来，取到的是云端此刻的策略（例如断网恢复之后）
     await go("#/matters");

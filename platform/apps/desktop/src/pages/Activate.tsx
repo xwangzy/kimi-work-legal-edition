@@ -7,10 +7,10 @@
  * 律师层不出现“证书、密钥、签名、令牌”等词；登录只把邮箱和密码（第 63 批起也可以是手机号和短信验证码）发给中软核对，不上传任何案件材料。
  */
 import { useEffect, useRef, useState } from "react";
-import { BrandLockup } from "../components/Brand.tsx";
 import { account, api, onboarding, recovery } from "../api.ts";
+import { AuthCard, AuthPage, MetaGate } from "../components/AuthShell.tsx";
 import { PasswordField } from "../components/PasswordField.tsx";
-import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta } from "../components/SmsCodeFields.tsx";
+import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMetaState } from "../components/SmsCodeFields.tsx";
 import { setAsideAutoOpen, setAsideNotice } from "../lib/activate-text.ts";
 import { checkPassword, codeLengthOk, dayLabel, deviceLine, emailLooksValid, nameLooksValid, notRegisteredActions, phoneLooksValid, phoneNotRegistered, registerCodeLengthOk, registrationFields, resetNextText, roleLabel, saveLoginMethod, smsCodeLooksValid, waitApprovalLead, type AccountDevice, type LoginMethod, type RegistrationMeta } from "../lib/account.ts";
 import { fmtTime } from "../lib/labels.ts";
@@ -105,18 +105,19 @@ export function ActivatePage({ initial, onRefresh, notice = "" }: { initial: Sta
   );
 }
 
-function Frame({ children }: { children: React.ReactNode }) {
+/** 第 64 批：开通页的每一步都用同一个登录类外壳（AuthShell：整窗页面 + 品牌条卡片 + 页脚说明）。 */
+function Frame({ children, foot, wide = false }: { children: React.ReactNode; foot?: React.ReactNode; wide?: boolean }) {
   return (
-    <div className="activate">
-      <div className="activate-card">
-        <div className="brand">
-          <BrandLockup size="lg" />
-        </div>
+    <AuthPage kind="activate">
+      <AuthCard foot={foot} wide={wide}>
         {children}
-      </div>
-    </div>
+      </AuthCard>
+    </AuthPage>
   );
 }
+
+/** 页脚：登录与开通发给云端的只有这些（第 63 批原文，不改）。 */
+const FOOT_TEXT = "登录与开通只把邮箱或手机号、密码或短信验证码、开通码或邀请码发给 Kimi Work 服务核对；你的案卷不会上传。";
 
 type View = "login" | "register" | "forgot" | "code" | "restore";
 type Blocked = { message: string; devices: AccountDevice[] };
@@ -144,8 +145,9 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
   const [email, setEmail] = useState("");
   // 第 63 批：手机号在登录与注册之间共用（验证码登录发现没注册 → “用这个手机号注册”直接带过去）
   const [phone, setPhone] = useState("");
-  // 注册策略整页只取一次，登录、注册、找回密码共用（取不到按旧流程）
-  const meta = useRegistrationMeta();
+  // 注册 / 登录策略整页只取一次，登录、注册、找回密码共用。第 64 批：三态——取策略中显示骨架、取不到显示原因与“重试”，
+  // 取到才渲染表单（不再先按旧流程只显示邮箱登录、取到后再变出验证码登录）
+  const metaState = useRegistrationMetaState();
   const [err, setErr] = useState(failed);
   const [note, setNote] = useState("");
   const [done, setDone] = useState<string | null>(null);
@@ -189,76 +191,82 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
         notice={setAside ? setAsideNotice(setAside) : ""}
       />
     );
-  const secondary = (
-    <div className="auth-secondary">
+  // 其他方式（Kimi 登录框“企业 SSO 登录”的位置）：凭码激活、从备份恢复
+  const alt = (
+    <div className="auth-alt">
       {view !== "code" && (
-        <button className="btn-link" onClick={() => go("code")}>
-          有开通码或邀请码？直接输入码 →
+        <button type="button" className="btn-link" onClick={() => go("code")}>
+          有开通码或邀请码
         </button>
       )}
-      <button className="btn-link" onClick={() => go("restore")}>
-        换了新电脑？从备份恢复 →
+      <button type="button" className="btn-link" onClick={() => go("restore")}>
+        换了新电脑？从备份恢复
       </button>
     </div>
   );
-  return (
-    <Frame>
-      {(view === "login" || view === "register") && (
-        <div className="auth-seg" role="tablist" aria-label="登录或注册">
-          <button role="tab" aria-selected={view === "login"} className={view === "login" ? "on" : ""} onClick={() => go("login")}>
-            登录
-          </button>
-          <button role="tab" aria-selected={view === "register"} className={view === "register" ? "on" : ""} onClick={() => go("register")}>
-            注册
-          </button>
-        </div>
+  const foot = (
+    <>
+      {FOOT_TEXT}
+      {legacy.length > 0 && (
+        <span className="auth-foot-note" role="note">
+          这台电脑上还有以前留下的数据（{legacy.join("、")}，例如旧版本试用或没有完成的入组）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
+        </span>
       )}
+    </>
+  );
+  return (
+    <Frame foot={foot}>
       {note && (
         <p className="activate-notice" role="status">
           {note}
         </p>
       )}
       {view === "login" && (
-        <LoginForm
-          meta={meta}
-          email={email}
-          setEmail={setEmail}
-          phone={phone}
-          setPhone={setPhone}
-          err={err}
-          setErr={setErr}
-          onResult={outcome}
-          onForgot={() => go("forgot")}
-          onRegisterWithPhone={() => {
-            go("register");
-            setNote(`已带上手机号 ${phone.trim()}。请补全邮箱、密码和姓名，再获取验证码完成注册；之后就可以用这个手机号登录。`);
-          }}
-        />
+        <MetaGate state={metaState}>
+          {(meta) => (
+            <LoginForm
+              meta={meta}
+              email={email}
+              setEmail={setEmail}
+              phone={phone}
+              setPhone={setPhone}
+              err={err}
+              setErr={setErr}
+              onResult={outcome}
+              onForgot={() => go("forgot")}
+              onRegister={() => go("register")}
+              onRegisterWithPhone={() => {
+                go("register");
+                setNote(`已带上手机号 ${phone.trim()}。请补全邮箱、密码和姓名，再获取验证码完成注册；之后就可以用这个手机号登录。`);
+              }}
+            />
+          )}
+        </MetaGate>
       )}
-      {view === "register" && <RegisterForm meta={meta} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} err={err} setErr={setErr} onResult={outcome} />}
+      {view === "register" && (
+        <MetaGate state={metaState}>{(meta) => <RegisterForm meta={meta} email={email} setEmail={setEmail} phone={phone} setPhone={setPhone} err={err} setErr={setErr} onResult={outcome} onLogin={() => go("login")} />}</MetaGate>
+      )}
       {view === "forgot" && (
-        <ForgotPassword
-          meta={meta}
-          email={email}
-          setEmail={setEmail}
-          onBack={() => go("login")}
-          onDone={() => {
-            go("login");
-            setNote("密码已重设。请用新密码登录（别的电脑上的登录都已退出）。");
-          }}
-        />
+        <MetaGate state={metaState}>
+          {(meta) => (
+            <ForgotPassword
+              meta={meta}
+              email={email}
+              setEmail={setEmail}
+              onBack={() => go("login")}
+              onDone={() => {
+                go("login");
+                setNote("密码已重设。请用新密码登录（别的电脑上的登录都已退出）。");
+              }}
+            />
+          )}
+        </MetaGate>
       )}
       {view === "code" && <EnterCode onPending={onPending} onFounder={(t) => {
             setDone(t);
             void waitForActivated(stuck, "#/welcome");
           }} failed={err} onBack={() => go("login")} />}
-      {view !== "forgot" && secondary}
-      <p className="muted activate-foot">登录与开通只把邮箱或手机号、密码或短信验证码、开通码或邀请码发给 Kimi Work 服务核对；你的案卷不会上传。</p>
-      {legacy.length > 0 && (
-        <p className="muted activate-foot" role="note">
-          这台电脑上还有以前留下的数据（{legacy.join("、")}，例如旧版本试用或没有完成的入组）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
-        </p>
-      )}
+      {view !== "forgot" && alt}
     </Frame>
   );
 }
@@ -277,6 +285,7 @@ function LoginForm(p: {
   setErr: (v: string) => void;
   onResult: (r: any) => void;
   onForgot: () => void;
+  onRegister: () => void;
   onRegisterWithPhone: () => void;
 }) {
   const [pw, setPw] = useState("");
@@ -311,43 +320,40 @@ function LoginForm(p: {
   };
   return (
     <form
-      className="auth-form"
+      className="auth-form quiet"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      {lm.methods.phone && <LoginMethodTabs value={lm.method} onChange={switchTo} />}
+      {/* 第 64 批：登录方式页签就是卡片的标题行（Kimi 登录框“手机号码登录”的位置）；云端只开了密码登录时只有一个标题 */}
+      {lm.methods.phone ? <LoginMethodTabs value={lm.method} onChange={switchTo} /> : <h1 className="auth-method-single">账号密码登录</h1>}
       {byPhone ? (
-        <>
-          <p className="activate-lead">用手机号和短信验证码登录。第一次使用请先注册。</p>
-          <SmsCodeFields
-            phone={p.phone}
-            setPhone={(v) => {
-              p.setPhone(v);
-              if (unreg) {
-                setUnreg(false);
-                p.setErr("");
-              }
-            }}
-            code={smsCode}
-            setCode={setSmsCode}
-            purpose="login"
-            codeLength={f.codeLength}
-            resendSeconds={f.resendSeconds}
-            setErr={p.setErr}
-            onSendError={(e) => setUnreg(phoneNotRegistered(e))}
-            autoFocus
-          />
-        </>
+        <SmsCodeFields
+          phone={p.phone}
+          setPhone={(v) => {
+            p.setPhone(v);
+            if (unreg) {
+              setUnreg(false);
+              p.setErr("");
+            }
+          }}
+          code={smsCode}
+          setCode={setSmsCode}
+          purpose="login"
+          codeLength={f.codeLength}
+          resendSeconds={f.resendSeconds}
+          setErr={p.setErr}
+          onSendError={(e) => setUnreg(phoneNotRegistered(e))}
+          autoFocus
+        />
       ) : (
         <>
-          <p className="activate-lead">用邮箱和密码登录。第一次使用请先注册。</p>
           <label className="field">
             <span>邮箱</span>
-            <input className="auth-input" type="email" value={p.email} onChange={(e) => (lm.lock(), p.setEmail(e.target.value))} autoComplete="username" autoFocus spellCheck={false} />
+            <input className="auth-input" type="email" value={p.email} onChange={(e) => (lm.lock(), p.setEmail(e.target.value))} autoComplete="username" autoFocus spellCheck={false} placeholder="请输入邮箱" />
           </label>
-          <PasswordField label="密码" value={pw} onChange={(v) => (lm.lock(), setPw(v))} />
+          <PasswordField label="密码" value={pw} onChange={(v) => (lm.lock(), setPw(v))} placeholder="请输入密码" />
         </>
       )}
       {p.err && (
@@ -373,18 +379,24 @@ function LoginForm(p: {
       <button type="submit" className="btn-primary activate-submit" disabled={!ready || busy}>
         {busy ? "正在登录…" : "登录"}
       </button>
-      {!byPhone && (
-        <div className="auth-row">
-          <button type="button" className="btn-link" onClick={p.onForgot}>
+      <div className="auth-links">
+        <span>
+          还没有账号？
+          <button type="button" className="btn-link" onClick={p.onRegister}>
+            注册
+          </button>
+        </span>
+        {!byPhone && (
+          <button type="button" className="btn-link auth-links-end" onClick={p.onForgot}>
             忘记密码？
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </form>
   );
 }
 
-function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmail: (v: string) => void; phone: string; setPhone: (v: string) => void; err: string; setErr: (v: string) => void; onResult: (r: any) => void }) {
+function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmail: (v: string) => void; phone: string; setPhone: (v: string) => void; err: string; setErr: (v: string) => void; onResult: (r: any) => void; onLogin: () => void }) {
   const [pw, setPw] = useState("");
   const [name, setName] = useState("");
   const [org, setOrg] = useState("");
@@ -423,6 +435,15 @@ function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmai
         void submit();
       }}
     >
+      <div className="auth-title-row">
+        <h1 className="activate-title">注册账号</h1>
+        <span className="muted">
+          已有账号？
+          <button type="button" className="btn-link" onClick={p.onLogin}>
+            登录
+          </button>
+        </span>
+      </div>
       <p className="activate-lead">{f.code === "required" ? "注册后这台电脑就是你的第一台电脑。现在凭邀请码注册：请填入收到的邀请码（律所负责人填开通码，同事填律所发的邀请码）。" : "注册后这台电脑就是你的第一台电脑。律所负责人收到的开通码、同事收到的邀请码，请在下面勾选后填入。"}</p>
       <label className="field">
         <span>邮箱</span>

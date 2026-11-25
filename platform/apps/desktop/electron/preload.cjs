@@ -3,6 +3,10 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("zrKernel", {
   platform: process.platform,
+  /** 第 64 批：无边框窗口（界面顶部自绘 40px 拖动条；macOS 红绿灯、Windows 窗口控件浮层在其中）。 */
+  frameless: process.platform === "darwin" || process.platform === "win32",
+  /** 界面明暗变了：Windows 窗口控件浮层跟着换色（只收 light / dark）。 */
+  setWindowTheme: (theme) => ipcRenderer.send("kwl:window-theme", theme === "dark" ? "dark" : "light"),
   /** 调用内核 API（§15.2 方法名）；失败抛出带 code 的 Error。 */
   invoke: async (method, params) => {
     const r = await ipcRenderer.invoke("kwl:invoke", method, params ?? {});

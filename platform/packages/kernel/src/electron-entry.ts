@@ -90,7 +90,8 @@ port.on("message", async (raw) => {
   }
   // 随包运行时全量摘要核验通过（复核 B4-R15）：放行随包子进程的拉起
   if (type === "kernel.runtime_verified") {
-    markRuntimeVerified();
+    // 第 64 批：scope = "gate" 只放行出站闸门（它自己的 Node 与入口已核对）；不带 scope = 全部
+    markRuntimeVerified((raw as { scope?: unknown }).scope === "gate" ? "gate" : "all");
     return;
   }
   // 安装冒烟（第 52 批）：随包子进程逐个真拉起。只认主进程的专用消息（渲染进程的调用一律经主进程拼成 {id, method}，带不出 type），

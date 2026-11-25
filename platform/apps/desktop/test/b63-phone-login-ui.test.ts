@@ -40,9 +40,11 @@ test("云端有无验证码登录：没有（旧云端、legacy、缺这一项�
   }
   assert.deepEqual(loginMethods({ ...base, phone_login: true }), { phone: true, password: true });
   // 界面：只有云端开了才渲染“验证码登录 | 密码登录”；密码登录的原文案保留（旧云端与第 62 批完全相同）
-  assert.match(activate, /\{lm\.methods\.phone && <LoginMethodTabs value=\{lm\.method\} onChange=\{switchTo\} \/>\}/);
-  assert.match(panel, /\{lm\.methods\.phone && <LoginMethodTabs value=\{lm\.method\} onChange=\{switchTo\} \/>\}/);
-  assert.ok(activate.includes("用邮箱和密码登录。第一次使用请先注册。"));
+  // 第 64 批：两种方式都有时页签就是卡片标题行；只有密码登录时换成一个标题（不再空着）
+  assert.match(activate, /\{lm\.methods\.phone \? <LoginMethodTabs value=\{lm\.method\} onChange=\{switchTo\} \/> : <h1 className="auth-method-single">账号密码登录<\/h1>\}/);
+  assert.match(panel, /\{lm\.methods\.phone \? <LoginMethodTabs value=\{lm\.method\} onChange=\{switchTo\} \/> : page \?/);
+  // 第 64 批：登录卡片不再放一行说明（参照 Kimi 登录框），“第一次使用请先注册”由表单下方“还没有账号？注册”承担
+  assert.ok(activate.includes("还没有账号？"));
   assert.match(sms, /const method: LoginMethod = methods\.phone \? \(chosen \?\? initialLoginMethod\(methods, remembered\)\) : "password";/);
 });
 
@@ -124,7 +126,12 @@ test("内核方法与验证码输入：四种用途、验证码登录同一个�
 });
 
 test("无障碍与样式：外层“登录或注册”与内层“登录方式”都是 tablist / tab + aria-selected；内层轻一档；错误 role=alert", () => {
-  assert.match(activate, /className="auth-seg" role="tablist" aria-label="登录或注册"/);
+  // 第 64 批：参照 Kimi 登录框，“注册”从外层页签改为表单下方的入口（还没有账号？注册），注册页有“已有账号？登录”；
+  // 页面以 data-auth-page 标明是开通页还是重新登录页（验收脚本据此识别）
+  assert.doesNotMatch(activate, /aria-label="登录或注册"/);
+  assert.match(activate, /还没有账号？\s*<button type="button" className="btn-link" onClick=\{p\.onRegister\}>\s*注册\s*<\/button>/);
+  assert.match(activate, /已有账号？\s*<button type="button" className="btn-link" onClick=\{p\.onLogin\}>\s*登录\s*<\/button>/);
+  assert.match(read("../src/components/AuthShell.tsx"), /data-auth-page=\{kind\}/);
   assert.match(sms, /className="auth-method" role="tablist" aria-label="登录方式"/);
   assert.equal((sms.match(/role="tab" aria-selected=\{value === "(phone|password)"\}/g) ?? []).length, 2);
   assert.match(css, /\.auth-method button\.on \{[^}]*border-bottom-color: var\(--text-primary\);/);

@@ -23,9 +23,9 @@ after(async () => {
   await cloud?.close();
 });
 
-async function boot(dir: string): Promise<Kernel> {
+async function boot(dir: string, extra: Record<string, string> = {}): Promise<Kernel> {
   const { createKernel } = await import("../src/index.ts");
-  const env: Record<string, string | undefined> = { ...process.env, ...cloud!.env, ZR_MODEL_PROVIDER: "upstream", ZR_KERNEL_TCP: "off", ZR_ONBOARDING: "1", ZR_CONTROL_PLANE_SYNC_MS: "off" };
+  const env: Record<string, string | undefined> = { ...process.env, ...cloud!.env, ZR_MODEL_PROVIDER: "upstream", ZR_KERNEL_TCP: "off", ZR_ONBOARDING: "1", ZR_CONTROL_PLANE_SYNC_MS: "off", ...extra };
   delete env.ZR_FIRM_SLUG;
   delete env.ZR_USER_SLUG;
   delete env.ZR_SEAT_TOKEN;
@@ -65,11 +65,13 @@ test("旧云端：registration_meta 回 legacy、发验证码不可用；注册�
   const r = (await k.invoke("account.register", { email: "old-cloud@example.cn", password: PW, name: "旧云端律师" })) as any;
   assert.deepEqual([r.kind, r.next], ["founder", "restart"]);
   await restart;
-  // 取不到策略（控制面不可达）也按旧流程，不报错
-  const k2 = await boot(mkdtempSync(join(tmpdir(), "kwl-b62-down-")));
+  // 第 64 批改：取不到策略（控制面不可达）如实报错（界面显示“取不到登录方式 · 重试”），不再冒充旧云端——
+  // 冒充的后果是这次打开整个只剩邮箱登录；恢复后再取即正常
+  const k2 = await boot(mkdtempSync(join(tmpdir(), "kwl-b62-down-")), { ZR_PREFETCH_META: "0" });
   cloud.setControlPlaneAvailable(false);
-  assert.deepEqual(((await k2.invoke("account.registration_meta", {})) as any).legacy, true);
+  await assert.rejects(k2.invoke("account.registration_meta", {}), (e: any) => e.code === "provider_unavailable" && typeof e.detail?.reason === "string" && /取不到登录方式|连不上/.test(e.message));
   cloud.setControlPlaneAvailable(true);
+  assert.deepEqual(((await k2.invoke("account.registration_meta", {})) as any).legacy, true, "恢复后照常取到（旧云端仍是 legacy）");
   cloud.setLegacyCloud(false);
 });
 

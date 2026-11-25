@@ -167,7 +167,8 @@ test("源码门禁：激活页缺省登录、可切注册与忘记密码，保�
   assert.match(app, /account\s*\.status\(\)/);
   assert.match(app, /setInterval\(refresh, 30_000\)/);
   assert.match(app, /"account\.login_required"/);
-  assert.match(app, /login-banner/);
+  // 第 64 批：登录失效 → 整窗重新登录页（不再是顶部横幅）
+  assert.match(app, /<ReloginPage/);
   const conn = src("pages/Connections.tsx");
   assert.match(conn, /每次 AI 调用的用量（请求编号、模型、token 数、金额）；看不到内容/);
   // 第 47 批：用量移到设置的“套餐与用量”页，律师与管理员同一个入口（管理员另有用量数、按成员与上限）

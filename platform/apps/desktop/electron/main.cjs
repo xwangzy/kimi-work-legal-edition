@@ -10,7 +10,7 @@ const { devToolsAllowed, appMenuTemplate } = require("./release-hardening.cjs");
 const path = require("node:path");
 const { createUrlPolicy } = require("./url-policy.cjs");
 const { APP_INDEX_URL, handleAppProtocol, registerAppScheme } = require("./app-protocol.cjs");
-const { resolveBundledRuntime, verifyRuntimeDigests } = require("./runtime-paths.cjs");
+const { resolveBundledRuntime, verifyRuntimeDigests, gateClosure } = require("./runtime-paths.cjs");
 const { adoptDbKey, loadOrCreateDbKey, purgeOldDumps } = require("./secret-store.cjs");
 const { quarantineUnreadable, unsealFailedCauses } = require("./unreadable-data.cjs");
 const { kernelChildEnv, loadReleaseConfig, applyEndpointProfile, OS_ENV_ALLOW } = require("./release-config.cjs");
@@ -158,17 +158,38 @@ let runtimeDigests = null;
 let runtimeManifest = null;
 /** 全量摘要核验已通过（开发形态没有随包运行时，视为通过）。内核在此之前不拉起随包子进程（KWL_RUNTIME_VERIFY_PENDING）。 */
 let runtimeVerifiedOk = !app.isPackaged;
+/**
+ * 出站闸门自己的文件（它的 Node 与入口，约 105 MB）已核对通过（第 64 批）：闸门可以先于全量核对拉起。
+ * 根因：登录页的注册策略与验证码都经闸门取，而全量核对在 Windows 上要逐个读完 3,665 个文件、约 680 MB（首启叠加杀毒扫描），
+ * 此前闸门要等全量核对结束——首启的登录页因此先只显示邮箱登录，几十秒后才出现验证码登录。
+ */
+let gateVerifiedOk = !app.isPackaged;
+const runtimeVerifyStartedAt = Date.now();
 function sendRuntimeVerified() {
-  if (!runtimeVerifiedOk || !kernel) return;
+  if (!kernel) return;
   try {
-    kernel.postMessage({ type: "kernel.runtime_verified" });
+    if (runtimeVerifiedOk) kernel.postMessage({ type: "kernel.runtime_verified" });
+    else if (gateVerifiedOk) kernel.postMessage({ type: "kernel.runtime_verified", scope: "gate" });
   } catch {
     // 内核正在退出：重新就绪时再发
   }
 }
 function verifyRuntimeInBackground(manifest) {
   if (!app.isPackaged || !manifest) return Promise.resolve([]);
-  runtimeDigests ??= verifyRuntimeDigests(path.join(process.resourcesPath, "runtime"), manifest).catch((e) => [`核验出错：${e && e.message ? e.message : e}`]);
+  const first = gateClosure(manifest);
+  runtimeDigests ??= verifyRuntimeDigests(path.join(process.resourcesPath, "runtime"), manifest, {
+    first,
+    onFirst: () => {
+      gateVerifiedOk = true;
+      slog.event("MAIN_RUNTIME_VERIFIED", { scope: "gate", files: first.length, ms: Date.now() - runtimeVerifyStartedAt });
+      sendRuntimeVerified();
+    },
+  })
+    .then((problems) => {
+      if (problems.length === 0) slog.event("MAIN_RUNTIME_VERIFIED", { scope: "all", files: Array.isArray(manifest.all) ? manifest.all.length : 0, ms: Date.now() - runtimeVerifyStartedAt });
+      return problems;
+    })
+    .catch((e) => [`核验出错：${e && e.message ? e.message : e}`]);
   return runtimeDigests;
 }
 
@@ -228,7 +249,8 @@ async function runSmoke(win) {
     // 第 46 批起未开通电脑的缺省激活页是“登录 / 注册”（.auth-seg，没有 .activate-title）：只认标题时全新安装的冒烟必报 ui_boot_stuck
     let booted = false;
     for (let i = 0; i < 240 && !booted; i++) {
-      booted = (await win.webContents.executeJavaScript("!!document.querySelector('.activate-title, .auth-seg, .shell') && !document.querySelector('.activate[aria-busy=\"true\"]')").catch(() => false)) === true;
+      // 第 64 批：登录页改为整窗外壳（data-auth-page = activate / relogin），首屏可能是“正在取得登录方式”的骨架——同样算界面已起来
+      booted = (await win.webContents.executeJavaScript("!!document.querySelector('.activate-title, .auth-seg, .shell, [data-auth-page=\"activate\"], [data-auth-page=\"relogin\"]') && !document.querySelector('.activate[aria-busy=\"true\"]')").catch(() => false)) === true;
       if (!booted) await new Promise((r) => setTimeout(r, 250));
     }
     if (!booted) throw new SmokeFailure("ui_boot_stuck");
@@ -913,6 +935,16 @@ ipcMain.handle("kwl:update-install", async (e) => {
   updateState.handle.install();
   return { ok: true };
 });
+// 第 64 批：界面明暗变了（跟随系统或显式选择）→ Windows 窗口控件浮层的底色与图标色跟着换；只认应用主框架发来的、只认两个取值
+ipcMain.on("kwl:window-theme", (e, theme) => {
+  if (!fromAppMainFrame(e) || (theme !== "light" && theme !== "dark") || process.platform !== "win32") return;
+  const win = BrowserWindow.fromWebContents(e.sender);
+  try {
+    if (win && !win.isDestroyed()) win.setTitleBarOverlay({ ...WINDOW_CHROME[theme], height: TITLEBAR_HEIGHT });
+  } catch {
+    // 浮层不可用（旧系统）：忽略
+  }
+});
 ipcMain.handle("kwl:renderer-net", (e) => (fromAppMainFrame(e) ? { blocked: rendererNet.blocked, last: rendererNet.lastBlocked } : { blocked: -1, last: [] }));
 
 /** 主进程向内核发一次调用（不经渲染进程）；内核未启动或超时返回 null。 */
@@ -972,6 +1004,21 @@ function wireContentProtection(win) {
   win.webContents.on("did-finish-load", () => void apply(win.webContents.getURL()));
 }
 
+/**
+ * 无边框窗口（第 64 批，对照 Kimi 客户端）：去掉系统标题栏，界面顶部留一条 40px 的拖动条（渲染层 styles-window.css）。
+ * - macOS：titleBarStyle hidden，红绿灯放进拖动条左侧（与侧栏的搜索、收起按钮同一行）；缩放、全屏、双击标题区照系统设置；
+ * - Windows：titleBarStyle hidden + 窗口控件浮层（titleBarOverlay）——最小化、最大化、关闭由系统绘制在右上角，
+ *   保留贴靠布局（悬停最大化按钮）、双击拖动条最大化、边缘缩放；浮层底色与图标色随界面明暗（kwl:window-theme）；
+ * - 颜色与令牌一致（--bg-sidebar / --text-primary 的浅色、深色值；style-tokens 用例核对）。
+ */
+const TITLEBAR_HEIGHT = 40;
+const WINDOW_CHROME = { light: { color: "#fbfaf9", symbolColor: "#0e1219" }, dark: { color: "#141312", symbolColor: "#ecebe9" } };
+function frameOptions(dark) {
+  if (process.platform === "darwin") return { titleBarStyle: "hidden", trafficLightPosition: { x: 18, y: 14 } };
+  if (process.platform === "win32") return { titleBarStyle: "hidden", titleBarOverlay: { ...WINDOW_CHROME[dark ? "dark" : "light"], height: TITLEBAR_HEIGHT } };
+  return {};
+}
+
 function createWindow() {
   // 应用图标（第 49 批）：打包后 Windows 用 exe 资源里的图标（build/icon.ico）、macOS 由应用包决定；未打包的开发形态显式设窗口/程序坞图标
   const devIcon = app.isPackaged ? null : path.join(__dirname, "../build", process.platform === "win32" ? "icon.ico" : "icon.png");
@@ -983,6 +1030,7 @@ function createWindow() {
     minWidth: 1080,
     minHeight: 700,
     title: "Kimi Work 法律行业发行版",
+    ...frameOptions(require("electron").nativeTheme.shouldUseDarkColors),
     // 首帧底色随系统明暗（侧栏 --bg-sidebar 两套值）；界面里显式选了与系统相反的外观时，首帧可能闪一下另一底色
     backgroundColor: require("electron").nativeTheme.shouldUseDarkColors ? "#141312" : "#fbfaf9",
     webPreferences: {

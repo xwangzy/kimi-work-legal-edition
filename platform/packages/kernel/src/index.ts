@@ -30,7 +30,7 @@ import { parseWithPipeline } from "./services/parse-pipeline.ts";
 import { runChildSelftest, type ChildSelftestResult } from "./services/child-selftest.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
 import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
-import { accountErrorText, dropAccountSession, modelRejectionProblem, readAccountSession, writeAccountSession, type AccountSessionFile } from "./account-session.ts";
+import { accountErrorText, dropAccountSession, dropLoginRequired, modelRejectionProblem, readAccountSession, readLoginRequired, writeAccountSession, writeLoginRequired, type AccountSessionFile } from "./account-session.ts";
 import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, reconcilePendingRestore, removePendingWorkspace, writeJoinFailure, writePendingActivation } from "./services/onboarding.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
 import { ControlPlaneClient } from "./control-plane/client.ts";
@@ -330,11 +330,26 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   });
   // 第 44 批：账号会话（令牌在 keys/account-session.json，封装；只在内核与闸门之间流转）与“要重新登录”的原因
   let accountSession: AccountSessionFile | null = config.onboarding ? null : readAccountSession(keysDir);
-  let accountProblem: string | null = null;
+  // 第 64 批：“要重新登录”落在本机（keys/account-login-required.json，封装、不含令牌）——重启应用、内核自动恢复、断网时都停在登录页，
+  // 不再要等下一次同步撞上 session_required 才补上（此前这段时间里界面会把工作区露出来）
+  const persistedProblem = config.onboarding ? null : readLoginRequired(keysDir);
+  let accountProblem: string | null = persistedProblem?.reason ?? null;
   /** 上次重新登录成功（清掉 accountProblem）的时刻：刚登录后网关可能还按旧的暂停名单拒绝（见 SESSION_REJECTION_GRACE_MS）。 */
   let accountClearedAt = Number.NEGATIVE_INFINITY;
-  /** 退出登录后仍记住上次的邮箱与姓名（不含令牌）：重新登录框里预填。 */
-  let lastAccount: { email: string; name: string; role: string } | null = accountSession ? { email: accountSession.email, name: accountSession.name, role: accountSession.role } : null;
+  /** 退出登录后仍记住上次的邮箱与姓名（不含令牌）：重新登录页预填与称呼；第 64 批起重启后也记得（读本机记录）。 */
+  let lastAccount: { email: string; name: string; role: string } | null = accountSession
+    ? { email: accountSession.email, name: accountSession.name, role: accountSession.role }
+    : persistedProblem && persistedProblem.email
+      ? { email: persistedProblem.email, name: persistedProblem.name, role: persistedProblem.role }
+      : null;
+  /** 记下“要重新登录”（内存 + 本机记录）；写不进去只影响重启后的表现，不影响这次。 */
+  const persistProblem = (code: string): void => {
+    try {
+      writeLoginRequired(keysDir, { reason: code, email: lastAccount?.email ?? accountSession?.email ?? null, name: lastAccount?.name ?? accountSession?.name ?? null, role: lastAccount?.role ?? accountSession?.role ?? null });
+    } catch (e) {
+      slog.event("KERNEL_ACCOUNT_MARK_FAILED", errFields(e));
+    }
+  };
   const accountDeps = {
     session: () => accountSession,
     last: () => lastAccount,
@@ -351,9 +366,13 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     clearProblem: () => {
       accountProblem = null;
       accountClearedAt = Date.now();
+      dropLoginRequired(keysDir);
     },
     setProblem: (code: string) => {
       accountProblem = code;
+      persistProblem(code);
+      // 退出登录也通知界面（此前只有同步与模型调用发现问题时才广播，界面要等 30 秒轮询）
+      broadcastRef.current?.({ type: "account.login_required", reason: code, source: "logout", message: accountErrorText(code) });
     },
   };
   /**
@@ -366,6 +385,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     const prev = accountProblem;
     if (prev === code) return;
     accountProblem = code;
+    persistProblem(code);
     if (prev === null) governance.seatDroppedForSession("session");
     const reason = /^[a-z_]{1,40}$/.test(code) ? code : "other";
     slog.event("KERNEL_ACCOUNT_LOGIN_REQUIRED", { reason, source });
@@ -934,6 +954,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   // ─── 开通与成员入组（第 13 批；docs/design/开通与成员入组设计-v1.md） ───
   // 待激活模式：只开放 onboarding.*（见 invoke 的门禁）；激活完成后请主进程按 activation.json 重启内核
   const onboarding = config.onboarding ? new OnboardingService({ config, relay: (req) => gate.cp(req), requestRestart: () => broadcast({ type: "kernel.restart_for_identity" }) }) : null;
+  // 第 64 批：开通页首屏要用注册 / 登录策略——内核一启动就预取（顺带拉起出站闸门），界面第一次调用接上这个请求
+  if (onboarding && env.ZR_PREFETCH_META !== "0") onboarding.prefetchRegistrationMeta();
   if (onboarding) {
     onboarding.start();
     api["onboarding.status"] = () => onboarding.status();

@@ -160,8 +160,9 @@ test("非 Windows：显式 --user-data-dir 时数据根随之放进该目录（W
 
 test("安装后冒烟认得未开通电脑的缺省激活页（登录 / 注册，.auth-seg）", () => {
   const main = readFileSync(file("electron/main.cjs"), "utf8");
-  assert.match(main, /document\.querySelector\('\.activate-title, \.auth-seg, \.shell'\)/);
+  // 第 64 批：登录页改为整窗外壳，按 data-auth-page 认（首屏可能是取登录方式时的骨架）
+  assert.match(main, /document\.querySelector\('\.activate-title, \.auth-seg, \.shell, \[data-auth-page=\\"activate\\"\], \[data-auth-page=\\"relogin\\"\]'\)/);
   const activate = readFileSync(file("src/pages/Activate.tsx"), "utf8");
   assert.match(activate, /const \[view, setView\] = useState<View>\(.*\? "restore" : "login"\);/, "缺省视图是登录");
-  assert.match(activate, /<div className="auth-seg" role="tablist"/, "登录 / 注册页带 .auth-seg");
+  assert.match(activate, /<AuthPage kind="activate">/, "开通页带 data-auth-page=activate");
 });

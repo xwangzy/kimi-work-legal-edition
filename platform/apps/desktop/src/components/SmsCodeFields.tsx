@@ -11,22 +11,61 @@ import { account } from "../api.ts";
 import { initialLoginMethod, loginMethods, phoneLooksValid, rememberedLoginMethod, type LoginMethod, type RegistrationMeta, type SmsPurpose } from "../lib/account.ts";
 
 /**
- * 注册策略（第 62 批）：按云端公布的能力字段决定显示手机号、邀请码与验证码登录。取不到（旧云端、网络不通）一律按旧流程，不报错。
- * 未取到之前（null）也按旧流程显示，取到后再补上手机号一栏。
+ * 注册 / 登录策略的三态（第 64 批）：loading（取策略中）/ ready（取到：新云端的策略，或云端如实答复的旧流程 legacy）/
+ * error（取不到：连不上、超时、证书不符——如实显示原因与“重试”，并按 5、10、20、40、60 秒退避自动再试）。
+ * 此前取到之前（null）与取不到都按旧流程显示：Windows 首启先只有邮箱登录、几十秒后才变出验证码登录；网络一抖还会整次打开都只剩邮箱登录。
  */
-export function useRegistrationMeta(): RegistrationMeta | null {
-  const [meta, setMeta] = useState<RegistrationMeta | null>(null);
-  useEffect(() => {
-    let live = true;
+export type MetaState =
+  | { status: "loading"; attempt: number }
+  | { status: "ready"; meta: RegistrationMeta }
+  | { status: "error"; error: string; retry: () => void; nextRetryS: number | null; attempt: number };
+
+const META_BACKOFF_S = [5, 10, 20, 40, 60];
+
+export function useRegistrationMetaState(): MetaState {
+  const [st, setSt] = useState<{ status: "loading" | "ready" | "error"; meta?: RegistrationMeta; error?: string; attempt: number; retryAt: number | null }>({ status: "loading", attempt: 0, retryAt: null });
+  const [, tick] = useState(0);
+  const live = useRef(true);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const load = (attempt: number) => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+    setSt({ status: "loading", attempt, retryAt: null });
     account
       .registrationMeta()
-      .then((m) => live && setMeta(m && typeof m === "object" ? m : { legacy: true }))
-      .catch(() => live && setMeta({ legacy: true }));
+      .then((m) => live.current && setSt({ status: "ready", meta: m && typeof m === "object" ? m : { legacy: true }, attempt, retryAt: null }))
+      .catch((e) => {
+        if (!live.current) return;
+        const wait = META_BACKOFF_S[Math.min(attempt, META_BACKOFF_S.length - 1)]!;
+        setSt({ status: "error", error: (e as Error).message || "暂时连不上 Kimi Work 服务，请检查网络后重试。", attempt, retryAt: Date.now() + wait * 1000 });
+        timer.current = setTimeout(() => live.current && load(attempt + 1), wait * 1000);
+      });
+  };
+  useEffect(() => {
+    live.current = true;
+    load(0);
     return () => {
-      live = false;
+      live.current = false;
+      if (timer.current) clearTimeout(timer.current);
     };
   }, []);
-  return meta;
+  // 自动再试的倒计时每秒刷新一次
+  useEffect(() => {
+    if (st.status !== "error") return;
+    const t = setInterval(() => tick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [st.status]);
+  if (st.status === "ready") return { status: "ready", meta: st.meta! };
+  if (st.status === "loading") return { status: "loading", attempt: st.attempt };
+  return { status: "error", error: st.error!, attempt: st.attempt, retry: () => load(st.attempt + 1), nextRetryS: st.retryAt === null ? null : Math.max(0, Math.ceil((st.retryAt - Date.now()) / 1000)) };
+}
+
+/**
+ * 只要“取到的策略”（取策略中、取不到都为 null）：账号卡上“绑定手机号”按钮这类可有可无的入口用它（取不到就先不显示）。
+ */
+export function useRegistrationMeta(): RegistrationMeta | null {
+  const s = useRegistrationMetaState();
+  return s.status === "ready" ? s.meta : null;
 }
 
 /**
@@ -115,6 +154,11 @@ export function SmsCodeFields(p: {
     <>
       <label className="field">
         <span>{p.optional ? (p.phoneLabel ?? "手机号（可不填，填了可用手机号找回密码）") : (p.phoneLabel ?? "手机号")}</span>
+        {/* 第 64 批：“+86”前缀与输入框是一个整体（只收中国大陆手机号） */}
+        <span className="auth-input-group">
+        <span className="auth-prefix" aria-hidden="true">
+          +86
+        </span>
         <input
           className="auth-input"
           type="tel"
@@ -130,9 +174,11 @@ export function SmsCodeFields(p: {
           autoComplete="tel"
           inputMode="tel"
           maxLength={20}
-          placeholder="11 位中国大陆手机号"
+          placeholder={p.optional ? "11 位手机号（可不填）" : "请输入手机号"}
+          aria-label={p.phoneLabel ?? "手机号"}
           autoFocus={p.autoFocus}
         />
+        </span>
         {p.phone.trim() && !phoneLooksValid(p.phone) && <span className="field-warn">手机号格式不对</span>}
       </label>
       {codeShown && (
@@ -151,14 +197,15 @@ export function SmsCodeFields(p: {
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={p.codeLength}
-              placeholder={`${p.codeLength} 位数字`}
+              placeholder={`请输入 ${p.codeLength} 位验证码`}
+              aria-label="短信验证码"
               spellCheck={false}
             />
-            <button type="button" className="btn-ghost" disabled={!canSend} onClick={() => void sendCode()}>
+            <button type="button" className="btn-ghost sms-send" disabled={!canSend} onClick={() => void sendCode()}>
               {sending ? "正在发送…" : wait > 0 ? `${wait} 秒后重新获取` : "获取验证码"}
             </button>
           </span>
-          {hint && <span className="muted">{hint}</span>}
+          {hint && <span className="muted sms-hint">{hint}</span>}
         </label>
       )}
     </>

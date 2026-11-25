@@ -95,7 +95,8 @@ test("#22 工作台协议条：我方 · 审查要点及版本 · 法域 · 已�
 test("I2 遗留：保存位置提示不用浏览器原生确认框；开通向导与主界面都挂了应用内询问", () => {
   assert.doesNotMatch(src("api.ts"), /window\.confirm\(/);
   const app = src("App.tsx");
-  assert.equal((app.match(/<AskHost \/>/g) ?? []).length, 2);
+  // 开通向导、整窗重新登录页（第 64 批）、主界面各挂一个
+  assert.equal((app.match(/<AskHost \/>/g) ?? []).length, 3);
 });
 
 test("I2 遗留：应用内询问没有挂载时按“不同意”处理（不会静默保存到同步盘）", async () => {

@@ -30,7 +30,11 @@ test("新云端：按策略显示手机号与邀请码；12 位注册邀请码�
 });
 
 test("注册页与找回密码页：取策略失败按旧流程、发验证码倒计时与失败提示、找回密码可用手机号（只在云端支持时）", () => {
-  assert.match(src, /\.registrationMeta\(\)[\s\S]{0,200}\.catch\(\(\) => live && setMeta\(\{ legacy: true \}\)\)/, "取不到策略不报错，按旧流程");
+  // 第 64 批改：取不到策略不再冒充“旧云端”（那会让验证码登录整次打开都不出现）——如实进入 error 态（原因 + 重试 + 退避自动再试）；
+  // 旧云端（云端答复里没有策略）仍由内核回 legacy、照旧流程
+  assert.doesNotMatch(src, /setMeta\(\{ legacy: true \}\)/, "取不到不再按旧流程");
+  assert.match(src, /\.registrationMeta\(\)[\s\S]{0,300}\.catch\(\(e\) => \{[\s\S]{0,200}status: "error"/, "取不到 → error 态");
+  assert.match(src, /const META_BACKOFF_S = \[5, 10, 20, 40, 60\];/, "按退避自动再试");
   assert.ok(src.includes("秒后重新获取") && src.includes("获取验证码"), "倒计时按钮");
   assert.ok(src.includes("retry_after_s"), "频控时按云端给的秒数倒计时");
   assert.ok(src.includes("测试环境：验证码是"), "dry-run 写明是测试环境");

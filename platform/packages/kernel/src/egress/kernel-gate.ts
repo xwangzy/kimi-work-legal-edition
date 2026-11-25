@@ -9,7 +9,7 @@
  * - 闸门新识别的令牌条目写回事项令牌表（按事项密钥重算校验）。
  */
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, statSync } from "node:fs";
+import { createReadStream, mkdirSync, readFileSync, statSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { EGRESS_CONTENT_FIELDS, egressRecordEnvelopeHash } from "@zr-legal/egress";
 import type { DirectModelEndpoint, GateEgressRecord, GateUpstreams } from "@zr-legal/egress-gate";
@@ -140,6 +140,17 @@ export function gateStartFailure(e: unknown): "closed" | "runtime_digest" | "run
 }
 
 /** 可执行文件的实际路径：绝对路径原样；否则按 PATH 解析（与 child_process 的查找一致）。 */
+/** 文件的 SHA-256（流式，不阻塞事件循环；第 64 批）。读不了按 null。 */
+async function sha256OfFile(file: string): Promise<string | null> {
+  try {
+    const h = createHash("sha256");
+    for await (const chunk of createReadStream(file, { highWaterMark: 1 << 20 })) h.update(chunk as Buffer);
+    return h.digest("hex");
+  } catch {
+    return null;
+  }
+}
+
 function resolveExecutable(cmd: string): string | null {
   if (isAbsolute(cmd)) return cmd;
   for (const dir of (process.env.PATH ?? "").split(delimiter)) {
@@ -370,13 +381,24 @@ export class KernelGate {
   }
   private lastStartFailure: { reason: string; at: number } = { reason: "", at: 0 };
 
-  private async ensureInner(): Promise<GateHandle> {
-    if (this.closed) throw new Error("出站闸门已关闭");
-    if (this.handle?.alive) return this.handle;
+  private ensureInner(): Promise<GateHandle> {
+    if (this.closed) return Promise.reject(new Error("出站闸门已关闭"));
+    if (this.handle?.alive) return Promise.resolve(this.handle);
     if (this.starting) return this.starting;
+    // 第 64 批：摘要改为异步计算后，计算期间到达的第二个调用要等同一次启动，不能再拉起一个闸门
+    const p = this.startInner();
+    this.starting = p;
+    p.catch(() => {}).finally(() => {
+      if (this.starting === p) this.starting = null;
+    });
+    return p;
+  }
+
+  private async startInner(): Promise<GateHandle> {
     if (this.d.runtimeSha256) {
       const bin = resolveExecutable(this.d.runtime ?? process.execPath);
-      const digest = bin ? createHash("sha256").update(readFileSync(bin)).digest("hex") : null;
+      // 第 64 批：流式计算（约 100 MB 的 Node 可执行文件）——此前同步整读整算，内核事件循环要卡住这段时间，界面的调用（含登录页）都得等
+      const digest = bin ? await sha256OfFile(bin) : null;
       if (digest !== this.d.runtimeSha256.toLowerCase()) throw new Error(`出站闸门运行时摘要不符（${bin ?? this.d.runtime}）：不拉起闸门，模型与联网步骤不可用`);
     }
     const { db, secret, revoked, tokens } = this.d;
@@ -404,7 +426,8 @@ export class KernelGate {
       knownOnlyTexts: (rid) => this.vouched.get(rid) ?? [],
     });
     const approvals = this.d.approvals;
-    this.starting = startEgressGate({
+    const t0 = Date.now();
+    return startEgressGate({
       entryPath: this.d.entryPath,
       socketPath: this.d.socketPath,
       upstreams: this.upstreams,
@@ -437,12 +460,10 @@ export class KernelGate {
         this.handle = h;
         // 启动窗口内发生的席位续期或清除（init 之后、句柄就绪之前）不会丢：就绪后再下发一次当前令牌（复核 S6-B25）
         if (gov.mode === "control_plane") h.updateSeat(this.upstreams.model?.seatToken ?? this.upstreams.search?.seatToken ?? this.upstreams.dist?.seatToken ?? "");
+        // 第 64 批：首启耗时证据（含等待运行时核对与进程拉起）
+        slog.event("KERNEL_GATE_STARTED", { ms: Date.now() - t0, since_boot_ms: Math.round(process.uptime() * 1000) });
         return h;
-      })
-      .finally(() => {
-        this.starting = null;
       });
-    return this.starting;
   }
 
   /** 闸门意外退出：唯一出口不可用，按退避自动重拉（期间模型与联网请求失败、按调用方的排队与重试处理；不改为直连）。 */

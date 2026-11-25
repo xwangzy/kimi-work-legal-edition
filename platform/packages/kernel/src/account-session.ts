@@ -46,6 +46,46 @@ export function dropAccountSession(keysDir: string): void {
   rmSync(accountSessionPath(keysDir), { force: true });
 }
 
+/**
+ * “要重新登录”的本机记录（第 64 批）：退出登录、会话失效、账号停用之后，这台电脑应当停在登录页——此前这个状态只在内核内存里，
+ * 应用一重启、内核自动恢复或断网（同步补不上）就丢了，界面会把工作区露出来。记录里没有令牌，只有原因与上次账号的邮箱、姓名、角色
+ * （登录页预填与称呼用），与会话同一封装（kwl-sealed/1）；重新登录成功即删。
+ */
+export interface LoginRequiredFile {
+  v: 1;
+  reason: string;
+  email: string;
+  name: string;
+  role: string;
+  at: string;
+}
+
+const LOGIN_REQUIRED_FILE = "account-login-required.json";
+
+export function loginRequiredPath(keysDir: string): string {
+  return join(keysDir, LOGIN_REQUIRED_FILE);
+}
+
+export function readLoginRequired(keysDir: string): LoginRequiredFile | null {
+  const p = loginRequiredPath(keysDir);
+  if (!existsSync(p)) return null;
+  try {
+    const s = readSecretFile<LoginRequiredFile>(p);
+    return s && s.v === 1 && typeof s.reason === "string" && SESSION_PROBLEM_CODES.has(s.reason) ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeLoginRequired(keysDir: string, x: { reason: string; email?: string | null; name?: string | null; role?: string | null }): void {
+  if (!SESSION_PROBLEM_CODES.has(x.reason)) return;
+  writeStagedSecret(loginRequiredPath(keysDir), { v: 1, reason: x.reason, email: x.email ?? "", name: x.name ?? "", role: x.role ?? "", at: new Date().toISOString() } satisfies LoginRequiredFile);
+}
+
+export function dropLoginRequired(keysDir: string): void {
+  rmSync(loginRequiredPath(keysDir), { force: true });
+}
+
 /** 控制面答复里表示“要重新登录”的错误代码。 */
 export const SESSION_PROBLEM_CODES: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch"]);
 

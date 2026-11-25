@@ -1,0 +1,132 @@
+/*
+ * 登录类页面（第 64 批，参照 Kimi 客户端登录框重做）：整窗页面 + 居中卡片（品牌条带细点纹、正文、页脚说明）。
+ * 无边框窗口：卡片以外的页面区域可拖动窗口（-webkit-app-region），卡片里的一切照常点按。
+ * 输入框为浅底填充、无描边（聚焦时描边 + 光晕），手机号带“+86”前缀，验证码框内嵌“获取验证码”，主按钮整宽黑底（不可点时浅灰）。
+ * 颜色、字号、圆角都只用令牌（样式门禁 style-tokens.test.ts）。
+ */
+.auth-page { position: relative; min-height: 100vh; box-sizing: border-box; display: grid; place-items: center; padding: 56px 16px 32px; background: var(--bg-sidebar); -webkit-app-region: drag; }
+.auth-page .auth-card { -webkit-app-region: no-drag; }
+
+.auth-card { width: min(440px, 100%); padding: 0; overflow: hidden; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+.auth-card.wide { width: min(520px, 100%); }
+.auth-card-head { position: relative; display: flex; align-items: center; height: 76px; padding: 0 32px; background: var(--bg-subtle); border-bottom: 1px solid var(--border-subtle); }
+.auth-card-head.brand { height: 76px; padding: 0 32px; }
+/* 品牌条右侧的细点纹（Kimi 登录框同样的处理），向左渐隐 */
+.auth-card-head::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 58%; pointer-events: none; background-image: radial-gradient(var(--border-default) 0.9px, transparent 1.2px); background-size: 8px 8px; -webkit-mask-image: linear-gradient(to left, var(--text-primary), transparent); mask-image: linear-gradient(to left, var(--text-primary), transparent); }
+.auth-card-head .brand-lockup { position: relative; z-index: 1; }
+.auth-card-body { padding: 28px 32px 4px; }
+.auth-card-foot { padding: 16px 32px 22px; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-secondary); text-align: center; }
+
+/* 标题与说明 */
+.auth-card .activate-title { font-size: var(--fs-xl); font-weight: 600; line-height: 1.35; margin: 0 0 6px; }
+.auth-card .activate-lead { font-size: var(--fs-body); line-height: 1.65; color: var(--text-secondary); margin: 0 0 18px; }
+.auth-card .activate-foot { font-size: var(--fs-meta); }
+.auth-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 18px; }
+.auth-title-row .activate-title { margin: 0; }
+.auth-title-row .btn-link { font-size: var(--fs-caption); white-space: nowrap; }
+.auth-greet { margin: 0 0 4px; font-size: var(--fs-xl); font-weight: 600; line-height: 1.35; }
+.auth-greet-sub { margin: 0 0 20px; font-size: var(--fs-body); line-height: 1.65; color: var(--text-secondary); }
+.auth-greet-sub b { font-weight: 600; color: var(--text-primary); }
+
+/* 登录方式页签：卡片里作为标题行（比外部设置页里的同一组件大一档） */
+.auth-card .auth-method { gap: 28px; margin: 0 0 18px; border-bottom: 0; }
+.auth-card .auth-method button { padding: 0 0 6px; font-size: var(--fs-lg); color: var(--text-secondary); border-bottom-width: 2px; }
+.auth-card .auth-method button.on { font-weight: 600; color: var(--text-primary); }
+.auth-card .auth-method-single { margin: 0 0 18px; font-size: var(--fs-lg); font-weight: 600; }
+
+/* 表单 */
+.auth-card .auth-form, .auth-card .login-box { display: flex; flex-direction: column; gap: 12px; }
+.auth-card .field { gap: 6px; }
+.auth-card .field > span, .auth-card .field > label > span { font-size: var(--fs-caption); color: var(--text-label); }
+/* 登录表单只有两三个框：照 Kimi 只留占位文字，标题对读屏软件保留 */
+.auth-card .auth-form.quiet .field > span:first-child, .auth-card .auth-form.quiet .field > label > span, .auth-card form.login-box .field > span:first-child, .auth-card form.login-box .field > label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.auth-card .auth-input, .auth-card .activate-code { box-sizing: border-box; width: 100%; height: 48px; padding: 0 16px; border: 1px solid transparent; border-radius: var(--r-md); background: var(--bg-muted); color: var(--text-primary); font-size: var(--fs-md); box-shadow: none; transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+.auth-card textarea.activate-code { height: auto; padding: 12px 16px; }
+.auth-card .auth-input:hover, .auth-card .activate-code:hover { border-color: var(--border-default); }
+.auth-card .auth-input:focus, .auth-card .activate-code:focus { outline: none; background: var(--bg-surface); border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); }
+.auth-card .pw-wrap .auth-input { padding-right: 64px; }
+.auth-card .pw-toggle { right: 14px; font-size: var(--fs-caption); }
+.auth-card .field-warn, .auth-card .pw-rules { font-size: var(--fs-meta); }
+
+/* 手机号：“+86”前缀与输入框是一个整体 */
+.auth-input-group { display: flex; align-items: center; min-width: 0; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-main); }
+.auth-input-group:focus-within { border-color: var(--focus-ring); }
+.auth-input-group .auth-prefix { flex: none; padding: 0 10px 0 12px; color: var(--text-primary); font-size: var(--fs-base); border-right: 1px solid var(--border-subtle); line-height: 1; }
+.auth-input-group .auth-input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; box-shadow: none; }
+.auth-input-group .auth-input:focus { outline: none; box-shadow: none; }
+.auth-card .auth-input-group { height: 48px; border-color: transparent; background: var(--bg-muted); transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+.auth-card .auth-input-group:hover { border-color: var(--border-default); }
+.auth-card .auth-input-group:focus-within { background: var(--bg-surface); border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); }
+.auth-card .auth-input-group .auth-prefix { padding: 0 12px 0 16px; font-size: var(--fs-md); }
+.auth-card .auth-input-group .auth-input, .auth-card .auth-input-group .auth-input:focus, .auth-card .auth-input-group .auth-input:hover { height: 46px; border: 0; background: transparent; box-shadow: none; }
+
+/* 验证码：输入框内嵌“获取验证码”（竖线隔开的文字按钮） */
+.auth-card .sms-row { display: flex; align-items: center; gap: 0; height: 48px; border: 1px solid transparent; border-radius: var(--r-md); background: var(--bg-muted); transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+.auth-card .sms-row:hover { border-color: var(--border-default); }
+.auth-card .sms-row:focus-within { background: var(--bg-surface); border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); }
+.auth-card .sms-row .auth-input, .auth-card .sms-row .auth-input:focus, .auth-card .sms-row .auth-input:hover { height: 46px; border: 0; background: transparent; box-shadow: none; }
+.auth-card .sms-row .sms-send { position: relative; flex: none; height: 46px; padding: 0 16px; border: 0; border-radius: 0 var(--r-md) var(--r-md) 0; background: transparent; color: var(--text-primary); font-size: var(--fs-base); font-weight: 500; white-space: nowrap; }
+.auth-card .sms-row .sms-send::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; border-left: 1px solid var(--border-default); }
+.auth-card .sms-row .sms-send:hover:not(:disabled) { background: var(--bg-hover-soft); }
+.auth-card .sms-row .sms-send:disabled { color: var(--text-secondary); cursor: default; }
+.auth-card .sms-hint { font-size: var(--fs-meta); color: var(--text-secondary); }
+
+/* 主按钮：整宽、黑底；不可点时浅灰（Kimi 同款），不是半透明 */
+.auth-card .activate-submit, .auth-card .auth-btn { width: 100%; height: 48px; margin-top: 6px; padding: 0 16px; border-radius: var(--r-md); font-size: var(--fs-md); font-weight: 500; }
+.auth-card .activate-submit:disabled, .auth-card .auth-btn:disabled { background: var(--bg-muted); border-color: transparent; color: var(--text-secondary); opacity: 1; cursor: default; }
+.auth-card .activate-actions { gap: 10px; margin-top: 16px; }
+.auth-card .activate-actions .btn-primary, .auth-card .activate-actions .btn-ghost { height: 44px; padding: 0 18px; border-radius: var(--r-md); font-size: var(--fs-body); }
+.auth-card .activate-actions .btn-primary { flex: 1 1 auto; }
+
+/* 错误与提示 */
+.auth-card .activate-error { margin: 0; padding: 9px 12px; border-radius: var(--r-sm); background: var(--status-danger-bg); color: var(--status-danger-text); font-size: var(--fs-caption); line-height: 1.6; }
+.auth-card .activate-notice { margin: 0 0 14px; font-size: var(--fs-caption); }
+.auth-card .auth-unreg { gap: 8px; }
+
+/* 表单下方的链接行与其他方式 */
+.auth-links { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.auth-links .btn-link { padding: 0; font-size: var(--fs-caption); color: var(--text-primary); font-weight: 500; }
+.auth-links .btn-link:hover { text-decoration: underline; }
+.auth-title-row .btn-link { color: var(--text-primary); font-weight: 500; }
+.auth-links-end { margin-left: auto; }
+.auth-alt { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 16px; margin: 22px 0 6px; padding-top: 18px; border-top: 1px solid var(--border-subtle); }
+.auth-alt .btn-link { padding: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.auth-alt .btn-link:hover { color: var(--text-primary); }
+
+/* 取登录方式期间的骨架与“取不到” */
+.auth-skeleton { display: flex; flex-direction: column; gap: 12px; }
+.auth-skel-tabs { display: flex; gap: 28px; margin: 0 0 6px; }
+.auth-skel-bar { display: block; border-radius: var(--r-md); background: linear-gradient(90deg, var(--bg-muted) 0%, var(--bg-subtle) 50%, var(--bg-muted) 100%); background-size: 200% 100%; animation: auth-shimmer 1.4s var(--ease-standard) infinite; }
+.auth-skel-bar.w-tab { width: 76px; height: 22px; border-radius: var(--r-xs); }
+.auth-skel-bar.w-input { height: 48px; }
+.auth-skel-bar.w-btn { height: 48px; margin-top: 6px; }
+.auth-skel-label { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 6px 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.auth-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: auth-dot 1.2s var(--ease-standard) infinite; }
+@keyframes auth-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@keyframes auth-dot { 0%, 100% { transform: scale(0.7); } 50% { transform: scale(1.15); } }
+@media (prefers-reduced-motion: reduce) { .auth-skel-bar, .auth-dot { animation: none; } }
+.auth-unavailable { padding: 18px 18px 16px; border-radius: var(--r-md); background: var(--status-warning-bg-soft); border: 1px solid var(--status-warning-border); }
+.auth-unavailable-title { font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); margin: 0 0 6px; }
+.auth-unavailable-text { margin: 0 0 14px; font-size: var(--fs-body); line-height: 1.65; color: var(--text-strong); }
+.auth-unavailable-actions { display: flex; align-items: center; gap: 12px; }
+.auth-unavailable-actions .auth-btn { width: auto; min-width: 96px; height: 40px; margin: 0; }
+
+/* 等待批准、核对码、设备列表等在卡片里的间距 */
+.auth-card .activate-checkcode { margin: 6px 0 14px; border-radius: var(--r-md); }
+.auth-card .auth-devices li { border-radius: var(--r-md); }
+.auth-card .section-title { margin: 18px 0 8px; font-size: var(--fs-body); }
+
+@media (max-width: 520px) {
+  .auth-card-body { padding: 24px 20px 4px; }
+  .auth-card-head, .auth-card-head.brand { padding: 0 20px; }
+  .auth-card-foot { padding: 14px 20px 20px; }
+}
+.auth-foot-note { display: block; margin-top: 8px; }
+.auth-card .login-box-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
+.auth-card .login-box-actions .btn-primary, .auth-card .login-box-actions .btn-ghost { height: 44px; padding: 0 18px; border-radius: var(--r-md); font-size: var(--fs-body); }
+.auth-card .login-box-actions .btn-primary { flex: 1 1 auto; }
+.auth-reloginwho { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; padding: 10px 12px; border-radius: var(--r-md); background: var(--bg-subtle); }
+.auth-reloginwho .user-avatar { flex: none; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); font-weight: 600; font-size: var(--fs-body); }
+.auth-reloginwho-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-body); }
+.auth-reloginwho-text b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auth-reloginwho-text small { font-size: var(--fs-meta); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

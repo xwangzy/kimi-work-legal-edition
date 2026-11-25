@@ -563,9 +563,10 @@ export class ControlPlaneClient {
   }
 
   /** 第 63 批：云端版本与注册 / 登录策略（GET /v1/meta，无鉴权、不带个人信息）；取不到返回 null（界面按旧流程）。 */
-  async meta(): Promise<Record<string, unknown> | null> {
+  /** 公开的能力与注册策略（GET /v1/meta）。第 64 批：失败时带上原因代码（取不到与“旧云端”要分开说）。 */
+  async meta(): Promise<{ ok: true; json: Record<string, unknown> } | { ok: false; code: string; status?: number }> {
     const r = await this.call("GET", "/v1/meta");
-    return r.ok ? r.json : null;
+    return r.ok ? { ok: true, json: r.json } : { ok: false, code: r.error, ...(r.status ? { status: r.status } : {}) };
   }
 
   // ─── 中软侧操作记录（第 9 批 S14） ───

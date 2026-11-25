@@ -94,9 +94,19 @@ test("自助注册 → 创始开通 → 重启即已登录；退出登录后控�
   assert.equal(st2.control_plane.seat?.has_token ?? false, false);
   const s2 = (await a.invoke("control_plane.sync")) as any;
   assert.equal(s2.report.steps.seat, "session_required");
+  // 第 64 批：“要重新登录”记在本机（封装、不含令牌）——重启内核后不用等同步，启动即要求登录并记得上次的邮箱（重新登录页预填）
+  const mark = join(dirA, st.firm, "keys", "account-login-required.json");
+  assert.ok(existsSync(mark), "退出登录写下本机记录");
+  assert.equal(readFileSync(mark, "utf8").includes("kws1."), false, "记录里没有会话令牌");
+  a = await reboot(a, dirA);
+  const st3 = (await a.invoke("kernel.status")) as any;
+  assert.deepEqual([st3.account.logged_in, st3.account.login_required, st3.account.reason, st3.account.last_email], [false, true, "session_required", "wang@example.cn"], "重启后仍要求登录");
+  assert.equal(((await a.invoke("account.status", {})) as any).last_account?.email, "wang@example.cn");
   await assert.rejects(a.invoke("account.login", { email: "wang@example.cn", password: "Wrong2026password" }), (e: any) => /邮箱或密码不正确/.test(e.message));
+  assert.ok(existsSync(mark), "登录失败不删记录");
   const li = (await a.invoke("account.login", { email: "wang@example.cn", password: PW })) as any;
   assert.equal(li.ok, true);
+  assert.equal(existsSync(mark), false, "重新登录成功即删本机记录");
   const s3 = (await a.invoke("control_plane.sync")) as any;
   assert.equal(s3.report.steps.seat, "accepted", JSON.stringify(s3.report.steps));
   assert.equal(((await a.invoke("account.status", {})) as any).logged_in, true);

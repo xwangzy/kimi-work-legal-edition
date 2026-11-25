@@ -28,6 +28,10 @@ declare global {
       updateStatus?: () => Promise<UpdateStatus | null>;
       installUpdate?: () => Promise<{ ok: boolean; reason?: string }>;
       platform?: string;
+      /** 第 64 批：无边框窗口（界面顶部自绘拖动条）。 */
+      frameless?: boolean;
+      /** 界面明暗变了：Windows 窗口控件浮层跟着换色。 */
+      setWindowTheme?: (theme: "light" | "dark") => void;
     };
   }
 }
