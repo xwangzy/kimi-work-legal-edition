@@ -157,7 +157,14 @@ test("宿主内检索健壮性（复核 S3B-B02～B05）：大文件上的正则
   assert.equal(ctx.out.split("\n").filter(Boolean).length, 40_001);
   assert.ok(ctxMs < 5_000, `大 -C 检索耗时 ${ctxMs} ms`);
   const maxMs = h.max / 1e6;
-  assert.ok(maxMs < 250, `检索期间宿主事件循环最大延迟 ${maxMs.toFixed(0)} ms（检索在 worker 内，主线程不被阻塞；总耗时 ${Date.now() - t0} ms）`);
+  const p99 = h.percentile(99) / 1e6;
+  const delayNote = `检索期间宿主事件循环延迟 p99 ${p99.toFixed(0)} ms、最大 ${maxMs.toFixed(0)} ms（检索在 worker 内，主线程不被阻塞；总耗时 ${Date.now() - t0} ms）`;
+  console.log(`[exec-router] ${delayNote}`);
+  // 检索若在主线程里做，单次检索（40 MB 单行计数、-U 全目录、20 万行 -C）都要数秒，事件循环会被整段卡住、停顿到秒级。
+  // 第 62 批：原先按“最大停顿 < 250 ms”判，GitHub Windows 运行器（2 vCPU）上偶有一次 340～405 ms 的停顿（本机最大 11 ms），
+  // 与检索是否在 worker 无关（GC / 系统扫描刚写入的 40 MB 文件一类）——改按 p99 与秒级上限判，仍能拦住“检索回到主线程”
+  assert.ok(p99 < 100, delayNote);
+  assert.ok(maxMs < 1_000, delayNote);
   // 运行中途 kill：立即以 143 结束（worker.terminate 硬终止）
   const p = await router.spawn(rg, ["--hidden", "--null", "--count-matches", "--with-filename", "--", "[甲乙]方\\d", join(work, "oneline.json")]);
   await new Promise((r) => setTimeout(r, 150));

@@ -183,10 +183,10 @@ function plainFs(zoneRoot: string): SearchFs {
   };
 }
 
-async function host(args: string[], cwd: string, fs: SearchFs): Promise<{ code: number; out: string; err: string }> {
+async function host(args: string[], cwd: string, fs: SearchFs, pathClass: "posix" | "win32" = PC): Promise<{ code: number; out: string; err: string }> {
   let out = "";
   let err = "";
-  const code = await runSearch(args, { cwd, pathClass: PC, fs, io: { out: (s) => (out += s), err: (s) => (err += s), aborted: () => false } });
+  const code = await runSearch(args, { cwd, pathClass, fs, io: { out: (s) => (out += s), err: (s) => (err += s), aborted: () => false } });
   return { code, out, err };
 }
 
@@ -275,6 +275,11 @@ const golden: Golden = existsSync(GOLDEN) ? (JSON.parse(readFileSync(GOLDEN, "ut
 const fresh: Golden = {};
 const digestOut = (out: string) => createHash("sha256").update(out.split(plainRoot).join("<ROOT>")).digest("hex").slice(0, 24);
 
+/** Windows 形状的输出转成金标准（POSIX）形状：路径分隔符 \\ → /，但二进制提示里的字面 "\\0" 保持原样。 */
+function winToPosixOut(out: string): string {
+  return out.replaceAll("\\", "/").replaceAll('found "/0" byte', 'found "\\0" byte');
+}
+
 /** 一例的比对：有 rg 时与 rg 比（并记下金标准）；没有 rg 时与金标准比。返回不一致说明（一致返回 null）。 */
 function compare(key: string, h: { code: number; out: string; err: string }, run: () => { code: number; out: string; err: string }): string | null {
   const hd = digestOut(h.out);
@@ -291,8 +296,10 @@ function compare(key: string, h: { code: number; out: string; err: string }, run
   const g = golden[key];
   if (!g) return `${key}: 金标准缺失（在有 rg 的机器上以 KWL_UPDATE_RG_GOLDEN=1 生成）`;
   // 金标准是 POSIX 机器上 rg 的输出；Windows 上宿主检索按 ripgrep 的 Windows 形状输出反斜杠路径。语料内容不含反斜杠，
-  // 所以先把语料根换成 <ROOT>、再把分隔符统一成 / 后比对——比的是匹配、顺序、计数、上下文，分隔符差异不算不一致
-  const gd = PC === "win32" ? digestOut(h.out.split(plainRoot).join("<ROOT>").replaceAll("\\", "/")) : hd;
+  // 所以先把语料根换成 <ROOT>、再把分隔符统一成 / 后比对——比的是匹配、顺序、计数、上下文，分隔符差异不算不一致。
+  // 例外：content 模式的二进制提示 `binary file matches (found "\0" byte …)` 里的反斜杠不是路径分隔符，统一后要还原
+  // （第 62 批：原先连它一起换成 "/0"，Windows 上凡是遍历到 bin.dat / late-nul.txt 的 content 例全部判不一致，69/1175）
+  const gd = PC === "win32" ? digestOut(winToPosixOut(h.out.split(plainRoot).join("<ROOT>"))) : hd;
   if (h.code !== g.code || (g.code !== 2 && gd !== g.sha)) return `${key}: 与金标准不一致（code ${h.code}/${g.code}）`;
   return null;
 }
@@ -412,7 +419,8 @@ test("超限文件不整读、跳过即报错（上游可见）；遍历到的�
     },
     parentsWithinZone: () => [],
   };
-  const r = await host(["--null", "-l", "--", "违约金", "/w"], "/w", fake);
+  // 假文件系统是 POSIX 形状（/w）：路径类固定 posix，与运行平台无关（第 62 批：Windows 上按 win32 拼出 /w\\ok.txt，与断言不符）
+  const r = await host(["--null", "-l", "--", "违约金", "/w"], "/w", fake, "posix");
   assert.equal(r.code, 2, "超限文件使检索以错误结束（上游会显示说明）");
   assert.match(r.err, /huge\.txt: 文件超过 256 MiB，宿主内检索未读取，结果不完整/);
   assert.equal(r.out, "/w/ok.txt\u0000");
