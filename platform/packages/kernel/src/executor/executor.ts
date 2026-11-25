@@ -45,11 +45,55 @@ import { materialRepealedPromptLine, materialRepealedReviewLines } from "../serv
 import { REVIEW_KIND_OF_SKILL, findingLevel, reviewItems, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, lawExcerptLines, lawRefsIn, parseFindings, workbookText, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind, followUpMessages, followUpSection, parseFollowUp, quoteHints, type FollowUpItem } from "../services/independent-review.ts";
 import { CLOUD_BUILD_TEXT, CLOUD_CERT_TEXT, cloudFailureKind } from "../services/cloud-connection.ts";
 
+/** 第 66 批之前的任务（runs.model 为空）一律用的模型。 */
+const LEGACY_TASK_MODEL = "legal/k3";
+
+/** 这次任务用的模型（runs.model，发起时按云端目录核过；第 66 批之前的任务为 legal/k3）。 */
+export function runModelId(db: KernelDb, runId: string): string {
+  try {
+    return db.get<{ model: string | null }>(`SELECT model FROM runs WHERE run_id = ?`, [runId])?.model || LEGACY_TASK_MODEL;
+  } catch {
+    return LEGACY_TASK_MODEL;
+  }
+}
+
+/**
+ * 内核自己发起的模型调用（合同审查分析、独立复核、复核追问）跟随任务所选模型（第 66 批）；本机路由已不认这个别名
+ * （之后被停用或套餐撤掉、目录已更新）时退回 legal/k3，免得复核整段失败。推理强度只在该模型支持时才带。
+ */
+function kernelRouteOf(deps: Pick<ExecutorDeps, "db" | "broker">, runId: string): string {
+  const id = runModelId(deps.db, runId);
+  try {
+    deps.broker.resolveRoute(id);
+    return id;
+  } catch {
+    return LEGACY_TASK_MODEL;
+  }
+}
+
+function effortIfSupported<E extends string>(deps: Pick<ExecutorDeps, "broker">, route: string, effort: E | undefined): E | undefined {
+  if (!effort) return undefined;
+  try {
+    return (deps.broker.resolveRoute(route).allowedEfforts as readonly string[]).includes(effort) ? effort : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** 交给助手宿主的模型参数（第 66 批）：所选别名与目录里的能力。 */
+function taskModelArgs(deps: Pick<ExecutorDeps, "db" | "modelSpecOf">, runId: string): { model: string; model_spec?: { capabilities: string[]; max_context: number | null; thinking: "effort" | "toggle" | "none" } } {
+  const model = runModelId(deps.db, runId);
+  const spec = deps.modelSpecOf?.(model) ?? null;
+  return { model, ...(spec ? { model_spec: spec } : {}) };
+}
+
 export interface ExecutorDeps {
   db: KernelDb;
   blobs: BlobStore;
   broker: ModelBroker;
   agentClient: AgentClient;
+  /** 第 66 批：任务所选模型的能力与上下文窗口（取自云端模型目录；随 startRun 下发给助手宿主生成引擎配置）。 */
+  modelSpecOf?: ((id: string) => { capabilities: string[]; max_context: number | null; thinking: "effort" | "toggle" | "none" } | null) | undefined;
   lawdb: Lawdb;
   /** 签名事件链（§5.2）：存在时 run_events 插入与签名见证同事务追加（OR IGNORE 去重时不签）。 */
   signer?: LedgerSigner | undefined;
@@ -502,12 +546,14 @@ async function stepModelReview(ctx: Ctx, runId: string, attemptId: string, mater
       ? `注意：引用核验已拦截 ${citations.intercepted} 条无法核实/需改引的引用，须在分析中如实标注，不得引用为有效依据。`
       : "引用核验未发现问题。";
 
+  // 第 66 批：跟随任务所选模型（缺省 / 旧任务为 legal/k3）
+  const s1Route = kernelRouteOf(ctx.deps, runId);
   const result = await withBoundedRetry(async () => {
     try {
       const r = await broker.chat({
         matter,
         task: { tid: run.tenant_id, uid: run.created_by, mid: run.matter_id, rid: runId, aid: attemptId },
-        route: "legal/k3",
+        route: s1Route,
         messages: [
           { role: "system", content: `${playbook}\n\n${saltBlock}\n\n${matterCtxSent}` },
           { role: "user", content: `${citationNote}\n\n材料：\n${excerpts}\n\n任务：输出审查分析（JSON 或结构化文本）。` },
@@ -515,17 +561,17 @@ async function stepModelReview(ctx: Ctx, runId: string, attemptId: string, mater
         clientIdempotencyId: `s1_review_${runId}`,
         note: egressNote ?? undefined,
       });
-      recordToolOperation(db, runId, attemptId, "model", "chat", { route: "legal/k3" }, "succeeded");
+      recordToolOperation(db, runId, attemptId, "model", "chat", { route: s1Route }, "succeeded");
       return r;
     } catch (err) {
-      recordToolOperation(db, runId, attemptId, "model", "chat", { route: "legal/k3" }, "failed");
+      recordToolOperation(db, runId, attemptId, "model", "chat", { route: s1Route }, "failed");
       throw err;
     }
   }, "model.review");
 
   appendEvent(ctx.deps, runId, attemptId, 40, "model.completed", {
     request_id: result.requestId,
-    route: "legal/k3",
+    route: s1Route,
     provider: result.provider,
     endpoint: result.endpointKind,
     cost_microcny: result.costMicroCny,
@@ -536,7 +582,7 @@ async function stepModelReview(ctx: Ctx, runId: string, attemptId: string, mater
   return {
     content: result.content ?? "",
     request_id: result.requestId,
-    route: "legal/k3",
+    route: s1Route,
     cost_microcny: result.costMicroCny,
     provider: result.provider,
     usage: result.usage as unknown as Record<string, unknown>,
@@ -1365,7 +1411,7 @@ async function runAgentScenario(ctx: Ctx, runId: string, attemptId: string, fenc
   const wallMs = ctx.deps.agentWallMs ?? AGENT_WALL_MS;
   const taskId = await (async () => {
     assertNotCancelled(db, runId);
-    const id = await agentClient.start(identity, { goal: goalSent, materials: snapshot, timeout_ms: timeoutMs, wall_ms: wallMs, purpose, fx, ...(continueSession ? { continue_session_id: continueSession } : {}) });
+    const id = await agentClient.start(identity, { goal: goalSent, materials: snapshot, timeout_ms: timeoutMs, wall_ms: wallMs, purpose, fx, ...(continueSession ? { continue_session_id: continueSession } : {}), ...taskModelArgs(ctx.deps, runId) });
     appendEvent(ctx.deps, runId, attemptId, 40, "agent.task_started", { agent_task_id: id, attempt_id: attemptId });
     return id;
   })();
@@ -1640,7 +1686,7 @@ async function runRedlineStage(
     ctx.deps.vouchKnownOnly?.(runId, goal);
     let taskId: string;
     try {
-      taskId = await agentClient.start(identity, { goal, materials: p.snapshot, timeout_ms: limit, wall_ms: p.wallMs, purpose: p.purpose, fx: p.fx, continue_session_id: sid, plan_first: false, task_suffix: "redline" });
+      taskId = await agentClient.start(identity, { goal, materials: p.snapshot, timeout_ms: limit, wall_ms: p.wallMs, purpose: p.purpose, fx: p.fx, continue_session_id: sid, plan_first: false, task_suffix: "redline", ...taskModelArgs(ctx.deps, runId) });
     } catch (e) {
       const error = String((e as Error)?.message ?? e).slice(0, 200);
       appendEvent(ctx.deps, runId, attemptId, REDLINE_SEQ.outcome, "redline.outcome", { status: "start_failed", error });
@@ -2122,6 +2168,8 @@ async function runReviewStage(
     // 本次复核用的推理强度：高强度一次跑了很久后被上游断开（第 58 批真实复测：劳动仲裁答辩书三份交付件一起复核，两次都在 10 分钟整被断开，
     // 复核没做成、任务记部分完成）——重试改用低强度，宁可推理浅一些也要做完复核（reviewEffortDowngrade）
     let effortNow = reviewEffortOf(ctx.deps);
+    // 第 66 批：独立复核跟随任务所选模型（推理强度只在它支持时带）
+    const reviewRoute = kernelRouteOf(ctx.deps, runId);
     for (let attempt = 1; ; attempt++) {
       const limit = ctx.deps.reviewLimitMs ?? REVIEW_LIMIT_MS;
       const ac = new AbortController();
@@ -2131,9 +2179,9 @@ async function runReviewStage(
         const s = await broker.chatStream({
           matter: loadMatter(db, run.matter_id),
           task: { tid: run.tenant_id, uid: run.created_by, mid: run.matter_id, rid: runId, aid: attemptId },
-          route: "legal/k3",
+          route: reviewRoute,
           messages,
-          effort: effortNow,
+          ...(effortIfSupported(ctx.deps, reviewRoute, effortNow) ? { effort: effortNow } : {}),
           maxTokens: reviewMaxTokens(effortNow),
           clientIdempotencyId: `review_${runId}_${attemptId}`,
           signal: ac.signal,
@@ -2155,7 +2203,7 @@ async function runReviewStage(
         if (ac.signal.aborted) throw new Error(`复核超过 ${Math.round(limit / 60_000)} 分钟没有完成`);
         // 正文为空不是“没有问题”（V13 实验：上游缺省推理强度下 32,000 个输出 token 全部用在推理上，正文为空）
         if (!text.trim()) throw new Error("复核没有给出意见（模型输出为空，可能是推理用尽了输出上限）");
-        recordToolOperation(db, runId, attemptId, "model", "review", { route: "legal/k3" }, "succeeded");
+        recordToolOperation(db, runId, attemptId, "model", "review", { route: reviewRoute }, "succeeded");
         // “未发现实质问题”由 parseFindings 判断：复核人写“1. …｜必须改”又在末尾写“其余未发现实质问题”的，意见照样认出
         const parsed = parseFindings(text);
         // 整单金额勾稽（D-229）：写出来的算式逐条复算、文书里的金额要在最新计算表或材料里有出处——机器核对出的不一致并入意见、列为必须改
@@ -2175,7 +2223,7 @@ async function runReviewStage(
         // 复核时机器核对出的全部条目（第 58 批）：回看时在最新版上重跑，修改轮新带进来的算式不等由此认出
         return { ok: true, text, findings, amountKeys: amountIssues.map(issueKey) };
       } catch (e) {
-        recordToolOperation(db, runId, attemptId, "model", "review", { route: "legal/k3" }, "failed");
+        recordToolOperation(db, runId, attemptId, "model", "review", { route: reviewRoute }, "failed");
         const error = String((e as Error)?.message ?? e).slice(0, 200);
         // 失败先重试一次（真实回归：上游一阵拒绝，20 单里 3 单的复核就这样没做成）；超时的不重试；律师已取消的不重试
         const wait = reviewRetryWait(error, attempt, ctx.deps.reviewRetryWaitMs ?? REVIEW_RETRY_WAIT_MS);
@@ -2259,7 +2307,7 @@ async function runReviewStage(
     let taskId: string;
     try {
       // 材料快照照样交给这一轮：宿主每轮清空并重写材料区，传空列表等于让助手在修改时读不到材料
-      taskId = await agentClient.start(identity, { goal, materials: p.snapshot, timeout_ms: limit, wall_ms: p.wallMs, purpose: p.purpose, fx: p.fx, continue_session_id: String(sid), plan_first: false, task_suffix: "review" });
+      taskId = await agentClient.start(identity, { goal, materials: p.snapshot, timeout_ms: limit, wall_ms: p.wallMs, purpose: p.purpose, fx: p.fx, continue_session_id: String(sid), plan_first: false, task_suffix: "review", ...taskModelArgs(ctx.deps, runId) });
     } catch (e) {
       const error = String((e as Error)?.message ?? e).slice(0, 200);
       appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.fixOutcome, "review.fix_outcome", { status: "start_failed", error });
@@ -2398,6 +2446,7 @@ async function runReviewStage(
       const messages = followUpMessages({ findings: modelMust, handling, docs, hints: quoteHints(modelMust, docs), laws: reviewLawLines(ctx.deps.lawdb, lawRefs, p.ctxM.asOf), asOf: p.ctxM.asOf, today: localToday() });
       const limit = followUpLimitMs(reviewEffortOf(ctx.deps), ctx.deps.reviewLimitMs ?? REVIEW_LIMIT_MS);
       const nos = modelMust.map((f) => f.no);
+      const followRoute = kernelRouteOf(ctx.deps, runId);
       for (let attempt = 1; ; attempt++) {
         const ac = new AbortController();
         const timer = setTimeout(() => ac.abort(), limit);
@@ -2406,9 +2455,9 @@ async function runReviewStage(
           const st = await broker.chatStream({
             matter: loadMatter(db, run.matter_id),
             task: { tid: run.tenant_id, uid: run.created_by, mid: run.matter_id, rid: runId, aid: attemptId },
-            route: "legal/k3",
+            route: followRoute,
             messages,
-            effort: reviewEffortOf(ctx.deps),
+            ...(effortIfSupported(ctx.deps, followRoute, reviewEffortOf(ctx.deps)) ? { effort: reviewEffortOf(ctx.deps) } : {}),
             maxTokens: followUpMaxTokens(reviewEffortOf(ctx.deps)),
             clientIdempotencyId: `review_followup_${runId}_${attemptId}_${attempt}`,
             signal: ac.signal,
@@ -2427,10 +2476,10 @@ async function runReviewStage(
           await st.finalize().catch(() => undefined);
           if (ac.signal.aborted) throw new Error("回看超过时限没有完成");
           if (!text.trim()) throw new Error("回看没有给出结论（模型输出为空）");
-          recordToolOperation(db, runId, attemptId, "model", "review_followup", { route: "legal/k3" }, "succeeded");
+          recordToolOperation(db, runId, attemptId, "model", "review_followup", { route: followRoute }, "succeeded");
           return { ok: true, items: finish(parseFollowUp(text, nos), { seconds: Math.round((Date.now() - t0) / 1000), request_id: st.requestId }), fresh };
         } catch (e) {
-          recordToolOperation(db, runId, attemptId, "model", "review_followup", { route: "legal/k3" }, "failed");
+          recordToolOperation(db, runId, attemptId, "model", "review_followup", { route: followRoute }, "failed");
           const error = String((e as Error)?.message ?? e).slice(0, 200);
           const wait = reviewRetryWait(error, attempt, ctx.deps.reviewRetryWaitMs ?? REVIEW_RETRY_WAIT_MS);
           if (wait !== null && !ac.signal.aborted && getRun(db, runId).status !== RunStatus.cancelled) {

@@ -89,7 +89,7 @@ export function pendingChecks(db: KernelDb, matterId: string): PendingCheck[] {
     const known = items.filter((x) => typeof x?.kind === "string" && OPEN_ITEM_TEXT[x.kind]);
     if (known.length === 0) continue;
     const n = known.reduce((k, x) => k + (Number.isFinite(x.count) && (x.count as number) > 0 ? (x.count as number) : 1), 0);
-    out.push({ kind: "open_items", count: n, text: `《${a.filename}》有未决项：${[...new Set(known.map((x) => OPEN_ITEM_TEXT[x.kind!]))].join("、")}`, target: { artifact_version_id: a.artifact_version_id } });
+    out.push({ kind: "open_items", count: n, text: `《${a.filename}》有未决项：${[...new Set(known.map((x) => (x.kind === "quarantined_source" && (x as { reason?: unknown }).reason === "removed_by_lawyer" ? "依据材料已被移除" : OPEN_ITEM_TEXT[x.kind!])))].join("、")}`, target: { artifact_version_id: a.artifact_version_id } });
   }
   return out;
 }

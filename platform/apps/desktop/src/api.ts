@@ -666,6 +666,52 @@ export interface ChatModelChoice {
   thinking?: "effort" | "toggle" | "none";
 }
 
+/** 第 66 批（V40）：模型选择器的入口——task = 首页发起任务，qa = 问答。 */
+export type ModelScope = "task" | "qa";
+
+/** 第 66 批：云端模型目录里的一项（models.list）。只有展示与能力字段——上游型号、地址与密钥不在客户端。 */
+export interface ModelOption {
+  /** 模型编号（别名），如 "legal/k3"、"legal/k3-fast"；发起任务时作 runs.start 的 model，问答发送时作 route。 */
+  id: string;
+  /** 律师看的名字，如“K3”。 */
+  label: string;
+  /** 一句话说明，如“适合复杂问题”；没有为 null。 */
+  description: string | null;
+  sort: number;
+  /** 深度思考开关控制什么：effort = 始终思考、开关调强度；toggle = 开 / 关；none = 不可控（不显示开关）。 */
+  thinking: "effort" | "toggle" | "none";
+  efforts: ("low" | "high" | "max")[];
+  capabilities: ("tool_use" | "thinking" | "long_context")[];
+  scopes: ModelScope[];
+  max_context: number | null;
+  /** 这个入口不选时用的就是它。 */
+  default: boolean;
+  /** 现在能不能选（套餐不含、未定价、无线路、已停用、不支持工具调用时为 false；界面置灰并显示 reason_text）。 */
+  available: boolean;
+  /** 不可用原因代码：not_in_plan / unpriced / no_route / disabled / no_tool_use / not_in_scope；可用时为 null。 */
+  reason: string | null;
+  /** 不可用原因的中文说明（直接显示）；可用时为 null。 */
+  reason_text: string | null;
+}
+
+/** 第 66 批：models.list 的结果。 */
+export interface ModelCatalogView {
+  scope: ModelScope;
+  /** 云端目录版本（只用内置两项时为 null）。 */
+  version: number | null;
+  /** cloud = 本次运行中从云端取到；cache = 上次取到的（离线时）；builtin = 从未取到 / 没有云端（开发形态、试用版）。 */
+  source: "cloud" | "cache" | "builtin";
+  fetched_at: string | null;
+  /** 这个入口的缺省模型编号。 */
+  default: string;
+  /** 现在应选中的：律师记住的（仍可用时）否则缺省。 */
+  selected: string;
+  /** 律师记住的模型现在不可用时（已回落到缺省）：说明原因，界面可提示一次。 */
+  selected_unavailable?: { id: string; label: string; reason: string; reason_text: string | null };
+  /** 该入口的模型（按排序；含不可用的）。 */
+  models: ModelOption[];
+}
+
 /** 内核广播：要重新登录（第 44 批同步；第 47 批起模型请求被网关按身份拒绝时也立即广播）。 */
 export interface AccountLoginRequiredEvent {
   type: "account.login_required";
@@ -774,7 +820,8 @@ export interface QuotaStatus {
   /** 安装形态（第 46 批）：trial = 试用版安装包。 */
   edition?: "trial" | "release" | "dev";
   note?: string;
-  plan?: { id: string; label: string };
+  /** 第 66 批（V40）：note / period / burst / models（可用模型显示名，与模型目录同源）是追加字段，旧控制面没有。 */
+  plan?: { id: string; label: string; note?: string | null; period?: "month" | "week"; burst?: { hours: number; pct: number } | null; models?: string[] | null };
   unit?: "tokens" | "cny";
   unit_label?: string;
   period?: { kind: "month" | "week"; key: string; start: string; resets_at: string };
@@ -804,6 +851,37 @@ export interface QuotaStatus {
   unreconciled_leases?: number;
   /** 本人的使用明细（第 47 批）：本期最近 20 条，新的在前；不含请求内容。旧控制面没有该字段。 */
   own_recent?: { at: string; kind: "qa" | "task"; alias: string | null; label: string | null; tokens_in: number; tokens_cached: number; tokens_out: number; charge: number; /** 第 62 批：这一条占本人分母的比例（控制面算；客户端不用 charge 折算金额）。旧控制面没有。 */ charge_ratio?: number; unit: "tokens" | "cny"; value_cny: number | null; outcome: string; partial: boolean; estimated: boolean; /** 第 62 批：上游没给真实用量、按估算——不计入额度，待核对。 */ pending?: boolean }[];
+  /**
+   * 第 66 批（V40）：个人口径——真正卡住“我”的那一项（额度、律所上限、5 小时窗口、个人上限四者最小）。界面的“已用 / 剩余”优先用它；
+   * limited_by = 正在卡住的那项（null = 都没卡）。旧控制面没有，回退到 own。
+   */
+  personal?: { used_ratio: number; remaining_ratio: number; limited_by: "allowance" | "cap" | "burst" | "seat" | null; /** 暂停原因（null = 没暂停）。 */ paused: "allowance" | "cap" | "burst" | "seat" | null };
+  /** 第 66 批：本人本期按模型（份额按 token，不含金额）。 */
+  own_models?: { alias: string; label: string; share: number; requests: number }[];
+}
+
+/** 第 66 批（V40）：本人用量明细的一行（quota.usage_page；与 own_recent 同口径，不含金额与请求内容）。in_period = 属于本期。 */
+export interface UsagePageRow {
+  at: string;
+  kind: "qa" | "task";
+  alias: string | null;
+  label: string | null;
+  tokens_in: number;
+  tokens_cached: number;
+  tokens_out: number;
+  charge_ratio: number;
+  outcome: string;
+  partial: boolean;
+  estimated: boolean;
+  pending: boolean;
+  in_period: boolean;
+}
+
+/** 第 66 批：明细一页；next_before = 下一页的 before（null = 没有更早的了）。mode = local_dev 时没有明细。 */
+export interface UsagePage {
+  mode: "control_plane" | "local_dev";
+  rows: UsagePageRow[];
+  next_before: string | null;
 }
 
 /** 账号状态（第 44 批）：这台电脑上登录的是谁、是否要重新登录。 */
@@ -827,6 +905,10 @@ export interface AccountMe {
   session: AccountSession;
   devices: AccountDevice[];
   sessions: AccountSession[];
+  /** 第 66 批（V40）：个人账号（换电脑直接登录、不设台数上限，只留防滥用硬上限）。旧云端没有。 */
+  personal?: boolean;
+  /** 第 66 批：最近 5 次登录（新的在前）：时刻、类型（login 登录 / enroll 新电脑登记）、设备编号、平台、粗粒度网段。旧云端没有。 */
+  recent_logins?: { at: string; kind: "login" | "enroll"; device_id: string | null; platform: string | null; version: string | null; net: string }[];
 }
 
 /** 中软侧操作记录（第 9 批 S14）：本机验过签名与哈希链后留存的记录。 */
@@ -991,6 +1073,16 @@ export const api = {
     if (!h) throw new KernelError(window.zrKernel?.fileHandleFor ? "这个文件不能引用（网络位置上的文件请先复制到本机）" : "引用原文件需要桌面客户端（web 调试请用添加）", "validation");
     return invoke("materials.mount", { matter_id: matterId, file_handle: h.handle, filename: file.name });
   },
+  /**
+   * 材料和任务的对应（第 66 批 K2，只读）：每份材料被哪些任务勾选过、每个任务勾了哪些材料；没勾材料的任务（可读全部）单列计数。
+   * 任务名 title / goal 是代号形态，显示前照常还原。
+   */
+  materialUsage: (matterId: string) => invoke<MaterialUsage>("materials.usage", { matter_id: matterId }),
+  /**
+   * 移除误放的材料（第 66 批 K3）：删本产品保存的副本与解析文字（挂载的只解除引用），原文件不动，留审计；
+   * 进行中的任务在用时报 code = "material_in_use"（detail.run_ids）。用过它的成果标“依据材料已被移除”待核对。
+   */
+  removeMaterial: (documentVersionId: string) => invoke<MaterialRemoveResult>("materials.remove", { document_version_id: documentVersionId }),
   /** 有没有选文件夹的系统对话框（桌面客户端有；web 开发形态没有，界面让开发者填路径）。 */
   hasFolderDialog: () => !!window.zrKernel?.pickFolder,
   /**
@@ -1022,8 +1114,8 @@ export const api = {
   listSuspects: (matterId: string, documentVersionIds: string[], goal?: string) => invoke<{ suspects: SuspectView[]; summary: SendSummaryView }>("matters.suspects.list", { matter_id: matterId, document_version_ids: documentVersionIds, ...(goal ? { goal } : {}) }),
   reviewSuspects: (matterId: string, items: { value: string; decision: "name" | "not_name" }[]) =>
     invoke<{ added_to_parties: number; dismissed: number; rejected: string[] }>("matters.suspects.review", { matter_id: matterId, items }),
-  startRun: (matterId: string, body: { estimate_id: string; idempotency_key: string; goal?: string; title?: string; topic_hint?: string; mode?: RunMode; plan_first?: boolean; preauthorizations?: Preauthorization[]; skill?: string; skill_args?: Record<string, string>; primary_output?: string; review_rules?: boolean; followup_of?: string; mode_raise_confirmed?: boolean; review_apply?: boolean }) =>
-    invoke<{ run_id: string; status: string; mode?: RunMode }>("runs.start", { matter_id: matterId, ...body }),
+  startRun: (matterId: string, body: { estimate_id: string; idempotency_key: string; goal?: string; title?: string; topic_hint?: string; mode?: RunMode; plan_first?: boolean; preauthorizations?: Preauthorization[]; skill?: string; skill_args?: Record<string, string>; primary_output?: string; review_rules?: boolean; followup_of?: string; mode_raise_confirmed?: boolean; review_apply?: boolean; /** 第 66 批：所选模型（ModelOption.id）；不给 = 律师在首页记住的或缺省；追问沿用上一轮（给了不同的被拒）。 */ model?: string }) =>
+    invoke<{ run_id: string; status: string; mode?: RunMode; /** 第 66 批：这次任务实际用的模型与显示名。 */ model?: string; model_label?: string }>("runs.start", { matter_id: matterId, ...body }),
   getRun: (runId: string) =>
     invoke<{ run: any; artifacts: any[]; inflight?: { model: number; search: number; fetch: number }; unresolved_operations?: UnresolvedOperation[]; waiting_ahead?: number }>("runs.get", { run_id: runId }),
   /** 方法模板（Kimi Code Skills）：已验签、会在任务中提供给 Agent 的方法模板。 */
@@ -1319,6 +1411,13 @@ export const api = {
    */
   chatSendWithModel: (body: { conversation_id?: string; text: string; stream_id?: string; route?: string; /** 深度思考（第 48 批）：true 先充分思考再答，false 快速回答；不给按内核缺省。 */ deep?: boolean }) =>
     invoke<{ conversation_id: string; messages: ChatMessage[]; blocked?: { reason: string; message: string; matters?: { matter_id: string; title: string }[] } }>("chat.send", body),
+  /**
+   * 第 66 批（V40）：云端模型目录（首页与问答的选择器共用）。scope = "task"（首页任务，只列能做任务的）或 "qa"（问答）；
+   * refresh: true 先向云端取一次（打开选择器时用；取不到用上一版）。
+   */
+  modelsList: (scope: ModelScope, opts: { refresh?: boolean } = {}) => invoke<ModelCatalogView>("models.list", { scope, ...(opts.refresh ? { refresh: true } : {}) }),
+  /** 第 66 批：记住律师在某入口选的模型（本机、按本人）；不可选的被拒（消息可直接显示）。 */
+  modelsSelect: (scope: ModelScope, id: string) => invoke<{ ok: true; scope: ModelScope; selected: string; label: string }>("models.select", { scope, id }),
 
   // 设备与连接
   /** 渲染会话被主进程拦截的外部请求（只在桌面客户端有；web 开发返回 null）。 */
@@ -1329,6 +1428,8 @@ export const api = {
   // 控制面与律所治理（阶段 6）：状态不含任何令牌；告警是控制面下发内容未通过本机核验的记录
   controlPlaneStatus: () => invoke<ControlPlaneStatus>("control_plane.status"),
   quotaStatus: () => invoke<QuotaStatus>("quota.status"),
+  /** 第 66 批（V40）：本人用量明细翻页（before = 上一页的 next_before；不传 = 最新一页；limit 1～100，缺省 50）。 */
+  quotaUsagePage: (o: { before?: string | null; limit?: number } = {}) => invoke<UsagePage>("quota.usage_page", { ...(o.before ? { before: o.before } : {}), ...(o.limit ? { limit: o.limit } : {}) }),
   // 期限提醒（第 10 批 S9）
   reminders: (matterId?: string) =>
     invoke<{
@@ -1537,6 +1638,8 @@ export const onboarding = {
   redeem: (code: string) => invoke<any>("onboarding.redeem", { code }),
   check: () => invoke<any>("onboarding.check"),
   reset: () => invoke<any>("onboarding.reset"),
+  /** 第 66 批（V40）：个人账号新电脑自动登记被风控暂停后，用账号绑定手机号的短信验证码（account.smsSend(phone, "login")）确认再登记。 */
+  deviceConfirm: (phone: string, smsCode: string) => invoke<any>("onboarding.device_confirm", { phone, sms_code: smsCode }),
   /** 从备份恢复（第 14 批）：安装包形态传句柄；开发形态（无对话框）传路径。 */
   restore: (o: { file_handle?: string; folder_handle?: string; file?: string; dir?: string; code: string; legacy_ack?: boolean; older_ack?: boolean }) => invoke<any>("onboarding.restore", o),
 };
@@ -1688,4 +1791,49 @@ export interface ConnectionDiagnosis {
     presented: string[];
     cloud_ca: boolean;
   }[];
+}
+
+/**
+ * materials.import 的结果（第 66 批 K1）：同事项已有内容相同的材料时不重复保存，duplicate 为 true、document_version_id 是已有那份、
+ * filename 是它的原名（界面提示“已在本事项（原名 X）”，不改名）。api.importMaterial 的返回可按此类型读取。
+ */
+export interface MaterialImportResult {
+  document_version_id: string;
+  chars?: number;
+  quality_flags?: string[];
+  sha256?: string;
+  note?: string;
+  marking_notice?: string | null;
+  duplicate?: boolean;
+  filename?: string;
+}
+
+/** materials.usage 的一个任务（第 66 批 K2）。scope：selected = 勾了材料（只读这些）；all = 没勾、可读本事项全部材料。 */
+export interface MaterialUsageRun {
+  run_id: string;
+  scenario: string;
+  status: string;
+  created_at: string;
+  title: string | null;
+  goal: string | null;
+  followup_of?: string | null;
+  scope?: "selected" | "all";
+  document_version_ids?: string[];
+  artifact_count: number;
+}
+
+export interface MaterialUsage {
+  documents: { document_version_id: string; used_by: MaterialUsageRun[]; readable_by_unrestricted: number }[];
+  runs: MaterialUsageRun[];
+  unrestricted_runs: number;
+}
+
+export interface MaterialRemoveResult {
+  document_version_id: string;
+  removed: true;
+  already?: boolean;
+  reason: string;
+  storage_mode?: string;
+  affected_artifacts: number;
+  note?: string;
 }

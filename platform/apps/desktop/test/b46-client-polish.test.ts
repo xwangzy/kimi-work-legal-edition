@@ -22,7 +22,7 @@ test("发起前检查的提示：从估价结果或发起错误里取出，入�
   assert.deepEqual(startHintOf(err), hint, "runs.start 拒绝时的 detail.start_hint");
   assert.equal(startHintOf(new Error("别的错误")), null);
   assert.equal(startHintOf({ start_hint: { kind: "x", message: "m" } }), null);
-  assert.equal(startHintActionLabel(hint as never), "查看本所用量");
+  assert.equal(startHintActionLabel(hint as never), "查看用量");
   assert.deepEqual(startHintTarget(hint as never), { path: "/connections/usage", anchor: "#sec-usage" });
   const login = startHintOf({ kind: "login", code: "session_expired", message: "登录已失效：请先在页面顶部重新登录，再开始任务", action: "login" })!;
   assert.equal(startHintActionLabel(login), "去登录");
@@ -30,7 +30,8 @@ test("发起前检查的提示：从估价结果或发起错误里取出，入�
   assert.deepEqual(startHintTarget(login), { path: null, anchor: '[data-auth-page="relogin"] input', refreshAccount: true });
   assert.equal(startHintActionLabel({ ...login, action: null }), null);
   // 用量页上真有这个锚点；登录横幅里真有登录框
-  assert.match(src("pages/Connections.tsx"), /id="sec-usage"/);
+  // 第 66 批：锚点在个人“套餐与用量”页的根节点上
+  assert.match(src("pages/PersonalUsage.tsx"), /id="sec-usage"/);
   assert.match(src("App.tsx"), /if \(login\)\s*return \(\s*<>\s*<ReloginPage/);
 });
 
@@ -109,7 +110,7 @@ test("上手清单：首页渲染卡片；按“自己建的”判断（内核 g
 test("试用版：账号、用量、用户卡、关于不写“开发形态”", () => {
   assert.equal(userCardText({ name: "试用律师", firm: null, edition: "trial" }, { title: "本机运行", note: "" }).firm, "试用版");
   assert.equal(userCardText({ name: "我", firm: null }, { title: "本机运行", note: "" }).firm, "开发形态", "真正的开发形态照旧");
-  assert.equal(quotaLawyerLine({ mode: "local_dev", edition: "trial" } as never), "试用版：不统计本所用量");
+  assert.equal(quotaLawyerLine({ mode: "local_dev", edition: "trial" } as never), "试用版：不统计你的用量");
   assert.match(src("components/AccountPanel.tsx"), /st\.edition === "trial" \? "试用版：不需要登录账号。"/);
   assert.match(src("pages/Connections.tsx"), /st\?\.edition === "trial" \? "试用版"/);
   assert.match(readFileSync(join(import.meta.dirname, "../electron/trial-mode.cjs"), "utf8"), /ZR_TRIAL_BUILD: "1"/);

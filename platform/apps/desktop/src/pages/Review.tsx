@@ -34,6 +34,8 @@ const STATUS_TEXT: Record<string, string> = {
 function openItemText(it: any): string {
   if (it && typeof it === "object") {
     if (it.kind === "citation_intercepted") return `有 ${Number(it.count ?? 0)} 条引用被拦下（查不到或已失效），请核对正文里是否还在使用`;
+    // 第 66 批 K3：律师移除的材料走同一套隔离，reason 区分说明
+    if (it.kind === "quarantined_source" && it.reason === "removed_by_lawyer") return "本成果依据的材料已被律师移除：请核对本成果是否仍可使用，确认前不得交付";
     if (it.kind === "quarantined_source") return "本成果用到的材料带国家秘密标志、已隔离：请按涉密载体规定核查，确认前不得交付";
     if (typeof it.note === "string") return it.note;
   }

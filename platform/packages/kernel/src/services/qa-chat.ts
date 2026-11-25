@@ -19,6 +19,7 @@ import { dataLevelOf } from "../egress/gate-host.ts";
 import type { Lawdb } from "@zr-legal/lawdb";
 import { checkArtifactCitations } from "./artifact-citations.ts";
 import { CLOUD_BUILD_TEXT, CLOUD_CERT_TEXT, cloudFailureKind } from "./cloud-connection.ts";
+import { BUILTIN_CATALOG, DEFAULT_MODEL, type CatalogModel } from "./model-catalog.ts";
 
 export interface QaMessageView {
   message_id: string;
@@ -48,29 +49,34 @@ export interface QaModelChoice {
   thinking: "effort" | "toggle" | "none";
 }
 
-/** 问答允许律师选的别名（只此两个；子任务另有规则，不经这里）与其律师名。顺序即界面显示顺序。 */
-export const QA_MODEL_CATALOG: readonly { alias: string; label: string; note: string }[] = [
-  { alias: "legal/k3", label: "K3", note: "适合复杂问题" },
-  { alias: "legal/k2.6", label: "K2.6", note: "更快、更省额度，复杂问题效果略弱" },
-];
+/**
+ * 问答可选的模型来自云端模型目录（第 66 批，V40；取消 D-200 的“问答只此两项”，偏离 D-291）：目录里入口含 qa、可用、且本机模型路由
+ * 认得的别名。没有云端目录（开发形态、试用版、从未取到）时是内置两项 K3 / K2.6（BUILTIN_CATALOG）。
+ */
 
-/** 别名 → 律师名（“K3”“K2.6”）；不在目录里的别名为 null。 */
-export function qaRouteLabel(alias: string | null | undefined): string | null {
-  return QA_MODEL_CATALOG.find((m) => m.alias === alias)?.label ?? null;
+/** 别名 → 律师名：先查给定的目录（缺省内置两项）；不认识的为 null。 */
+export function qaRouteLabel(alias: string | null | undefined, catalog: readonly CatalogModel[] = BUILTIN_CATALOG): string | null {
+  if (!alias) return null;
+  return catalog.find((m) => m.id === alias)?.label ?? BUILTIN_CATALOG.find((m) => m.id === alias)?.label ?? null;
 }
 
 /**
- * 可选模型列表（第 47 批）：目录里、且模型路由实际配置了的别名；缺省那一个的说明前加“缺省，”。纯函数。
- * configured = broker.routeAliases()；defaultRoute = ZR_QA_ROUTE ?? legal/k3。
+ * 可选模型列表（第 47 批；第 66 批改读目录）：目录里入口含 qa、可用、且模型路由实际配置了的别名，按目录排序；缺省那一个的说明前加“缺省，”。纯函数。
+ * configured = broker.routeAliases()；defaultRoute = ZR_QA_ROUTE ?? 目录的问答缺省。
  */
-export function qaModelChoices(configured: readonly string[], defaultRoute: string, thinkingOf?: (alias: string) => QaModelChoice["thinking"]): QaModelChoice[] {
-  return QA_MODEL_CATALOG.filter((m) => configured.includes(m.alias)).map((m) => ({
-    alias: m.alias,
-    label: m.label,
-    note: m.alias === defaultRoute ? `缺省，${m.note}` : m.note,
-    default: m.alias === defaultRoute,
-    thinking: thinkingOf?.(m.alias) ?? "none",
-  }));
+export function qaModelChoices(configured: readonly string[], defaultRoute: string, thinkingOf?: (alias: string) => QaModelChoice["thinking"], catalog: readonly CatalogModel[] = BUILTIN_CATALOG): QaModelChoice[] {
+  return catalog
+    .filter((m) => m.scopes.includes("qa") && m.available && configured.includes(m.id))
+    .map((m) => {
+      const note = m.description ?? "";
+      return {
+        alias: m.id,
+        label: m.label,
+        note: m.id === defaultRoute ? (note ? `缺省，${note}` : "缺省") : note,
+        default: m.id === defaultRoute,
+        thinking: thinkingOf?.(m.id) ?? "none",
+      };
+    });
 }
 
 /**
@@ -149,10 +155,14 @@ export interface QaDeps {
   defaultDeep?: boolean;
   /** 模型路由实际配置了的别名（broker.routeAliases()；第 47 批）：律师选的模型须在其中。不给时只认缺省别名。 */
   routes?: () => readonly string[];
+  /** 云端模型目录（第 66 批；ModelCatalogService.models()）。不给时按内置两项。 */
+  catalog?: () => readonly CatalogModel[];
+  /** 律师本人在问答里记住的模型（models.select scope=qa）；没选过为 null。chat.send 不带 route 时先用它（仍须在可选列表里）。 */
+  selectedRoute?: (tenantId: string, userId: string) => string | null;
   /** 别名 → 思考控制方式（第 49 批；model-broker thinkingControlOf）。不给时按“不可控”。 */
   thinkingOf?: (alias: string) => QaModelChoice["thinking"];
-  /** 不选模型时用的别名（index.ts：ZR_QA_ROUTE ?? legal/k3）；不给时 legal/k3。 */
-  defaultRoute?: string;
+  /** 不选模型时用的别名（index.ts：ZR_QA_ROUTE ?? 目录的问答缺省）；不给时 legal/k3。可给函数（目录随时更新）。 */
+  defaultRoute?: string | (() => string);
 }
 
 /**
@@ -162,7 +172,7 @@ export interface QaDeps {
 /**
  * 问答取不到回答时的说明（第 46 批）：闸门把网关错误代码以“[kwl:代码]”附在说明末尾——额度、登录类按代码说人话，其余照原话、去掉代码。纯函数。
  */
-export function qaFailureText(message: string, route?: string | null): string {
+export function qaFailureText(message: string, route?: string | null, names?: { labelOf?: (alias: string) => string | null; defaultAlias?: string }): string {
   const code = /\[kwl:([a-z0-9_]{1,60})\]/.exec(message)?.[1] ?? "";
   // 第 52 批（第 50 批 IP 部署演练发现）：证书被换时原来落到下面的通用说法（说明里带“模型通道 502”）——证书类、安装包配置类单独说，与“连不上”分开
   const cloud = cloudFailureKind(code);
@@ -172,13 +182,16 @@ export function qaFailureText(message: string, route?: string | null): string {
   if (cloud === "timeout") return "云端 AI 服务长时间没有响应，这次没有取得回答：请稍后再问";
   // 第 47 批：所选模型本身用不了（未定价 503、没有路由或已停用 400、套餐不含 403、这个别名没有可用上游 503）——说清是“这个模型”的事，
   // 不说成额度用完或连不上；选的不是 K3 时建议换 K3
+  // 第 66 批：建议换成缺省模型（目录的缺省，显示名随云端），不再写死 K3
   if (code === "price_unconfigured" || code === "model_not_routed" || code === "model_disabled" || code === "model_not_allowed" || code === "upstream_unavailable") {
-    const label = qaRouteLabel(route);
-    const isK3 = route == null || route === "legal/k3";
+    const labelOf = (a: string) => names?.labelOf?.(a) ?? qaRouteLabel(a);
+    const label = route ? labelOf(route) : null;
+    const defAlias = names?.defaultAlias ?? DEFAULT_MODEL;
+    const isDefault = route == null || route === defAlias;
     const why = code === "model_not_allowed" ? `本所的套餐不含${label ? ` ${label}` : "这个模型"}` : `${label ? `${label} ` : ""}这个模型暂不可用`;
-    return isK3 ? `${why}，这次没有取得回答：请稍后再问，或联系律所管理员` : `${why}，这次没有取得回答：请换 K3 再问，或联系律所管理员`;
+    return isDefault ? `${why}，这次没有取得回答：请稍后再问，或联系律所管理员` : `${why}，这次没有取得回答：请换 ${labelOf(defAlias) ?? "缺省模型"} 再问，或联系律所管理员`;
   }
-  if (code.startsWith("quota_")) return "本所 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查看，稍后再问或联系律所管理员";
+  if (code.startsWith("quota_")) return "你的 AI 额度暂时用到限制，这次没有取得回答：可在“设置 → 套餐与用量”查看剩余与重置时间，稍后再问";
   if (code.startsWith("seat_") || /AI 使用授权/.test(message)) return "登录已失效或这台电脑暂时没有取得 AI 使用授权，这次没有取得回答：请重新登录（或联网稍等）后再问";
   // 第 46 批真实验收（停用演练）：律师看到过“模型通道错误 402：账号已停用”
   if (code === "account_disabled" || /账号已停用/.test(message)) return "你的账号已被停用，这次没有取得回答：请联系律所管理员或中软客服";
@@ -330,7 +343,7 @@ export class QaChatService {
         const text = restoreTokens(m.text, table).text;
         const citations = m.role === "assistant" ? this.citations(text) : null;
         const route = m.role === "user" ? null : (m.route ?? null);
-        const base = { ...m, text, route, route_label: qaRouteLabel(route) };
+        const base = { ...m, text, route, route_label: qaRouteLabel(route, this.catalog()) };
         return citations ? { ...base, citations } : base;
       });
   }
@@ -473,19 +486,28 @@ export class QaChatService {
 
   /** 可选模型（第 47 批）：kernel.status 的 model_choices 与 chat.models 用。 */
   modelChoices(): QaModelChoice[] {
-    return qaModelChoices(this.d.routes?.() ?? [this.defaultRoute()], this.defaultRoute(), this.d.thinkingOf);
+    return qaModelChoices(this.d.routes?.() ?? [this.defaultRoute()], this.defaultRoute(), this.d.thinkingOf, this.catalog());
+  }
+
+  private catalog(): readonly CatalogModel[] {
+    return this.d.catalog?.() ?? BUILTIN_CATALOG;
   }
 
   private defaultRoute(): string {
-    return this.d.defaultRoute ?? "legal/k3";
+    const d = this.d.defaultRoute;
+    return (typeof d === "function" ? d() : d) ?? DEFAULT_MODEL;
   }
 
   /**
    * 律师选的模型（第 47 批）：不选（undefined / null / 空串）用缺省；选了就只认可选列表里的别名（K3、K2.6，且本机模型路由配置了），
    * 不认识的拒绝并说明能选什么——不静默改用别的模型。
    */
-  private pickRoute(route: unknown): string {
-    if (route === undefined || route === null || route === "") return this.defaultRoute();
+  private pickRoute(route: unknown, tenantId?: string, userId?: string): string {
+    if (route === undefined || route === null || route === "") {
+      // 第 66 批：没带模型时先用律师在问答里记住的（仍可选才用），否则缺省
+      const saved = tenantId && userId ? this.d.selectedRoute?.(tenantId, userId) : null;
+      return saved && this.modelChoices().some((c) => c.alias === saved) ? saved : this.defaultRoute();
+    }
     const choices = this.modelChoices();
     if (typeof route === "string" && choices.some((c) => c.alias === route)) return route;
     const can = choices.map((c) => c.label).join("、");
@@ -496,7 +518,7 @@ export class QaChatService {
     const text = String(input.text ?? "").trim();
     if (!text) throw Object.assign(new Error("问题为空"), { code: "validation" });
     if (text.length > 8000) throw Object.assign(new Error("问题过长（无事项问答不处理案件材料；请在事项内处理）"), { code: "validation" });
-    const route = this.pickRoute(input.route);
+    const route = this.pickRoute(input.route, tenantId, userId);
     const blocked = this.check(text, tenantId, userId);
     if (blocked) {
       return { conversation_id: input.conversationId ?? "", messages: input.conversationId ? this.get(input.conversationId, tenantId, userId) : [], blocked };
@@ -562,7 +584,7 @@ export class QaChatService {
       });
     } catch (e) {
       partial?.stop();
-      this.addMessage(c.conversation_id, "notice", `未能取得回答：${qaFailureText(qaErrorMessage(e), route)}`, route);
+      this.addMessage(c.conversation_id, "notice", `未能取得回答：${qaFailureText(qaErrorMessage(e), route, { labelOf: (a) => qaRouteLabel(a, this.catalog()), defaultAlias: this.defaultRoute() })}`, route);
       return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
     }
     // 模型回答原样保存（令牌形态；显示时还原）；写不进去的记“未能取得回答”，不让回答悄悄丢掉

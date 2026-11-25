@@ -230,6 +230,9 @@ function paneModels(pane, d, reload) {
               [...(m.targets ?? [])].sort((a, b) => a.priority - b.priority).map((t) => h("li", {}, h("span", { class: "prio num" }, String(t.priority)), mono(t.provider), h("span", { class: "muted" }, " → "), mono(t.model), pmap[t.provider] ? providerBadge(pmap[t.provider].health, pmap[t.provider].enabled) : badge("上游不存在", "danger"))),
             ),
         },
+        // 第 66 批：客户端模型目录——在哪些入口可选、是否给客户端看（律师端按套餐与路由动态拉取，不需重新封装）
+        { key: "scopes", label: "客户端入口", sortable: false, class: "opt", render: (m) => (m.client_visible === false ? h("span", { class: "muted" }, "不给客户端") : h("span", { class: "badges" }, (m.scopes ?? []).includes("qa") ? badge("问答", "info") : null, (m.scopes ?? []).includes("task") ? badge("任务", "info") : null, !(m.scopes ?? []).length ? h("span", { class: "muted" }, "无") : null)) },
+        { key: "sort", label: "排序", num: true, class: "opt", render: (m) => fmt.int(m.sort ?? 100) },
         { key: "allow_cross_vendor", label: "跨厂商切换", value: (m) => (m.allow_cross_vendor ? 1 : 0), render: (m) => (m.allow_cross_vendor ? badge("允许", "warn") : h("span", { class: "muted" }, "不允许")) },
         { key: "default_max_tokens", label: "缺省 max_tokens", num: true, render: (m) => fmt.int(m.default_max_tokens) },
       ],
@@ -247,6 +250,23 @@ function editModel(m, d, reload) {
     { name: "is_default", label: "设为默认别名", type: "checkbox", value: !!m?.is_default, hint: "至多一个；客户端未指定别名时用它" },
     { name: "allow_cross_vendor", label: "允许跨厂商切换", type: "checkbox", value: !!m?.allow_cross_vendor, hint: "关：只在同厂商的目标之间切换" },
     { name: "default_max_tokens", label: "缺省 max_tokens（256–262144）", type: "number", min: 256, max: 262_144, value: m?.default_max_tokens ?? 8192 },
+  ];
+  // 第 66 批：客户端模型目录的展示与能力（律师端选择器显示；上游目标、型号与密钥不下发给客户端）
+  const has = (k, x) => (m?.[k] ?? []).includes(x);
+  const metaSpecs = [
+    { name: "description", label: "说明（给律师看，≤ 60 字）", value: m?.description ?? "", maxlength: 60, placeholder: "适合复杂问题" },
+    { name: "sort", label: "排序（小者在前，0–9999）", type: "number", min: 0, max: 9999, value: m?.sort ?? 100 },
+    { name: "thinking", label: "深度思考的控制方式", type: "select", value: m?.thinking ?? "none", options: [["effort", "调强度（K3 系列：始终思考，reasoning_effort）"], ["toggle", "开 / 关（K2.6：thinking.type）"], ["none", "不可控（不发思考参数）"]] },
+    { name: "eff_low", label: "档位 low", type: "checkbox", value: isNew ? false : has("efforts", "low"), hint: "只对“调强度”的模型有效" },
+    { name: "eff_high", label: "档位 high", type: "checkbox", value: isNew ? false : has("efforts", "high") },
+    { name: "eff_max", label: "档位 max", type: "checkbox", value: isNew ? false : has("efforts", "max") },
+    { name: "cap_tool_use", label: "能力：工具调用（tool_use）", type: "checkbox", value: isNew ? true : has("capabilities", "tool_use"), hint: "任务入口要求有这项" },
+    { name: "cap_thinking", label: "能力：深度思考（thinking）", type: "checkbox", value: isNew ? false : has("capabilities", "thinking") },
+    { name: "cap_long_context", label: "能力：长上下文（long_context）", type: "checkbox", value: isNew ? false : has("capabilities", "long_context") },
+    { name: "scope_qa", label: "可在问答里选", type: "checkbox", value: isNew ? true : has("scopes", "qa") },
+    { name: "scope_task", label: "可在任务里选", type: "checkbox", value: isNew ? false : has("scopes", "task"), hint: "任务的子 Agent 另有规则，不经这里" },
+    { name: "client_visible", label: "对客户端可见", type: "checkbox", value: m ? m.client_visible !== false : true, hint: "关：只作内部别名，不出现在律师端选择器" },
+    { name: "max_context", label: "上下文窗口（token，空 = 缺省 262144）", type: "number", min: 8192, max: 2_000_000, value: m?.max_context ?? "" },
   ];
   let targets = (m?.targets ?? []).map((t) => ({ ...t }));
   if (!targets.length) targets = [{ provider: providers[0]?.[0] ?? "", model: "", priority: 1 }];
@@ -274,6 +294,8 @@ function editModel(m, d, reload) {
     { class: "drawer-form", novalidate: true },
     specs.map(field),
     h("div", { class: "field" }, h("label", {}, "目标（优先级小者先）"), providers.length ? tBox : h("div", { class: "banner warn" }, "还没有上游：先在“上游”里登记。")),
+    h("div", { class: "field" }, h("label", {}, "律师端显示与能力"), note("律师端按套餐与这里的设置动态拉取可选模型（约 10 分钟内或下次登录生效，不需重新封装客户端）；不下发上游、型号与密钥。")),
+    metaSpecs.map(field),
     err,
     h(
       "div",
@@ -289,11 +311,23 @@ function editModel(m, d, reload) {
       h("button", { type: "submit", class: "btn primary", disabled: !can("route.manage") || !providers.length, title: needs("route.manage") }, isNew ? "新增别名" : "保存路由"),
     ),
   );
-  const dr = openDrawer({ title: isNew ? "新增模型别名" : `别名 ${m.alias}`, subtitle: builtin ? "内置别名：客户端写死，不可改名、不可删；只改它指向的上游与型号" : null, body: form });
+  const dr = openDrawer({ title: isNew ? "新增模型别名" : `别名 ${m.alias}`, subtitle: builtin ? "内置别名：旧客户端写死，不可改名、不可删；可改它指向的上游与型号、律师端显示与能力" : null, body: form });
   form.addEventListener("submit", async (ev) => {
     ev.preventDefault();
     err.textContent = "";
     const v = readForm(form, specs);
+    const mv = readForm(form, metaSpecs);
+    const meta = {
+      description: (mv.description ?? "").trim() || null,
+      sort: mv.sort ?? 100,
+      thinking: mv.thinking || "none",
+      efforts: mv.thinking === "effort" ? ["low", "high", "max"].filter((x) => mv[`eff_${x}`]) : [],
+      capabilities: ["tool_use", "thinking", "long_context"].filter((x) => mv[`cap_${x}`]),
+      scopes: ["qa", "task"].filter((x) => mv[`scope_${x}`]),
+      client_visible: !!mv.client_visible,
+      max_context: mv.max_context ?? null,
+    };
+    if (meta.scopes.includes("task") && !meta.capabilities.includes("tool_use")) return void (err.textContent = "任务入口要求模型支持工具调用：勾选“能力：工具调用”，或取消“可在任务里选”");
     const alias = isNew ? v.alias : m.alias;
     if (!ALIAS_RE.test(alias)) return void (err.textContent = "别名须为小写字母数字开头、可含 . _ / - 的 2–48 位");
     const ts = targets.map((t) => ({ provider: t.provider, model: t.model, priority: Number(t.priority) }));
@@ -315,7 +349,7 @@ function editModel(m, d, reload) {
       ].filter(Boolean),
       typeToConfirm: !isNew && builtin ? alias : undefined,
       confirmLabel: isNew ? "新增" : "保存路由",
-      run: () => api.put(`/v1/ops/routing/models/${encodeURIComponent(alias)}`, { label: v.label, enabled: v.enabled, is_default: v.is_default, targets: ts, allow_cross_vendor: v.allow_cross_vendor, default_max_tokens: v.default_max_tokens ?? 8192 }),
+      run: () => api.put(`/v1/ops/routing/models/${encodeURIComponent(alias)}`, { label: v.label, enabled: v.enabled, is_default: v.is_default, targets: ts, allow_cross_vendor: v.allow_cross_vendor, default_max_tokens: v.default_max_tokens ?? 8192, ...meta }),
     });
     if (ok) {
       toast(isNew ? "已新增别名" : "已保存路由");

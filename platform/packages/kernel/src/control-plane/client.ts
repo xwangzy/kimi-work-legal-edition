@@ -42,6 +42,8 @@ export interface ControlPlaneClientDeps {
   device: { deviceId: string; cert: DeviceCertificate; signer: DeviceSyncSigner };
   /** G0 开发形态：创始设备的律所根密钥（开通时登记根公钥用；生产为开通流程，不在联机设备上）。 */
   firmRoot?: () => { publicKeyPem: string; privateKeyPem: string } | null;
+  /** 第 66 批（V40，D-292）：创始设备的律所公钥包（恢复托管公钥 + 律所根签名，公开数据）——随登记上传，控制面下发给个人账号的新电脑。 */
+  firmBundle?: () => { recovery_public_key_pem: string; sig: string } | null;
   /** 第 13 批：经开通码激活的创始设备，首次登记根公钥时出示的认领凭据（登记成功后 onEnrolled 删除暂存）。 */
   activationClaim?: () => { activation_id: string; claim_secret: string } | null;
   onEnrolled?: () => void;
@@ -112,7 +114,8 @@ export interface DraftView {
 export interface QuotaView {
   tid: string;
   issued_at: string;
-  plan: { id: string; label: string };
+  /** 第 66 批（V40）：note / period / burst / models（可用模型显示名，与模型目录同源）是追加字段，旧控制面没有。 */
+  plan: { id: string; label: string; note?: string | null; period?: "month" | "week"; burst?: { hours: number; pct: number } | null; models?: string[] };
   account: { aid: string; email: string; name: string } | null;
   accounts_required: boolean;
   unit: "tokens" | "cny";
@@ -126,6 +129,30 @@ export interface QuotaView {
   by_member?: { uid: string | null; name: string | null; used: number; used_ratio_of_firm: number; requests: number }[];
   boosts?: { at: string; pct: number }[];
   unreconciled_leases?: number;
+  /**
+   * 第 66 批（V40）：个人口径——真正卡住“我”的那一项（额度、律所上限、频率窗口、个人上限四者最小）。limited_by = 正在卡住的那项（null = 都没卡）；
+   * 旧控制面没有这一段（界面回退到 own）。
+   */
+  personal?: { used_ratio: number; remaining_ratio: number; limited_by: "allowance" | "cap" | "burst" | "seat" | null; paused: "allowance" | "cap" | "burst" | "seat" | null };
+  /** 第 66 批：本人本期按模型（份额按 token，不含金额）。 */
+  own_models?: { alias: string; label: string; share: number; requests: number }[];
+}
+
+/** 第 66 批（V40）：本人用量明细的一行（与 /v1/quota 的 own_recent 同口径，不含金额与请求内容）。 */
+export interface UsagePageRow {
+  at: string;
+  kind: "qa" | "task";
+  alias: string | null;
+  label: string | null;
+  tokens_in: number;
+  tokens_cached: number;
+  tokens_out: number;
+  charge_ratio: number;
+  outcome: string;
+  partial: boolean;
+  estimated: boolean;
+  pending: boolean;
+  in_period: boolean;
 }
 
 type CallResult = { ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number; message?: string; retry_after_s?: number };
@@ -219,7 +246,8 @@ export class ControlPlaneClient {
   /** 设备登记（幂等）；租户根公钥未入组时先开通（G0）。 */
   private async register(): Promise<string> {
     const v = this.d.clientVersion;
-    const body = { tid: this.d.tenantId, cert: this.d.device.cert, ...(v && CLIENT_VERSION_RE.test(v) ? { client: { version: v } } : {}) };
+    const fb = this.d.firmBundle?.() ?? null;
+    const body = { tid: this.d.tenantId, cert: this.d.device.cert, ...(v && CLIENT_VERSION_RE.test(v) ? { client: { version: v } } : {}), ...(fb ? { firm_bundle: fb } : {}) };
     let r = await this.call("POST", "/v1/devices/register", body);
     if (!r.ok && r.error === "root_not_enrolled") {
       const root = this.d.firmRoot?.() ?? null;
@@ -227,7 +255,7 @@ export class ControlPlaneClient {
       const ts = this.d.now?.() ?? Date.now();
       const proof = sign(null, enrollProofBytes(this.d.tenantId, root.publicKeyPem, ts), root.privateKeyPem).toString("base64url");
       const claim = this.d.activationClaim?.() ?? null;
-      const e = await this.call("POST", "/v1/enroll", { tid: this.d.tenantId, root_public_key_pem: root.publicKeyPem, ts, proof, ...(claim ? { activation_id: claim.activation_id, claim_secret: claim.claim_secret } : {}) });
+      const e = await this.call("POST", "/v1/enroll", { tid: this.d.tenantId, root_public_key_pem: root.publicKeyPem, ts, proof, ...(claim ? { activation_id: claim.activation_id, claim_secret: claim.claim_secret } : {}), ...(fb ? { firm_bundle: fb } : {}) });
       if (!e.ok) return `enroll:${e.error}`;
       if (claim) this.d.onEnrolled?.();
       r = await this.call("POST", "/v1/devices/register", body);
@@ -543,6 +571,29 @@ export class ControlPlaneClient {
     if (!v || v.tid !== this.d.tenantId) throw new Error("quota_view_invalid");
     this.quotaCache = { view: v, at: this.d.now?.() ?? Date.now() };
     return v;
+  }
+
+  /**
+   * 第 66 批（V40）：本人用量明细翻页（GET /v1/quota/usage；控制面签名信封 kwl-usage-page）。只收本租户、本人（证书成员）的页。
+   */
+  async quotaUsagePage(o: { before?: string | null; limit?: number }): Promise<{ rows: UsagePageRow[]; next_before: string | null }> {
+    const lim = Math.min(100, Math.max(1, Math.floor(o.limit ?? 50)));
+    const before = o.before && Number.isFinite(Date.parse(o.before)) ? new Date(Date.parse(o.before)).toISOString() : null;
+    const r = await this.call("GET", `/v1/quota/usage?${before ? `before=${before}&` : ""}limit=${lim}`);
+    if (!r.ok) throw new Error(r.error);
+    const v = this.d.gov.openSigned<{ tid: string; uid: string; rows: UsagePageRow[]; next_before: string | null }>(r.json, "kwl-usage-page");
+    if (!v || v.tid !== this.d.tenantId || v.uid !== this.d.device.cert.memberId || !Array.isArray(v.rows)) throw new Error("usage_page_invalid");
+    return { rows: v.rows, next_before: typeof v.next_before === "string" ? v.next_before : null };
+  }
+
+  /**
+   * 第 66 批：可用模型目录（GET /v1/models）。返回控制面签名信封原样——验签、只进不退与缓存在 ModelCatalogService（缓存存原信封，读回重验）。
+   * 失败抛带 code 的错误（离线、会话失效等；调用方用上一版）。
+   */
+  async modelCatalogEnvelope(): Promise<unknown> {
+    const r = await this.call("GET", "/v1/models");
+    if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error });
+    return r.json;
   }
 
   /** 管理员设月度上限（本月总额度的百分比 1–100；null = 不设上限）。 */

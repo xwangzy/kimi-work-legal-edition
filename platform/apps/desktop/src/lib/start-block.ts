@@ -39,7 +39,7 @@ export function startHintOf(x: unknown): StartHint | null {
 
 /** 提示上的入口按钮文字（没有入口为 null）。 */
 export function startHintActionLabel(h: StartHint): string | null {
-  return h.action === "login" ? "去登录" : h.action === "usage" ? "查看本所用量" : null;
+  return h.action === "login" ? "去登录" : h.action === "usage" ? "查看用量" : null;
 }
 
 /** 入口去哪：登录 = 整窗重新登录页（第 64 批起不再是顶部横幅；先让外壳重新取一次登录状态）；用量 = 设置 → 套餐与用量。 */

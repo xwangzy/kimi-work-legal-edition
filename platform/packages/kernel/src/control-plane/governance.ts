@@ -720,6 +720,9 @@ export class FirmGovernance {
       for (const raw of b.devices.slice(0, 50_000)) {
         const cert = raw as DeviceCertificate;
         const id = typeof cert?.deviceId === "string" ? cert.deviceId : "?";
+        // 第 66 批（V40，D-292）：个人账号自动登记的电脑（控制面签的 account_ca 证书）不进本机设备表——团队共享与成员日志只认律所根签发的设备；
+        // 它们本来就是同一账号的别的电脑（各机工作区独立、不同步案卷），不当作“证书无效”告警
+        if (cert && typeof cert === "object" && cert.issuer === "account_ca") continue;
         const cv = cert && typeof cert === "object" ? verifyDeviceCertificate(cert, this.d.rootPublicKeyPem, now) : { ok: false as const, reason: "证书缺失" };
         if (!cv.ok) {
           const code = certProblemCode(cv.reason);

@@ -48,6 +48,9 @@ export const EVENTS = {
   KERNEL_ONBOARDING_JOIN_REQUESTED: { level: "info", fields: {} },
   KERNEL_ONBOARDING_JOINED: { level: "info", fields: {} },
   KERNEL_ONBOARDING_CERT_REJECTED: { level: "warn", fields: {} },
+  // 第 66 批（V40，D-292）：个人账号新电脑自动登记（成功 / 失败原因码）
+  KERNEL_ONBOARDING_AUTO_ENROLLED: { level: "info", fields: {} },
+  KERNEL_ONBOARDING_AUTO_ENROLL_FAILED: { level: "warn", fields: { reason: "ident" } },
   KERNEL_JOIN_STAGED_REJECTED: { level: "warn", fields: {} },
   // 第 54 批：激活后删不掉待激活占位工作区（Windows 上有文件仍被占用）——不再让内核启动失败，下次启动再删
   KERNEL_PENDING_WORKSPACE_LEFT: { level: "warn", fields: { reason: ["busy", "perm", "other"] } },
@@ -63,6 +66,8 @@ export const EVENTS = {
   KERNEL_BACKUP_DONE: { level: "info", fields: { files: "int", copied: "int" } },
   KERNEL_BACKUP_FAILED: { level: "warn", fields: { ...ERR } },
   KERNEL_EXIT_MODE_LIFTED: { level: "info", fields: { resumed: "int" } },
+  // 第 66 批：云端模型目录没取成或没采用（取不到、验签或格式不过、比本机旧、缓存写不进）；trigger = 登录、定时、网关拒绝等触发原因
+  KERNEL_MODEL_CATALOG: { level: "warn", fields: { outcome: ["fetch_failed", "invalid", "stale", "cache_failed"], trigger: "ident" } },
   KERNEL_RUNS_RECOVERED: { level: "warn", fields: { count: "int", parked: "bool" } },
   KERNEL_CHECKPOINT_FAILED: { level: "warn", fields: { ...ERR } },
   KERNEL_SYNC_TIMER_FAILED: { level: "warn", fields: { ...ERR } },

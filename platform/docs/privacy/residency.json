@@ -1102,6 +1102,16 @@
       ],
       "reason": "设备与律所密钥文件（kwl-sealed/1）、暂存的设备恢复"
     },
+    "packages/kernel/src/services/model-catalog.ts": {
+      "apis": [
+        "renameSync",
+        "writeFileSync"
+      ],
+      "rows": [
+        19
+      ],
+      "reason": "云端模型目录缓存（第 66 批）：<工作区>/model-catalog.json 存控制面签名信封原样（别名、显示名、说明、能力、入口与可用性；不含上游型号、地址与密钥，不含案卷与个人信息）与取到的时刻；临时文件改名落位，读回时重新验签"
+    },
     "packages/kernel/src/services/content-updates.ts": {
       "apis": [
         "copyFileSync",
@@ -1230,6 +1240,7 @@
       "kwl.checklist.v1.<8 位摘要>": "上手清单的显示状态（值为 \"shown\" 或 \"hidden\"）；键尾同上（律所与成员标识的 FNV-1a 摘要），不写标识原文、不含案件信息；完成与否由内核按本机真实数据判定、不存这里（第 46 批；经 lib/guide-checklist.ts 的读写函数）",
       "kwl.sidebar.sections": "侧栏“事项”“任务”分组是否展开（第 47 批）",
       "kwl.home.quota-dismissed": "首页额度提示条关掉时的周期与情形键（如 2026-11:firm-low，不含任何用量数；第 47 批）",
+      "kwl.home.lastMatter": "首页上次用过的事项编号（只存编号，不含事项名称与内容；第 66 批：首页缺省停在它，减少文件放错事项）",
       "kwl.chat.model": "问答上次选的模型别名（legal/k3 或 legal/k2.6；第 47 批）",
       "kwl.chat.deep": "问答“深度思考”开关上次的选择（1 / 0；第 48 批；不含问答内容）",
       "kwl.login.method": "登录页上次用的登录方式（phone = 验证码登录 / password = 密码登录；第 63 批；只记方式，不含手机号、邮箱或验证码）"

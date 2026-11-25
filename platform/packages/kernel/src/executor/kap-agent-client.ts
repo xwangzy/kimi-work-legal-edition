@@ -540,6 +540,8 @@ export function createKapAgentClient(opts: KapAgentOptions): KapAgentClient {
               ...(req.wall_ms ? { wall_limit_ms: req.wall_ms } : {}),
               // 追问：在上一次运行的会话上继续（会话编号由内核按任务记录给出）
               ...(req.continue_session_id ? { continue_session_id: req.continue_session_id } : {}),
+              // 第 66 批：任务所选模型（内核发起时已按云端目录核过；追问、修改轮沿用任务记录里的同一个）
+              ...(req.model ? { model: req.model, ...(req.model_spec ? { model_spec: req.model_spec } : {}) } : {}),
             },
             origin: { channel: "desktop", userId: id.uid },
             matter_policy: { ...policy, purpose: req.purpose ?? policy.purpose },

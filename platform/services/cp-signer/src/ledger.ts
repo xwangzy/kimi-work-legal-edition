@@ -18,7 +18,7 @@ export interface SignerLedgerRecord {
   request_id: string;
   /** 调用方身份（mTLS 客户端证书的 URI 或 CN；测试形态为 insecure-test）。 */
   caller: string;
-  op: "envelope" | "seat_token";
+  op: "envelope" | "seat_token" | "device_cert";
   kind: string | null;
   kid: string | null;
   tid: string | null;

@@ -150,8 +150,10 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signe
       const failures: ChainFailure[] = [];
       const revokedSigners = new Set<string>();
       let prevHash: string | null = null;
-      const firmRow = db.get<{ root_public_key_pem: string }>(`SELECT root_public_key_pem FROM firm_identity WHERE tenant_id = ?`, [tenantId]);
+      const firmRow = db.get<{ root_public_key_pem: string; account_ca_public_key_pem: string | null }>(`SELECT root_public_key_pem, account_ca_public_key_pem FROM firm_identity WHERE tenant_id = ?`, [tenantId]);
       const rootPub = firmRow?.root_public_key_pem ?? null;
+      // 第 66 批（V40，D-292）：本机是个人账号自动登记的电脑时，本机证书由账号设备签发钥签——本机账本的证书链按它核（只对 issuer = account_ca 的证书）
+      const accountCaPub = firmRow?.account_ca_public_key_pem ?? null;
       type Dev = { cert: DeviceCertificate; archived: ArchivedCert[]; status: string };
       const deviceCache = new Map<string, Dev | null>();
 
@@ -174,7 +176,7 @@ export function createLedgerSigner(deps: { db: KernelDb; deviceId: string; signe
       // 证书链与归属核对（每条签名/检查点共用）：证书须被律所根密钥签出且 cert.deviceId 与签名设备一致
       const certProblem = (cert: DeviceCertificate, expectedDeviceId: string): string | null => {
         if (!rootPub) return "firm_identity 缺失，无法验证书链";
-        if (!verifyCertSignature(cert, rootPub)) return "证书链验签失败";
+        if (!verifyCertSignature(cert, rootPub, accountCaPub)) return "证书链验签失败";
         if (cert.deviceId !== expectedDeviceId) return "证书与签名设备不符";
         return null;
       };
@@ -499,9 +501,11 @@ export function certVerifying(
   data: Uint8Array,
   signature: string,
   witnessSeq: number | null,
+  /** 第 66 批：本机的账号设备签发钥（个人账号自动登记的电脑）；不给 = 只认律所根。 */
+  accountCaPublicKeyPem: string | null = null,
 ): DeviceCertificate | null {
   if (!rootPublicKeyPem) return null;
-  const ok = (c: DeviceCertificate) => c.deviceId === deviceId && verifyCertSignature(c, rootPublicKeyPem) && verifyBytes(c.signPublicKeyPem, data, signature);
+  const ok = (c: DeviceCertificate) => c.deviceId === deviceId && verifyCertSignature(c, rootPublicKeyPem, accountCaPublicKeyPem) && verifyBytes(c.signPublicKeyPem, data, signature);
   if (current && ok(current)) return current;
   if (witnessSeq === null) return null;
   for (const a of archivedCertsOf(db, deviceId)) if (witnessSeq <= a.supersededSeq && ok(a.cert)) return a.cert;
@@ -512,10 +516,13 @@ export function certVerifying(
  * 证书链校验：根公钥对证书字段（除 signature）的签名有效，且证书的签名算法与设备公钥一致（与 verifyDeviceCertificate 同一口径，复核 S7A-05）；
  * 有效期由调用方按业务时点判断。
  */
-export function verifyCertSignature(cert: DeviceCertificate, rootPublicKeyPem: string): boolean {
+export function verifyCertSignature(cert: DeviceCertificate, rootPublicKeyPem: string, accountCaPublicKeyPem: string | null = null): boolean {
   if (!certSignAlgConsistent(cert)) return false;
+  // 第 66 批（V40，D-292）：按证书写明的签发者选锚——account_ca 证书只对账号设备签发钥验（没给即不通过：团队路径只认律所根），其余只对律所根验
+  const anchor = cert.issuer === "account_ca" ? accountCaPublicKeyPem : rootPublicKeyPem;
+  if (!anchor) return false;
   const { signature, ...unsigned } = cert;
-  return verifyBytes(rootPublicKeyPem, new TextEncoder().encode(canonicalJson(unsigned)), signature);
+  return verifyBytes(anchor, new TextEncoder().encode(canonicalJson(unsigned)), signature);
 }
 
 export function sha256HexOf(buf: Buffer): string {

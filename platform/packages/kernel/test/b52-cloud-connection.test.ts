@@ -52,7 +52,7 @@ describe("失败说明映射（纯函数）", () => {
     assert.equal(qaFailureText("模型通道 503（x） [kwl:upstream_pins_missing]"), CLOUD_BUILD_TEXT);
     assert.match(qaFailureText("模型通道 502（模型通道不可达（已排队或稍后重试）；交编排层有界退避，不切换端点） [kwl:upstream_unreachable]"), /^连不上云端 AI 服务/);
     assert.doesNotMatch(qaFailureText("x [kwl:upstream_unreachable]"), /证书/);
-    assert.match(qaFailureText("402 本所本期 AI 额度不足（预占失败） [kwl:quota_exhausted]"), /^本所 AI 额度暂时用到限制/);
+    assert.match(qaFailureText("402 本所本期 AI 额度不足（预占失败） [kwl:quota_exhausted]"), /^你的 AI 额度暂时用到限制/);
     assert.match(qaFailureText("401 登录已失效，请重新登录 [kwl:seat_session_inactive]"), /^登录已失效或这台电脑暂时没有取得 AI 使用授权/);
     assert.equal(qaFailureText("x [kwl:upstream_unavailable]", "legal/k3"), "K3 这个模型暂不可用，这次没有取得回答：请稍后再问，或联系律所管理员");
     assert.equal(qaFailureText("模型通道错误 500：Internal Server Error"), "AI 服务暂时不可用，这次没有取得回答：请稍后再问");

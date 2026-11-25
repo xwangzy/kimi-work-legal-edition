@@ -150,24 +150,29 @@ export function legacyNote(q: QuotaStatus): string | null {
   return typeof l === "number" && l > 0 ? `本期含旧计量口径的用量 ${fmtPct(l)}（换用新计量之前的部分，按比例计入）。` : null;
 }
 
-/** 律师看到的一句话（本所与本人用量、重置时间、暂停原因）。 */
+/**
+ * 律师看到的一句话（第 66 批 V40 改为个人口径：你已用、剩余、重置时间、暂停原因）。已用与剩余取控制面的 personal（真正卡住你的那一项）；
+ * 旧控制面没有 personal 时回退到 own 与本所比例。不出现“本所额度”。
+ */
 export function quotaLawyerLine(q: QuotaStatus | null): string {
   if (!q) return "读取中…";
-  if (q.mode !== "control_plane" || !q.firm) return q.edition === "trial" ? "试用版：不统计本所用量" : "开发形态：不统计本所用量";
-  const own = q.own && q.own.requests > 0 ? `你本期已用${q.own.denominator === "account_limit" ? "个人上限" : "每人额度"}的 ${fmtPct(q.own.used_ratio)}` : "你本期还没有用量";
-  const firm = `本所已用 ${fmtPct(q.firm.used_ratio)}${q.firm.cap_pct ? `（上限 ${q.firm.cap_pct}%）` : ""}`;
-  const tone = usageTone(q.firm);
+  if (q.mode !== "control_plane" || !q.firm) return q.edition === "trial" ? "试用版：不统计你的用量" : "开发形态：不统计你的用量";
+  const p = q.personal;
+  const used = p ? p.used_ratio : q.own ? q.own.used_ratio : q.firm.used_ratio;
+  const remaining = p ? p.remaining_ratio : Math.max(0, Math.min(q.firm.remaining_ratio, 1 - used));
+  const head = !p && !(q.own && q.own.requests > 0) ? `你本期还没有用量，剩余 ${fmtPct(remaining)}` : `你本期已用 ${fmtPct(used)}，剩余 ${fmtPct(remaining)}`;
+  const by = p ? p.paused : q.firm.paused ?? (usageTone(q.firm) === "full" ? "cap" : null);
   const warn =
-    q.firm.paused === "allowance"
-      ? "；本所本期 AI 额度已用完，AI 处理暂停，请联系律所管理员加量"
-      : q.firm.paused === "cap" || (tone === "full" && q.firm.paused !== "burst")
-        ? "；本所本期用量已到律所设的上限，AI 处理暂停，请联系律所管理员"
-        : q.firm.paused === "burst"
+    by === "allowance" || by === "seat"
+      ? "；你的 AI 额度已用完，AI 处理暂停，下期自动重置"
+      : by === "cap"
+        ? "；已到设定的用量上限，AI 处理暂停"
+        : by === "burst"
           ? "；最近 5 小时用得太快，AI 处理暂时放缓"
-          : tone === "high"
-            ? "；本所本期额度即将用完"
+          : remaining <= 0.1
+            ? "；你的额度即将用完"
             : "";
-  return `${own}；${firm}；${resetLabel(q.period?.resets_at)}${warn}`;
+  return `${head}；${resetLabel(q.period?.resets_at)}${warn}`;
 }
 
 /** 模型别名 → 显示名（主任务 / 子任务；别的别名原样）。 */

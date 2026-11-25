@@ -7,6 +7,8 @@
 import { accountErrorText, accountFailure, controlPlaneErrorText, CP_RULE_REJECTIONS, onboardingStateText, seatBlockReason } from "../account-session.ts";
 import { fetchRegistrationMeta, loginBody, smsPhoneInput, smsSendResult } from "../services/onboarding.ts";
 import { diagnoseView } from "../services/cloud-connection.ts";
+import { BUILTIN_MODEL_IDS, catalogReasonText, ModelCatalogService, type ModelScope } from "../services/model-catalog.ts";
+import { saveModelPref, selectedModelOf } from "../services/model-prefs.ts";
 import { launchCheck, QUOTA_VIEW_MAX_AGE_MS, type LaunchHint } from "../services/launch-check.ts";
 import { calcDeadline } from "../tools/tools/deadline.ts";
 import { localToday } from "../services/local-date.ts";
@@ -139,6 +141,8 @@ export interface ApiDeps {
   /** W1：出站批准凭据、无事项问答、kap 引擎（确认卡与提问通道）与事项运行策略。 */
   approvals?: EgressApprovalStore | null;
   qa?: QaChatService | null;
+  /** 第 66 批：云端模型目录（models.list / models.select、runs.start 的 model 校验）；不给时按内置两项。 */
+  modelCatalog?: ModelCatalogService | null;
   kap?: KapAgentClient | null;
   matterPolicy?: (matterId: string) => KapMatterPolicy;
   /** 急停撤销任务令牌（§15.2 runs.cancel）。 */
@@ -443,6 +447,15 @@ function artifactCitationsFor(db: KernelDb, blobs: BlobStore, lawdb: Lawdb, art:
 export function createApi(deps: ApiDeps): Record<string, Handler> {
   const { db, blobs, broker, egress, queue, config, lawdb, keyctx, ioMutex, ocrModelPaths, parseMock, parseWorker, localStats, revokeRun, tokens, gate } = deps;
   const MODE_RANK: Record<string, number> = { chat: 0, manual: 1, default: 2, auto: 3 };
+  /** 第 66 批：云端模型目录（没给 = 只有内置两项，开发形态与只建方法表的用例）。 */
+  const catalog = deps.modelCatalog ?? new ModelCatalogService({ pull: null, open: () => null, tenantId: "", cacheFile: null });
+  const scopeOf = (v: unknown): ModelScope => {
+    if (v === undefined || v === null || v === "" || v === "task") return "task";
+    if (v === "qa") return "qa";
+    throw validation("scope 须为 task（首页任务）或 qa（问答）");
+  };
+  /** 模型的显示名（目录里的；不认识的原样）。 */
+  const modelLabel = (id: string): string => catalog.labelOf(id) ?? id;
   /** 安装形态（第 46 批）：试用版安装包由主进程给 ZR_TRIAL_BUILD=1；正式安装包要求控制面；其余是开发形态。 */
   const edition: "trial" | "release" | "dev" = config.env.ZR_TRIAL_BUILD === "1" ? "trial" : config.env.ZR_REQUIRE_CONTROL_PLANE === "1" ? "release" : "dev";
   const titleCache = new Map<string, string | null>();
@@ -507,7 +520,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     let cert = current;
     if (!(current && verifyDeletionReceipt(r.receipt, r.signature, current.signPublicKeyPem)) && witness !== null) {
       const archived = archivedCertsOf(db, r.receipt.device_id).find(
-        (a) => witness <= a.supersededSeq && a.cert.deviceId === r.receipt.device_id && verifyCertSignature(a.cert, keyctx.firm.rootPublicKeyPem) && verifyDeletionReceipt(r.receipt, r.signature, a.cert.signPublicKeyPem),
+        (a) => witness <= a.supersededSeq && a.cert.deviceId === r.receipt.device_id && verifyCertSignature(a.cert, keyctx.firm.rootPublicKeyPem, keyctx.firm.accountCaPublicKeyPem ?? null) && verifyDeletionReceipt(r.receipt, r.signature, a.cert.signPublicKeyPem),
       );
       if (archived) cert = archived.cert;
     }
@@ -693,13 +706,28 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
    * 隔离一份材料（复核 B3-A05）：删除解析文本、页面与证据锚点、据此产生的风险卡与事实行；导入副本块在没有其他登记引用时删除；
    * 本事项的 Agent 会话与工作区一并清理（里面可能有该材料的摘录）；有进行中的任务时这一步跳过，隔离本身照常生效（材料已不能再被读取）。
    */
-  async function quarantineDocument(doc: { document_version_id: string; matter_id: string; sha256: string; storage_mode: string; storage_uri: string }, reason: string, identity: Identity): Promise<void> {
+  async function quarantineDocument(
+    doc: { document_version_id: string; matter_id: string; sha256: string; storage_mode: string; storage_uri: string },
+    reason: string,
+    identity: Identity,
+    /**
+     * 第 66 批 K3（律师移除误放材料，reason = removed_by_lawyer）：只移除这一条登记（不连带同内容的其他登记）、
+     * 不清本事项的 Agent 会话（那会让此前任务都不能再追问）、不动据此起草的审查要点（律师审定过的）；审计记 materials.removed。
+     * 国家秘密标志的隔离照旧：同内容一并隔离、清会话与审查要点。
+     */
+    opts?: { onlyThis?: boolean; keepAgentData?: boolean; keepRules?: boolean; auditAction?: string },
+  ): Promise<{ affected_runs: number; affected_artifacts: number }> {
     const PVS = `SELECT parse_version_id FROM parse_versions WHERE document_version_id = ?`;
+    const qt = quarantineText(reason);
     // 同一事项里内容相同的其他登记一并隔离（复核 C-A05 部分：同一份文件导入或挂载过多次）
     const same = db.all<{ document_version_id: string; storage_mode: string; storage_uri: string }>(
-      `SELECT document_version_id, storage_mode, storage_uri FROM document_versions WHERE matter_id = ? AND (document_version_id = ? OR sha256 = ?) AND quarantined_at IS NULL`,
-      [doc.matter_id, doc.document_version_id, doc.sha256],
+      opts?.onlyThis
+        ? `SELECT document_version_id, storage_mode, storage_uri FROM document_versions WHERE matter_id = ? AND document_version_id = ? AND quarantined_at IS NULL`
+        : `SELECT document_version_id, storage_mode, storage_uri FROM document_versions WHERE matter_id = ? AND (document_version_id = ? OR sha256 = ?) AND quarantined_at IS NULL`,
+      opts?.onlyThis ? [doc.matter_id, doc.document_version_id] : [doc.matter_id, doc.document_version_id, doc.sha256],
     );
+    let affectedArtifacts = 0;
+    let affectedRuns = 0;
     const ids = same.map((x) => x.document_version_id);
     db.tx(() => {
       for (const id of ids) {
@@ -715,7 +743,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         db.run(`DELETE FROM matter_facts WHERE document_version_id = ?`, [id]);
         db.run(`UPDATE document_versions SET quarantined_at = ?, quarantine_reason = ? WHERE document_version_id = ?`, [nowIso(), reason, id]);
       }
-      // 隔离前已生成的成果：用过这些材料的任务的成果标出“待处置”（不自动删除——律师须决定成果是否含有涉密内容）
+      // 隔离前已生成的成果：用过这些材料的任务的成果标出“待处置”（不自动删除——律师须决定成果是否含有涉密内容）；
+      // 律师移除的（第 66 批）同一机制：标“依据材料已被移除”，已签发的不自动撤回
       const usedRuns: string[] = [];
       for (const run of db.all<{ run_id: string; input_snapshot: string | null }>(`SELECT run_id, input_snapshot FROM runs WHERE matter_id = ?`, [doc.matter_id])) {
         const used = parseJson<any>(run.input_snapshot, {})?.document_version_ids;
@@ -723,24 +752,47 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         usedRuns.push(run.run_id);
         for (const a of db.all<{ artifact_version_id: string; open_items: string }>(`SELECT artifact_version_id, open_items FROM artifact_versions WHERE run_id = ?`, [run.run_id])) {
           const items = parseJson<unknown[]>(a.open_items, []);
-          items.push({ kind: "quarantined_source", note: "本成果引用的材料带国家秘密标志、已隔离：请按涉密载体规定核查本成果，确认前不得交付" });
+          items.push({ kind: "quarantined_source", ...(reason === "state_secret_marking" ? {} : { reason }), note: qt.openItem });
           db.run(`UPDATE artifact_versions SET open_items = ? WHERE artifact_version_id = ?`, [JSON.stringify(items), a.artifact_version_id]);
+          affectedArtifacts++;
         }
       }
       // 从这些任务起草的审查要点（复核 Q4-02）：草稿删除，审定启用的版本清除内容、在用的停用——否则据涉密范本概括的条款会随之后每次审合同发出
-      scrubRulesFromRuns(db, doc.matter_id, usedRuns);
+      if (!opts?.keepRules) scrubRulesFromRuns(db, doc.matter_id, usedRuns);
+      affectedRuns = usedRuns.length;
     });
     for (const s of same) {
       if (s.storage_mode !== "import") continue;
       const others = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM document_versions WHERE storage_uri = ? AND quarantined_at IS NULL`, [s.storage_uri])!.n;
       if (others === 0) blobs.remove(s.storage_uri);
     }
-    try {
-      await deps.purgeAgentData?.(doc.matter_id);
-    } catch {
-      // 有进行中的任务：会话里的摘录留到任务结束后由律师处理（隔离本身已生效：材料不能再被读取）
+    if (!opts?.keepAgentData) {
+      try {
+        await deps.purgeAgentData?.(doc.matter_id);
+      } catch {
+        // 有进行中的任务：会话里的摘录留到任务结束后由律师处理（隔离本身已生效：材料不能再被读取）
+      }
     }
-    audit(db, identity, "materials.quarantined", "document", doc.document_version_id, sha256Hex(reason), keyctx);
+    audit(db, identity, opts?.auditAction ?? "materials.quarantined", "document", doc.document_version_id, sha256Hex(reason), keyctx);
+    return { affected_runs: affectedRuns, affected_artifacts: affectedArtifacts };
+  }
+
+  /**
+   * 隔离原因 → 律师看到的说明（第 66 批 K3：原先一律写“国家秘密标志”；律师移除的材料走同一套隔离，但说明不同）。
+   * 未知原因按国家秘密标志口径（更严的一边）。
+   */
+  function quarantineText(reason: string | null | undefined): { openItem: string; estimate: string; preview: string } {
+    if (reason === "removed_by_lawyer")
+      return {
+        openItem: "本成果依据的材料已被律师移除：请核对本成果是否仍可使用，确认前不得交付",
+        estimate: "所选材料中有已移除的材料，不能用于任务：请刷新后重新勾选",
+        preview: "该材料已被移除，不能预览",
+      };
+    return {
+      openItem: "本成果引用的材料带国家秘密标志、已隔离：请按涉密载体规定核查本成果，确认前不得交付",
+      estimate: "所选材料中有已隔离的材料（带国家秘密标志），不能用于任务",
+      preview: "该材料已隔离（带国家秘密标志），不能预览",
+    };
   }
 
   function insertParsePages(psvId: string, pages?: { pageNo: number; kind: string; quality: string; note?: string | undefined; charCount: number; meanScore?: number | undefined }[]): void {
@@ -1055,7 +1107,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "matters.get": (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       const docs = db.all(
-        `SELECT dv.document_version_id, dv.filename, dv.sha256, dv.size_bytes, dv.mime, dv.storage_mode, dv.created_at, dv.quarantined_at, dv.rel_path, dv.supersedes, dr.role
+        `SELECT dv.document_version_id, dv.filename, dv.sha256, dv.size_bytes, dv.mime, dv.storage_mode, dv.created_at, dv.quarantined_at, dv.quarantine_reason, dv.rel_path, dv.supersedes, dr.role
            FROM document_versions dv LEFT JOIN document_roles dr ON dr.document_version_id = dv.document_version_id
           WHERE dv.matter_id = ? ORDER BY dv.created_at DESC`,
         [matter.matter_id],
@@ -1234,6 +1286,37 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (bytes.length === 0 || bytes.length > MAX_BYTES) throw validation(`文件大小非法（上限 ${MAX_BYTES}）`);
       const sha256 = sha256Hex(bytes);
       if (p?.sha256 && p.sha256 !== sha256) throw new DomainError("hash_mismatch", "内核复算 hash 与声明不符，已拒收", 422);
+      // 同事项同内容不重复保存（第 66 批 K1）：本事项里已有一份内容相同、仍有效（未隔离/未移除、未被新版本取代）的导入副本，就返回那一份——
+      // 不新建登记、不改名（文件名不同时界面提示“已在本事项（原名 X）”）。作为新版本保存（supersedes）时不查；挂载（mount）不走这里；
+      // 跨事项不去重（块按事项密钥加密，伦理墙）。案卷文件夹同步自己按内容比对、要给新登记写位置，传 dedupe:false
+      if (!(typeof p?.supersedes === "string" && p.supersedes) && p?.dedupe !== false) {
+        const dup = db.get<{ document_version_id: string; filename: string }>(
+          `SELECT dv.document_version_id, dv.filename FROM document_versions dv
+            WHERE dv.matter_id = ? AND dv.sha256 = ? AND dv.storage_mode = 'import' AND dv.quarantined_at IS NULL
+              AND NOT EXISTS (SELECT 1 FROM document_versions n WHERE n.supersedes = dv.document_version_id)
+            ORDER BY dv.created_at ASC, dv.rowid ASC LIMIT 1`,
+          [matter.matter_id, sha256],
+        );
+        if (dup) {
+          const pv = db.get<{ parse_version_id: string; quality_flags: string | null; chars: number | null }>(
+            `SELECT pv.parse_version_id, pv.quality_flags, length(pt.content) AS chars FROM parse_versions pv LEFT JOIN parse_texts pt ON pt.parse_version_id = pv.parse_version_id
+              WHERE pv.document_version_id = ? ORDER BY pv.created_at DESC LIMIT 1`,
+            [dup.document_version_id],
+          );
+          audit(db, id, "materials.import_duplicate", "document", dup.document_version_id, sha256, keyctx);
+          return {
+            document_version_id: dup.document_version_id,
+            duplicate: true,
+            filename: dup.filename,
+            parse_version_id: pv?.parse_version_id ?? null,
+            quality_flags: parseJson<string[]>(pv?.quality_flags ?? null, []),
+            chars: pv?.chars ?? 0,
+            marking_notice: null,
+            sha256,
+            note: `本事项已有内容相同的材料（原名《${dup.filename}》），未重复保存`,
+          };
+        }
+      }
       // 作为某份材料的新版本（D-224：当事人信息改了出新版本，事项里只留一份当前有效）：只能取代本事项里、还没被取代的那一份
       let supersedes: string | null = null;
       if (typeof p?.supersedes === "string" && p.supersedes) {
@@ -1325,6 +1408,100 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return { document_version_id: docId, role };
     },
 
+    /**
+     * 材料和任务的对应（第 66 批 K2，只读）：每份材料被哪些任务勾选过（used_by），每个任务勾了哪些材料、出了几份成果。
+     * 没勾材料的任务不设边界、可读本事项全部材料（D-183），不算进 used_by，单列：总数 unrestricted_runs，
+     * 每份材料另给 readable_by_unrestricted（在它导入之后发起的、没勾材料的任务数）。任务名与任务说明是代号形态，界面还原。
+     */
+    "materials.usage": (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      const docs = db.all<{ document_version_id: string; created_at: string }>(`SELECT document_version_id, created_at FROM document_versions WHERE matter_id = ?`, [matter.matter_id]);
+      const artifactCount = new Map(
+        db
+          .all<{ run_id: string; n: number }>(`SELECT run_id, COUNT(*) AS n FROM artifact_versions WHERE matter_id = ? AND run_id IS NOT NULL AND status <> 'superseded' GROUP BY run_id`, [matter.matter_id])
+          .map((r) => [r.run_id, r.n]),
+      );
+      const runs = db
+        .all<{ run_id: string; scenario: string; status: string; created_at: string; input_snapshot: string | null }>(
+          `SELECT run_id, scenario, status, created_at, input_snapshot FROM runs WHERE matter_id = ? ORDER BY created_at DESC LIMIT 500`,
+          [matter.matter_id],
+        )
+        .map((r) => {
+          const snap = parseJson<any>(r.input_snapshot, {});
+          const ids = docIdsOf(snap?.document_version_ids);
+          return {
+            run_id: r.run_id,
+            scenario: r.scenario,
+            status: r.status,
+            created_at: r.created_at,
+            title: typeof snap?.title === "string" ? snap.title : null,
+            goal: typeof snap?.goal === "string" ? snap.goal.slice(0, 60) : null,
+            followup_of: typeof snap?.followup_of === "string" ? snap.followup_of : null,
+            scope: ids.length > 0 ? ("selected" as const) : ("all" as const),
+            document_version_ids: ids,
+            artifact_count: artifactCount.get(r.run_id) ?? 0,
+          };
+        });
+      const unrestricted = runs.filter((r) => r.scope === "all");
+      return {
+        documents: docs.map((d) => ({
+          document_version_id: d.document_version_id,
+          used_by: runs
+            .filter((r) => r.document_version_ids.includes(d.document_version_id))
+            .map((r) => ({ run_id: r.run_id, title: r.title, goal: r.goal, scenario: r.scenario, status: r.status, created_at: r.created_at, artifact_count: r.artifact_count })),
+          readable_by_unrestricted: unrestricted.filter((r) => r.created_at >= d.created_at).length,
+        })),
+        runs,
+        unrestricted_runs: unrestricted.length,
+      };
+    },
+
+    /**
+     * 移除误放的材料（第 66 批 K3）：走隔离同一套（reason = removed_by_lawyer）——删本产品保存的导入副本、解析文字与据此产生的
+     * 事实、审查意见、审阅表格子；登记行留着（标已移除，留审计）；挂载的只解除引用，原文件不动。用过它的任务的成果标“依据材料已被移除”
+     * 待处置，已签发的不自动撤回。进行中的任务勾了它（或没勾材料、可能正在读）时拒绝；示例事项拒绝；需要编辑及以上角色。
+     */
+    "materials.remove": async (p, id) => {
+      const docId = String(p?.document_version_id ?? "");
+      const doc = db.get<{ document_version_id: string; matter_id: string; sha256: string; storage_mode: string; storage_uri: string; filename: string; created_at: string; quarantined_at: string | null; quarantine_reason: string | null }>(
+        `SELECT document_version_id, matter_id, sha256, storage_mode, storage_uri, filename, created_at, quarantined_at, quarantine_reason FROM document_versions WHERE document_version_id = ? AND tenant_id = ?`,
+        [docId, id.tenantId],
+      );
+      if (!doc) throw notFound("材料");
+      requireMatterAccess(db, doc.matter_id, id);
+      requireMatterWriter(db, doc.matter_id, id);
+      assertNotSample(db, doc.matter_id, "移除材料");
+      if (doc.quarantined_at) return { document_version_id: docId, removed: true, already: true, reason: doc.quarantine_reason ?? "state_secret_marking", affected_artifacts: 0 };
+      const active = db.all<{ run_id: string; created_at: string; input_snapshot: string | null }>(
+        `SELECT run_id, created_at, input_snapshot FROM runs WHERE matter_id = ? AND status NOT IN (${TERMINAL_RUN_STATUSES.map(() => "?").join(",")})`,
+        [doc.matter_id, ...TERMINAL_RUN_STATUSES],
+      );
+      const busy = active.filter((r) => {
+        const ids = docIdsOf(parseJson<any>(r.input_snapshot, {})?.document_version_ids);
+        return ids.length > 0 ? ids.includes(docId) : r.created_at >= doc.created_at;
+      });
+      if (busy.length > 0) {
+        const titles = busy.map((r) => parseJson<any>(r.input_snapshot, {})?.title).filter((t): t is string => typeof t === "string" && t.length > 0);
+        throw new DomainError(
+          "material_in_use",
+          `有 ${busy.length} 个进行中的任务正在用这份材料${titles.length > 0 ? `（${titles.slice(0, 2).map((t) => `“${t}”`).join("、")}${titles.length > 2 ? " 等" : ""}）` : ""}：请等任务结束或先取消任务，再移除`,
+          409,
+          { run_ids: busy.map((r) => r.run_id) },
+        );
+      }
+      const r = await quarantineDocument(doc, "removed_by_lawyer", id, { onlyThis: true, keepAgentData: true, keepRules: true, auditAction: "materials.removed" });
+      return {
+        document_version_id: docId,
+        removed: true,
+        reason: "removed_by_lawyer",
+        storage_mode: doc.storage_mode,
+        affected_artifacts: r.affected_artifacts,
+        note:
+          (doc.storage_mode === "mount" ? "已解除引用，原文件仍在原位置" : "已删除本产品保存的副本与解析文字，原文件不受影响") +
+          (r.affected_artifacts > 0 ? `；${r.affected_artifacts} 份用过它的成果已标“依据材料已被移除”，请核对` : ""),
+      };
+    },
+
     "materials.mount": async (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       requireMatterWriter(db, matter.matter_id, id);
@@ -1360,7 +1537,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       ownDeviceId: keyctx.device.deviceId,
       requireMatterAccess: (mid, id) => requireMatterAccess(db, mid, id),
       requireMatterWriter: (mid, id, opts) => requireMatterWriter(db, mid, id, opts),
-      importFile: async (a, id) => (await api["materials.import"]!({ matter_id: a.matterId, path: a.path, filename: a.filename, mime: a.mime, sha256: a.sha256 }, id)) as { document_version_id: string },
+      importFile: async (a, id) => (await api["materials.import"]!({ matter_id: a.matterId, path: a.path, filename: a.filename, mime: a.mime, sha256: a.sha256, dedupe: false }, id)) as { document_version_id: string },
       audit: (id, action, kind, objectId, detailHash) => audit(db, id, action, kind, objectId, detailHash, keyctx),
     }),
 
@@ -1578,6 +1755,39 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
 
     // ─── 任务（§15.2 runs.estimate/start/events/cancel：先预估、后确认；同键同内容返回原任务） ───
+    // ─── 第 66 批（V40）：云端模型目录——首页（任务）与问答的模型选择器共用 ───
+    // 返回该入口可选的模型（含不可用的，标原因与中文说明）、缺省、律师本人记住的选择（不可用时回落缺省并在 selected_unavailable 说明）。
+    // refresh:true 先向云端取一次（至多 5 秒一次；取不到用上一版）。不含上游型号、地址与密钥（目录本身就没有）。
+    "models.list": async (p, id) => {
+      const scope = scopeOf(p?.scope);
+      if (p?.refresh === true) await catalog.refresh("manual", { minIntervalMs: 5_000 });
+      const st = catalog.state();
+      const def = scope === "qa" ? (deps.qa?.modelChoices().find((c) => c.default)?.alias ?? catalog.defaultFor("qa")) : catalog.defaultFor("task");
+      const models = catalog.list(scope).map((m) => ({ id: m.id, label: m.label, description: m.description, sort: m.sort, thinking: m.thinking, efforts: m.efforts, capabilities: m.capabilities, scopes: m.scopes, max_context: m.max_context, default: m.id === def, available: m.available, reason: m.available ? null : (m.reason ?? (catalog.check(m.id, scope) as { reason?: string }).reason ?? null), reason_text: m.reason_text }));
+      const saved = selectedModelOf(db, id.tenantId, id.userId, scope);
+      const savedView = saved ? models.find((m) => m.id === saved) : undefined;
+      const selected = savedView?.available ? saved! : def;
+      return {
+        scope,
+        version: st.version,
+        source: st.source,
+        fetched_at: st.fetched_at,
+        default: def,
+        selected,
+        ...(saved && !savedView?.available ? { selected_unavailable: { id: saved, label: modelLabel(saved), reason: savedView?.reason ?? "unknown", reason_text: savedView?.reason_text ?? catalogReasonText("unknown", scope) } } : {}),
+        models,
+      };
+    },
+    // 记住律师在某入口的选择（本机、按本人）；只收该入口当前可选的模型
+    "models.select": (p, id) => {
+      const scope = scopeOf(p?.scope);
+      const mid = typeof p?.id === "string" ? p.id : "";
+      const c = catalog.check(mid, scope);
+      if (!c.ok) throw validation(`不能选这个模型：${c.message}`, { field: "id", reason: c.reason });
+      saveModelPref(db, id.tenantId, id.userId, scope, mid);
+      return { ok: true, scope, selected: mid, label: c.model.label };
+    },
+
     "runs.estimate": (p, id) => {
       const matterId = String(p?.matter_id ?? "");
       const matter = requireMatterAccess(db, matterId, id);
@@ -1586,8 +1796,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const docIds: string[] = p?.document_version_ids ?? [];
       let pages = 0;
       for (const docId of docIds) {
-        const q = db.get<{ quarantined_at: string | null }>(`SELECT quarantined_at FROM document_versions WHERE document_version_id = ?`, [docId]);
-        if (q?.quarantined_at) throw new DomainError("conflict", "所选材料中有已隔离的材料（带国家秘密标志），不能用于任务", 409, { document_version_id: docId });
+        const q = db.get<{ quarantined_at: string | null; quarantine_reason: string | null }>(`SELECT quarantined_at, quarantine_reason FROM document_versions WHERE document_version_id = ?`, [docId]);
+        if (q?.quarantined_at) throw new DomainError("conflict", quarantineText(q.quarantine_reason).estimate, 409, { document_version_id: docId, reason: q.quarantine_reason ?? "state_secret_marking" });
         const r = db.get<{ page_count: number | null }>(
           `SELECT page_count FROM parse_versions WHERE document_version_id = ? ORDER BY created_at DESC LIMIT 1`,
           [docId],
@@ -1876,6 +2086,40 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         }
       }
 
+      // 第 66 批（V40）：这次任务用哪个模型——界面带的 model（首页选择器）→ 律师在首页记住的 → 云端目录的任务缺省；
+      // 追问 / 修改轮沿用上一轮任务记录里的模型（同一会话中途不换）。按云端目录核：在目录中、可用、入口含 task、能力含 tool_use；
+      // 自带密钥 / 私有端点只认内置两项。不合格的明确拒绝（不静默改用别的模型）
+      if (p?.model !== undefined && p?.model !== null && p?.model !== "" && typeof p.model !== "string") throw validation("model 须为模型编号（如 legal/k3）", { field: "model" });
+      const askedModel = typeof p?.model === "string" && p.model ? p.model : null;
+      const usesModel = est.scenario === "a1.agent_task" || est.scenario === "s1.contract_review" || askedModel !== null;
+      let runModel: string | null = null;
+      if (usesModel) {
+        const taskDefault = catalog.defaultFor("task");
+        let chosen: string;
+        if (followup) {
+          const prevModel = db.get<{ model: string | null }>(`SELECT model FROM runs WHERE run_id = ?`, [followup.followup_of])?.model || "legal/k3";
+          if (askedModel && askedModel !== prevModel) throw validation(`追问在原对话上继续，沿用上一轮的模型（${modelLabel(prevModel)}），不能中途换；要换模型请重新发起任务`, { field: "model", previous_model: prevModel });
+          chosen = prevModel;
+        } else {
+          const saved = askedModel ? null : selectedModelOf(db, id.tenantId, id.userId, "task");
+          chosen = askedModel ?? (saved && catalog.check(saved, "task").ok ? saved : taskDefault);
+        }
+        runModel = chosen;
+        const c = catalog.check(chosen, "task");
+        if (!c.ok) {
+          void catalog.refresh("start_rejected", { minIntervalMs: 30_000 });
+          throw validation(
+            followup
+              ? `上一轮用的模型（${modelLabel(chosen)}）现在不能用：${c.message}。追问须沿用同一模型：请重新发起任务并选别的模型`
+              : `所选模型（${modelLabel(chosen)}）不能用于这次任务：${c.message}。${chosen === taskDefault ? "请稍后再试或联系律所管理员" : `请换成${modelLabel(taskDefault)}`}`,
+            { field: "model", reason: c.reason, model: chosen, model_unavailable: true, default_model: taskDefault },
+          );
+        }
+        if (matter.model_endpoint !== "standard" && !BUILTIN_MODEL_IDS.includes(chosen)) {
+          throw validation(`${catalogReasonText("byok_builtin_only", "task")}：所选模型（${modelLabel(chosen)}）只在中软标准端点可用，请换成 K3`, { field: "model", reason: "byok_builtin_only", model: chosen });
+        }
+      }
+
       // 开放任务离不开模型：发起时按当前事项状态再核一次（复核 C-B13：估价之后依据可能变了，界面的禁用也可能被绕过）。
       // 放在请求参数校验（档位、预授权、模板、追问）之后：参数错先报参数错
       if (est.scenario === "a1.agent_task") {
@@ -1898,8 +2142,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const runId = newId("run");
       db.run(
         `INSERT INTO runs (run_id, tenant_id, matter_id, scenario, workflow_version, status, idempotency_key,
-                           input_snapshot, budget_points, points_reserved, estimate_id, created_by)
-         VALUES (?,?,?,?,'v5.0.0-g0','queued',?,?,?,?,?,?)`,
+                           input_snapshot, budget_points, points_reserved, estimate_id, created_by, model)
+         VALUES (?,?,?,?,'v5.0.0-g0','queued',?,?,?,?,?,?,?)`,
         [
           runId,
           id.tenantId,
@@ -1911,11 +2155,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           Math.min(est.points, budgetCap),
           est.estimate_id,
           id.userId,
+          runModel,
         ],
       );
       queue.enqueue(runId);
       if (followupModeRaised) audit(db, id, "run.followup_mode_raised", "run", runId, sha256Hex(followupModeRaised), keyctx);
-      return { run_id: runId, status: "queued", points_reserved: Math.min(est.points, budgetCap) };
+      return { run_id: runId, status: "queued", points_reserved: Math.min(est.points, budgetCap), ...(runModel ? { model: runModel, model_label: modelLabel(runModel) } : {}) };
     },
 
     "runs.get": (p, id) => {
@@ -1951,7 +2196,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           ? (db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM runs WHERE tenant_id = ? AND status IN ('waiting_approval','waiting_input') AND run_id <> ?`, [run.tenant_id, run.run_id])?.n ?? 0)
           : 0;
       // is_mine：追问只对发起人显示（复核 B3-B13；内核同样只接受发起人追问）
-      return { run: { ...runOut(run), is_mine: run.created_by === id.userId, usage_display: chargedDisplay(Number(run.points_charged) || 0, Number(run.budget_points) || 0) }, artifacts: artifactsOut, inflight, unresolved_operations, waiting_ahead };
+      // 第 66 批：这次任务用的模型（runs.model；旧任务为空）与显示名，执行页可显示“由 K3 完成”
+      return { run: { ...runOut(run), is_mine: run.created_by === id.userId, usage_display: chargedDisplay(Number(run.points_charged) || 0, Number(run.budget_points) || 0), model: run.model ?? null, model_label: run.model ? modelLabel(String(run.model)) : null }, artifacts: artifactsOut, inflight, unresolved_operations, waiting_ahead };
     },
 
     "runs.events": (p, id) => {
@@ -2342,7 +2588,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const doc = db.get<any>(`SELECT * FROM document_versions WHERE document_version_id = ? AND tenant_id = ?`, [docId, id.tenantId]);
       if (!doc) throw notFound("文档");
       requireMatterAccess(db, doc.matter_id, id);
-      if (doc.quarantined_at) throw new DomainError("conflict", "该材料已隔离（带国家秘密标志），不能预览", 409);
+      if (doc.quarantined_at) throw new DomainError("conflict", quarantineText(doc.quarantine_reason).preview, 409, { reason: doc.quarantine_reason ?? "state_secret_marking" });
       let paragraphs: string[] | null = null;
       if (String(doc.filename).toLowerCase().endsWith(".docx") && doc.storage_mode === "import") {
         try {
@@ -2708,7 +2954,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         artifactHashMatch = false;
       }
       const device = db.get<any>(`SELECT cert_json, status, revoked_at FROM devices WHERE device_id = ?`, [ap.signer_device_id]);
-      const firmRow = db.get<{ root_public_key_pem: string }>(`SELECT root_public_key_pem FROM firm_identity WHERE tenant_id = ?`, [art.tenant_id]);
+      // 第 66 批（V40，D-292）：本机是个人账号自动登记的电脑时，本机审批的证书链按账号设备签发钥核（只对 issuer = account_ca 的证书）
+      const firmRow = db.get<{ root_public_key_pem: string; account_ca_public_key_pem: string | null }>(`SELECT root_public_key_pem, account_ca_public_key_pem FROM firm_identity WHERE tenant_id = ?`, [art.tenant_id]);
       let cert: DeviceCertificate | null = null;
       try {
         cert = device ? (JSON.parse(device.cert_json) as DeviceCertificate) : null;
@@ -2727,9 +2974,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
             ap.signature,
             // 审批的见证行序号（复核 B4-R10：留档证书只对不晚于其上界的见证有效）
             db.get<{ seq: number }>(`SELECT seq FROM signed_events WHERE kind = 'approval' AND ref_id = ?`, [ap.approval_id])?.seq ?? null,
+            firmRow?.account_ca_public_key_pem ?? null,
           ) ?? cert);
       const signatureValid = signerCert ? verifyBytes(signerCert.signPublicKeyPem, new TextEncoder().encode(ap.signed_payload), ap.signature) : false;
-      const certChainValid = signerCert && firmRow ? verifyCertSignature(signerCert, firmRow.root_public_key_pem) : false;
+      const certChainValid = signerCert && firmRow ? verifyCertSignature(signerCert, firmRow.root_public_key_pem, firmRow.account_ca_public_key_pem ?? null) : false;
       const signedAt = parseJson<any>(ap.signed_payload, {})?.signed_at ?? ap.created_at;
       let signerStatus: string = "unknown";
       if (device) {
@@ -3769,7 +4017,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
     // ─── 用量与上限（第 9 批 S3）：本所本月用量、律所设的月度上限（硬停）；管理员与合伙人另看按成员明细 ───
     "quota.status": async (_p, id) => {
-      if (!deps.controlPlane) return { mode: "local_dev", edition, note: edition === "trial" ? "试用版：不统计本所用量" : "开发形态：额度只在开发网关内存里" };
+      if (!deps.controlPlane) return { mode: "local_dev", edition, note: edition === "trial" ? "试用版：不统计你的用量" : "开发形态：你的额度只在开发网关内存里，不显示用量" };
       const view = await cpCall(() => deps.controlPlane!.quota());
       // 成员编号换成本机成员名（控制面只知道有账号的成员的姓名）
       const names = new Map(db.all<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM users WHERE tenant_id = ?`, [id.tenantId]).map((r) => [r.user_id, r.display_name]));
@@ -3778,6 +4026,16 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         ...view,
         ...(view.by_member ? { by_member: view.by_member.map((m) => ({ ...m, name: m.name ?? (m.uid ? (names.get(m.uid) ?? null) : null) })) } : {}),
       };
+    },
+    // 第 66 批（V40）：本人用量明细翻页（控制面签名信封 kwl-usage-page，只含本人的行；before = 上一页最后一行的时刻）
+    "quota.usage_page": async (p) => {
+      if (!deps.controlPlane) return { mode: "local_dev", rows: [], next_before: null };
+      const before = p?.before == null || p.before === "" ? null : String(p.before);
+      if (before !== null && !Number.isFinite(Date.parse(before))) throw validation("翻页位置不正确");
+      const limit = p?.limit == null ? 50 : Number(p.limit);
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw validation("每页条数须为 1～100");
+      const page = await cpCall(() => deps.controlPlane!.quotaUsagePage({ before, limit }));
+      return { mode: "control_plane", ...page };
     },
     "quota.set_cap": async (p, id) => {
       requireAdminDevice(id);

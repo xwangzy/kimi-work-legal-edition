@@ -64,7 +64,7 @@ test("S12B-55：出件箱里的段因引用的块被重封而作废（local_blob
   const gate = (kA.kernel as any).gate;
   const real = gate.relay;
   gate.relay = async () => ({ ok: false, reason: "relay_unreachable" });
-  await imp(kA, m, "甲-离线期间.txt", "同一份证据");
+  const first = (await imp(kA, m, "甲-离线期间.txt", "同一份证据")) as { document_version_id: string };
   await imp(kA, m, "甲-离线期间-另一份.txt", "只在 S1 里的另一份材料");
   await sleep(30);
   await kA.inv("relay.sync").catch(() => {});
@@ -73,7 +73,8 @@ test("S12B-55：出件箱里的段因引用的块被重封而作废（local_blob
   // 恢复连接之前 A 移出 dave（纪元 2），又把同一份证据导入到另一处（内容寻址：同一个块）
   await kA.inv("matters.members.remove", { matter_id: m, user_id: usr("dave") });
   await sleep(30);
-  await imp(kA, m, "甲-同一证据-副本.txt", "同一份证据");
+  // 第 66 批：materials.import 对同事项同内容去重（不再新建行）；用“新版本”（supersedes，去重按设计跳过）再导入同一内容，仍是引用同一个块的新行
+  await kA.inv("materials.import", { matter_id: m, filename: "甲-同一证据-副本.txt", data_base64: Buffer.from("同一份证据", "utf8").toString("base64"), mime: "text/plain", supersedes: first.document_version_id });
   // 这一次同步：导出的段 S2 引用同一个块 → 发出前按纪元 2 重封 → S1 上传时 local_blob_changed → 作废、水位退到 S1 的生成时刻
   const r = await kA.inv("relay.sync");
   assert.ok(r.push.uploaded >= 1, JSON.stringify(r.push));

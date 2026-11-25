@@ -88,7 +88,7 @@ function draw(head, box, d, reload) {
           ["套餐", plan.label ?? plan.id ?? "—"],
           ["额度单位", plan.unit === "cny" ? "金额（元）" : plan.unit === "tokens" ? "token" : "—"],
           ["每人额度（每席位）", plan.seat_quota === undefined || plan.seat_quota === null ? "—" : fmt.amount(plan.seat_quota, plan.unit)],
-          ["每账号电脑数", plan.device_limit ? `${plan.device_limit} 台` : "—"],
+          ["每账号电脑数（仅多人律所）", plan.device_limit ? `${plan.device_limit} 台` : "—"],
           ["开通于", fmt.date(f.created_at)],
           ["到期", fmt.date(f.expires_at)],
           ["强制用账号登录", f.accounts_required === false ? "否" : "是"],

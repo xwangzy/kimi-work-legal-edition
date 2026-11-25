@@ -54,7 +54,7 @@ test("我的电脑与登录记录：第几台、这台电脑、最近使用、�
   const other = deviceLine({ device_id: "dev_firm_li_D2", registered_at: "2025-12-31T17:00:00.000Z", client_version: null, last_seen_on: null, session: "none" }, NOW);
   assert.equal(other.title, "第 2 台电脑");
   assert.equal(other.meta, "2026 年 1 月 1 日登记".replace("2026 年 ", ""), "北京时间已是 1 月 1 日，今年不写年份");
-  assert.equal(deviceLine({ device_id: "dev_firm_li_D2", registered_at: null, revoked_at: "2026-11-02T00:00:00Z", client_version: null, last_seen_on: null }, NOW).state.text, "已解绑");
+  assert.equal(deviceLine({ device_id: "dev_firm_li_D2", registered_at: null, revoked_at: "2026-11-02T00:00:00Z", client_version: null, last_seen_on: null }, NOW).state.text, "已移除");
   const s = sessionLine({ sid: "ses_aaaaaaaaaaaaaaaa", kind: "desktop", device_id: "dev_firm_li_D2", created_at: "2026-11-10T01:00:00Z", last_seen_at: "2026-11-13T01:00:00Z", idle_expires_at: "2026-12-13T01:00:00Z", client: { platform: "win32" }, current: false }, NOW);
   assert.equal(s.title, "Windows 电脑（第 2 台）");
   assert.equal(s.meta, "11 月 10 日登录 · 最近活动 11 月 13 日 · 不使用到 12 月 13 日会自动退出");
@@ -172,7 +172,9 @@ test("源码门禁：激活页缺省登录、可切注册与忘记密码，保�
   const conn = src("pages/Connections.tsx");
   assert.match(conn, /每次 AI 调用的用量（请求编号、模型、token 数、金额）；看不到内容/);
   // 第 47 批：用量移到设置的“套餐与用量”页，律师与管理员同一个入口（管理员另有用量数、按成员与上限）
-  assert.match(conn, /<UsagePanel admin=\{isAdmin\} \/>/);
+  // 第 66 批：“套餐与用量”只给个人视图；本所额度与上限在“管理 · 用量与上限”
+  assert.match(conn, /\{tab === "usage" && <PersonalUsage \/>\}/);
+  assert.match(conn, /\{sub === "usage" && <UsagePanel admin \/>\}/);
 });
 
 test("第 44 批真实验收的发现：时间线里本产品的额度规则写“暂停”，不写“AI 服务连不上”", async () => {

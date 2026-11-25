@@ -43,6 +43,11 @@ if [ -f /etc/kwl/tls-ip.env ] && [ -f /etc/kwl/tls/cp.crt ] && openssl x509 -in 
   systemctl disable --now kwl-cert-renew.timer 2>/dev/null || true
   echo "⚠ 本机是域名部署却留着纯 IP 部署的续期配置：已停用 kwl-cert-renew.timer；请把 /etc/kwl/tls-ip.env 移走（运维手册“排障”）"
 fi
+# 第 66 批（v1.3.0，D-292）：签名服务补“账号设备签发钥”（个人账号换电脑直接登录用）；已有则不动，幂等
+if [ -f /etc/kwl/cp-signer.json ]; then
+  node scripts/add-account-device-ca.mjs --config /etc/kwl/cp-signer.json --secrets /etc/kwl/secrets || { echo "补账号设备签发钥失败（个人账号换电脑仍走批准流程，其余照常）"; }
+  [ -f /etc/kwl/secrets/account-device-ca.pem ] && { chgrp kwl /etc/kwl/secrets/account-device-ca.pem; chmod 0440 /etc/kwl/secrets/account-device-ca.pem; }
+fi
 systemctl daemon-reload
 if [ -f /etc/nginx/sites-available/kwl-console.conf ] && command -v nginx >/dev/null; then
   DOMAIN=$(awk '/server_name/ {gsub(";",""); print $2; exit}' /etc/nginx/sites-available/kwl-console.conf)

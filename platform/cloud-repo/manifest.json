@@ -20,6 +20,7 @@
     "services/dist-api",
     "scripts/cloud-serve.mjs",
     "scripts/cloud-init-secrets.mjs",
+    "scripts/add-account-device-ca.mjs",
     "scripts/build-console.mjs",
     "scripts/dev-console.mjs",
     "scripts/stack-local.mjs",

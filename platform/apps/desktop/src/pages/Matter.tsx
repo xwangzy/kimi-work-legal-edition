@@ -1,8 +1,8 @@
 /**
  * 事项页（第 03 篇 §4.4 事项头常显；材料、任务、看板、当事人词典、数据去向）。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { api, pickMaterials, type AiAuthorization, type EgressRecord, type Matter, type MaterialFile, type MaterialTriage, type MatterBasis, type RunPolicyView } from "../api.ts";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { api, type AiAuthorization, type EgressRecord, type Matter, type MaterialFile, type MaterialImportResult, type MaterialTriage, type MaterialUsage, type MatterBasis, type RunPolicyView } from "../api.ts";
 import { triageSuggestion, triageText } from "../lib/material-triage.ts";
 import { nav } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
@@ -18,7 +18,7 @@ import { prepareStart, RunSheet, type PendingStart } from "../components/RunShee
 import { TableReview } from "../components/TableReview.tsx";
 import type { TableView } from "../lib/table-review.ts";
 import { reasonLabel } from "../components/DataFlow.tsx";
-import { DEST_LABELS, fmtTime, fmtWhen, jurisdictionLabel, MODE_LABELS, parseFlagsText, RUN_STATUS_LABELS, SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
+import { DEST_LABELS, fmtTime, fmtWhen, jurisdictionLabel, materialStateLabel, MODE_LABELS, parseFlagsText, RUN_STATUS_LABELS, SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
 import { FactsPanel } from "../components/FactsPanel.tsx";
 import { decideMatterTab } from "../lib/matter-tab.ts";
 import { peekMatterFocus } from "../lib/search.ts";
@@ -33,7 +33,10 @@ import { Breadcrumb } from "../components/Breadcrumb.tsx";
 import { importFailText } from "../lib/errors.ts";
 import { MaterialFolderBar } from "../components/MaterialFolderBar.tsx";
 import { MaterialSearch } from "../components/MaterialSearch.tsx";
-import { filterDocsByName, relDir, supersededIds } from "../lib/material-folder.ts";
+import { filterDocsByName, importResultText, MATERIAL_ORIGIN_LABELS, materialOrigin, relDir, supersededIds, visibleMaterials } from "../lib/material-folder.ts";
+import { MaterialPicker } from "../components/MaterialPicker.tsx";
+import { ConfirmButton } from "../components/ConfirmButton.tsx";
+import { SafePreview } from "../components/SafePreview.tsx";
 import "../styles-materials.css";
 import "../styles-matter.css";
 
@@ -100,8 +103,11 @@ export function MatterPage({ matterId }: { matterId: string }) {
   const [workbench, setWorkbench] = useState<{ doc: string | null } | null>(null);
   /** 材料初判（v9.4 第 22 批，C1 #28）：本机按规则认出的文书类型与篇幅，只做建议。 */
   const [triage, setTriage] = useState<Map<string, MaterialTriage>>(new Map());
-  const mountRef = useRef<HTMLInputElement>(null);
-  const importRef = useRef<HTMLInputElement>(null);
+  /** 材料和任务的对应（第 66 批 K2/D4）：每份材料被哪些任务勾选过；展开的是哪一份；预览哪一份；旧版本与已移除的是否展开。 */
+  const [usage, setUsage] = useState<Map<string, MaterialUsage["documents"][number]>>(new Map());
+  const [usageOpen, setUsageOpen] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ filename: string; text: string | null; error?: string } | null>(null);
+  const [showOld, setShowOld] = useState(false);
 
   const reload = useCallback(() => {
     api
@@ -118,6 +124,10 @@ export function MatterPage({ matterId }: { matterId: string }) {
       .materialTriage(matterId)
       .then((r) => setTriage(new Map(r.items.map((t) => [t.document_version_id, t]))))
       .catch(() => setTriage(new Map()));
+    api
+      .materialUsage(matterId)
+      .then((r) => setUsage(new Map(r.documents.map((d) => [d.document_version_id, d]))))
+      .catch(() => setUsage(new Map()));
     api
       .riskCards(matterId)
       .then((r) => {
@@ -148,7 +158,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
 
   /** 正在添加第几份（第 51 批：逐份解析加密，扫描件要识别文字，可能要几十秒——给真实的 n/m、文件名与已用时间）。 */
   const [adding, setAdding] = useState<{ i: number; total: number; name: string; since: number } | null>(null);
-  const upload = async (files: FileList | MaterialFile[] | null, mode: "import" | "mount") => {
+  // select：导入后自动勾进输入框（第 66 批 D4：与首页一致；同内容已在本事项的也勾上那一份）
+  const upload = async (files: FileList | MaterialFile[] | null, mode: "import" | "mount", select = false) => {
     if (!files || files.length === 0) return;
     setBusy(true);
     setMsg("");
@@ -162,9 +173,11 @@ export function MatterPage({ matterId }: { matterId: string }) {
       for (const [i, f] of list.entries()) {
         setAdding({ i: i + 1, total: list.length, name: f.name, since });
         try {
-          const r: any = mode === "import" ? await api.importMaterial(matterId, f) : await api.mountMaterial(matterId, f);
+          const r = (mode === "import" ? await api.importMaterial(matterId, f) : await api.mountMaterial(matterId, f)) as MaterialImportResult;
           const how = mode === "import" ? "已添加（加密保存一份副本，原文件不改动）" : "已关联（只读引用原文件，不复制）";
-          lines.push(`${f.name} ${how}，${Number(r.chars ?? 0).toLocaleString()} 字${r.marking_notice ? `。${r.marking_notice}` : ""}`);
+          if (r.duplicate) lines.push(`${f.name}：${importResultText(f.name, r)}`);
+          else lines.push(`${f.name} ${how}，${Number(r.chars ?? 0).toLocaleString()} 字${r.marking_notice ? `。${r.marking_notice}` : ""}`);
+          if (select && r.document_version_id) setValue((v) => (v.documentIds.includes(r.document_version_id) ? v : { ...v, documentIds: [...v.documentIds, r.document_version_id] }));
         } catch (e) {
           fails.push(importFailText(f.name, (e as Error).message));
         }
@@ -172,9 +185,34 @@ export function MatterPage({ matterId }: { matterId: string }) {
       setMsg(lines.join("\n"));
       setFailMsg(fails.join("\n"));
       reload();
+      if (lines.length > 0) notifyDataChanged();
     } finally {
       setAdding(null);
       setBusy(false);
+    }
+  };
+
+  /** 预览原文（第 66 批 D4）：本机解析出的文字，不联网、不发给 AI。 */
+  const openPreview = (d: { document_version_id: string; filename: string }) => {
+    setPreview({ filename: d.filename, text: null });
+    api
+      .materialText(d.document_version_id)
+      .then((r) => setPreview({ filename: d.filename, text: r.paragraphs.join("\n") }))
+      .catch((e) => setPreview({ filename: d.filename, text: "", error: (e as Error).message }));
+  };
+
+  /** 移除误放的材料（第 66 批 K3/D4）：删本产品保存的副本与解析文字，原文件不动，留审计；进行中的任务在用时内核拒绝并说明。 */
+  const removeDoc = async (d: { document_version_id: string; filename: string }) => {
+    setMsg("");
+    setFailMsg("");
+    try {
+      const r = await api.removeMaterial(d.document_version_id);
+      setMsg(`《${d.filename}》${r.note ? `：${r.note}` : "已移除"}`);
+      setValue((v) => ({ ...v, documentIds: v.documentIds.filter((x) => x !== d.document_version_id) }));
+      reload();
+      notifyDataChanged();
+    } catch (e) {
+      setFailMsg(`《${d.filename}》没有移除：${(e as Error).message}`);
     }
   };
 
@@ -350,11 +388,11 @@ export function MatterPage({ matterId }: { matterId: string }) {
             autoFocus
             matterId={matterId}
             stance={matter?.stance}
-            documents={docs.filter((d) => !d.quarantined_at)}
+            documents={visibleMaterials(docs)}
             policy={policy}
             value={value}
             onChange={setValue}
-            onImport={(f) => void upload(f, "import")}
+            onImport={(f) => void upload(f, "import", true)}
             onSubmit={() => void submit()}
             busy={busy}
             onPickScenario={(c) => nav(`/start/${c.id}/${matterId}`)}
@@ -376,7 +414,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           {(
             [
               ["board", "概览"],
-              ["materials", `材料（${docs.length}）`],
+              ["materials", `材料（${docs.filter((d) => !d.quarantined_at).length}）`],
               ["facts", "事实"],
               // “任务”改名“AI 记录”（C1 §3.2）：它是 AI 运行流水，待办在概览里
               ["runs", `AI 记录（${runs.length}）`],
@@ -424,22 +462,21 @@ export function MatterPage({ matterId }: { matterId: string }) {
               {matView === "list" && <MaterialFolderBar matterId={matter.matter_id} folder={matter.folder ?? null} readOnly={closed} disabled={busy} onChanged={reload} />}
             </div>
             {matView === "table" && docs.length > 0 && <TableReview matterId={matter.matter_id} docs={docs} readOnly={closed} initialTable={tableFocus} onFill={(t) => void fillTable(t)} onAsk={(t, q) => void askTable(t, q)} onExported={() => void reload()} />}
-            {matView === "list" && !closed && <div
-              className="upload-zone"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                void upload(e.dataTransfer.files, "import");
-              }}
-            >
-              {/* 律师语言（Y4 MT-3 / 10-13 P1-5）：说清楚“复制一份加密保存”与“只引用原文件”的区别 */}
-              把文件拖到这里添加（加密保存一份副本，原文件不改动），或
-              <button className="btn-link" disabled={busy} onClick={() => void pickMaterials(importRef.current, (f) => upload(f, "import"))}>选择文件</button>
-              ；也可以
-              <button className="btn-link" disabled={busy} onClick={() => void pickMaterials(mountRef.current, (f) => upload(f, "mount"))}>只引用、不复制</button>
-              <input ref={importRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "import")} />
-              <input ref={mountRef} type="file" multiple hidden onChange={(e) => void upload(e.target.files, "mount")} />
-            </div>}
+            {/* 第 66 批 D1：添加材料与首页、开始面板、追问同一个组件（拖放、选择文件、逐份结果；同内容已在本事项的不重复保存） */}
+            {matView === "list" && !closed && (
+              <MaterialPicker
+                matterTitle={matter.title}
+                documents={docs}
+                showList={false}
+                disabled={busy}
+                onImport={(f) => api.importMaterial(matterId, f) as Promise<MaterialImportResult>}
+                onMount={(f) => api.mountMaterial(matterId, f) as Promise<MaterialImportResult>}
+                onImported={(out) => {
+                  reload();
+                  if (out.some((o) => o.ok)) notifyDataChanged();
+                }}
+              />
+            )}
             {matView === "list" && docs.length > 0 && (
               // 材料内搜索（第 48 批）：输入即按文件名筛选下面的表；回车或停顿片刻再到材料的文字里找
               <MaterialSearch matterId={matter.matter_id}>
@@ -454,14 +491,46 @@ export function MatterPage({ matterId }: { matterId: string }) {
                 <colgroup><col /><col className="c-role" /><col className="c-triage" /><col className="c-read" /><col className="c-review" /><col className="c-time" /></colgroup>
                 <thead><tr><th>文件</th><th>用途</th><th>初判</th><th>读取</th><th>审查意见</th><th>时间</th></tr></thead>
                 <tbody>
-                  {shown.map((d) => (
-                    <tr key={d.document_version_id}>
+                  {(() => {
+                    // 第 66 批 D4：旧版本与已移除（或已隔离）的材料默认折叠在最后
+                    const folded = shown.filter((d) => d.quarantined_at || old.has(d.document_version_id));
+                    const current = shown.filter((d) => !folded.includes(d));
+                    const row = (d: any) => (
+                    <Fragment key={d.document_version_id}>
+                    <tr>
                       <td className="mat-name" title={`${d.rel_path ?? d.filename}${d.storage_mode === "mount" ? "（只引用原文件，未复制）" : "（已加密保存副本）"}`}>
                         <span className="mat-name-text">{d.filename}</span>
-                        {d.storage_mode === "mount" && <span className="tag tag-gray">引用</span>}
-                        {old.has(d.document_version_id) && <span className="tag tag-gray mat-old" title="文件夹里同一位置的文件已更新，这是之前的版本">旧版本</span>}
+                        {/* 来源（第 66 批 D7，按规则推断）：案卷文件夹 / 引用原文件 / 律师填写 / 由成果转入；普通上传不标 */}
+                        {materialOrigin(d) !== "upload" && <span className="tag tag-gray">{MATERIAL_ORIGIN_LABELS[materialOrigin(d)]}</span>}
+                        {old.has(d.document_version_id) && <span className="tag tag-gray mat-old" title="同一位置（或同一份当事人信息）已有新版本，这是之前的版本">旧版本</span>}
                         {/* 文件夹里的位置（目录部分）作第二行 */}
                         {relDir(d.rel_path) && <span className="mat-dir">{relDir(d.rel_path)}</span>}
+                        {/* 第 66 批 D4：预览原文、用于哪些任务、移除误放的材料 */}
+                        {!d.quarantined_at && (
+                          <span className="mat-acts">
+                            <button className="btn-link" onClick={() => openPreview(d)}>预览</button>
+                            {(usage.get(d.document_version_id)?.used_by.length ?? 0) > 0 ? (
+                              <button className="btn-link" aria-expanded={usageOpen === d.document_version_id} onClick={() => setUsageOpen((x) => (x === d.document_version_id ? null : d.document_version_id))}>
+                                用于 {usage.get(d.document_version_id)!.used_by.length} 次任务 {usageOpen === d.document_version_id ? "▴" : "▾"}
+                              </button>
+                            ) : (
+                              <span className="mat-unused">{(usage.get(d.document_version_id)?.readable_by_unrestricted ?? 0) > 0 ? `${usage.get(d.document_version_id)!.readable_by_unrestricted} 次任务可读全部材料（含它）` : "还没有任务用过"}</span>
+                            )}
+                            {!closed && !matter.is_sample && (
+                              <ConfirmButton
+                                label="移除"
+                                className="btn-link mat-remove"
+                                confirmLabel="移除"
+                                question={
+                                  d.storage_mode === "mount"
+                                    ? `解除对《${d.filename}》的引用：删除本产品保存的解析文字及据此提取的事实和审查意见，原文件不动，留审计记录。用过它的成果会标出待核对。`
+                                    : `从本事项移除《${d.filename}》：删除本产品保存的副本与解析文字及据此提取的事实和审查意见，原文件不动，留审计记录。用过它的成果会标出待核对。`
+                                }
+                                onConfirm={() => removeDoc(d)}
+                              />
+                            )}
+                          </span>
+                        )}
                       </td>
                       <td>
                         {/* 材料用途（Y4 §5 D-4）：我方 / 对方 / 参考，写进任务的材料清单 */}
@@ -491,7 +560,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                           `${(Number(d.size_bytes ?? 0) / 1024).toFixed(1)} KB`
                         )}
                       </td>
-                      <td>{d.quarantined_at ? <span className="tag tag-warn">已隔离（国家秘密标志）</span> : parseFlagsText(d.quality_flags ?? [])}</td>
+                      <td>{d.quarantined_at ? <span className="tag tag-warn">{materialStateLabel(d)}</span> : parseFlagsText(d.quality_flags ?? [])}</td>
                       <td>
                         {review.get(d.document_version_id) ? (
                           <button className="btn-link" onClick={() => setWorkbench({ doc: d.document_version_id })}>
@@ -505,7 +574,43 @@ export function MatterPage({ matterId }: { matterId: string }) {
                       </td>
                       <td className="nowrap" title={fmtTime(d.created_at)}>{fmtWhen(d.created_at)}</td>
                     </tr>
-                  ))}
+                    {usageOpen === d.document_version_id && usage.get(d.document_version_id) && (
+                      <tr className="mat-usage-row">
+                        <td colSpan={6}>
+                          <ul className="mat-usage">
+                            {usage.get(d.document_version_id)!.used_by.map((r) => (
+                              <li key={r.run_id}>
+                                <button className="btn-link" onClick={() => nav(`/run/${r.run_id}/${matterId}`)}>
+                                  {r.title ? r.title : `${SCENARIO_LABELS[r.scenario] ?? r.scenario}${r.goal ? ` · ${String(r.goal).slice(0, 40)}` : ""}`}
+                                </button>
+                                <span className="muted"> · {RUN_STATUS_LABELS[r.status] ?? r.status} · {fmtWhen(r.created_at)}{r.artifact_count > 0 ? ` · 成果 ${r.artifact_count} 份` : ""}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          {usage.get(d.document_version_id)!.readable_by_unrestricted > 0 && (
+                            <p className="muted mat-usage-note">另有 {usage.get(d.document_version_id)!.readable_by_unrestricted} 次任务没有限定材料，也可以读到它。</p>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
+                    );
+                    return (
+                      <>
+                        {current.map(row)}
+                        {folded.length > 0 && (
+                          <tr className="mat-fold-row">
+                            <td colSpan={6}>
+                              <button className="btn-link" aria-expanded={showOld} onClick={() => setShowOld((v) => !v)}>
+                                旧版本与已移除的材料（{folded.length}）{showOld ? "▴" : "▾"}
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                        {showOld && folded.map(row)}
+                      </>
+                    );
+                  })()}
                 </tbody>
               </table>
                   );
@@ -577,6 +682,22 @@ export function MatterPage({ matterId }: { matterId: string }) {
         />
       )}
       {sheet && <RunSheet pending={sheet} onClose={() => setSheet(null)} />}
+      {/* 预览材料原文（第 66 批 D4）：本机解析出的文字，不联网、不发给 AI */}
+      {preview && (
+        <Modal title={preview.filename} subtitle="本机解析出的文字（只读预览，不发给 AI）" onClose={() => setPreview(null)} wide>
+          {preview.error ? (
+            <p className="banner banner-red" role="alert">{preview.error}</p>
+          ) : preview.text === null ? (
+            <WaitBlock title="正在读取…" />
+          ) : preview.text.trim() ? (
+            <div className="mat-preview">
+              <SafePreview filename="预览.txt" text={preview.text} />
+            </div>
+          ) : (
+            <p className="muted">这份材料没有可显示的文字（扫描件可能还没识别文字）。</p>
+          )}
+        </Modal>
+      )}
     </main>
   );
 }

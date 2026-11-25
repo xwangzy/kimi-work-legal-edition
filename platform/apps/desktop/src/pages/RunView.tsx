@@ -5,7 +5,9 @@
 import { downloadPlan } from "../lib/download.ts";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, onKernelEvent, type ApprovalCard, type QuestionCard, type RunEvent, type RunMode, type RunProgress, type SendSummaryView, type UnresolvedOperation } from "../api.ts";
+import { MaterialPicker } from "../components/MaterialPicker.tsx";
+import { visibleMaterials } from "../lib/material-folder.ts";
+import { api, onKernelEvent, type MaterialImportResult, type ApprovalCard, type QuestionCard, type RunEvent, type RunMode, type RunProgress, type SendSummaryView, type UnresolvedOperation } from "../api.ts";
 import { SendSummary } from "../components/SendSummary.tsx";
 import { nav } from "../App.tsx";
 import { ApprovalCardView, QuestionCardView } from "../components/Cards.tsx";
@@ -496,10 +498,11 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
   const loaded = useMemo(() => [...events].reverse().find((e) => e.type === "materials.loaded")?.payload, [events]);
   // 追问补勾材料（V18 第 43 批续三）：勾选即边界之后，漏勾一份不必整单重来。只在上一轮勾了材料时提供（没勾的任务本来就可读全部）；
   // 可补的是本事项里上一轮没勾的材料。补勾的随追问一起估价、发起，内核据此放进新一轮的材料快照与读取范围
+  // 第 66 批 D6/D7：可补的按统一口径（已移除、已隔离的与当事人信息旧版不列）；补充材料里也能直接上传新文件（存入本事项后自动勾上）
   const extraDocs = useMemo(() => {
     if (inputDocs.length === 0) return [];
     const had = new Set(inputDocs.map((d) => d.document_version_id));
-    return docs.filter((d) => !had.has(d.document_version_id));
+    return visibleMaterials(docs).filter((d) => !had.has(d.document_version_id));
   }, [inputDocs, docs]);
   const followDocIds = useMemo(() => [...inputDocs.map((d) => d.document_version_id), ...extraDocs.filter((d) => followAdd.includes(d.document_version_id)).map((d) => d.document_version_id)], [inputDocs, extraDocs, followAdd]);
   const followAdded = followDocIds.length - inputDocs.length;
@@ -1215,33 +1218,31 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 </button>
               )}
             </div>
-            {extraDocs.length > 0 && (
+            {inputDocs.length > 0 && (
               <div className="followup-mats">
                 <button className="btn-link" aria-expanded={followAddOpen} onClick={() => setFollowAddOpen((v) => !v)}>
                   {followAdded > 0 ? `补充材料：已勾 ${followAdded} 份` : "补充材料"} {followAddOpen ? "▴" : "▾"}
                 </button>
                 {followAddOpen && (
-                  <div className="ss-docs" role="group" aria-label="补充材料">
-                    {extraDocs.map((d) => {
-                      const on = followAdd.includes(d.document_version_id);
-                      return (
-                        <label key={d.document_version_id} className={`ss-doc${on ? " on" : ""}`}>
-                          <input
-                            type="checkbox"
-                            aria-label={d.filename}
-                            checked={on}
-                            disabled={busy}
-                            onChange={() => {
-                              setFollowAdd((ids) => (on ? ids.filter((x) => x !== d.document_version_id) : [...ids, d.document_version_id]));
-                              setFollowConfirm(null);
-                            }}
-                          />
-                          <span className="ss-doc-name">{d.filename}</span>
-                        </label>
-                      );
-                    })}
-                    <div className="ss-scope muted">{followUpMaterialsText(inputDocs.length, followAdded, extraDocs.length)}</div>
-                  </div>
+                  <MaterialPicker
+                    compact
+                    matterTitle={matter?.title ?? "本事项"}
+                    documents={extraDocs}
+                    selected={followAdd}
+                    disabled={busy}
+                    onToggle={(id, on) => {
+                      setFollowAdd((ids) => (on ? (ids.includes(id) ? ids : [...ids, id]) : ids.filter((x) => x !== id)));
+                      setFollowConfirm(null);
+                    }}
+                    onImport={(f) => api.importMaterial(matterId, f) as Promise<MaterialImportResult>}
+                    onImported={() => {
+                      void api
+                        .getMatter(matterId)
+                        .then((r) => setDocs(r.documents))
+                        .catch(() => {});
+                    }}
+                    hint={extraDocs.length > 0 ? <div className="ss-scope muted">{followUpMaterialsText(inputDocs.length, followAdded, extraDocs.length)}</div> : null}
+                  />
                 )}
               </div>
             )}

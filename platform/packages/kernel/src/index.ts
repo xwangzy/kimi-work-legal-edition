@@ -13,7 +13,7 @@ import type { Server } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
-import { signSyncWith, verifyBytes, verifyDeviceCertificate } from "@zr-legal/keys";
+import { signSyncWith, SoftwareSigner, verifyBytes, verifyDeviceCertificate } from "@zr-legal/keys";
 import { collectRecoveryContent, openRecoveryPackage, peekRecoveryPackage, sealRecoveryPackage } from "./services/recovery-package.ts";
 import { cleanupRestoreStaging, configureBackup, markPrunePending, readBackupState, RESTORED_MARKER, restoreFromBackup, runBackup, type BackupDeps } from "./services/backup.ts";
 import { writeExportFile } from "./services/export-file.ts";
@@ -34,7 +34,7 @@ import { accountErrorText, dropAccountSession, dropLoginRequired, modelRejection
 import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, reconcilePendingRestore, removePendingWorkspace, writeJoinFailure, writePendingActivation } from "./services/onboarding.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
 import { ControlPlaneClient } from "./control-plane/client.ts";
-import { parsePublicKeyMap } from "@zr-legal/firm-trust";
+import { firmBundleBytes, parsePublicKeyMap } from "@zr-legal/firm-trust";
 import { appendAuditEvent, createLedgerSigner, rowPayloadHash } from "./ledger-signer.ts";
 import { AsyncMutex, Semaphore } from "./mutex.ts";
 import { materializeSkillsBundle } from "./skills-bundle.ts";
@@ -56,6 +56,8 @@ import { EgressApprovalStore } from "./services/egress-approvals.ts";
 import { screenSearchQuery } from "@zr-legal/egress-gate";
 import { createGateProvider, mockProvider, thinkingParams, thinkingControlOf } from "@zr-legal/model-broker";
 import { collectStreamText, QaChatService } from "./services/qa-chat.ts";
+import { isModelRejection, ModelCatalogService } from "./services/model-catalog.ts";
+import { selectedModelOf } from "./services/model-prefs.ts";
 import { ReminderService } from "./services/reminders.ts";
 import { ShareRelaySync } from "./services/share-relay.ts";
 import { mintTaskToken } from "./identity.ts";
@@ -348,6 +350,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   let accountProblem: string | null = persistedProblem?.reason ?? null;
   /** 上次重新登录成功（清掉 accountProblem）的时刻：刚登录后网关可能还按旧的暂停名单拒绝（见 SESSION_REJECTION_GRACE_MS）。 */
   let accountClearedAt = Number.NEGATIVE_INFINITY;
+  /** 第 66 批：云端模型目录（下面建好后填入；登录成功、网关按模型拒绝时据此刷新）。 */
+  const modelCatalogRef: { current: ModelCatalogService | null } = { current: null };
   /** 退出登录后仍记住上次的邮箱与姓名（不含令牌）：重新登录页预填与称呼；第 64 批起重启后也记得（读本机记录）。 */
   let lastAccount: { email: string; name: string; role: string } | null = accountSession
     ? { email: accountSession.email, name: accountSession.name, role: accountSession.role }
@@ -369,6 +373,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       writeAccountSession(keysDir, x);
       accountSession = readAccountSession(keysDir);
       lastAccount = { email: x.email, name: x.name, role: x.role };
+      // 第 66 批：登录成功后取一次模型目录（会话换了，套餐可能也不同）；不阻塞登录
+      setTimeout(() => void modelCatalogRef.current?.refresh("login"), 0).unref?.();
     },
     drop: () => {
       dropAccountSession(keysDir);
@@ -415,6 +421,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
    */
   const onModelRejection = (codeOrMessage: string | null | undefined): void => {
     if (!controlPlane) return;
+    // 第 66 批：所选模型被网关按模型拒绝（套餐不含、停用、未登记、未定价、无可用上游）→ 刷新一次模型目录（至多 30 秒一次），界面随之置灰并说明
+    if (isModelRejection(codeOrMessage)) void modelCatalogRef.current?.refresh("model_rejection", { minIntervalMs: 30_000 });
     const code = modelRejectionProblem(codeOrMessage, Date.now() - accountClearedAt);
     if (code) markAccountProblem(code, "model");
   };
@@ -431,6 +439,16 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
             try {
               const r = getFirmRootPrivateKey(keysDir);
               return { publicKeyPem: r.publicKeyPem, privateKeyPem: r.privateKeyPem };
+            } catch {
+              return null;
+            }
+          },
+          // 第 66 批（V40，D-292）：创始设备的律所公钥包（公开数据）随登记上传——控制面据此给个人账号的新电脑直接登记（存量律所由此回填）
+          firmBundle: () => {
+            if (!firm.recoveryPublicKeyPem) return null;
+            try {
+              const r = getFirmRootPrivateKey(keysDir);
+              return { recovery_public_key_pem: firm.recoveryPublicKeyPem, sig: new SoftwareSigner(r.privateKeyPem).signSync(firmBundleBytes(identity.tenantId, r.publicKeyPem, firm.recoveryPublicKeyPem)) };
             } catch {
               return null;
             }
@@ -473,6 +491,21 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       return null;
     }
   };
+  // 第 66 批（V40）：云端模型目录——经控制面通道拉取、验签、只进不退、缓存；没有控制面（开发形态、试用版、待激活）只用内置两项。
+  // 采用新目录即更新本机模型路由（broker 只认目录里可用的与内置两项）
+  const modelCatalog = new ModelCatalogService({
+    pull: controlPlane ? () => controlPlane.modelCatalogEnvelope() : null,
+    open: (envelope) => governance.openSigned(envelope, "kwl-model-catalog"),
+    tenantId: identity.tenantId,
+    cacheFile: controlPlane ? join(config.workspaceDir, "model-catalog.json") : null,
+    onChange: (doc) => broker.setCatalog(doc?.models ?? []),
+    log: (event, fields) => {
+      const outcome = event.endsWith("FETCH_FAILED") ? "fetch_failed" : event.endsWith("INVALID") ? "invalid" : event.endsWith("STALE") ? "stale" : "cache_failed";
+      slog.event("KERNEL_MODEL_CATALOG", { outcome, trigger: typeof fields.reason === "string" && /^[a-z_]{1,40}$/.test(fields.reason) ? fields.reason : "other" });
+    },
+  });
+  broker.setCatalog(modelCatalog.models());
+  modelCatalogRef.current = modelCatalog;
   const queue = new TaskQueue(db, { concurrency: Number(env.ZR_KERNEL_CONCURRENCY ?? 2) });
   const ioMutex = new AsyncMutex(); // §4.5：材料解析与 OCR 批次排队（8 GB 笔记本内存预算；Agent 运行另有独立槽位）
   const localStats = { rejectedPathRequests: 0, rejectedPaths: [] as string[], rejectedToolCalls: 0 }; // 探针 2：管道非白名单请求/工具调用取证
@@ -591,7 +624,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   // 第 58 批（D-235）：独立复核与回看缺省高强度推理（第 57 批两卡对照：high 都抓到评分认定的头号问题，low 都漏了；每单多约 1.5～5.5 分钟、0.1～0.15 元）。
   // ZR_REVIEW_EFFORT=low 可调回低强度（例如额度紧张时）
   const reviewEffort = env.ZR_REVIEW_EFFORT === "low" ? ("low" as const) : ("high" as const);
-  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, independentReview, reviewLimitMs, reviewRetryWaitMs, reviewFixLimitMs, redlineLimitMs, reviewEffort, vouchKnownOnly: (rid: string, text: string) => gate.vouchKnownOnly(rid, text), onAgentFailure: (error: string | null) => onModelRejection(error) };
+  const workflowDeps = { db, blobs, broker, agentClient, lawdb, signer, tokens, agentWorkLimitMs, agentWallMs, skillPrimaryOf, independentReview, reviewLimitMs, reviewRetryWaitMs, reviewFixLimitMs, redlineLimitMs, reviewEffort, vouchKnownOnly: (rid: string, text: string) => gate.vouchKnownOnly(rid, text), onAgentFailure: (error: string | null) => onModelRejection(error), modelSpecOf: (id: string) => { const m = modelCatalog.find(id); return m ? { capabilities: [...m.capabilities], max_context: m.max_context, thinking: m.thinking } : null; } };
   queue.register("legalRun", createLegalWorkflow(workflowDeps));
 
   const ocrModelPaths = {
@@ -615,7 +648,10 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     // 第 47 批：律师按次选模型（K3 / K2.6）；QaChatService 已按可选列表核过，这里只按别名取路由
     routes: () => broker.routeAliases(),
     thinkingOf: (alias) => thinkingControlOf(broker.resolveRoute(alias)),
-    defaultRoute: env.ZR_QA_ROUTE ?? "legal/k3",
+    // 第 66 批：可选模型、显示名与缺省读云端模型目录（ZR_QA_ROUTE 只作开发覆盖）；律师在问答里记住的模型按本人存在本机
+    catalog: () => modelCatalog.models(),
+    selectedRoute: (tid, uid) => selectedModelOf(db, tid, uid, "qa"),
+    defaultRoute: () => env.ZR_QA_ROUTE ?? modelCatalog.defaultFor("qa"),
     ask: async (input) => {
       const route = broker.resolveRoute(input.route);
       // 深度思考开关 → 上游参数（第 49 批按官方参数表改）：K3 系列用 reasoning_effort（深度 max / 快速 low，K3 不支持 thinking 参数），
@@ -775,6 +811,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     gate,
     approvals,
     qa,
+    modelCatalog,
     kap: kapAgentClient,
     matterPolicy: (mid) => kapMatterPolicy(db, mid, firmPolicy()),
     governance,
@@ -983,6 +1020,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     api["onboarding.redeem"] = (p) => onboarding.redeem((p ?? {}) as { code?: unknown });
     api["onboarding.check"] = () => onboarding.check();
     api["onboarding.reset"] = () => onboarding.reset();
+    // 第 66 批（V40，D-292）：个人账号新电脑自动登记被风控暂停后，用短信验证码确认再登记
+    api["onboarding.device_confirm"] = (p) => onboarding.deviceConfirm((p ?? {}) as { phone?: unknown; sms_code?: unknown });
     // 第 44 批：账号注册与登录（这台电脑还没有身份）；找回密码两种模式都可用
     api["account.register"] = (p) => onboarding.accountRegister((p ?? {}) as Record<string, unknown>);
     api["account.login"] = (p) => onboarding.accountLogin((p ?? {}) as Record<string, unknown>);
@@ -1262,6 +1301,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   }
 
   if (controlPlane && env.ZR_CONTROL_PLANE_SYNC_MS !== "off") controlPlane.start(Number(env.ZR_CONTROL_PLANE_SYNC_MS ?? 600_000) || 600_000);
+  // 第 66 批：模型目录每 10 分钟取一次（启动即取；ZR_MODEL_CATALOG_MS=off 关，开发联调可调短）
+  if (controlPlane && env.ZR_MODEL_CATALOG_MS !== "off" && (env.ZR_CONTROL_PLANE_SYNC_MS !== "off" || env.ZR_MODEL_CATALOG_MS)) modelCatalog.start(Number(env.ZR_MODEL_CATALOG_MS ?? 600_000) || 600_000);
 
   return {
     identity,
@@ -1307,6 +1348,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
         }
       }
       controlPlane?.stop();
+      modelCatalog.stop();
       onboarding?.stop();
       relayClosed = true;
       if (relayPushTimer) clearInterval(relayPushTimer);

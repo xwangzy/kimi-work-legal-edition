@@ -20,6 +20,7 @@ import { deviceSafetyTile } from "../lib/device-status.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
 import { RecallEvalPanel } from "./RecallEval.tsx";
 import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
+import { PersonalUsage } from "./PersonalUsage.tsx";
 import { AccountSection } from "../components/AccountPanel.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
@@ -98,13 +99,8 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
         {tab === "general" && <GeneralTab version={displayVersion(status?.app_version, status?.version)} />}
         {tab === "writing" && <WritingTab />}
         {tab === "account" && <AccountTab mySafety={mySafety} admin={isAdmin} />}
-        {/* 套餐与用量（第 47 批，对应 Kimi“设置 · 订阅 · 我的额度”）：律师看本所额度与本人用量；管理员另看用量数、按成员明细、设上限 */}
-        {tab === "usage" && (
-          <section className="panel device-section usage-page" aria-labelledby="sec-usage">
-            <h2 className="section-h h-section" id="sec-usage">套餐与用量</h2>
-            <UsagePanel admin={isAdmin} />
-          </section>
-        )}
+        {/* 套餐与用量（第 66 批 V40 P0-5）：个人套餐与个人用量（Kimi“我的订阅”同思路）；本所额度、按成员与上限移到“管理”与云端控制台 */}
+        {tab === "usage" && <PersonalUsage />}
         {tab === "backup" && <BackupTab caps={caps} gate={gate} />}
         {tab === "visibility" && (
           <>
@@ -711,9 +707,9 @@ function AccountTab({ mySafety, admin }: { mySafety: string | null; admin: boole
     <div className="device">
       {(firm || cp?.mode === "control_plane") && (
       <section className="panel device-section" aria-labelledby="sec-team">
-        <h2 className="section-h h-section" id="sec-team">本所与账号</h2>
+        <h2 className="section-h h-section" id="sec-team">账号</h2>
         {firm && (
-          <SettingRow label="本所">
+          <SettingRow label="所属">
             {/* 第 55 批：名称与姓名放进同一个 span——右栏是纵向排列，原来“ · 姓名”这段文字单独落成一行，开头是一个孤零零的“·” */}
             <span>
               <b>{firm.firm?.name}</b>
@@ -935,14 +931,15 @@ function StatusTile({ tone, title, line, action }: { tone: "ok" | "warn" | "info
 function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any }) {
   // 子标签收敛（Z3 评审 #7.3、I2 遗留）：诊断与替换准确度测试是给律所 IT 与中软运维用的，收进“技术支持”
   // V16 IA-4：“技术支持”直接展开诊断首层；替换准确度测试升为独立二级标签“代号准确度”（进所评测是售前动作）
-  // 用量与上限已移到设置的“套餐与用量”页（第 47 批），这里不再重复
-  const [sub, setSub] = useState<"members" | "policy" | "cp_audit" | "support" | "recall">("members");
+  // 第 66 批：“套餐与用量”只给个人视图；本所额度、按成员与上限（管理员动作）回到“管理 · 用量与上限”
+  const [sub, setSub] = useState<"members" | "usage" | "policy" | "cp_audit" | "support" | "recall">("members");
   return (
     <div>
       <div className="tabs" role="tablist" aria-label="管理">
         {(
           [
             ["members", "成员"],
+            ["usage", "用量与上限"],
             ["policy", "律所策略"],
             ["cp_audit", "操作记录"],
             ["support", "技术支持"],
@@ -955,6 +952,7 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
         ))}
       </div>
       {sub === "members" && <MembersAdmin />}
+      {sub === "usage" && <UsagePanel admin />}
       {sub === "policy" && <PolicyTab />}
       {sub === "cp_audit" && <CpAuditPanel />}
       {sub === "support" && (

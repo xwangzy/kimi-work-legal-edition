@@ -22,7 +22,7 @@ import type { StateStore } from "./state-store.ts";
 import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
 import { availability, boostPct as quotaBoost, chargeLease, closeLease, emptyQuota, ensurePeriod, forecastExhaust, leaseQuota, memberLimitOf, migrateQuota, outstanding, pausedOf, QuotaError, quotaView, ratio, setCap as quotaSetCap, sweepLeases, totalsOf, usedOf, type QuotaCtx, type QuotaState, revokeLeases } from "./quota.ts";
 import { B62_CNY_PER_MTOK, catalogFromConfig, microToCny, migrateCatalog, periodBill, periodBounds, planOf, PlanError, seatQuotaUnits, tokensToCny, tokensToMicro, unitOut, validatePlan, validateSettings, type B62MigrationRecord, type Catalog, type PlanSpec } from "./billing.ts";
-import { amountOf, billedOf, bootstrapRouting, currentPrices, deleteModel, deleteProvider, migratePricingToModels, migrateRouting, moneyOf, priceTableOf, pricingView, recordHealth, requestProbe, reserveRates, resolvePrice, routingFeedBody, RoutingError, routingView, setPrices, setPricing, upsertModel, upsertProvider, type RoutingState, unpricedAliasesIn, validatePrices, type PriceTable } from "./routing.ts";
+import { amountOf, billedOf, bootstrapRouting, currentPrices, deleteModel, deleteProvider, migratePricingToModels, migrateRouting, modelCatalogBody, moneyOf, priceTableOf, pricingView, recordHealth, requestProbe, reserveRates, resolvePrice, routingFeedBody, RoutingError, routingView, setPrices, setPricing, upsertModel, upsertProvider, type RoutingState, unpricedAliasesIn, validatePrices, type PriceTable } from "./routing.ts";
 import { addAgg, dayOf, emptyAgg, rowAgg, UsageBook, usedIn, type Agg, type UsageRow, type UsageTokens } from "./usage-ledger.ts";
 import {
   accountDeviceId,
@@ -35,6 +35,10 @@ import {
   hashPassword,
   locked,
   MAX_DEVICES_PER_ACCOUNT,
+  coarseNet,
+  PERSONAL_DEVICE_HARD_CAP,
+  PERSONAL_DEVICE_NUMBER_MAX,
+  type LoginRecord,
   newId,
   newOneTimeCode,
   newSessionToken,
@@ -56,7 +60,7 @@ import {
   type OneTimeCode,
   type SessionRecord,
 } from "./accounts.ts";
-import { canonicalJson, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
+import { canonicalJson, signAlgOfPublicKey, verifyBytes, verifyDeviceCertificate, DEVICE_ID_PATTERN, type DeviceCertificate } from "@zr-legal/keys";
 import { maskPhone, migrateSms, newSmsCode, normalizePhone, RegError, sealText, SMS_FAIL, SMS_PURPOSES, smsCreds, smsLoginAvailable, smsMissing, smsMode, smsProject, smsView, submailBalance, submailSendCode, validateSmsPatch, type SmsFailCode, type SmsPurpose, type SmsSettings, type SubmailOptions } from "./sms.ts";
 import { batchView, createInviteBatch, INVITE_REJECT, INVITE_STATUSES, inviteCodeText, inviteStatus, inviteView, normalizeInviteCode, RegistrationBook, SmsStatsBook, type InviteCode, type InviteStatus, type SmsCodeRecord } from "./registration.ts";
 import { DANGER_PERMISSIONS, permsOf, rolesProblem, rolesView, type CpPermission, type PlatformRole } from "./rbac.ts";
@@ -90,6 +94,9 @@ import {
   validateSummary,
   verifyAdminSignatures,
   verifyDeviceRequest,
+  verifyDeviceCertificateAny,
+  certIssuerOf,
+  deviceEnrollProofBytes,
   type AdminSignature,
   type AnonMatterSummary,
   type CpEnvelope,
@@ -112,11 +119,13 @@ export type { ControlPlaneKeys, CpKeyPair } from "./signer.ts";
  * 开发与测试用：生成控制面的密钥（生产在签名服务 cp-signer，公钥随客户端与网关构建固定）。
  * `audiences: true` 另为支持、通知、中继各生成一把受众席位密钥（A-8 按受众拆分）。
  */
-export function devControlPlaneKeys(o: { audiences?: boolean } = {}): ControlPlaneKeys {
+export function devControlPlaneKeys(o: { audiences?: boolean; accountCa?: boolean } = {}): ControlPlaneKeys {
   const e = generateKeyPairSync("ed25519");
   const s = generateKeyPairSync("ed25519");
   const keys: ControlPlaneKeys = { envelope: { kid: "cp-dev1", ...e }, seat: { kid: "seat-dev1", ...s } };
   if (o.audiences) keys.seatAudiences = { support: { kid: "seat-support-dev1", ...generateKeyPairSync("ed25519") }, notify: { kid: "seat-notify-dev1", ...generateKeyPairSync("ed25519") }, relay: { kid: "seat-relay-dev1", ...generateKeyPairSync("ed25519") } };
+  // 第 66 批（V40，D-292）：账号设备签发钥（个人账号新电脑直接登录；不给 = 仍走批准）
+  if (o.accountCa) keys.accountDeviceCa = { kid: "acct-ca-dev1", ...generateKeyPairSync("ed25519") };
   return keys;
 }
 
@@ -179,7 +188,7 @@ export interface AlertRecord {
   id: string;
   at: string;
   /** usage_missing（第 62 批）：上游没给真实用量、按估算记的请求（不计入额度，待对账）——持续出现说明上游或网关的用量采集有问题，额度会被绕过。 */
-  kind: "threshold" | "cap" | "exhausted" | "anomaly" | "route_down" | "device_flag" | "usage_missing";
+  kind: "threshold" | "cap" | "exhausted" | "anomaly" | "route_down" | "device_flag" | "usage_missing" | "new_device";
   level: "info" | "warn" | "critical";
   tid: string | null;
   aid: string | null;
@@ -249,6 +258,15 @@ export interface TenantRecord {
   accounts_required?: boolean;
   /** 开通方式：运营开通 / 自助注册（试用）。 */
   created_via?: "ops" | "self";
+  /**
+   * 第 66 批（V40，D-292）：个人租户——只有 1 名成员且是管理员（自助注册的个人工作室）。自助注册时置 true；成员数变多、发了成员邀请即
+   * 永久转回 false（personalOf），恢复“另一台电脑批准”。第 66 批之前的状态读回时按 personalShape 判定一次。
+   */
+  personal?: boolean;
+  /** 第 66 批：这家律所认的账号设备签发钥（个人租户开通或首次自动登记时记下；之后登记的 account_ca 证书按它验）。 */
+  account_device_ca?: { kid: string; public_key_pem: string; since: string } | null;
+  /** 第 66 批：律所公钥包（恢复托管公钥 + 律所根签名；公开数据）——创始设备开通或登记时上传，控制面下发给个人账号的新电脑。 */
+  firm_bundle?: FirmBundle | null;
 }
 
 export interface ControlPlaneOptions {
@@ -615,7 +633,22 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         kimi_required: undefined,
       });
     }
+    // 第 66 批（V40，D-292）存量迁移：之前的状态没有 personal——自助注册、只有 1 个账号且是管理员、没有别的成员设备、没有未撤的成员邀请
+    // 判为个人租户，其余（运营开通、多人、发过邀请）一律 false。律所公钥包没有的，从已批准的入组申请回填（批准时留过一份）；
+    // 仍没有的，等创始电脑下次登记（/v1/devices/register 带 firm_bundle）补上——补上之前个人账号新电脑照旧走批准
+    for (const t of tenants.values()) {
+      if (typeof t.personal !== "boolean") t.personal = t.created_via === "self" && personalShape(t);
+      if (!t.firm_bundle) t.firm_bundle = [...t.joinRequests.values()].find((x) => x.status === "approved" && x.firm_bundle)?.firm_bundle ?? null;
+    }
   };
+  /** 第 66 批：租户眼下是不是“个人”的形状：只有 1 个账号且是管理员、没有别的成员的设备、没有未撤的成员邀请（账号自己的认领不算）。 */
+  function personalShape(t: TenantRecord): boolean {
+    const mine = [...accounts.values()].filter((a) => a.tid === t.tid);
+    if (mine.length !== 1 || mine[0]!.role !== "admin") return false;
+    const uid = `usr_${t.tid.slice(4)}_${mine[0]!.member_slug}`;
+    if ([...t.devices.values()].some((d) => d.cert.role !== "node" && d.cert.memberId !== uid)) return false;
+    return ![...t.activations.values()].some((r) => r.kind === "member" && !r.via_account && r.status !== "revoked");
+  }
   /**
    * 第 62 批读回迁移（额度改按金额；价目改按上游型号）：只对第 62 批之前写下的状态做一次（catalog.migrations.b62_billing 缺省），幂等，原值留存可还原。
    * ① 价目：按别名的当前版本 → 按上游型号的新版本（官方价作成本缺省；原别名售价落到目标型号上，与 成本 × 1.0 一致的不另设覆盖）；
@@ -1009,6 +1042,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         ...(allowanceUnits !== undefined ? { allowance_override: allowanceUnits } : {}),
         accounts_required: accountsRequired,
         created_via: createdVia,
+        // 第 66 批（V40，D-292）：自助注册的个人工作室是个人租户（成员变多或发了成员邀请即自动转回 false，见 personalOf）
+        personal: createdVia === "self",
       };
       issueLicense(t);
       publishStrictest(t);
@@ -1371,6 +1406,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
 
   const requireAdmin = (dev: DeviceRecord): void => {
     if (dev.cert.role !== "admin") throw new CpError(403, "admin_required", "需要管理员设备");
+    // 第 66 批（V40，D-292）：控制面签的账号设备证书不能做团队管理动作（批准成员、发邀请、发布策略与连接器、设律所上限）——只认律所根签发的电脑
+    if (certIssuerOf(dev.cert) === "account_ca") throw new CpError(403, "firm_root_device_required", "这项操作只能在律所开通时的那台电脑上进行");
   };
 
   const adminCheck = (t: TenantRecord, bytes: Buffer, sigs: AdminSignature[], at: Date = new Date(now())) =>
@@ -1582,7 +1619,68 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   const uidOfAccount = (a: AccountRecord) => `usr_${a.tid.slice(4)}_${a.member_slug}`;
   const orgOf = (tid: string) => ({ slug: tid.slice(4), name: tenants.get(tid)?.name ?? tid.slice(4) });
-  const deviceLimitOf = (a: AccountRecord): number => Math.min(MAX_DEVICES_PER_ACCOUNT, a.device_limit ?? (tenants.get(a.tid) ? planFor(tenants.get(a.tid)!).device_limit : catalog.settings.default_device_limit));
+  // 第 66 批（V40，D-292）：个人账号不按套餐台数挡（套餐 device_limit 只管多人律所），只留防滥用硬上限 PERSONAL_DEVICE_HARD_CAP
+  const deviceLimitOf = (a: AccountRecord): number => {
+    const t = tenants.get(a.tid);
+    if (t && autoEnrollReady(t)) return PERSONAL_DEVICE_HARD_CAP;
+    return Math.min(MAX_DEVICES_PER_ACCOUNT, a.device_limit ?? (t ? planFor(t).device_limit : catalog.settings.default_device_limit));
+  };
+  // ─── 第 66 批（V40，D-292）：个人账号换电脑直接登录 ───
+  const AUTO_ENROLL_FRESH_MS = 10 * 60_000;
+  const AUTO_ENROLL_BURST = { windowMs: 24 * 3600_000, max: 3 };
+  const ACCOUNT_DEVICE_CERT_DAYS = 365;
+  /** 签名者有没有账号设备签发钥（没有 = 个人账号新电脑仍走批准）。 */
+  const accountCa = () => (signer.issueAccountDeviceCert ? (signer.publicKeys().account_device_ca ?? null) : null);
+  /** 个人租户：标记为 true 且眼下仍是个人形状；形状不再成立（多了成员、发了成员邀请）即永久转回 false（恢复批准流程）。 */
+  const personalOf = (t: TenantRecord): boolean => {
+    if (t.personal !== true) return false;
+    if (personalShape(t)) return true;
+    t.personal = false;
+    feedVersion += 1;
+    return false;
+  };
+  /** 这家律所的新电脑能不能由控制面直接签发：个人租户、签名者有账号设备签发钥、律所根与律所公钥包都已登记。 */
+  const autoEnrollReady = (t: TenantRecord): boolean => !!accountCa() && !!t.root_public_key_pem && !!t.firm_bundle && personalOf(t);
+  /** 设备证书的信任锚：律所根 +（登记过的）账号设备签发钥。团队功能另外只认律所根（requireAdmin、adminCheck、入组批准）。 */
+  const certAnchorsOf = (t: TenantRecord) => ({ root: t.root_public_key_pem, accountCa: t.account_device_ca?.public_key_pem ?? null });
+  /** 该账号下一台电脑的编号：1..max 里第一个从未用过的（吊销过的编号不再复用）。 */
+  const nextDeviceId = (t: TenantRecord, a: AccountRecord, max: number): string | null => {
+    const fs = t.tid.slice(4);
+    const used = new Set([...accountDevices(a).map((d) => accountDeviceIndex(fs, a.member_slug, d.cert.deviceId)), ...[...t.preRevoked.keys()].map((id) => accountDeviceIndex(fs, a.member_slug, id))]);
+    for (const jr of t.joinRequests.values()) if (jr.member_slug === a.member_slug && (jr.status === "pending" || jr.status === "approved")) used.add(accountDeviceIndex(fs, a.member_slug, jr.device_id));
+    let n = 1;
+    while (used.has(n) && n <= max) n += 1;
+    return n > max ? null : accountDeviceId(fs, a.member_slug, n);
+  };
+  /** 律所公钥包：须由本所律所根签名（恢复托管公钥 + 根签名，公开数据）；已有的不覆盖。 */
+  const storeFirmBundle = (t: TenantRecord, fb: unknown): boolean => {
+    if (t.firm_bundle || !t.root_public_key_pem || !fb || typeof fb !== "object") return false;
+    const x = fb as FirmBundle;
+    let ok = false;
+    try {
+      ok = typeof x.recovery_public_key_pem === "string" && typeof x.sig === "string" && verifyBytes(t.root_public_key_pem, firmBundleBytes(t.tid, t.root_public_key_pem, x.recovery_public_key_pem), x.sig);
+    } catch {
+      ok = false;
+    }
+    if (ok) t.firm_bundle = { recovery_public_key_pem: x.recovery_public_key_pem, sig: x.sig };
+    return ok;
+  };
+  /** 记一次登录或新电脑登记（至多 20 条）：只记平台、版本、设备编号与粗粒度网段。 */
+  const noteLogin = (a: AccountRecord, req: IncomingMessage, kind: LoginRecord["kind"], deviceId: string | null, client: unknown): LoginRecord => {
+    const c = clientInfo(client);
+    const rec: LoginRecord = { at: iso(), kind, device_id: deviceId, platform: c.platform, version: c.version, net: coarseNet(sourceOf(req)) };
+    a.logins = [rec, ...(a.logins ?? [])].slice(0, 20);
+    return rec;
+  };
+  /** 新电脑自动登记的风控：24 小时内已自动登记 3 台（再来就是第 4 台）、或 1 小时内从 3 个以上网段登录——暂停，要短信验证码确认。 */
+  const enrollRisk = (a: AccountRecord, net: string): "burst" | "multi_region" | null => {
+    const t0 = now();
+    const ls = a.logins ?? [];
+    if (ls.filter((x) => x.kind === "enroll" && t0 - Date.parse(x.at) < AUTO_ENROLL_BURST.windowMs).length >= AUTO_ENROLL_BURST.max) return "burst";
+    const nets = new Set(ls.filter((x) => t0 - Date.parse(x.at) < 3600_000).map((x) => x.net));
+    nets.add(net);
+    return nets.size >= 3 ? "multi_region" : null;
+  };
   const accountDevices = (a: AccountRecord): DeviceRecord[] => [...(tenants.get(a.tid)?.devices.values() ?? [])].filter((d) => d.cert.memberId === uidOfAccount(a));
   const liveSessionsOf = (aid: string) => [...sessions.values()].filter((x) => x.aid === aid && sessionLive(x, now()));
   /** 暂停的设备：要求账号登录的律所里，设备所属成员没有账号、账号停用，或这台设备上没有有效的桌面会话。 */
@@ -1717,6 +1815,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (a.role !== "admin") return { state: "waiting_founder", ...base };
       if (!issueClaim) return { state: "needs_founder_setup", ...base };
       return { state: "needs_founder_setup", ...base, claim: { kind: "founder", tid: t.tid, firm, member, ...accountClaim(t, a, "founder") } };
+    }
+    // 第 66 批（V40，D-292）：个人账号——不等另一台电脑批准、不按套餐台数挡：由控制面用账号设备签发钥直接签（POST /v1/auth/devices/enroll）
+    if (autoEnrollReady(t)) {
+      const nextId = nextDeviceId(t, a, PERSONAL_DEVICE_NUMBER_MAX);
+      if (!nextId) return { state: "device_limit", ...base, devices: [] };
+      return { state: "needs_device_auto", ...base, personal: true, ...(issueClaim ? { device_id: nextId } : {}) };
     }
     if (live.length >= limit) return { state: "device_limit", ...base, devices: live.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null })) };
     // 下一台的编号：1..9 里第一个从未用过的（吊销过的编号不再复用）
@@ -3691,6 +3795,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const kind = clientInfo(b.client).platform === "web" ? "web" : "desktop";
       const onb = onboardingOf(a, dev, kind !== "web");
       const { token, rec } = newSession(a, kind, dev ? dev.cert.deviceId : null, b.client);
+      // 第 66 批（V40）：最近登录（“登录过的电脑”、短时多地判断）
+      noteLogin(a, req, "login", dev ? dev.cert.deviceId : null, b.client);
       accountMark(res, a, byPhone ? "account.login_sms" : "account.login");
       // 改绑的审计随本次应答一起写（send 里“先审计、再落盘、再回复”）：不在最后一道检查之前先记“ok”（云端审计 2-B）
       if (rebound) auditCtx.get(res)!.extra = [{ tid: a.tid, actor: { kind: "account", id: a.aid }, action: "account.rebind", target: a.aid }];
@@ -3793,8 +3899,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         account: { ...accountView(a, { org: orgOf(a.tid) }), device_limit: deviceLimitOf(a) },
         session: sessionView(s, s.sid),
         onboarding: dev && !dev.revoked_at ? { state: "ready", tid: t.tid, device_id: dev.cert.deviceId } : null,
-        devices: devs.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, revoked_at: d.revoked_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, current: d.cert.deviceId === s.device_id, session: liveSessionsOf(a.aid).some((x) => x.device_id === d.cert.deviceId) ? "active" : "none" })),
+        devices: devs.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, revoked_at: d.revoked_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, current: d.cert.deviceId === s.device_id, issuer: certIssuerOf(d.cert), session: liveSessionsOf(a.aid).some((x) => x.device_id === d.cert.deviceId) ? "active" : "none" })),
         sessions: liveSessionsOf(a.aid).map((x) => sessionView(x, s.sid)),
+        // 第 66 批（V40）：个人账号（新电脑直接登录、不设台数上限）与最近 5 次登录（时刻、类型、设备编号、平台、粗粒度网段）
+        personal: autoEnrollReady(t),
+        recent_logins: (a.logins ?? []).slice(0, 5),
       });
     }
     if (method === "POST" && p === "/v1/auth/logout") {
@@ -3859,6 +3968,72 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       accountMark(res, a, "account.session_revoke");
       return send(res, 200, { ok: true });
     }
+    // ─── 第 66 批（V40，D-292）：个人账号新电脑自动登记——会话鉴权 + 新设备公钥 + 持有证明 → 控制面用账号设备签发钥签 365 天证书、直接登记 ───
+    if (method === "POST" && p === "/v1/auth/devices/enroll") {
+      const b = parseJson(raw);
+      const t = tenantOf(a.tid);
+      if (!autoEnrollReady(t)) throw new CpError(409, "device_auto_unavailable", "这个账号的新电脑需要律所管理员批准（多人律所，或云端还没开通自动登记）：请重新登录按提示申请");
+      if (s.kind !== "desktop" || s.device_id !== null) throw new CpError(409, "session_not_enrollable", "这次登录不能用来登记新电脑：请在新电脑上重新登录");
+      if (now() - Date.parse(s.created_at) > AUTO_ENROLL_FRESH_MS) throw new CpError(401, "session_not_fresh", "登录已超过 10 分钟：请重新登录后再登记这台电脑");
+      const deviceId = String(b.device_id ?? "");
+      const expected = nextDeviceId(t, a, PERSONAL_DEVICE_NUMBER_MAX);
+      if (!expected || deviceId !== expected) throw new CpError(409, "device_id_mismatch", "设备编号已变化：请重新登录后再试");
+      const signPub = String(b.sign_pub ?? "");
+      const encPub = String(b.enc_pub ?? "");
+      const alg = signAlgOfPublicKey(signPub);
+      let encOk = false;
+      try {
+        encOk = createPublicKey(encPub).asymmetricKeyType === "x25519";
+      } catch {
+        encOk = false;
+      }
+      if (!alg || !encOk) throw new CpError(400, "device_keys_invalid", "设备公钥不合格");
+      if (!verifyBytes(signPub, deviceEnrollProofBytes({ tid: t.tid, aid: a.aid, sid: s.sid, deviceId, signPublicKeyPem: signPub, encPublicKeyPem: encPub }), String(b.proof ?? ""))) throw new CpError(400, "proof_invalid", "持有证明无效");
+      const net = coarseNet(sourceOf(req));
+      // 风控：可疑（24 小时内已自动登记 3 台、或 1 小时内 3 个以上网段）即暂停，要账号绑定手机号的短信验证码（/v1/auth/sms/send purpose=login）确认是本人
+      const risk = enrollRisk(a, net);
+      if (risk) {
+        if (!(typeof b.sms_code === "string" && b.sms_code.trim() !== "")) {
+          addAlert({ kind: "device_flag", level: "warn", tid: t.tid, aid: a.aid, provider: null, pct: null, message: `${a.email} 的新电脑自动登记已暂停（${risk === "burst" ? "24 小时内已自动登记 3 台" : "1 小时内从多个网段登录"}），等本人用短信验证码确认` });
+          persistNow();
+          throw new CpError(403, "device_enroll_hold", risk === "burst" ? "24 小时内已有 3 台新电脑登录这个账号，为安全起见已暂停自动登记：请用账号绑定的手机号接收验证码确认是本人操作" : "短时间内从多个地方登录这个账号，为安全起见已暂停自动登记：请用账号绑定的手机号接收验证码确认是本人操作", { reason: risk, sms_available: loginUsable() && !!a.phone, phone_masked: a.phone?.masked ?? null });
+        }
+        const phone = normalizePhone(b.phone);
+        if (!phone || !a.phone || phoneMacOf(phone) !== a.phone.mac) throw new CpError(400, "sms_phone_mismatch", "手机号与账号绑定的不一致");
+        consumeSmsCode("login", phone, b.sms_code);
+      }
+      // 防滥用硬上限：同时有效的电脑已有 PERSONAL_DEVICE_HARD_CAP 台时，自动吊销最久未用的（写审计与提醒），不拒绝登录
+      const live = accountDevices(a).filter((d) => !d.revoked_at);
+      const rotated: string[] = [];
+      if (live.length >= PERSONAL_DEVICE_HARD_CAP) {
+        const lastUsed = (d: DeviceRecord) => Math.max(Date.parse(d.registered_at) || 0, d.client_seen_on ? Date.parse(`${d.client_seen_on}T00:00:00+08:00`) || 0 : 0, ...[...sessions.values()].filter((x) => x.aid === a.aid && x.device_id === d.cert.deviceId).map((x) => Date.parse(x.last_seen_at) || 0));
+        for (const d of [...live].sort((x, y) => lastUsed(x) - lastUsed(y)).slice(0, live.length - PERSONAL_DEVICE_HARD_CAP + 1)) {
+          viaRoute(() => ops.revokeDevice(a.tid, d.cert.deviceId, { by: `account:${a.aid}` }));
+          revokeSessions((x) => x.aid === a.aid && x.device_id === d.cert.deviceId, "device_auto_rotated");
+          rotated.push(d.cert.deviceId);
+        }
+        addAlert({ kind: "new_device", level: "warn", tid: t.tid, aid: a.aid, provider: null, pct: null, message: `${a.email} 登录过的电脑超过 ${PERSONAL_DEVICE_HARD_CAP} 台：已自动移除最久未用的 ${rotated.join("、")}` });
+      }
+      const ca = accountCa()!;
+      const at = now();
+      let cert: DeviceCertificate;
+      try {
+        cert = await signer.issueAccountDeviceCert!({ certId: `cert_${deviceId}_${at.toString(36)}`, memberId: uidOfAccount(a), deviceId, role: a.role, signPublicKeyPem: signPub, encPublicKeyPem: encPub, issuedAt: iso(at), expiresAt: iso(at + ACCOUNT_DEVICE_CERT_DAYS * DAY_MS), issuer: "account_ca", ...(alg !== "ed25519" ? { signAlg: alg } : {}) }, at);
+      } catch {
+        throw new CpError(503, "signer_unavailable", "云端签名服务暂时不可用，请稍后重试");
+      }
+      // 这家律所认的账号设备签发钥（首次自动登记时记下；之后 /v1/devices/register 按它验 account_ca 证书）
+      if (!t.account_device_ca) t.account_device_ca = { kid: ca.kid, public_key_pem: ca.public_key_pem, since: iso(at) };
+      const c = clientInfo(b.client);
+      t.devices.set(deviceId, { cert, registered_at: iso(at), revoked_at: null, client_version: c.version && CLIENT_VERSION_RE.test(c.version) ? c.version : "legacy", client_seen_on: dayOf(at) });
+      t.directoryVersion += 1;
+      feedVersion += 1;
+      s.device_id = deviceId;
+      noteLogin(a, req, "enroll", deviceId, b.client);
+      addAlert({ kind: "new_device", level: "info", tid: t.tid, aid: a.aid, provider: null, pct: null, message: `${a.email} 在一台新电脑上登录（${c.platform === "win32" ? "Windows" : c.platform === "darwin" ? "macOS" : (c.platform ?? "未知平台")}，网段 ${net}）；不是本人操作请立即在“登录过的电脑”里移除它并修改密码` });
+      auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "account", id: a.aid }, action: "device.auto_enroll", target: deviceId }, written: false, extra: rotated.map((id) => ({ tid: t.tid, actor: { kind: "account" as const, id: a.aid }, action: "device.auto_revoke", target: id })) });
+      return send(res, 200, await seal("kwl-device-enroll", { tid: t.tid, issued_at: iso(at), device_id: deviceId, cert, root_public_key_pem: t.root_public_key_pem!, firm_bundle: t.firm_bundle!, ca: { kid: ca.kid, public_key_pem: ca.public_key_pem }, rotated }));
+    }
     const du = /^\/v1\/auth\/devices\/([A-Za-z0-9_-]{1,128})\/unbind$/.exec(p);
     if (method === "POST" && du) {
       const b = parseJson(raw);
@@ -3890,7 +4065,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 第 62 批：registration_policy / sms_available / features 是能力字段——客户端按它们做特性检测（旧云端没有，客户端照旧流程注册）
     if (method === "GET" && p === "/v1/meta") {
       const pol = registrationPolicy();
-      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites", "phone_login", "phone_bind"] });
+      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites", "phone_login", "phone_bind", ...(accountCa() ? ["device_auto_enroll"] : [])], ...(accountCa() ? { account_device_ca: { kid: accountCa()!.kid } } : {}) });
     }
     if (p.startsWith("/v1/me/") || p.startsWith("/v1/firm/")) return memberRoute(req, res, method, p, url, raw);
 
@@ -3918,6 +4093,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         rec.member.name = null;
       }
       t.root_public_key_pem = pem;
+      // 第 66 批（V40，D-292）：创始设备同时上传律所公钥包（公开数据），控制面存一份给个人账号的新电脑；个人租户记下账号设备签发钥
+      storeFirmBundle(t, b.firm_bundle);
+      const ca = accountCa();
+      if (ca && !t.account_device_ca && personalOf(t)) t.account_device_ca = { kid: ca.kid, public_key_pem: ca.public_key_pem, since: iso() };
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "root", id: t.tid }, action: "tenant.enroll_root", target: null }, written: false });
       return send(res, 200, { ok: true, tid: t.tid });
     }
@@ -3930,12 +4109,16 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const t = tenantOf(tid);
       if (!t.root_public_key_pem) throw new CpError(409, "root_not_enrolled", "租户尚未登记律所根公钥");
       if (!cert || typeof cert !== "object") throw new CpError(400, "cert_missing", "缺少设备证书");
-      const cv = verifyDeviceCertificate(cert, t.root_public_key_pem, new Date(now()));
+      // 第 66 批（V40，D-292）：律所根签发，或（登记过账号设备签发钥的租户）控制面签的账号设备证书
+      const cv = verifyDeviceCertificateAny(cert, certAnchorsOf(t), new Date(now()));
       if (!cv.ok) throw new CpError(400, "cert_invalid", "设备证书未由本所律所根签发或已过期");
       const v = verifyDeviceRequest(req.headers, { method, path, body: raw }, { publicKeyFor: (rt, rd) => (rt === tid && rd === cert.deviceId ? cert.signPublicKeyPem : null), now: now(), seenNonce });
       // 时钟偏差同样附控制面当前时间（复核 S6-C02：每次同步第一步就是登记）
       if (!v.ok) throw new CpError(401, v.reason, "登记请求的设备签名无效", v.reason === "device_auth_stale" ? { server_time: iso() } : undefined);
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "device", id: cert.deviceId, fp: certFingerprint(cert) }, action: "device.register", target: cert.deviceId }, written: false });
+      // 第 66 批：存量律所的律所公钥包由创始电脑登记时补传（须律所根签名；已有的不覆盖）
+      storeFirmBundle(t, b.firm_bundle);
+      if (!t.account_device_ca && accountCa() && personalOf(t)) t.account_device_ca = { kid: accountCa()!.kid, public_key_pem: accountCa()!.public_key_pem, since: iso() };
       const existing = t.devices.get(cert.deviceId);
       const revokedAt = existing?.revoked_at ?? t.preRevoked.get(cert.deviceId)?.revoked_at ?? null;
       if (revokedAt) {
@@ -4275,7 +4458,65 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         estimated: r.usage_source === "estimated",
         pending: r.reconcile === "pending",
       }));
-      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), plan: { id: plan.id, label: plan.label }, account: me ? { aid: me.aid, email: me.email, name: me.name } : null, accounts_required: t.accounts_required === true, ...view, models, own_recent: ownRecent }));
+      // 第 66 批（V40）：个人口径——真正卡住“我”的那一项（额度、律所上限、频率窗口、个人上限四者最小，availability 折算）；
+      // 分母：个人上限（设了或套餐对个人生效）> 单席位律所的总额度 > 每席位额度。不改已有字段，只追加
+      const ml = memberLimitOf(ctx, dev.cert.memberId);
+      const pDenom = Math.max(1, ml.limit ?? (ctx.seats <= 1 ? totalsOf(q, ctx).total : seatQuotaUnits(plan)));
+      const av = availability(q, ctx, t.seatsByUser.get(dev.cert.memberId)?.sid ?? "", dev.cert.memberId);
+      const personal = {
+        used_ratio: ratio(usedOf(q, ctx, dev.cert.memberId), pDenom),
+        remaining_ratio: Math.min(1, Math.max(0, ratio(av.avail, pDenom))),
+        limited_by: av.avail >= pDenom ? null : av.by,
+        // 暂停原因（null = 没暂停）：律所层面的暂停（本期用完、律所上限、频率窗口）优先，其次本人已无可用（个人上限等）
+        paused: (view.firm.paused ?? (av.avail <= 0 ? av.by : null)) as "allowance" | "cap" | "burst" | "seat" | null,
+      };
+      // 本人按模型（份额按 token，不含金额；与 /v1/me/usage 的 by_model 同一口径）
+      const mine = [...book.memberModels(t.tid, dev.cert.memberId, q.period_from, q.period_to)];
+      const mineTok = mine.reduce((n, [, x]) => n + x.tokens_in + x.tokens_out, 0);
+      const ownModels = mine.map(([alias, x]) => ({ alias, label: routing.models.find((m) => m.alias === alias)?.label ?? alias, share: ratio(x.tokens_in + x.tokens_out, mineTok), requests: x.requests })).sort((x, y) => y.share - x.share);
+      // 套餐权益：说明、周期、频率窗口、可用模型（显示名，与模型目录同源；目录取不到用路由登记的显示名）——不下发金额与单价
+      let planModels: string[];
+      try {
+        planModels = modelCatalogBody(routing, plan, now(), { tid: t.tid, uid: dev.cert.memberId }).models.filter((m) => (plan.models ? plan.models.includes(m.id) : m.available)).map((m) => m.label);
+      } catch {
+        planModels = (plan.models ?? routing.models.filter((m) => m.enabled).map((m) => m.alias)).map((alias) => routing.models.find((m) => m.alias === alias)?.label ?? alias);
+      }
+      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), plan: { id: plan.id, label: plan.label, note: plan.note, period: plan.period, burst: plan.burst, models: planModels }, account: me ? { aid: me.aid, email: me.email, name: me.name } : null, accounts_required: t.accounts_required === true, ...view, models, own_recent: ownRecent, personal, own_models: ownModels }));
+    }
+    // ─── 第 66 批（V40）：本人用量明细翻页（设备签名，同 /v1/quota；签名信封 kwl-usage-page）：before = 只要这一时刻之前的行，至多 100 条；
+    // 只给本人的行（uid = 证书成员），字段同 own_recent（不含请求内容）；往前最多 180 天（账本保留期内）
+    if (method === "GET" && p === "/v1/quota/usage") {
+      const qs = new URL(path, "http://cp").searchParams;
+      const beforeRaw = qs.get("before");
+      const before = beforeRaw && Number.isFinite(Date.parse(beforeRaw)) ? new Date(Date.parse(beforeRaw)).toISOString() : null;
+      if (beforeRaw && !before) throw new CpError(400, "before_invalid", "before 须为时刻（ISO）");
+      const lim = Math.min(100, Math.max(1, Number.parseInt(qs.get("limit") ?? "50", 10) || 50));
+      const { q, ctx } = qOf(t);
+      const ownDenom = memberLimitOf(ctx, dev.cert.memberId).limit ?? seatQuotaUnits(ctx.plan);
+      const r = book.query({ tid: t.tid, uid: dev.cert.memberId, from: dayOf(now() - 180 * DAY_MS), ...(before ? { before } : {}), limit: lim + 1 });
+      const rows = r.rows.slice(0, lim).map((x) => ({
+        at: x.at,
+        kind: x.qa ? ("qa" as const) : ("task" as const),
+        alias: x.alias,
+        label: x.alias ? (routing.models.find((m) => m.alias === x.alias)?.label ?? x.alias) : null,
+        tokens_in: (x.usage ?? x.est_usage)?.input ?? 0,
+        tokens_cached: (x.usage ?? x.est_usage)?.cached ?? 0,
+        tokens_out: (x.usage ?? x.est_usage)?.output ?? 0,
+        charge_ratio: ratio(x.charge, ownDenom),
+        outcome: x.outcome,
+        partial: x.partial === true,
+        estimated: x.usage_source === "estimated",
+        pending: x.reconcile === "pending",
+        in_period: x.day >= q.period_from,
+      }));
+      const more = r.rows.length > lim;
+      return send(res, 200, await seal("kwl-usage-page", { tid: t.tid, uid: dev.cert.memberId, issued_at: iso(), rows, next_before: more && rows.length ? rows[rows.length - 1]!.at : null }));
+    }
+    // ─── 第 66 批（V40）：客户端模型目录——本所套餐下这台电脑的成员能选哪些模型（设备签名，同 /v1/quota；签名信封 kwl-model-catalog）。
+    // 只给别名、显示名、说明、排序、思考方式、能力、入口与可用性；目标、上游、地址、密钥与上游型号一律不下发（modelCatalogBody 只组这些字段）
+    if (method === "GET" && p === "/v1/models") {
+      const { ctx } = qOf(t);
+      return send(res, 200, await seal("kwl-model-catalog", modelCatalogBody(routing, ctx.plan, now(), { tid: t.tid, uid: dev.cert.memberId })));
     }
     if (method === "PUT" && p === "/v1/quota/cap") {
       mark("quota.cap_set");

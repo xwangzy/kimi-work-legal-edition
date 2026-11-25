@@ -109,7 +109,7 @@ test("问答失败：所选模型未定价或路由不可用说“这个模型�
   assert.equal(qaFailureText("x [kwl:price_unconfigured]"), "这个模型暂不可用，这次没有取得回答：请稍后再问，或联系律所管理员", "不带模型（旧调用）");
   assert.doesNotMatch(qaFailureText("x [kwl:price_unconfigured]", "legal/k2.6"), /连不上|额度/);
   // 第 46 批的口径不变
-  assert.match(qaFailureText("402 本所本期 AI 额度不足（预占失败） [kwl:quota_exhausted]", "legal/k2.6"), /^本所 AI 额度暂时用到限制/);
+  assert.match(qaFailureText("402 本所本期 AI 额度不足（预占失败） [kwl:quota_exhausted]", "legal/k2.6"), /^你的 AI 额度暂时用到限制/);
   assert.equal(qaFailureText("模型通道错误 402：账号已停用 [kwl:account_disabled]", "legal/k2.6"), "你的账号已被停用，这次没有取得回答：请联系律所管理员或中软客服");
   // 429/5xx 的说明里没有代码：从错误的 detail.code 补上
   const e503 = new DomainError("provider_unavailable", "模型通道 503（该模型尚未定价，暂不能使用：请联系平台运营；交编排层有界退避，不切换端点）", 503, { status: 503, code: "price_unconfigured" });

@@ -30,7 +30,7 @@ import { FileBroker } from "@zr-legal/file-broker";
 import { argsHash, type ManifestRegistry, type RunMode } from "@zr-legal/host-policy";
 import type { EventEnvelope } from "../vendor/kap-embed/kap-embed.mjs";
 import { capabilityLedger, type CapabilityRow, type DeviceFacts } from "./capabilities.ts";
-import { MAIN_MODEL } from "./engine-config.ts";
+import { MAIN_MODEL, MODEL_ID_RE, sanitizeTaskModel, type TaskModelSpec } from "./engine-config.ts";
 import { UNAVAILABLE_DOMAIN, type ExecDomainFactory, type ExecutionDomain } from "./exec-router.ts";
 import type { EgressAuthority, ModelBinding } from "./host-egress.ts";
 import { KapError, type KapAnswer } from "./kap-client.ts";
@@ -160,6 +160,13 @@ export interface StartRunRequest {
    * 会话须属于本事项的引擎、当前没有进行中的运行；缺省不进入计划模式。会话编号由内核按上一次运行的记录给出。
    */
   continue_session_id?: string;
+  /**
+   * 第 66 批（V40）：这次任务用的模型别名（内核按云端目录核过：可用、入口含 task、能力含 tool_use）；缺省 legal/k3。
+   * 追问、修改轮由内核按任务记录沿用同一个。子 Agent 不受影响（仍强制 K2.6，见 policy.ts）。
+   */
+  model?: string;
+  /** 所选模型的能力与上下文窗口（取自目录；只用于生成引擎配置的 models 段）。 */
+  model_spec?: { capabilities?: string[]; max_context?: number | null; thinking?: "effort" | "toggle" | "none" };
 }
 
 export type RuntimeRunStatus = "running" | "waiting_approval" | "waiting_input" | "succeeded" | "partial" | "failed" | "cancelled";
@@ -326,6 +333,22 @@ export class KapRuntime {
     },
   };
 
+  /** 第 66 批：各事项引擎配置里另加的任务模型（内置两项之外）；换了模型时关掉重开引擎（见 engineWithModel）。 */
+  private readonly taskModels = new Map<string, TaskModelSpec>();
+
+  /**
+   * 取本事项引擎，并保证可信配置的 models 段里有所选模型：没有（运营新增的别名第一次在本事项用）且本事项没有进行中的运行时，
+   * 关掉引擎按新配置重开（会话在盘上，追问照常恢复）。调用方（startRun）已保证同一事项同时只发起一个运行。
+   */
+  private async engineWithModel(matterId: string, model: TaskModelSpec): Promise<MatterEngine> {
+    const engine = await this.engine(matterId);
+    const models = (engine.config.config.models ?? {}) as Record<string, unknown>;
+    if (model.id in models) return engine;
+    this.taskModels.set(matterId, model);
+    await this.closeMatterEngine(matterId);
+    return this.engine(matterId);
+  }
+
   private engine(matterId: string): Promise<MatterEngine> {
     let e = this.engines.get(matterId);
     if (!e) {
@@ -347,6 +370,7 @@ export class KapRuntime {
         searchConfigured: this.deps.searchConfigured ?? false,
         fetchConfigured: this.deps.fetchConfigured ?? false,
         ...(this.deps.testMaxContextSize ? { testMaxContextSize: this.deps.testMaxContextSize } : {}),
+        ...(this.taskModels.has(matterId) ? { taskModels: [this.taskModels.get(matterId)!] } : {}),
         onDecision: (r) => this.decisions.set(decisionKey(r.sessionId, r.agentId, r.toolCallId), r),
         ...(this.deps.screenSearch ? { screenSearch: this.deps.screenSearch } : {}),
         ...(this.deps.logLevel ? { logLevel: this.deps.logLevel } : {}),
@@ -436,7 +460,10 @@ export class KapRuntime {
     policy: MatterPolicy,
     runId: string,
   ): Promise<{ run_id: string; session_id: string; status: RuntimeRunStatus; mode: RunMode; state_version: number }> {
-    const engine = await this.engine(req.matter_id);
+    // 第 66 批：所选模型（缺省 K3）；别名格式不对直接拒绝，不静默改用 K3
+    const modelId = req.model ?? MAIN_MODEL;
+    if (typeof modelId !== "string" || !MODEL_ID_RE.test(modelId)) throw new RuntimeError("validation", "所选模型的编号不合法");
+    const engine = modelId === MAIN_MODEL ? await this.engine(req.matter_id) : await this.engineWithModel(req.matter_id, sanitizeTaskModel(modelId, req.model_spec)!);
     const mode = effectiveMode(req.mode, policy.maxMode, origin.channel);
     const allowed = new Set(policy.allowedPreauthorizations);
     const preauthorized = new Set((req.preauthorized ?? []).filter((p) => allowed.has(p)));
@@ -517,13 +544,13 @@ export class KapRuntime {
     };
     this.sessionSubs.set(session.id, unsub);
     this.unsubscribers.push(unsub);
-    this.push(run, "run.started", { session_id: session.id, mode, requested_mode: req.mode, channel: origin.channel, model: MAIN_MODEL, data_level: policy.dataLevel, plan_first: planFirst });
+    this.push(run, "run.started", { session_id: session.id, mode, requested_mode: req.mode, channel: origin.channel, model: modelId, data_level: policy.dataLevel, plan_first: planFirst });
     // 看门狗（审查 S2-15）：总时限与审批有效期主动执行，不依赖主回合结束或有人调用审批接口
     run.watchdog = setInterval(() => void this.watch(run, engine), 1_000);
     run.watchdog.unref();
     try {
       if (planFirst) await engine.kap.enterPlanMode(session.id);
-      await engine.kap.prompt(session.id, { text: req.goal, model: MAIN_MODEL, promptId: run.promptId });
+      await engine.kap.prompt(session.id, { text: req.goal, model: modelId, promptId: run.promptId });
     } catch (e) {
       this.finish(run, engine, "failed", { reason: "prompt_rejected", error: (e as Error).message });
       throw e instanceof KapError ? new RuntimeError("unavailable", e.message) : e;

@@ -29,7 +29,8 @@ const wtc = (text: string) => `<w:tc><w:tcPr><w:tcW w:w="2000" w:type="dxa"/></w
 const wtr = (cells: string[]) => `<w:tr>${cells.map(wtc).join("")}</w:tr>`;
 
 /** 设备采购合同的付款部分：3.1 定金条款、3.2 付款表（款项｜比例｜金额（元）｜支付时间）、3.3 尾款与发票。 */
-function purchaseContract(): Buffer {
+/** extra：在末尾多加一段（第 66 批：同事项同内容导入会去重，要两份不同的合同时用它区分）。 */
+function purchaseContract(extra = ""): Buffer {
   const body = [
     wp("第三条 价款与支付"),
     wp("3.1 甲方应于本合同签订之日起5个工作日内向乙方支付定金人民币960,000元（合同价款的30%）。"),
@@ -44,6 +45,7 @@ function purchaseContract(): Buffer {
     wp("3.3 尾款作为质量保证，乙方收到每期款项之日起30日内开具发票。"),
     wp("第四条 交付"),
     wp("4.1 乙方应于收到发货款之日起60日内交货。"),
+    ...(extra ? [wp(extra)] : []),
   ].join("");
   const files = readZipEntries(createDocx("设备采购合同", [{ heading: "占位", paragraphs: ["占位"] }]));
   files.set("word/document.xml", Buffer.from(files.get("word/document.xml")!.toString("utf8").replace(/<w:body>[\s\S]*?(<w:sectPr)/, `<w:body>${body}$1`)));
@@ -184,7 +186,8 @@ test("补交：六条里两条定位不到整批不写→只换这两条写入�
 test("补交：没有上一次清单时报错；另一个任务、另一份文件的清单不串；试写之后用 amend: {} 正式写入不必重发", { timeout: 180_000 }, async () => {
   const { matter } = await tk.inv("matters.create", { title: "设备采购合同修订 不串", stance: "买方", consent_status: "agreed", key_dates: { analysis_as_of: "2026-11-10" } });
   const doc = await importBytes(tk.inv, matter.matter_id, "设备采购合同（乙方稿）.docx", purchaseContract(), DOCX_MIME);
-  const other = await importBytes(tk.inv, matter.matter_id, "设备采购合同（第二份）.docx", purchaseContract(), DOCX_MIME);
+  // 第 66 批起同事项同内容导入会去重：第二份合同多一段，才是另一份文件
+  const other = await importBytes(tk.inv, matter.matter_id, "设备采购合同（第二份）.docx", purchaseContract("附：第二份合同。"), DOCX_MIME);
   const a = await reviseAgent(matter.matter_id, "dry-first");
   const b = await reviseAgent(matter.matter_id, "another-run");
   try {

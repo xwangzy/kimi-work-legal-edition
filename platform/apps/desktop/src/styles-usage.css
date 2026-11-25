@@ -1,0 +1,53 @@
+/* 套餐与用量（第 66 批 V40 P0-5，对照 Kimi“我的订阅”）：套餐头 + 浅灰圆角卡片（用量进度 / 按模型 / 使用明细）。只用令牌。 */
+.pu { display: flex; flex-direction: column; gap: var(--sp-5); }
+.pu-empty { padding: var(--sp-6) 0; font-size: var(--fs-body); color: var(--text-secondary); }
+.pu-plan { display: flex; flex-direction: column; gap: var(--sp-3); }
+.pu-plan-main { display: flex; align-items: center; gap: var(--sp-3); }
+.pu-plan-badge { flex: none; min-width: 44px; height: 44px; padding: 0 var(--sp-2); border-radius: var(--r-md); display: grid; place-items: center; background: var(--btn-primary); color: var(--btn-primary-text); font-size: var(--fs-md); font-weight: 600; }
+.pu-plan-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pu-plan-name { font-size: var(--fs-xl); font-weight: 600; color: var(--text-strong); line-height: 1.3; }
+.pu-plan-note { font-size: var(--fs-caption); color: var(--text-secondary); }
+.pu-perks { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.pu-perks li { font-size: var(--fs-caption); color: var(--text-label); background: var(--bg-subtle); border: 1px solid var(--border-subtle); border-radius: var(--r-full); padding: 2px var(--sp-3); }
+
+.pu-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: var(--sp-4) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-2); }
+.pu-card-h { display: flex; align-items: baseline; gap: var(--sp-3); font-size: var(--fs-body); font-weight: 600; color: var(--text-strong); margin-bottom: var(--sp-1); }
+.pu-card-sub { font-size: var(--fs-xs); font-weight: 400; color: var(--text-secondary); }
+.pu-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+.pu-total { display: flex; align-items: baseline; gap: var(--sp-2); }
+.pu-total-k { font-size: var(--fs-body); color: var(--text-primary); }
+.pu-total-v { font-size: var(--fs-2xl); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-strong); line-height: 1.2; }
+.pu-total-v.tone-high { color: var(--status-warning-text); }
+.pu-total-v.tone-full { color: var(--status-danger-text); }
+.pu-reset { font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; }
+.pu-meter { display: flex; height: 12px; border-radius: var(--r-full); background: var(--bg-active); overflow: hidden; }
+.pu-meter-sm { height: 6px; }
+.pu-seg { display: block; height: 100%; transition: width var(--motion-slow) var(--ease-out-soft); }
+.pu-seg.seg-a, .pu-dot.seg-a { background: var(--accent); }
+.pu-seg.seg-b, .pu-dot.seg-b { background: var(--btn-primary); }
+.pu-seg.seg-c, .pu-dot.seg-c { background: var(--status-success-solid); }
+.pu-seg.seg-d, .pu-dot.seg-d { background: var(--status-warning-solid); }
+.pu-meter.tone-full .pu-seg { background: var(--status-danger-solid); }
+.pu-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-caption); color: var(--text-label); }
+.pu-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.pu-dot { display: inline-block; width: 8px; height: 8px; border-radius: var(--r-xs); flex: none; }
+.pu-left { margin-left: auto; color: var(--text-secondary); }
+.pu-burst { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: var(--sp-1); }
+.pu-burst-k { font-size: var(--fs-body); color: var(--text-primary); }
+.pu-burst-v { font-size: var(--fs-caption); color: var(--text-primary); }
+.pu-models { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.pu-models li { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto 72px; align-items: center; gap: var(--sp-2); padding: var(--sp-2) 0; font-size: var(--fs-body); }
+.pu-models li + li { border-top: 1px solid var(--border-subtle); }
+.pu-model-share { font-variant-numeric: tabular-nums; color: var(--text-strong); }
+.pu-model-n { text-align: right; font-size: var(--fs-caption); }
+.pu-table { background: var(--bg-surface); border-radius: var(--r-md); overflow: hidden; }
+.pu-none { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.pu-more { align-self: flex-start; padding: 0; font-size: var(--fs-caption); }
+.pu-foot { margin: 0; font-size: var(--fs-xs); color: var(--text-secondary); }
+.pu-more-row { display: flex; align-items: center; gap: var(--sp-4); }
+.pu-seg.seg-flight, .pu-dot.seg-flight { background: var(--accent-border); }
+.pu-dot.seg-free { background: var(--bg-active); border: 1px solid var(--border-default); }
+.pu-left { display: inline-flex; align-items: center; gap: 6px; }
+.pu-upgrade { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.pu-table { background: transparent; }
+.pu-meter.tone-full .pu-seg.seg-flight { background: var(--accent-border); }

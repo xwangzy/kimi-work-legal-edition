@@ -24,11 +24,12 @@ import {
   validatePolicyDoc,
 } from "@zr-legal/firm-trust";
 import { issueSeatToken, verifySeatToken } from "@zr-legal/seat-token";
-import { DEVICE_ID_PATTERN } from "@zr-legal/keys";
+import { DEVICE_ID_PATTERN, issueDeviceCertificate, verifyDeviceCertificate } from "@zr-legal/keys";
 import {
   ENVELOPE_KINDS,
   SEAT_AUDIENCES,
   SEAT_TTL_BOUNDS,
+  accountDeviceCertProblem,
   seatKeyFor,
   signerPublicKeys,
   type ControlPlaneKeys,
@@ -156,6 +157,25 @@ export function checkEnvelopeBody(kind: EnvelopeKind, body: unknown, reqNow: num
       for (const p of body.providers) if (!isObj(p) || typeof p.id !== "string" || typeof p.base_url !== "string" || !/^https:\/\//.test(p.base_url)) return "routing_provider_invalid";
       return null;
     }
+    case "kwl-model-catalog": {
+      // 只核结构与时限；另核不夹带上游信息（目录只许展示字段：防控制面误把目标、地址或密钥签给客户端）
+      if (!isObj(body) || !tidOk(body) || !isInt(body.version) || !Array.isArray(body.models) || typeof body.default !== "string") return "model_catalog_malformed";
+      if (!near(body.issued_at)) return "issued_at_not_now";
+      if (body.models.length > 32) return "model_catalog_too_large";
+      for (const m of body.models) if (!isObj(m) || typeof m.id !== "string" || ["targets", "provider", "base_url", "key_sealed", "key_hint", "upstream_model"].some((k) => k in m)) return "model_catalog_entry_invalid";
+      return null;
+    }
+    // 第 66 批（V40）：个人用量明细翻页——只许本人行（uid 与信封一致）、至多 200 行
+    case "kwl-usage-page": {
+      if (!isObj(body) || !tidOk(body) || !near(body.issued_at) || typeof body.uid !== "string" || !Array.isArray(body.rows) || body.rows.length > 200) return "usage_page_malformed";
+      return null;
+    }
+    // 第 66 批：个人账号新电脑自动登记的应答——证书须由账号设备签发钥签（issuer = account_ca），不夹带任何私钥
+    case "kwl-device-enroll": {
+      if (!isObj(body) || !tidOk(body) || !near(body.issued_at) || !isObj(body.cert) || body.cert.issuer !== "account_ca" || typeof body.root_public_key_pem !== "string" || !isObj(body.ca)) return "device_enroll_malformed";
+      if (/PRIVATE/i.test(JSON.stringify(body))) return "device_enroll_private_material";
+      return null;
+    }
     case "kwl-cp-audit-page": {
       if (!isObj(body) || !tidOk(body) || !near(body.issued_at) || !Array.isArray(body.records) || body.records.length > 500 || !isObj(body.head)) return "audit_page_malformed";
       return null;
@@ -180,7 +200,7 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
   const skew = o.maxSkewMs ?? 5_000;
   const maxBody = o.maxBodyBytes ?? 8 * 1024 * 1024;
   if (!o.allowedCallers.length && !o.insecureForTest) throw new Error("签名服务须登记允许的调用方（allowed_callers）");
-  for (const k of [o.keys.envelope, o.keys.seat, ...Object.values(o.keys.seatAudiences ?? {})]) {
+  for (const k of [o.keys.envelope, o.keys.seat, ...Object.values(o.keys.seatAudiences ?? {}), ...(o.keys.accountDeviceCa ? [o.keys.accountDeviceCa] : [])]) {
     if (!k || k.privateKey.asymmetricKeyType !== "ed25519") throw new Error("签名私钥须为 Ed25519");
   }
   const publicKeys = signerPublicKeys(o.keys);
@@ -232,8 +252,9 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
     }
     const path = (req.url ?? "/").split("?")[0];
     if (req.method === "GET" && path === "/v1/public-keys") return reply(res, 200, publicKeys);
-    if (req.method !== "POST" || (path !== "/v1/sign/envelope" && path !== "/v1/sign/seat-token")) return reply(res, 404, { error: "not_found" });
-    const op = path === "/v1/sign/envelope" ? "envelope" : "seat_token";
+    const certOp = path === "/v1/sign/device-cert" && !!o.keys.accountDeviceCa;
+    if (req.method !== "POST" || (path !== "/v1/sign/envelope" && path !== "/v1/sign/seat-token" && !certOp)) return reply(res, 404, { error: "not_found" });
+    const op = path === "/v1/sign/envelope" ? "envelope" : certOp ? "device_cert" : "seat_token";
     let b: Record<string, unknown>;
     const raw = await readBody(req);
     try {
@@ -248,8 +269,8 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
     const tid = typeof b.tid === "string" && TID_RE.test(b.tid) ? b.tid : isObj(b.body) && typeof b.body.tid === "string" && TID_RE.test(b.body.tid) ? b.body.tid : null;
     const kind = op === "envelope" ? (typeof b.kind === "string" && b.kind.length <= 64 ? b.kind : null) : null;
     // 计数键只用登记过的种类与受众（复核 RB16A-03：调用方原文进计数键会让已攻陷的 cp-api 撑大内存与指标）
-    const kindKey = op === "envelope" ? (kind && (ENVELOPE_KINDS as readonly string[]).includes(kind) ? kind : "invalid") : b.aud === undefined ? "general" : (SEAT_AUDIENCES as readonly unknown[]).includes(b.aud) ? String(b.aud) : "invalid";
-    const bodySha = op === "envelope" ? sha(JSON.stringify(b.body ?? null)) : null;
+    const kindKey = op === "envelope" ? (kind && (ENVELOPE_KINDS as readonly string[]).includes(kind) ? kind : "invalid") : op === "device_cert" ? "account_ca" : b.aud === undefined ? "general" : (SEAT_AUDIENCES as readonly unknown[]).includes(b.aud) ? String(b.aud) : "invalid";
+    const bodySha = op === "envelope" ? sha(JSON.stringify(b.body ?? null)) : op === "device_cert" ? sha(JSON.stringify(b.cert ?? null)) : null;
     const reject = (status: number, reason: string, kid: string | null = null): never => {
       count(`${op}/${kindKey}/rejected`);
       // 拒签也记账：记不进去照样拒（本来就不签）
@@ -278,6 +299,22 @@ export function createSignerService(o: SignerServiceOptions): SignerService {
       kid = env.kid;
       signed = env.sig;
       out = { envelope: { kind: env.kind, kid: env.kid, sig: env.sig } };
+    } else if (op === "device_cert") {
+      // 第 66 批（V40，D-292）：账号设备证书——只认这三个字段；证书字段按 accountDeviceCertProblem 核（issuer 固定 account_ca、不签 node、至多 366 天、签发时刻贴近请求时刻）
+      if (Object.keys(b).some((k) => !["request_id", "req_now", "cert"].includes(k))) reject(400, "field_not_allowed");
+      const why = accountDeviceCertProblem(b.cert, reqNow);
+      if (why) reject(400, why);
+      const ca = o.keys.accountDeviceCa!;
+      let cert;
+      try {
+        cert = issueDeviceCertificate(ca.privateKey.export({ format: "pem", type: "pkcs8" }).toString(), b.cert as never);
+      } catch {
+        reject(400, "cert_fields_invalid");
+      }
+      if (!verifyDeviceCertificate(cert!, publicKeys.account_device_ca!.public_key_pem, new Date(reqNow)).ok) reject(500, "cert_selftest_failed");
+      kid = ca.kid;
+      signed = cert!.signature;
+      out = { cert };
     } else {
       if (Object.keys(b).some((k) => !["request_id", "req_now", "tid", "uid", "sid", "dev", "aud", "ttl_s"].includes(k))) reject(400, "field_not_allowed");
       const aud = b.aud === undefined ? undefined : (SEAT_AUDIENCES as readonly unknown[]).includes(b.aud) ? (b.aud as SeatAudience) : reject(400, "audience_not_allowed");

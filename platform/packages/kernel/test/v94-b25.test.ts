@@ -197,7 +197,8 @@ test("审查工作台导出的意见表按所审合同分开：审第二份合�
   const { inv, kernel } = tk;
   const { matter } = await inv("matters.create", { title: "两份合同", stance: "买方", consent_status: "agreed" });
   const exportFor = async (name: string) => {
-    const doc = await importText(inv, matter.matter_id, name, "第五条 付款\n买方应于验收合格后九十日内付款。");
+    // 第 66 批起同事项同内容导入会去重：两份合同正文开头写上各自的名称，才是两份文件
+    const doc = await importText(inv, matter.matter_id, name, `${name}\n第五条 付款\n买方应于验收合格后九十日内付款。`);
     const live = liveTaskIdentity(tk, matter.matter_id, `x${name.length}`);
     submitRiskCards({ db: kernel.db, blobs: kernel.blobs }, { tenantId: live.tid, matterId: matter.matter_id, runId: live.rid }, { document_version_id: doc.document_version_id, cards: [{ anchor_text: "买方应于验收合格后九十日内付款。", severity: "mid", category: "commercial", issue: "付款期限过长", suggestion: "改为三十日" }] });
     return (await inv("riskcards.export_table", { matter_id: matter.matter_id, document_version_id: doc.document_version_id })).artifact_version_id as string;

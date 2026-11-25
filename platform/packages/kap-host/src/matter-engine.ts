@@ -17,7 +17,7 @@ import { createEmbeddedServer, type EmbeddedServer, type EventEnvelope } from ".
 import type { MatterKeyRing } from "@zr-legal/at-rest";
 import { MemoryQueryStore } from "./memory-query-store.ts";
 import { migrateHomeDir, migrateWorkDir, SealedFileStorageService, sealedJournalIo } from "./sealed-storage.ts";
-import { buildEngineConfig, trustedConfigPath, trustedConfigStore, type EngineConfig } from "./engine-config.ts";
+import { buildEngineConfig, trustedConfigPath, trustedConfigStore, type EngineConfig, type TaskModelSpec } from "./engine-config.ts";
 import { ExecRouter, type ExecDomainFactory, type ExecutionDomain } from "./exec-router.ts";
 import { KapClient } from "./kap-client.ts";
 import { HostPolicy, type HostPolicyDeps, type PolicyDecisionRecord } from "./policy.ts";
@@ -46,6 +46,8 @@ export interface MatterEngineOptions {
   fetchConfigured?: boolean;
   /** 只供测试：上下文窗口（见 EngineConfigSpec.testMaxContextSize）。 */
   testMaxContextSize?: number | undefined;
+  /** 第 66 批：内置两项之外、本事项任务选用的模型（见 EngineConfigSpec.taskModels）。 */
+  taskModels?: readonly TaskModelSpec[];
   onDecision?: (r: PolicyDecisionRecord) => void;
   /** 检索式预筛（内核提供；见 HostPolicyDeps.screenSearch）。 */
   screenSearch?: HostPolicyDeps["screenSearch"];
@@ -182,6 +184,7 @@ export class MatterEngine {
       searchConfigured: o.searchConfigured ?? false,
       fetchConfigured: o.fetchConfigured ?? false,
       testMaxContextSize: o.testMaxContextSize,
+      ...(o.taskModels?.length ? { taskModels: o.taskModels } : {}),
     });
     const virtualFiles = new Map<string, string>();
     if (config.mcpJson) virtualFiles.set(join(homeDir, "mcp.json"), config.mcpJson);

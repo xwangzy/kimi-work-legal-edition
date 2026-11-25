@@ -2,6 +2,8 @@
  * 发起前的预览（第 03 篇 §5 步骤 5：看到预计用量（占本月份额的百分比）与数据去向预览；第 04 篇 §15.2 先预估、后确认）。
  * 预估与去向由内核按事项记录计算；律师确认后才发起。
  */
+import { useModelCatalog } from "./ModelPicker.tsx";
+import { modelLabelOf } from "../lib/model-choices.ts";
 import { pendingOptions } from "../lib/pending-options.ts";
 import { useEffect, useState } from "react";
 import { api, type Matter } from "../api.ts";
@@ -38,6 +40,8 @@ export interface PendingStart {
   primaryOutput?: string;
   /** 所选材料的文件名（第 26 批，评审 U2-23：确认卡回显用到哪几份，只在本机显示）。 */
   docNames?: string[];
+  /** 第 66 批：首页选择器选的模型（api.modelsList("task") 的 ModelOption.id）；不给 = 内核按律师记住的或缺省。 */
+  model?: string;
   estimate: {
     estimate_id: string;
     points: number;
@@ -63,6 +67,7 @@ export async function launchRun(p: PendingStart): Promise<string> {
     ...(agent && p.skill && p.skillArgs && Object.keys(p.skillArgs).length > 0 ? { skill_args: p.skillArgs } : {}),
     ...(agent && p.skill && p.reviewRules === false ? { review_rules: false } : {}),
     ...(agent && p.skill && p.primaryOutput ? { primary_output: p.primaryOutput } : {}),
+    ...(p.model ? { model: p.model } : {}),
   });
   notifyDataChanged();
   nav(`/run/${run.run_id}/${p.matter.matter_id}`);
@@ -70,7 +75,7 @@ export async function launchRun(p: PendingStart): Promise<string> {
 }
 
 /** 预估（失败抛出内核原因，例如场景须有材料）。 */
-export async function prepareStart(matter: Matter, value: ComposerValue, o: { skill?: string; label?: string; skillArgs?: Record<string, string>; reviewRules?: boolean; primaryOutput?: string; docNames?: string[] } = {}): Promise<PendingStart> {
+export async function prepareStart(matter: Matter, value: ComposerValue, o: { skill?: string; label?: string; skillArgs?: Record<string, string>; reviewRules?: boolean; primaryOutput?: string; docNames?: string[]; /** 第 66 批：所选模型。 */ model?: string } = {}): Promise<PendingStart> {
   const extra: Record<string, unknown> = {};
   if (value.scenario === "s1b.draft_compare") {
     if (value.documentIds.length < 2) throw new Error("回稿比对需要选择两份文档：先选基线稿，再选回稿");
@@ -80,7 +85,7 @@ export async function prepareStart(matter: Matter, value: ComposerValue, o: { sk
   if (value.goal.trim()) extra.goal = value.goal.trim();
   if (value.scenario === "s2.case_file" && value.issues?.length) extra.issues = value.issues;
   const estimate = await api.estimate(matter.matter_id, { scenario: value.scenario, document_version_ids: value.documentIds, ...extra });
-  return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}), ...(o.skillArgs ? { skillArgs: o.skillArgs } : {}), ...(o.reviewRules !== undefined ? { reviewRules: o.reviewRules } : {}), ...(o.primaryOutput ? { primaryOutput: o.primaryOutput } : {}), ...(o.docNames ? { docNames: o.docNames } : {}) };
+  return { matter, value, estimate: estimate as PendingStart["estimate"], ...(o.skill ? { skill: o.skill } : {}), ...(o.label ? { label: o.label } : {}), ...(o.skillArgs ? { skillArgs: o.skillArgs } : {}), ...(o.reviewRules !== undefined ? { reviewRules: o.reviewRules } : {}), ...(o.primaryOutput ? { primaryOutput: o.primaryOutput } : {}), ...(o.docNames ? { docNames: o.docNames } : {}), ...(o.model ? { model: o.model } : {}) };
 }
 
 export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose: () => void }) {
@@ -93,6 +98,9 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const [cur, setCur] = useState(pending);
   const { matter, value, estimate } = cur;
   const agent = value.scenario === "a1.agent_task";
+  // 第 66 批：显示本次用的模型（与首页 / 开始面板同一份云端目录）
+  const [catalog] = useModelCatalog("task", agent);
+  const modelName = catalog ? modelLabelOf(cur.model ? { ...catalog, selected: cur.model } : catalog) : null;
   const blocked = !!estimate.data_where?.start_blocked;
   // 只有“依据待确认”可以原地修复（第 48 批：内核把 L3b、不使用模型、席位失效等分成 policy，不再一律当成“去记录同意”）；
   // 事项里另有进行中的任务、或处于退出模式时只说明原因并禁用开始
@@ -225,6 +233,9 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
               {modeSheetText({ mode: value.choice.mode, planFirst: value.choice.mode !== "chat" && value.choice.planFirst })}
               {value.choice.mode === "auto" && value.choice.preauth.length > 0 ? `（事先同意：${value.choice.preauth.map((p) => PREAUTH_LABELS[p] ?? p).join("；")}）` : ""}
             </dd>
+            {/* 第 66 批：用哪个模型（云端目录里的显示名；没选时写“缺省”） */}
+            <dt>模型</dt>
+            <dd>{modelName ?? "缺省模型"}</dd>
           </>
         )}
         <dt>预计用量</dt>

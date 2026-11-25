@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, onKernelEvent, type ChatMessage, type ChatModelChoice } from "../api.ts";
 import { nav } from "../App.tsx";
 import { Icon } from "../components/Icons.tsx";
+import { ModelPicker } from "../components/ModelPicker.tsx";
 import { Markdown } from "../components/Markdown.tsx";
 import { QA_CITATION_KIND, qaCitationLine, type QaCitationsView } from "../lib/qa-citations.ts";
 import { fmtTime, fmtWhen } from "../lib/labels.ts";
@@ -324,7 +325,14 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
                 深度思考
               </button>
             )}
-            {models.length > 1 ? <ModelPicker choices={models} value={route} onChange={chooseModel} /> : models.length === 1 ? <span className="model-label">{models[0]!.label}</span> : null}
+            {/* 第 66 批：与首页同一个模型选择器；选项来自云端模型目录（内核 chat.models 只列问答入口可用的） */}
+            <ModelPicker
+              title="问答模型"
+              choices={models.map((c) => ({ id: c.alias, label: c.label, description: c.note.replace(/^缺省[，,、]\s*/, ""), available: true, isDefault: c.default }))}
+              value={route}
+              onChange={chooseModel}
+              foot="按实际用量计入你的额度；具体型号由云端统一配置。"
+            />
             {/* 问答页回车发送，与任务输入框（Ctrl / ⌘ + 回车）不同：写明（余项续复核 RC-B-15） */}
             <span className="send-hint muted" aria-hidden="true">回车发送 · Shift + 回车换行</span>
             <button className="send" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送" title="发送（回车）"><Icon.send /></button>
@@ -376,46 +384,6 @@ function ChatSkeleton() {
 }
 
 /** 问答模型选择（真实可用：选项与校验都在内核，所选别名随问题发给网关计量）。 */
-function ModelPicker({ choices, value, onChange }: { choices: ChatModelChoice[]; value: string | null; onChange: (alias: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
-  const cur = choices.find((c) => c.alias === value) ?? choices.find((c) => c.default) ?? choices[0]!;
-  return (
-    <div className="model-picker" ref={ref}>
-      <button className="model-label model-label-btn" onClick={() => setOpen((o) => !o)} aria-haspopup="listbox" aria-expanded={open} title="选择回答用的模型">
-        {cur.label}
-        <Icon.down />
-      </button>
-      {open && (
-        <div className="popover model-popover" role="listbox" aria-label="问答模型">
-          {choices.map((c) => (
-            <button
-              key={c.alias}
-              role="option"
-              aria-selected={c.alias === cur.alias}
-              className={`mode-option${c.alias === cur.alias ? " selected" : ""}`}
-              onClick={() => {
-                onChange(c.alias);
-                setOpen(false);
-              }}
-            >
-              <span className="mode-name">{c.label}</span>
-              <span className="mode-hint">{c.note}</span>
-            </button>
-          ))}
-          <div className="mode-foot muted">都按实际用量计入本所额度；具体型号由律所的云端路由决定。</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /** 回答下面的引用核对（B-6）：一行结论，点开逐条看。 */
 function CitationCheck({ c }: { c: QaCitationsView }) {
   const line = qaCitationLine(c);

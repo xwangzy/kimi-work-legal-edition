@@ -310,7 +310,7 @@ if (cfg.role === "cp-signer") {
   if (cfg.control_plane || cfg.service_secret_file || cfg.ops) fail("签名服务不订阅吊销集、不用服务间凭据、没有运营接口：删去 control_plane / service_secret_file / ops");
   const callers = Array.isArray(cfg.allowed_callers) ? cfg.allowed_callers.map(String).filter((x) => /^(spiffe:\/\/[A-Za-z0-9._\/-]{1,200}|[A-Za-z0-9._-]{1,64})$/.test(x)) : [];
   if (!insecure && (callers.length === 0 || callers.length !== cfg.allowed_callers.length)) fail("allowed_callers 须列出控制面的客户端证书身份（spiffe://… 或 CN）");
-  const kidRe = new RegExp(`^(cp|seat|seat-support|seat-notify|seat-relay)-${env}-[0-9a-z]{1,16}$`);
+  const kidRe = new RegExp(`^(cp|seat|seat-support|seat-notify|seat-relay|acct-ca)-${env}-[0-9a-z]{1,16}$`);
   const seen = new Set();
   const signPair = (k, what, use) => {
     if (!k?.kid || !k?.private_key_file) fail(`缺少 ${what}.kid / ${what}.private_key_file`);
@@ -368,7 +368,8 @@ if (cfg.role === "cp-signer") {
   stopHooks.push(() => archiver?.stop(5_000));
   const signer = signerMod.createSignerService({
     ...(archiver ? { archiver } : {}),
-    keys: { envelope: signPair(ks.envelope, "keys.envelope", "cp"), seat: signPair(ks.seat, "keys.seat", "seat"), seatAudiences: audiences },
+    // 第 66 批（V40，D-292）：账号设备签发钥（可选；没有配置 = 个人账号新电脑仍走“另一台电脑批准”）
+    keys: { envelope: signPair(ks.envelope, "keys.envelope", "cp"), seat: signPair(ks.seat, "keys.seat", "seat"), seatAudiences: audiences, ...(ks.account_device_ca ? { accountDeviceCa: signPair(ks.account_device_ca, "keys.account_device_ca", "acct-ca") } : {}) },
     ledgerFile,
     // 首次部署显式初始化签名账（"init_ledger": true）；之后账本不在即拒绝启动（复核 RB16A-01：整本删除也能发现）
     initLedger: cfg.init_ledger === true,

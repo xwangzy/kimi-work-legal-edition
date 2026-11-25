@@ -472,24 +472,21 @@ function UserCard(props: {
               {card.firm && <small>{card.firm}</small>}
             </span>
           </div>
-          {/* 本机状态：正常时一行灰字；有问题时变色、点开去处理 */}
-          <button className={`menu-row user-menu-status${warn ? " warn" : ""}`} role="menuitem" onClick={() => go(foot.href)}>
-            <span className={`dot ${footTone}`} aria-hidden="true" />
-            <span className="menu-row-text">
-              {foot.title}
-              {foot.note ? `：${foot.note}` : ""}
-            </span>
-          </button>
-          {usageLine && (
-            <button className="menu-row user-menu-usage" role="menuitem" onClick={() => go("/connections/usage")}>
-              <span className="menu-row-text">{usageLine}</span>
-              <span className="menu-row-go" aria-hidden="true">{Icon.right()}</span>
+          {/* 本机状态（第 66 批）：正常时不显示（个人产品不需要“防护正常”这类研发状态）；有问题时一行变色说明、点开去处理 */}
+          {warn && (
+            <button className="menu-row user-menu-status warn" role="menuitem" onClick={() => go(foot.href)}>
+              <span className={`dot ${footTone}`} aria-hidden="true" />
+              <span className="menu-row-text">
+                {foot.title}
+                {foot.note ? `：${foot.note}` : ""}
+              </span>
             </button>
           )}
           <div className="menu-sep" role="separator" />
           <button className="menu-row" role="menuitem" onClick={() => go("/connections/usage")}>
             <span className="nav-icon">{Icon.chart()}</span>
             <span className="menu-row-text">套餐与用量</span>
+            {usageLine && <span className="menu-row-meta">{usageLine}</span>}
           </button>
           <button className="menu-row" role="menuitem" onClick={() => go("/connections")}>
             <span className="nav-icon">{Icon.gear()}</span>
@@ -553,7 +550,7 @@ function UserCard(props: {
         <span className="user-avatar" aria-hidden="true">
           {card.avatar}
           {/* 侧栏收窄时只剩头像：状态点挂在头像右上角（复核 R15B-23） */}
-          <span className={`dot avatar-dot ${footTone}`} />
+          {warn && <span className={`dot avatar-dot ${footTone}`} />}
         </span>
         <span className="user-text">
           <span className="user-name-row">

@@ -59,3 +59,90 @@
 .ss-pl-state { flex: none; margin-left: auto; color: var(--text-secondary); font-size: var(--fs-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ss-pl-state.due { color: var(--status-warning-text); }
 .ss-pl-agent { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: var(--fs-caption); }
+
+/* ── 第 66 批（V40 P0-2）开始面板两栏：左边“你给什么、要定什么”，右边“你得到什么、花多少、发去哪” ── */
+.modal-xl { width: min(1040px, 94vw); max-height: 90vh; }
+.modal-head.modal-head-2 { align-items: flex-start; padding: var(--sp-4) var(--sp-5); }
+.modal-titles { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.modal-icon { flex: none; width: 36px; height: 36px; display: grid; place-items: center; border-radius: var(--r-md); background: var(--bg-muted); color: var(--text-primary); }
+.modal-icon svg { width: 18px; height: 18px; }
+.modal-title-text { display: flex; flex-direction: column; min-width: 0; }
+.modal-title { font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); line-height: 1.4; }
+.modal-subtitle { font-size: var(--fs-caption); font-weight: 400; color: var(--text-secondary); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modal-xl > .modal-body { padding: var(--sp-4) var(--sp-5) var(--sp-4); }
+.modal-xl .modal-actions-sticky { margin: var(--sp-4) calc(-1 * var(--sp-5)) calc(-1 * var(--sp-4)); padding: var(--sp-3) var(--sp-5); }
+
+.ss2 { gap: var(--sp-3); }
+.ss-ctx { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); padding-bottom: var(--sp-3); border-bottom: 1px solid var(--border-subtle); }
+.ss-ctx .ss-label { color: var(--text-secondary); font-size: var(--fs-caption); }
+.ss-ctx-stance { font-size: var(--fs-caption); color: var(--text-secondary); }
+.ss-ctx-warn { flex-basis: 100%; font-size: var(--fs-caption); color: var(--status-warning-text); }
+.ss2 .ss-hints { margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--bg-subtle); }
+
+.ss-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: var(--sp-5); align-items: start; }
+.ss-main { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; }
+.ss2 .ss-sec + .ss-sec { padding-top: var(--sp-5); }
+.ss2 .ss-sec > .ss-h, .ss2 .ss-sec-head .ss-h { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); }
+.ss-n { flex: none; width: 20px; height: 20px; border-radius: var(--r-full); display: inline-grid; place-items: center; font-size: var(--fs-xs); font-weight: 600; color: var(--text-on-solid); background: var(--btn-primary); }
+.ss2 .ss-sec > .ss-hint { margin-top: -4px; }
+.ss-scope-short { display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; }
+.ss-scope-short .btn-link { font-size: var(--fs-caption); }
+.ss2 .ss-scope { font-size: var(--fs-xs); line-height: 1.6; }
+
+/* 材料清单：一只细边框卡片，行间细线；用途标签平时只显示已标的，悬停或聚焦本行时显示全部三个 */
+.ss-doclist { display: flex; flex-direction: column; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); max-height: 300px; overflow-y: auto; }
+.ss2 .ss-doc-row { display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3) 0 var(--sp-2); min-height: 38px; }
+.ss2 .ss-doc-row + .ss-doc-row { border-top: 1px solid var(--border-subtle); }
+.ss2 .ss-doc-row:hover { background: var(--bg-hover-soft); }
+.ss2 .ss-doc-row.on { background: var(--accent-bg); }
+.ss2 .ss-doc { background: transparent; padding: 6px 4px; font-size: var(--fs-body); gap: var(--sp-2); }
+.ss2 .ss-doc.on { background: transparent; }
+.ss-doc-ico { flex: none; display: inline-flex; color: var(--text-label); }
+.ss-doc-ico svg { width: 15px; height: 15px; }
+.ss2 .ss-doc-row .role-pill:not(.on) { color: transparent; border-color: transparent; background: transparent; }
+.ss2 .ss-doc-row:hover .role-pill:not(.on), .ss2 .ss-doc-row:focus-within .role-pill:not(.on) { color: var(--text-secondary); border-color: var(--border-subtle); background: var(--bg-surface); }
+.ss2 .ss-drop { justify-content: flex-start; min-height: 38px; }
+.ss2 .ss-drop-empty { justify-content: center; min-height: 88px; }
+.ss-drop-note { margin-left: var(--sp-2); font-size: var(--fs-xs); color: var(--text-label); }
+.ss-brief-open { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 0; font-size: var(--fs-caption); }
+.ss-brief-open svg { width: 13px; height: 13px; }
+
+/* 右栏：浅底卡片，块与块之间细线 */
+.ss-aside { position: sticky; top: 0; display: flex; flex-direction: column; border-radius: var(--r-lg); background: var(--bg-subtle); border: 1px solid var(--border-subtle); padding: var(--sp-1) var(--sp-4); min-width: 0; }
+.ss-aside-block { padding: var(--sp-3) 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.ss-aside-block + .ss-aside-block { border-top: 1px solid var(--border-subtle); }
+.ss-aside-h { font-size: var(--fs-xs); font-weight: 600; color: var(--text-label); letter-spacing: 0.02em; }
+.ss2 .ss-gets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-body); color: var(--text-strong); }
+.ss2 .ss-gets li { display: flex; align-items: flex-start; gap: 6px; line-height: 1.5; }
+.ss2 .ss-gets svg { flex: none; width: 14px; height: 14px; margin-top: 3px; color: var(--status-success-text); }
+.ss2 .ss-how { align-self: flex-start; display: inline-flex; align-items: center; gap: 3px; padding: 0; font-size: var(--fs-caption); }
+.ss-how-chev { display: inline-flex; transition: transform var(--motion-fast) var(--ease-standard); }
+.ss-how-chev svg { width: 13px; height: 13px; }
+.ss-how-chev.up { transform: rotate(180deg); }
+.ss2 .ss-steps { margin: 0; padding-left: var(--sp-4); font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.7; }
+.ss2 .ss-est { font-size: var(--fs-caption); }
+.ss-est-v { font-size: var(--fs-body); color: var(--text-strong); line-height: 1.6; }
+.ss-aside-send { font-size: var(--fs-caption); }
+.ss-aside-notes { padding: var(--sp-2) 0 var(--sp-3); border-top: 1px solid var(--border-subtle); }
+.ss-aside-notes .ss-note { margin: 0; font-size: var(--fs-xs); line-height: 1.6; }
+
+@media (max-width: 900px) {
+  .ss-grid { grid-template-columns: minmax(0, 1fr); }
+  .ss-aside { position: static; }
+}
+/* 第 66 批第二轮（卡片审查建议）：材料清单收起、当事人未填一行、补全提示一行、底部“先填写”可点 */
+.ss-doc-more { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; min-height: 34px; border: 0; border-top: 1px solid var(--border-subtle); background: transparent; font-size: var(--fs-caption); color: var(--text-secondary); }
+.ss-doc-more:hover { background: var(--bg-hover-soft); color: var(--text-primary); }
+.ss-doc-more svg { width: 13px; height: 13px; }
+.ss2 .ss-parties-line { padding: var(--sp-2) var(--sp-3); min-height: 0; }
+.ss-hint-btn { padding: 0; font-size: inherit; }
+.ss-hint-why { margin-left: var(--sp-1); color: var(--text-label); }
+.ss2 .ss-hint-edit { display: inline-flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+.modal-actions-sticky button.ss-foot-why { flex: 1; text-align: left; padding: 0; font-size: var(--fs-caption); color: var(--status-warning-text); }
+.ss-model .model-picker { align-self: flex-start; }
+.ss-model .model-label-btn { border: 1px solid var(--border-subtle); background: var(--bg-surface); height: 30px; padding: 0 var(--sp-3); color: var(--text-primary); }
+.ss-model .mdl-pop { top: calc(100% + 6px); bottom: auto; left: 0; right: auto; }
+/* 右栏里的“发送什么、发给谁”不再套一层卡片：标题与其他块同一级小标题，条目直接列 */
+.ss-aside .sheet-privacy { border: 0; background: transparent; padding: 0; margin: 0; box-shadow: none; }
+.ss-aside .sheet-privacy-title { font-size: var(--fs-xs); font-weight: 600; color: var(--text-label); margin-bottom: var(--sp-1); }
+.ss-aside .sheet-points { font-size: var(--fs-caption); line-height: 1.6; }

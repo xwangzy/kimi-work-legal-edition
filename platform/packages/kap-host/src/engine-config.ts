@@ -12,6 +12,39 @@ import { join } from "node:path";
 
 export const MAIN_MODEL = "legal/k3";
 export const SECONDARY_MODEL = "legal/k2.6";
+/** 模型别名（云端模型目录的 id；第 66 批）。 */
+export const MODEL_ID_RE = /^[a-z0-9][a-z0-9._/-]{1,47}$/;
+
+/**
+ * 任务所选模型（第 66 批，V40）：内核按云端模型目录核过（可用、入口含 task、能力含 tool_use）后随 startRun 下发。
+ * 引擎配置的 models 段按它动态加一项；上游型号不在客户端（provider 仍是闸门，网关按别名路由）。
+ */
+export interface TaskModelSpec {
+  id: string;
+  /** 目录里的能力（tool_use / thinking / long_context）。 */
+  capabilities: readonly string[];
+  /** 目录里的上下文窗口；null = 缺省 262144。 */
+  max_context: number | null;
+  /** 目录里的思考控制方式：只有 effort（始终思考、调强度，K3 系列）给引擎声明 thinking 能力——与内置 K3 / K2.6 的现状一致。 */
+  thinking?: "effort" | "toggle" | "none";
+}
+
+/** 目录能力 → 引擎能力：tool_use 照给；thinking 只给“调强度”的模型（K2.6 这类开关型现状不声明）；long_context 引擎不认，不给。 */
+export function engineCapabilitiesOf(spec: TaskModelSpec): string[] {
+  const caps = ["tool_use"];
+  if (spec.thinking === "effort" && spec.capabilities.includes("thinking")) caps.push("thinking");
+  return caps;
+}
+
+/** 下发的模型规格是否合格（宿主不信任意形态；不合格按“没有规格”处理：只给 tool_use、缺省上下文）。 */
+export function sanitizeTaskModel(id: unknown, spec: unknown): TaskModelSpec | null {
+  if (typeof id !== "string" || !MODEL_ID_RE.test(id)) return null;
+  const s = (spec && typeof spec === "object" && !Array.isArray(spec) ? spec : {}) as Record<string, unknown>;
+  const caps = Array.isArray(s.capabilities) ? s.capabilities.filter((c): c is string => c === "tool_use" || c === "thinking" || c === "long_context") : ["tool_use"];
+  const ctx = typeof s.max_context === "number" && Number.isSafeInteger(s.max_context) && s.max_context >= 4096 && s.max_context <= 2_000_000 ? s.max_context : null;
+  const thinking = s.thinking === "effort" || s.thinking === "toggle" || s.thinking === "none" ? s.thinking : "none";
+  return { id, capabilities: caps, max_context: ctx, thinking };
+}
 /** 上游配置键 = basename(configPath)；该文件从不落盘。 */
 export const TRUSTED_CONFIG_KEY = "kwl-trusted-config.toml";
 
@@ -29,6 +62,8 @@ export interface EngineConfigSpec {
    * 宿主只在非安装包形态（落盘加密不是 required）接受该项。
    */
   testMaxContextSize?: number | undefined;
+  /** 第 66 批：内置两项之外、本事项任务选用的模型（按目录能力生成 models 段的一项）。 */
+  taskModels?: readonly TaskModelSpec[];
 }
 
 export interface EngineConfig {
@@ -105,6 +140,12 @@ export function buildEngineConfig(spec: EngineConfigSpec): EngineConfig {
         max_context_size: ctx,
         capabilities: ["tool_use"],
       },
+      // 第 66 批：任务所选的其他模型（云端目录里的别名；provider 仍是闸门，上游型号由网关按别名决定）
+      ...Object.fromEntries(
+        (spec.taskModels ?? [])
+          .filter((m) => MODEL_ID_RE.test(m.id) && m.id !== MAIN_MODEL && m.id !== SECONDARY_MODEL)
+          .map((m) => [m.id, { provider: "kwl-gate", model: m.id, max_context_size: spec.testMaxContextSize && ctx !== 262144 ? ctx : (m.max_context ?? 262144), capabilities: engineCapabilitiesOf(m) }]),
+      ),
     },
     // 子 Agent 一律用 K2.6 级（需要 K3 的子任务由宿主策略按预算审批；能力账本“子 Agent”行）
     secondary_model: { default_model: SECONDARY_MODEL, force: true },

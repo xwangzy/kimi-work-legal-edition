@@ -220,14 +220,30 @@ function ResetBox({ email: initialEmail, onBack, page = false }: { email: string
   );
 }
 
-/** 解绑一台电脑：须输入密码（自绘对话框，不用浏览器确认框）。 */
-function UnbindDialog({ title, onClose, onDone }: { title: string; onClose: () => void; onDone: (pw: string) => Promise<void> }) {
+/** 第 66 批（V40）：“最近登录”一行——哪台电脑、登录还是新电脑登记、平台、时刻与粗粒度网段。 */
+function recentLoginLine(x: NonNullable<AccountMe["recent_logins"]>[number], devices: AccountMe["devices"]): { title: string; meta: string } {
+  const d = x.device_id ? devices.find((y) => y.device_id === x.device_id) : undefined;
+  const who = d ? deviceLine(d).title : x.device_id ? "一台新电脑" : x.platform === "web" ? "网页" : "还没登记的电脑";
+  const platform = x.platform === "win32" ? "Windows" : x.platform === "darwin" ? "macOS" : x.platform === "web" ? "浏览器" : x.platform === "linux" ? "Linux" : "";
+  const at = Number.isFinite(Date.parse(x.at)) ? new Date(Date.parse(x.at)).toLocaleString("zh-CN", { hour12: false, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+  return { title: `${who}${x.kind === "enroll" ? " · 新电脑登记" : " · 登录"}`, meta: [at, platform, x.net && x.net !== "未知" ? `网段 ${x.net}` : ""].filter(Boolean).join(" · ") };
+}
+
+/**
+ * 移除一台电脑（第 66 批 V40：原“解绑”）：须输入密码（自绘对话框，不用浏览器确认框）。= 让那台电脑的登录失效并停用它在云端的登记；
+ * 那台电脑上已有的资料不删。个人账号要再用那台电脑，重新登录即可（不用别的电脑批准）；多人律所的成员仍要管理员批准。
+ */
+function UnbindDialog({ title, personal, onClose, onDone }: { title: string; personal: boolean; onClose: () => void; onDone: (pw: string) => Promise<void> }) {
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   return (
-    <Modal title={`解绑${title}？`} onClose={onClose}>
-      <p className="confirm-dialog-q">解绑后，那台电脑不能再用你的账号使用 AI，也收不到本所的共享；它上面已有的资料不会被删除。要再用，需重新登录并由管理员批准。</p>
+    <Modal title={`移除${title}？`} onClose={onClose}>
+      <p className="confirm-dialog-q">
+        {personal
+          ? "移除后，那台电脑上的登录立即失效，不能再用你的账号使用 AI；它上面已有的资料不会被删除。以后要再用那台电脑，重新登录即可。"
+          : "移除后，那台电脑上的登录立即失效，不能再用你的账号使用 AI，也收不到本所的共享；它上面已有的资料不会被删除。要再用，需重新登录并由管理员批准。"}
+      </p>
       <PasswordField label="请输入你的密码确认" value={pw} onChange={setPw} autoFocus />
       {err && (
         <p className="activate-error" role="alert">
@@ -246,11 +262,11 @@ function UnbindDialog({ title, onClose, onDone }: { title: string; onClose: () =
             setErr("");
             onDone(pw)
               .then(onClose)
-              .catch((e) => setErr((e as Error).message || "没有解绑成功"))
+              .catch((e) => setErr((e as Error).message || "没有移除成功"))
               .finally(() => setBusy(false));
           }}
         >
-          {busy ? "正在解绑…" : "确定解绑"}
+          {busy ? "正在移除…" : "确定移除"}
         </button>
       </div>
     </Modal>
@@ -481,7 +497,14 @@ export function AccountSection({ firm }: { firm: string | null }) {
         {meErr && <div className="muted">暂时取不到账号详情（{meErr}）。</div>}
       </SettingRow>
       {me && (
-        <SettingRow label="我的电脑" hint={`已登记 ${activeDevices.length} 台，最多 ${a?.device_limit ?? "—"} 台。不再用的电脑请解绑。`}>
+        <SettingRow
+          label="登录过的电脑"
+          hint={
+            me.personal
+              ? `用这个账号登录过的电脑（在用 ${activeDevices.length} 台）。换电脑直接登录即可，不需要别的电脑批准；各台电脑上的事项与文件各自独立、不互相同步。不认识的电脑请马上移除并修改密码。`
+              : `用这个账号登录过的电脑（在用 ${activeDevices.length} 台）。不再用的电脑请移除；新电脑登录需律所管理员批准。`
+          }
+        >
           <ul className="account-list">
             {devices.map((d) => {
               const l = deviceLine(d);
@@ -493,12 +516,30 @@ export function AccountSection({ firm }: { firm: string | null }) {
                   </div>
                   {!d.revoked_at &&
                     (d.current ? (
-                      <span className="muted">要停用这台，请退出登录或请管理员处理</span>
+                      <span className="muted">{me.personal ? "要停用这台，退出登录即可" : "要停用这台，请退出登录或请管理员处理"}</span>
                     ) : (
                       <button className="btn-ghost btn-danger btn-sm" onClick={() => setUnbind({ id: d.device_id, title: l.title })}>
-                        解绑
+                        移除这台电脑
                       </button>
                     ))}
+                </li>
+              );
+            })}
+          </ul>
+        </SettingRow>
+      )}
+      {/* 第 66 批（V40）：最近 5 次登录与新电脑登记（时刻、哪台电脑、平台、粗粒度网段）——不认识的马上移除那台电脑并改密码 */}
+      {me && (me.recent_logins?.length ?? 0) > 0 && (
+        <SettingRow label="最近登录" hint="最近 5 次。位置只到网段（不精确到地址）；不认识的登录请移除对应电脑并修改密码。">
+          <ul className="account-list">
+            {me.recent_logins!.map((x, i) => {
+              const l = recentLoginLine(x, devices);
+              return (
+                <li key={`${x.at}-${i}`}>
+                  <div className="account-list-main">
+                    <b>{l.title}</b>
+                    <div className="muted">{l.meta}</div>
+                  </div>
                 </li>
               );
             })}
@@ -542,10 +583,11 @@ export function AccountSection({ firm }: { firm: string | null }) {
       {unbind && (
         <UnbindDialog
           title={unbind.title}
+          personal={me?.personal === true}
           onClose={() => setUnbind(null)}
           onDone={async (pw) => {
             await account.unbindDevice(unbind.id, pw);
-            setMsg(`已解绑${unbind.title}。`);
+            setMsg(`已移除${unbind.title}：那台电脑上的登录已失效。`);
             load();
           }}
         />

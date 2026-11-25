@@ -1,6 +1,8 @@
 /**
  * 案卷文件夹与材料内搜索（第 48 批）的纯函数：同步结果的一句话、文件夹位置的目录部分、按文件名即时筛选、命中词高亮切分。
+ * 第 66 批：材料列表统一口径（visibleMaterials）、来源推断（materialOrigin）、导入结果一句话（importResultText）。
  */
+import { PARTIES_PREFIX } from "./parties.ts";
 
 /** 同步结果里界面要用的字段（与 api.ts FolderSyncResult 同形）。 */
 export interface SyncResultLike {
@@ -74,4 +76,59 @@ export function highlightParts(text: string, terms: string[]): { text: string; h
 /** 被同一位置的新版本取代了的材料（supersedes 指向的那些）。 */
 export function supersededIds(docs: { supersedes?: string | null }[]): Set<string> {
   return new Set(docs.map((d) => d.supersedes).filter((x): x is string => typeof x === "string" && x.length > 0));
+}
+
+/** 材料行里这几处要用的字段（与 matters.get 的 documents 同形）。 */
+export interface MaterialLike {
+  document_version_id: string;
+  filename: string;
+  supersedes?: string | null;
+  quarantined_at?: string | null;
+  quarantine_reason?: string | null;
+  storage_mode?: string | null;
+  rel_path?: string | null;
+}
+
+/**
+ * 可勾选、可交给助手的材料（第 66 批 D7：首页 @ 材料、开始面板、事项页输入框、追问补充材料同一口径）：
+ * 去掉已移除（律师移除）与已隔离（国家秘密标志）的；当事人信息只留最新一份（D-224）；案卷文件夹同一位置的旧版本照旧列出
+ * （回稿对比要用，与开始面板原规则一致）。hideOldVersions：凡被新版本取代的都不列（事项页默认折叠旧版本时用）。
+ */
+export function visibleMaterials<T extends MaterialLike>(docs: T[], opts: { hideOldVersions?: boolean } = {}): T[] {
+  const old = supersededIds(docs);
+  return docs.filter((d) => !d.quarantined_at && !(old.has(d.document_version_id) && (opts.hideOldVersions || d.filename.startsWith(PARTIES_PREFIX))));
+}
+
+/** 材料从哪来（第 66 批 D7，按规则推断，不另存）：案卷文件夹 / 引用原文件 / 律师填写 / 由成果转入 / 上传。 */
+export type MaterialOrigin = "folder" | "mount" | "lawyer" | "artifact" | "upload";
+export const MATERIAL_ORIGIN_LABELS: Record<MaterialOrigin, string> = {
+  folder: "案卷文件夹",
+  mount: "引用原文件",
+  lawyer: "律师填写",
+  artifact: "由成果转入",
+  upload: "上传",
+};
+/** 律师在界面里写的文字存成的材料：当事人信息（D-224）、开始面板的案情说明（第 55 批，lib/scenarios.ts briefFilename）。 */
+const LAWYER_WRITTEN = [PARTIES_PREFIX, "案情说明（律师口述）"];
+export function materialOrigin(d: Pick<MaterialLike, "filename" | "storage_mode" | "rel_path">): MaterialOrigin {
+  if (d.rel_path) return "folder";
+  if (d.storage_mode === "mount") return "mount";
+  if (LAWYER_WRITTEN.some((p) => d.filename.startsWith(p))) return "lawyer";
+  // 成果“作为材料继续修改”（materials.from_artifact）的文件名以“（第 N 轮修改后）.docx”结尾
+  if (/（第\d+轮修改后）\.docx$/i.test(d.filename)) return "artifact";
+  return "upload";
+}
+
+/** materials.import 的结果里这一句要用的字段（duplicate：本事项已有同内容的材料，filename 是那一份的原名）。 */
+export interface ImportResultLike {
+  chars?: number;
+  marking_notice?: string | null;
+  duplicate?: boolean;
+  filename?: string;
+}
+
+/** 导入结果一句话（第 66 批 K1）：“已添加，1,234 字” / “已在本事项（原名《X》），未重复保存”。 */
+export function importResultText(name: string, r: ImportResultLike): string {
+  if (r.duplicate) return r.filename && r.filename !== name ? `已在本事项（原名《${r.filename}》），未重复保存` : "已在本事项，未重复保存";
+  return `已添加，${Number(r.chars ?? 0).toLocaleString()} 字${r.marking_notice ? `。${r.marking_notice}` : ""}`;
 }

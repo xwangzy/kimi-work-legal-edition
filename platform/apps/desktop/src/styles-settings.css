@@ -195,3 +195,17 @@
 .sup-it > .quiet-details:last-child { border-bottom: 1px solid var(--border-subtle); }
 .sup-page .section-title { margin-top: var(--sp-4); }
 .audit-why { display: block; margin-top: 2px; font-size: var(--fs-caption); color: var(--status-danger-text); }
+
+/* ── 第 66 批（V40 P1-2）设置页统一版心：所有选项卡同一宽度、同一左边界，切换不跳 ──
+   原因：表单类页签限宽 860px、套餐与用量 / 数据去向 / 管理沿用 1120px，且版心居中——切换时标题与选项卡左右移动、宽度变化；
+   另外内容高度不同导致滚动条时有时无，再差 7px。改法：一个版心（920px）给全部页签；主区始终预留滚动条位置；
+   页签里的大块（数据去向图、额度卡、表格）一律撑满版心，不再各自定宽。 */
+.main { scrollbar-gutter: stable; }
+.main-wide.set-page, .set-page.set-general, .set-page.set-writing, .set-page.set-backup, .set-page.set-account, .set-page.set-usage, .set-page.set-visibility, .set-page.set-admin { max-width: 920px; width: 100%; }
+.set-page .dfm-page, .set-page .dfx, .set-page .dfm-authz, .set-page .usage-card { max-width: none; }
+.set-page > .tabs-line { overflow-x: auto; scrollbar-width: none; }
+.set-page table { width: 100%; }
+
+/* 第 66 批第二轮（独立评审 R1）：顶部橙色提醒（如“还没有生成恢复包”）降为中性小条：浅灰底、正文色、前面一个橙点；红色（要马上处理的）不变 */
+.top-notice.tone-orange { background: var(--bg-subtle); color: var(--text-primary); border: 1px solid var(--border-subtle); }
+.top-notice.tone-orange::before { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-warning-solid); flex: none; }

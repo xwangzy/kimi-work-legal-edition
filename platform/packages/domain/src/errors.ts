@@ -53,6 +53,8 @@ export const FaultCode = {
   classifiedMaterial: "classified_material",
   /** 令牌还原等敏感接口的速率上限（隐私安全审查 P1-5）。 */
   rateLimited: "rate_limited",
+  /** 第 66 批 K3：进行中的任务正在用这份材料（勾了它，或没限定材料），不能移除（detail.run_ids）。 */
+  materialInUse: "material_in_use",
   // 通用
   validation: "validation",
   notFound: "not_found",

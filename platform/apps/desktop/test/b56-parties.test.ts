@@ -179,8 +179,9 @@ test("界面接线：开始面板显示已填 / 未填并按同一口径带入�
   const src = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
   const start = src("../src/components/ScenarioStart.tsx");
   assert.ok(start.includes("withPartiesDoc(v.documentIds") && start.includes("还没填：起草首部会写【待填】。"));
+  // 第 66 批：开始面板两栏，段标题前加序号（ss-n），段落仍是独立的“当事人”段
   // 第 64 批：开始面板里“当事人”单独成段（段标题与其他段一致），对话框按卡给称谓建议
-  assert.ok(start.includes('<section className="ss-sec ss-parties" aria-label="当事人">') && start.includes('<div className="ss-h">当事人</div>') && start.includes("cardId={card.id}"));
+  assert.ok(start.includes('<section className="ss-sec ss-step ss-parties" aria-label="当事人">') && /<div className="ss-h"><span className="ss-n" aria-hidden="true">\{partiesStep\}<\/span>当事人<\/div>/.test(start) && start.includes("cardId={card.id}"));
   assert.ok(src("../src/components/MatterOverview.tsx").includes("还没有填当事人信息——起诉状、律师函等文书的首部会留【待填】"));
   const pi = src("../src/components/PartiesInfo.tsx");
   assert.ok(pi.includes("importMaterialText(matter.matter_id, PARTIES_FILENAME, text, prev)"), "新版本取代上一版");

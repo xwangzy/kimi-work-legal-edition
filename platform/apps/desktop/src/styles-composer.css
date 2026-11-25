@@ -1,0 +1,66 @@
+/* 首页输入框（第 66 批 V40 P0-4）：拖放提示层、托盘“材料”计数、材料弹层（直接上传、写明归属与读取范围）、模型选择器。只用令牌。 */
+.composer-shell { position: relative; }
+.composer-shell.drag-over .composer { border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); }
+.composer-drop { position: absolute; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; gap: var(--sp-2); border-radius: var(--r-xl); background: var(--accent-bg); border: 1.5px dashed var(--focus-ring); color: var(--accent-text); font-size: var(--fs-body); font-weight: 500; pointer-events: none; }
+.composer-drop svg { width: 16px; height: 16px; }
+.tray-btn.on { color: var(--accent-text); }
+.tray-count { margin-left: 4px; font-size: var(--fs-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; background: var(--bg-muted); border-radius: var(--r-full); padding: 0 6px; line-height: 18px; }
+.tray-btn.on .tray-count { color: var(--accent-text); background: var(--accent-bg); }
+
+.mat-pop { left: var(--sp-5); right: var(--sp-5); width: auto; padding: 0; overflow: hidden; display: flex; flex-direction: column; max-height: min(460px, 62vh); }
+.mat-pop-head { padding: var(--sp-3) var(--sp-4) var(--sp-2); border-bottom: 1px solid var(--border-subtle); }
+.mat-pop-title { display: flex; align-items: center; gap: 6px; font-size: var(--fs-body); font-weight: 600; color: var(--text-strong); min-width: 0; }
+.mat-pop-title svg { width: 15px; height: 15px; flex: none; color: var(--text-label); }
+.mat-pop-count { margin-left: auto; font-size: var(--fs-xs); font-weight: 400; color: var(--text-secondary); white-space: nowrap; }
+.mat-pop-sub { margin-top: 2px; font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.6; }
+.mat-pop-list { max-height: 248px; overflow-y: auto; padding: var(--sp-1); display: flex; flex-direction: column; }
+.mat-pop-list .menu-label { display: inline-flex; align-items: center; gap: 6px; }
+.mat-pop-list .menu-label svg { width: 14px; height: 14px; color: var(--text-label); }
+.mat-pop-row { display: flex; align-items: center; gap: var(--sp-2); padding: 6px var(--sp-2); border-radius: var(--r-sm); font-size: var(--fs-body); cursor: pointer; min-width: 0; }
+.mat-pop-row:hover { background: var(--bg-hover-soft); }
+.mat-pop-row.on { background: var(--accent-bg); }
+.mat-pop-ico { flex: none; display: inline-flex; color: var(--text-label); }
+.mat-pop-ico svg { width: 14px; height: 14px; }
+.mat-pop-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mat-pop-drop { margin: var(--sp-2) var(--sp-3) var(--sp-3); padding: var(--sp-2) var(--sp-3); display: flex; align-items: center; flex-wrap: wrap; gap: 6px var(--sp-2); border: 1px dashed var(--border-default); border-radius: var(--r-md); font-size: var(--fs-caption); color: var(--text-secondary); }
+.mat-pop-drop.empty { min-height: 96px; justify-content: center; flex-direction: column; background: var(--bg-subtle); }
+.mat-pop-drop .btn-link { padding: 0; font-size: inherit; }
+.mat-pop-drop-ico { display: inline-flex; color: var(--text-label); }
+.mat-pop-drop-ico svg { width: 15px; height: 15px; }
+.mat-pop-hint { margin-left: auto; font-size: var(--fs-xs); color: var(--text-label); }
+.mat-pop-drop.empty .mat-pop-hint { margin-left: 0; }
+.mat-pop-progress { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text-primary); }
+.mat-pop-note { margin: 0 var(--sp-3) var(--sp-2); padding: 6px var(--sp-3); border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-xs); color: var(--text-primary); white-space: pre-line; max-height: 96px; overflow: auto; }
+.mat-pop-foot { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--border-subtle); font-size: var(--fs-caption); color: var(--text-secondary); }
+.mat-pop-foot .btn-link { padding: 0; font-size: inherit; }
+
+/* 模型选择器（首页与问答共用） */
+.mdl-pop { right: 0; left: auto; bottom: calc(100% + 6px); top: auto; width: 300px; padding: var(--sp-1); }
+.mdl-title { padding: var(--sp-2) var(--sp-3) var(--sp-1); font-size: var(--fs-xs); color: var(--text-label); font-weight: 500; }
+.mdl-option { width: 100%; display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; text-align: left; }
+.mdl-option:hover:not(:disabled) { background: var(--bg-hover); }
+.mdl-option.selected { background: var(--bg-active); }
+.mdl-option:disabled { cursor: not-allowed; }
+.mdl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mdl-name { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-body); font-weight: 500; color: var(--text-strong); }
+.mdl-option.off .mdl-name { color: var(--text-secondary); }
+.mdl-default { font-size: var(--fs-xs); font-weight: 400; color: var(--text-label); background: var(--bg-muted); border-radius: var(--r-xs); padding: 0 5px; line-height: 16px; }
+.mdl-desc { font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.5; }
+.mdl-off { font-size: var(--fs-xs); color: var(--status-warning-text); }
+.mdl-check { flex: none; display: inline-flex; color: var(--accent-text); margin-top: 2px; }
+.mdl-check svg { width: 14px; height: 14px; }
+.mdl-foot { margin-top: var(--sp-1); padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--border-subtle); font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.6; }
+/* 弹层里的材料组件（MaterialPicker 紧凑形态）：四周留白、结果行在弹层内折行 */
+.mat-pop-body { padding: var(--sp-2) var(--sp-3) var(--sp-3); min-width: 0; min-height: 0; overflow-y: auto; flex: 1 1 auto; }
+.mat-pop-body .mp-results { word-break: break-all; max-height: 120px; overflow-y: auto; }
+.mat-pop-body .mp-list { border: 0; }
+
+/* 第 66 批第二轮（独立评审 R2）：弹层与下方事项条等宽、限高内部滚动；行尾用途可直接改 */
+.mat-pop .role-pills { flex: none; }
+.mat-pop .mp-row .role-pill:not(.on) { color: transparent; border-color: transparent; background: transparent; }
+.mat-pop .mp-row:hover .role-pill:not(.on), .mat-pop .mp-row:focus-within .role-pill:not(.on) { color: var(--text-secondary); border-color: var(--border-subtle); background: var(--bg-surface); }
+/* 第 66 批第三轮（独立复评）：列表多时底部渐隐，看得出还能往下滚，而不是被拦腰截断；弹层高一些；用途标签常显为淡色 */
+.mat-pop { max-height: min(560px, 70vh); }
+.mat-pop-body { mask-image: linear-gradient(to bottom, var(--bg-surface) calc(100% - 28px), transparent); padding-bottom: var(--sp-5); }
+.mat-pop .mp-list { max-height: none; }
+.mat-pop .mp-row .role-pill:not(.on) { color: var(--text-label); border-color: transparent; background: transparent; }

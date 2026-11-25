@@ -23,6 +23,7 @@ import { FileRows, ProcessRows } from "../components/ArtifactRow.tsx";
 import { restoredPlain, restoreTokens } from "../lib/tokens.ts";
 import { Icon } from "../components/Icons.tsx";
 import { ListSkeleton, LoadError } from "../components/Loading.tsx";
+import { DeliverablePreview, type PreviewRow } from "../components/DeliverablePreview.tsx";
 
 type Row = any & { matter_id: string; matter_title: string; display: string };
 
@@ -47,6 +48,9 @@ export function DeliverablesPage() {
   const [err, setErr] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  // 第 66 批（V40 P0-3）：右侧就地预览——宽窗口点一行在右边看内容与版本；窄窗口（< 1100px）仍直接进复核页
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const wide = useWide();
   // 律师没点过流程条时，缺省停在最该处理的一段（待复核 → 草稿 → 退回 → 全部）
   const touchedRef = useRef(false);
   const load = () => {
@@ -98,6 +102,26 @@ export function DeliverablesPage() {
   const shownGroups = groups
     .map((g) => ({ ...g, tasks: g.tasks.map((t) => ({ ...t, files: pick(t.split.files), process: filter === "all" ? t.split.process : pick(t.split.process) })).filter((t) => t.files.length + t.process.length + (filter === "all" ? t.split.earlier.length : 0) > 0) }))
     .filter((g) => g.tasks.length > 0);
+  // 选中那一版所在的文件（各版本）与任务，供右侧预览切换版本、回到任务
+  const picked = useMemo(() => {
+    if (!selectedId) return null;
+    for (const g of groups)
+      for (const t of g.tasks)
+        for (const e of [...t.split.files, ...t.split.process, ...t.split.earlier]) {
+          const all = [e.latest, ...e.older];
+          const hit = all.find((x: any) => x.artifact_version_id === selectedId);
+          if (hit) return { row: hit as PreviewRow, versions: all as PreviewRow[], task: taskGroupLabel(t, (iso) => fmtWhen(iso)) };
+        }
+    return null;
+  }, [selectedId, groups]);
+  const open = (r: any) => (wide ? setSelectedId(r.artifact_version_id) : nav(`/review/${r.artifact_version_id}`));
+  // 宽窗口首次进来、律师还没选时，缺省预览当前筛选里的第一份
+  useEffect(() => {
+    if (!wide || selectedId || shownGroups.length === 0) return;
+    const first = shownGroups[0]!.tasks.find((t) => t.files.length > 0)?.files[0]?.latest;
+    if (first) setSelectedId(first.artifact_version_id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wide, shownGroups.length > 0]);
   const download = async (r: any) => {
     setErr("");
     setNote("");
@@ -119,6 +143,7 @@ export function DeliverablesPage() {
     try {
       await api.submitReview(r.artifact_version_id);
       nav(`/review/${r.artifact_version_id}`);
+      void load();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -129,7 +154,7 @@ export function DeliverablesPage() {
   const total = count("all");
   return (
     <main className="main">
-      <div className="main-wide dl-page">
+      <div className={`main-wide dl-page${wide && picked ? " dl-split-on" : ""}`}>
         <div className="dl-head">
           <div>
             <h1 className="page-title">成果</h1>
@@ -154,7 +179,7 @@ export function DeliverablesPage() {
                   {Icon.right()}
                 </span>
               )}
-              <button role="tab" aria-selected={filter === s.key} className={`dl-flow-step dl-flow-${s.key}${filter === s.key ? " on" : ""}${s.key === "rejected" ? " aside" : ""}${rows !== null && counts[s.key] === 0 ? " zero" : ""}`} onClick={() => choose(s.key)}>
+              <button role="tab" aria-selected={filter === s.key} title={s.note} className={`dl-flow-step dl-flow-${s.key}${filter === s.key ? " on" : ""}${s.key === "rejected" ? " aside" : ""}${rows !== null && counts[s.key] === 0 ? " zero" : ""}`} onClick={() => choose(s.key)}>
                 <span className="dl-flow-n">{rows === null ? "–" : counts[s.key]}</span>
                 <span className="dl-flow-text">
                   <span className="dl-flow-label">{s.label}</span>
@@ -170,6 +195,9 @@ export function DeliverablesPage() {
         {err && <div className="banner banner-red">{err}</div>}
         {note && <div className="banner banner-gray">{note}</div>}
         {missed > 0 && <div className="banner banner-orange">有 {missed} 个事项的成果这次没有读到，下面没有列出它们。稍后回到本页会重新读取。</div>}
+        {/* 第 66 批第二轮（独立评审 R5）：页头、复核流程条与提示横跨两栏；下面才分列表与预览 */}
+        <div className="dl-split">
+        <div className="dl-list-col">
         {rows === null && !loadErr && <ListSkeleton cards={2} rows={3} label="正在载入成果" />}
         {loadErr && <LoadError what="成果" message={loadErr} onRetry={() => void load()} />}
         {rows !== null && shownGroups.length === 0 && (
@@ -228,11 +256,12 @@ export function DeliverablesPage() {
                               parts={parts.get(String(e.latest.display))}
                               primary={i === 0 && isPrimaryFile(String(e.latest.filename ?? ""), primary)}
                               showStatus={filter === "all"}
-                              onOpen={(r) => nav(`/review/${r.artifact_version_id}`)}
+                              onOpen={open}
                               onDownload={(r) => void download(r)}
                               downloadingId={downloadingId}
                               onSubmit={(r) => void submit(r)}
                               busyId={busyId}
+                              selectedId={wide ? selectedId : null}
                             />
                           ));
                         })()}
@@ -247,9 +276,38 @@ export function DeliverablesPage() {
             </section>
           );
         })}
+        </div>
+        {wide && picked && (
+          <DeliverablePreview
+            key={picked.row.artifact_version_id}
+            row={picked.row}
+            versions={picked.versions}
+            taskLabel={picked.task}
+            onDownload={(r) => void download(r)}
+            onSubmit={(r) => void submit(r)}
+            busy={busyId === picked.row.artifact_version_id}
+            downloading={downloadingId === picked.row.artifact_version_id}
+            onClose={() => setSelectedId(null)}
+          />
+        )}
+        </div>
       </div>
     </main>
   );
+}
+
+/** 窗口够宽（≥ 1100px）才在成果页右侧预览；窄了仍点开进复核页。 */
+function useWide(): boolean {
+  const q = "(min-width: 1100px)";
+  const [w, setW] = useState(() => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(q).matches);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const m = window.matchMedia(q);
+    const on = () => setW(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return w;
 }
 
 type Filter = DeliverableFilter;

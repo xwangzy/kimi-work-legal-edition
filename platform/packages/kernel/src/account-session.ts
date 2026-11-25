@@ -223,6 +223,15 @@ export function accountErrorText(code: string, fallback?: string): string {
       return "这台电脑已登记为本所另一位成员：请用那位成员的账号登录";
     case "device_limit":
       return "账号的设备数已满：请先在别的电脑上解绑一台，或请管理员调高上限";
+    // 第 66 批（V40，D-292）：个人账号新电脑自动登记的几种失败
+    case "device_enroll_hold":
+      return "短时间内有多台新电脑登录这个账号，为安全起见已暂停自动登记：请用账号绑定的手机号接收验证码确认是本人";
+    case "session_not_fresh":
+      return "登录已超过 10 分钟：请重新登录后再登记这台电脑";
+    case "device_auto_unavailable":
+      return "这个账号的新电脑需要律所管理员批准：请重新登录按提示申请";
+    case "sms_phone_mismatch":
+      return "手机号与账号绑定的不一致";
     case "rate_limited":
       return "尝试过于频繁，请一分钟后再试";
     case "license_expired":
@@ -300,8 +309,8 @@ export function onboardingStateText(state: string, o: { admin?: boolean } = {}):
   switch (state) {
     case "device_limit":
       return o.admin
-        ? "这个账号的电脑数已满：请先在已登录的电脑上（设置 → 账号与团队 → 我的电脑）解绑一台，或调高本所成员的电脑数上限"
-        : "这个账号的电脑数已满：请先在已登录的电脑上（设置 → 账号与团队 → 我的电脑）解绑一台，或请律所管理员调高上限";
+        ? "这个账号的电脑数已满：请先在已登录的电脑上（设置 → 账号与团队 → 登录过的电脑）移除一台，或调高本所成员的电脑数上限"
+        : "这个账号的电脑数已满：请先在已登录的电脑上（设置 → 账号与团队 → 登录过的电脑）移除一台，或请律所管理员调高上限";
     case "device_mismatch":
       return "这台电脑已登记为本所另一位成员：请用那位成员的账号登录";
     case "waiting_founder":
@@ -309,6 +318,9 @@ export function onboardingStateText(state: string, o: { admin?: boolean } = {}):
       return "你的律所还没有完成开通：请律所负责人先在自己的电脑上登录完成开通";
     case "needs_device_join":
       return "这个账号还没有登记这台电脑：请用这台电脑原来登录的账号；要换人使用，请律所管理员处理";
+    // 第 66 批（V40，D-292）：个人账号的新电脑由云端直接登记（不用另一台电脑批准）；正常模式下遇到即说明换到这台电脑怎么做
+    case "needs_device_auto":
+      return "这台电脑还没有用这个账号登录过：退出后在登录页重新登录，会自动登记为你的电脑（不需要别的电脑批准；这台电脑上的资料与别的电脑各自独立）";
     case "ready":
       return "这台电脑已登记为你的电脑，但这里没有找到对应的本机资料：请用“从备份恢复”找回；没有备份的，请律所管理员停用这台电脑的旧登记后重新加入";
     default:

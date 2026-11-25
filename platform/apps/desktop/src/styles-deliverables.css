@@ -111,3 +111,47 @@
 .dl-flow-step.aside { margin-left: 0; }
 .dl-flow-arrow { width: 20px; }
 .dl-flow-all { margin: 0 var(--sp-2) 0 var(--sp-3); }
+
+/* ── 第 66 批（V40 P0-3）成果工作区：左边列表、右边就地预览（≥ 1100px） ── */
+.dl-page.dl-split-on { max-width: 1520px; }
+.dl-split { display: block; }
+.dl-split-on .dl-split { display: grid; grid-template-columns: minmax(440px, 1fr) minmax(460px, 1.15fr); gap: var(--sp-5); align-items: start; }
+.dl-list-col { min-width: 0; }
+.dl-row.is-selected { background: var(--accent-bg); }
+.dl-row.is-selected .dl-row-title { color: var(--text-strong); }
+.dl-row-sub { cursor: pointer; }
+.dl-row-sub:hover { background: var(--bg-hover-soft); }
+
+.dlp { position: sticky; top: var(--sp-4); display: flex; flex-direction: column; min-width: 0; max-height: calc(100vh - 96px); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: var(--bg-surface); box-shadow: var(--shadow-sm); overflow: hidden; animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
+.dlp-head { padding: var(--sp-4) var(--sp-5) var(--sp-3); border-bottom: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: var(--sp-2); }
+.dlp-title-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.dlp-title { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlp-close { flex: none; }
+.dlp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); }
+.dlp-where { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
+.dlp-where .btn-link { display: inline-flex; align-items: center; gap: 4px; padding: 0; font-size: var(--fs-caption); color: var(--text-label); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlp-where .btn-link:hover { color: var(--accent-text); }
+.dlp-where svg { width: 13px; height: 13px; flex: none; }
+.dlp-next { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.6; }
+.dlp-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-1); }
+.dlp-versions { display: inline-flex; flex-wrap: wrap; gap: 2px; align-self: flex-start; padding: 3px; border-radius: var(--r-md); background: var(--bg-muted); margin-top: var(--sp-1); }
+.dlp-ver { border: 0; background: transparent; border-radius: var(--r-sm); height: 26px; padding: 0 var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); }
+.dlp-ver:hover:not(.on) { color: var(--text-primary); }
+.dlp-ver.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
+.dlp-body { flex: 1; min-height: 360px; overflow: auto; background: var(--bg-preview); color: var(--text-on-paper); }
+.dlp-body .sp-wrap, .dlp-body > div { min-height: 100%; }
+.dlp-loading { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); height: 320px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.dlp-empty { padding: var(--sp-6); text-align: center; font-size: var(--fs-caption); color: var(--text-secondary); }
+/* 分栏时复核流程条收紧：只留数字与名称，说明放悬停 */
+.dl-split-on .dl-flow-label { white-space: nowrap; }
+.dl-split-on .dl-head { gap: var(--sp-3); }
+
+/* 第 66 批第二轮（独立评审 R5）：页头与流程条横跨两栏（说明与箭头恢复）；选中行是缩进的圆角色块；预览外框一层 */
+.dl-split-on .dl-head, .dl-split-on .dl-flow { max-width: none; }
+.dl-row.is-selected { background: var(--accent-bg); border-radius: var(--r-sm); }
+.dlp .safe-preview { border: 0; border-radius: 0; }
+.dlp .sp-note { background: transparent; border-bottom: 1px solid var(--border-subtle); }
+/* 第 66 批第三轮（独立复评）：列表栏宽一些（文件名少截断）；选中行缩进成圆角色块，两侧的分隔线让开 */
+.dl-split-on .dl-split { grid-template-columns: minmax(500px, 1fr) minmax(460px, 1fr); }
+.dl-rows > .dl-row.is-selected { margin: 0 var(--sp-2); padding-left: var(--sp-2); padding-right: var(--sp-2); }
+.dl-rows > .dl-row.is-selected::before, .dl-rows > .dl-row.is-selected + .dl-row::before { border-top-color: transparent; }

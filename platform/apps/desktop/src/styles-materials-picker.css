@@ -1,0 +1,55 @@
+/* 材料勾选与添加（第 66 批 D1，components/MaterialPicker.tsx）：外观与开始面板的材料清单一致（styles-start.css .ss-doclist / .ss-doc-row / .ss-drop） */
+.mp { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+
+/* 清单：一只细边框卡片，行间细线 */
+.mp-list { display: flex; flex-direction: column; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); max-height: 300px; overflow-y: auto; }
+.mp-compact .mp-list { max-height: 220px; }
+.mp-row { display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3) 0 var(--sp-2); min-height: 38px; }
+.mp-compact .mp-row { min-height: 34px; }
+.mp-row + .mp-row { border-top: 1px solid var(--border-subtle); }
+.mp-row:hover { background: var(--bg-hover-soft); }
+.mp-row.on { background: var(--accent-bg); }
+.mp-doc { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2); padding: 6px 4px; font-size: var(--fs-body); color: var(--text-primary); cursor: default; }
+label.mp-doc { cursor: pointer; }
+.mp-doc input { flex: none; margin: 0; }
+.mp-ico { flex: none; display: inline-flex; color: var(--text-label); }
+.mp-ico svg { width: 15px; height: 15px; }
+.mp-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-tag { flex: none; margin-left: 0; }
+
+/* 添加区：虚线框，拖入时高亮 */
+.mp-drop { display: flex; align-items: center; justify-content: flex-start; gap: var(--sp-2); min-height: 38px; padding: var(--sp-2) var(--sp-3); border: 1px dashed var(--border-default); border-radius: var(--r-md); font-size: var(--fs-caption); color: var(--text-secondary); transition: background var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard); }
+.mp-drop-empty { justify-content: center; min-height: 88px; background: var(--bg-subtle); }
+.mp-compact .mp-drop-empty { min-height: 56px; }
+.mp-drop.over { border-color: var(--focus-ring); background: var(--accent-bg); color: var(--text-primary); }
+.mp-drop-icon { flex: none; display: inline-flex; color: var(--text-label); }
+.mp-drop-icon svg { width: 15px; height: 15px; }
+.mp-drop-text { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; }
+.mp-add { padding: 0 2px; font-size: inherit; }
+.mp-drop-note { margin-left: var(--sp-2); font-size: var(--fs-xs); color: var(--text-label); }
+.mp-busy { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 逐份结果 */
+.mp-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-caption); line-height: 1.6; }
+.mp-ok { color: var(--text-secondary); }
+.mp-dup { color: var(--status-info-text); }
+.mp-fail { color: var(--status-danger-text); }
+.mp-results-close .btn-link { font-size: var(--fs-xs); padding: 0; }
+
+/* 事项页材料表（第 66 批 D4）：文件名下一行的“预览 · 用于 n 次任务 · 移除”；展开的任务清单；折叠的旧版本与已移除 */
+.mat-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); margin-top: 2px; font-size: var(--fs-caption); white-space: nowrap; }
+.mat-acts .btn-link { padding: 0; font-size: var(--fs-caption); }
+.mat-unused { color: var(--text-label); }
+.mat-acts .mat-remove { color: var(--text-secondary); }
+.mat-acts .mat-remove:hover { color: var(--status-danger-text); }
+.mat-table tr.mat-usage-row td { padding-top: 0; background: var(--bg-subtle); }
+.mat-usage { list-style: none; margin: 0; padding: var(--sp-2) 0 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-caption); }
+.mat-usage .btn-link { padding: 0; font-size: var(--fs-caption); }
+.mat-usage-note { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); }
+.mat-table tr.mat-fold-row td { padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
+.mat-fold-row .btn-link { padding: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.mat-preview { max-height: 60vh; overflow-y: auto; }
+/* 第 66 批第二轮：文件按类型显示（W / X / 文），列表里用小号 */
+.mp-ico .dl-ficon { width: 20px; height: 20px; font-size: var(--fs-xs); border-radius: var(--r-xs); }
+.mp-filter { width: 100%; font-size: var(--fs-caption); padding: 6px 10px; border-radius: var(--r-sm); }
+.mp-none { padding: var(--sp-2) var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); }

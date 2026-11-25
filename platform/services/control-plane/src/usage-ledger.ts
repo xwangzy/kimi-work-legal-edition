@@ -180,6 +180,8 @@ const bump = <K>(m: Map<K, DayMap>, k: K, day: string, a: Agg) => {
 };
 
 export interface UsageQuery {
+  /** 第 66 批（V40）：只要这一时刻之前的行（ISO；个人用量明细翻页）。 */
+  before?: string;
   from?: string;
   to?: string;
   tid?: string;
@@ -354,7 +356,7 @@ export class UsageBook {
   query(q: UsageQuery): { rows: UsageRow[]; next: string | null } {
     const limit = Math.min(200, Math.max(1, q.limit ?? 50));
     const match = (r: UsageRow) =>
-      (!q.from || r.day >= q.from) && (!q.to || r.day <= q.to) && (!q.tid || r.tid === q.tid) && (!q.aid || r.aid === q.aid) && (!q.uid || r.uid === q.uid) && (!q.alias || r.alias === q.alias) && (!q.outcome || r.outcome === q.outcome) && (!q.request_id || r.request_id === q.request_id || r.client_request_id === q.request_id || r.upstream_request_id === q.request_id);
+      (!q.from || r.day >= q.from) && (!q.to || r.day <= q.to) && (!q.before || r.at < q.before) && (!q.tid || r.tid === q.tid) && (!q.aid || r.aid === q.aid) && (!q.uid || r.uid === q.uid) && (!q.alias || r.alias === q.alias) && (!q.outcome || r.outcome === q.outcome) && (!q.request_id || r.request_id === q.request_id || r.client_request_id === q.request_id || r.upstream_request_id === q.request_id);
     const out: UsageRow[] = [];
     let i = q.cursor && /^\d{1,9}$/.test(q.cursor) ? Math.min(Number(q.cursor), this.rows.length) - 1 : this.rows.length - 1;
     for (; i >= 0 && out.length < limit; i--) if (match(this.rows[i]!)) out.push(this.rows[i]!);

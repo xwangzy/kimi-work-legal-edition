@@ -13,6 +13,7 @@ import { request as httpsRequest, Agent } from "node:https";
 import { request as httpRequest } from "node:http";
 import { openEnvelope, publicKeyMap, sealEnvelope, type CpEnvelope } from "@zr-legal/firm-trust";
 import { issueSeatToken, verifySeatToken } from "@zr-legal/seat-token";
+import { DEVICE_ID_PATTERN, issueDeviceCertificate, verifyDeviceCertificate, type DeviceCertificate, type DeviceCertificateInput } from "@zr-legal/keys";
 
 export interface CpKeyPair {
   kid: string;
@@ -29,6 +30,11 @@ export interface ControlPlaneKeys {
   seat: CpKeyPair;
   /** 按受众拆分的席位密钥（A-8）；缺的受众用通用席位密钥。 */
   seatAudiences?: Partial<Record<SeatAudience, CpKeyPair>>;
+  /**
+   * 第 66 批（V40，D-292）：账号设备签发钥——只给个人租户（1 名成员且为管理员）的新电脑签设备证书（issuer = account_ca），
+   * 与信封钥、席位钥分开（kid 经 /v1/meta 公布）。没有配置 = 个人账号新电脑仍走“另一台电脑批准”。
+   */
+  accountDeviceCa?: CpKeyPair;
 }
 
 /** 控制面签的全部信封种类（签名服务只签这些；新增种类须同时在签名服务登记按种类的核对）。 */
@@ -44,6 +50,11 @@ export const ENVELOPE_KINDS = [
   "kwl-cp-audit-page",
   // 第 44 批：API 路由订阅（网关取上游、别名、价目；上游密钥是只有网关解得开的密文）
   "kwl-routing-feed",
+  // 第 66 批：客户端模型目录（别名与可用性；不含上游型号、地址与密钥）
+  "kwl-model-catalog",
+  // 第 66 批（V40）：个人用量明细翻页；个人账号新电脑自动登记的应答（证书 + 律所根公钥 + 律所公钥包 + 账号设备签发钥公钥）
+  "kwl-usage-page",
+  "kwl-device-enroll",
 ] as const;
 export type EnvelopeKind = (typeof ENVELOPE_KINDS)[number];
 
@@ -76,6 +87,29 @@ export interface SignerPublicKeys {
   /** 各受众用哪把（kid）；没有的受众用通用席位密钥。 */
   seat_audiences: Partial<Record<SeatAudience, string>>;
   seat_general: string;
+  /** 第 66 批：账号设备签发钥（没有配置 = null）。 */
+  account_device_ca?: { kid: string; public_key_pem: string } | null;
+}
+
+/** 账号设备证书的申请（第 66 批）：签名服务按这些字段核对后签发，issuer 固定 account_ca，有效期至多 366 天、角色不能是 node。 */
+export type AccountDeviceCertRequest = Omit<DeviceCertificateInput, "issuer"> & { issuer: "account_ca" };
+export const ACCOUNT_DEVICE_CERT_MAX_DAYS = 366;
+
+/** 申请字段核对（本地签名者与签名服务共用）：返回拒签原因，null = 可以签。 */
+export function accountDeviceCertProblem(c: unknown, reqNow: number, skewMs = 5 * 60_000): string | null {
+  if (!c || typeof c !== "object" || Array.isArray(c)) return "cert_fields_invalid";
+  const x = c as Record<string, unknown>;
+  const allowed = ["certId", "memberId", "deviceId", "role", "signPublicKeyPem", "encPublicKeyPem", "issuedAt", "expiresAt", "signAlg", "issuer"];
+  if (Object.keys(x).some((k) => !allowed.includes(k))) return "cert_field_not_allowed";
+  if (x.issuer !== "account_ca") return "cert_issuer_invalid";
+  if (typeof x.role !== "string" || !["admin", "partner", "lawyer", "assistant"].includes(x.role)) return "cert_role_not_allowed";
+  if (typeof x.deviceId !== "string" || !DEVICE_ID_PATTERN.test(x.deviceId)) return "cert_device_invalid";
+  if (typeof x.memberId !== "string" || !/^usr_[A-Za-z0-9_-]{1,120}$/.test(x.memberId)) return "cert_member_invalid";
+  const iat = Date.parse(String(x.issuedAt));
+  const exp = Date.parse(String(x.expiresAt));
+  if (!Number.isFinite(iat) || Math.abs(iat - reqNow) > skewMs) return "cert_issued_at_skew";
+  if (!Number.isFinite(exp) || exp <= iat || exp - iat > ACCOUNT_DEVICE_CERT_MAX_DAYS * 86_400_000) return "cert_validity_out_of_range";
+  return null;
 }
 
 export interface CpSigner {
@@ -83,6 +117,8 @@ export interface CpSigner {
   sealEnvelope<T>(kind: EnvelopeKind, body: T, reqNow: number): Promise<CpEnvelope<T>>;
   issueSeatToken(r: SeatTokenRequest): Promise<string>;
   publicKeys(): SignerPublicKeys;
+  /** 第 66 批：用账号设备签发钥签一张设备证书（没有配置这把钥的签名者没有此方法）。 */
+  issueAccountDeviceCert?(c: AccountDeviceCertRequest, reqNow: number): Promise<DeviceCertificate>;
   /** 进程内同步签名：只有本地签名者有（演练“控制面被攻破”与开发脚本用）；远程签名者没有——生产入口拿不到 ops.seal。 */
   readonly sealSync?: <T>(kind: string, body: T) => CpEnvelope<T>;
   /** 开通码胡椒的派生材料：只有本地签名者有（生产入口必须另给胡椒文件）。 */
@@ -102,7 +138,9 @@ export function signerPublicKeys(keys: ControlPlaneKeys): SignerPublicKeys {
     seat[k.kid] = pem(k.publicKey);
     aud[a] = k.kid;
   }
-  return { envelope: { [keys.envelope.kid]: pem(keys.envelope.publicKey) }, seat, seat_audiences: aud, seat_general: keys.seat.kid };
+  const ca = keys.accountDeviceCa;
+  if (ca && (ca.kid === keys.envelope.kid || seat[ca.kid])) throw new Error(`账号设备签发钥编号不能与其他密钥重复：${ca.kid}`);
+  return { envelope: { [keys.envelope.kid]: pem(keys.envelope.publicKey) }, seat, seat_audiences: aud, seat_general: keys.seat.kid, account_device_ca: ca ? { kid: ca.kid, public_key_pem: pem(ca.publicKey) } : null };
 }
 
 /** 选签这一受众的席位密钥（没有拆分的受众用通用席位密钥）。 */
@@ -122,6 +160,15 @@ export function localSigner(keys: ControlPlaneKeys): CpSigner {
       return issueSeatToken({ tid: r.tid, uid: r.uid, sid: r.sid, dev: r.dev, kid: k.kid, ...(r.aud ? { aud: [r.aud] } : {}) }, k.privateKey, r.ttlSeconds, r.at);
     },
     publicKeys: () => pub,
+    ...(keys.accountDeviceCa
+      ? {
+          async issueAccountDeviceCert(c: AccountDeviceCertRequest, reqNow: number) {
+            const why = accountDeviceCertProblem(c, reqNow);
+            if (why) throw new SignerUnavailableError(why);
+            return issueDeviceCertificate(keys.accountDeviceCa!.privateKey.export({ format: "pem", type: "pkcs8" }).toString(), c);
+          },
+        }
+      : {}),
     sealSync: (kind, body) => sealEnvelope(kind, body, keys.envelope),
     envelopePrivateKey: keys.envelope.privateKey,
   };
@@ -200,7 +247,15 @@ export async function connectRemoteSigner(o: RemoteSignerOptions): Promise<CpSig
     seat: checkMap(pk.seat, "席位"),
     seat_audiences: pk.seat_audiences && typeof pk.seat_audiences === "object" ? pk.seat_audiences : {},
     seat_general: String(pk.seat_general ?? ""),
+    account_device_ca: null,
   };
+  // 第 66 批：账号设备签发钥（旧签名服务没有这一项 = 个人账号新电脑仍走批准）
+  if (pk.account_device_ca && typeof pk.account_device_ca === "object") {
+    const c = pk.account_device_ca as { kid?: unknown; public_key_pem?: unknown };
+    if (typeof c.kid !== "string" || typeof c.public_key_pem !== "string" || /PRIVATE/i.test(c.public_key_pem)) throw new Error("签名服务的账号设备签发钥公钥不合格");
+    createPublicKey(c.public_key_pem);
+    pub.account_device_ca = { kid: c.kid, public_key_pem: c.public_key_pem };
+  }
   if (!pub.seat[pub.seat_general]) throw new Error("签名服务没有报通用席位密钥");
   // 交付前先用签名服务报的公钥验一遍回复（复核 RB16A-04）：签名服务配错密钥或被替换时在控制面这一侧就报错，而不是让全部设备验签失败
   const envKeys = publicKeyMap(pub.envelope);
@@ -231,6 +286,19 @@ export async function connectRemoteSigner(o: RemoteSignerOptions): Promise<CpSig
       return j.token;
     },
     publicKeys: () => pub,
+    ...(pub.account_device_ca
+      ? {
+          async issueAccountDeviceCert(c: AccountDeviceCertRequest, reqNow: number) {
+            const j = await call("POST", "/v1/sign/device-cert", { request_id: randomUUID(), req_now: reqNow, cert: c });
+            const cert = j?.cert as DeviceCertificate | undefined;
+            // 签回来的证书须对账号设备签发钥验过，且字段与申请的一致（签名服务不能借机改编号、成员、角色、公钥或有效期）
+            if (!cert || typeof cert !== "object" || !verifyDeviceCertificate(cert, pub.account_device_ca!.public_key_pem, new Date(reqNow)).ok) throw new SignerUnavailableError("reply_invalid");
+            const { signature: _sig, ...body } = cert;
+            if (JSON.stringify(Object.keys(body).sort().map((k) => [k, (body as Record<string, unknown>)[k]])) !== JSON.stringify(Object.keys(c).filter((k) => (c as Record<string, unknown>)[k] !== undefined).sort().map((k) => [k, (c as Record<string, unknown>)[k]]))) throw new SignerUnavailableError("reply_invalid");
+            return cert;
+          },
+        }
+      : {}),
     close: () => agent?.destroy(),
   };
 }

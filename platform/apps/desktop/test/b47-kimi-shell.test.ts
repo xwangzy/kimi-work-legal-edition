@@ -34,15 +34,15 @@ test("额度提示条：剩余不足 10% 时提示，日期按北京时间写 MM
   assert.equal(quotaNotice(base()), null);
   const low = quotaNotice(base({}, { used_ratio: 0.93, remaining_ratio: 0.07 }))!;
   assert.equal(low.tone, "warn");
-  assert.equal(low.text, "本所本月额度已不足 10%，将于 12-01 重置");
+  assert.equal(low.text, "你本月的额度已不足 10%，将于 12-01 重置");
   assert.equal(low.key, "2026-11:firm-low");
 });
 
 test("额度提示条：用完、到律所上限、5 小时过快、个人上限的优先级与说法", () => {
   const all = quotaNotice(base({}, { used_ratio: 1, remaining_ratio: 0, paused: "allowance" }))!;
-  assert.deepEqual([all.tone, all.text], ["stop", "本所本月的 AI 额度已用完，新任务暂不能发起，将于 12-01 重置"]);
+  assert.deepEqual([all.tone, all.text], ["stop", "你本月的 AI 额度已用完，新任务暂不能发起，将于 12-01 重置"]);
   const cap = quotaNotice(base({}, { used_ratio: 0.8, remaining_ratio: 0.2, paused: "cap", cap_pct: 80 }))!;
-  assert.equal(cap.text, "本所本月用量已到律所设的上限（80%），新任务暂不能发起，将于 12-01 重置");
+  assert.equal(cap.text, "本月用量已到设定的上限（80%），新任务暂不能发起，将于 12-01 重置");
   const burst = quotaNotice(base({ burst: { hours: 5, pct: 50, used_ratio: 1, resets_at: "2026-11-19T07:30:00.000Z" } }, { paused: "burst" }))!;
   assert.deepEqual([burst.tone, burst.text], ["warn", "最近 5 小时用得太快，AI 处理暂时放缓，15:30 起逐步恢复"]);
   const own = { used_ratio: 1, denominator: "account_limit" as const, enforced: true, used: 100, total: 100, requests: 3, tokens: 100, value_cny: null, estimated_rows: 0 };
@@ -61,8 +61,9 @@ test("额度提示条：本地开发与试用版（没有控制面）不提示�
   assert.equal(planBadge(base()), "标准");
   assert.equal(planBadge(base({ plan: { id: "x", label: "专业版" } })), "专业");
   const week = base({ period: { kind: "week", key: "2026-W47", start: "2026-11-15T16:00:00.000Z", resets_at: "2026-11-22T16:00:00.000Z" } }, { remaining_ratio: 0.05, used_ratio: 0.95 });
-  assert.equal(quotaNotice(week)!.text, "本所本周额度已不足 10%，将于 11-23 重置");
-  assert.equal(quotaMenuLine(base()), "本所本月已用 30% · 12-01 重置");
+  assert.equal(quotaNotice(week)!.text, "你本周的额度已不足 10%，将于 11-23 重置");
+  // 第 66 批：菜单只说本人用量（“套餐与用量”右侧小字）
+  assert.equal(quotaMenuLine(base()), "已用 30%");
   assert.equal(quotaMenuLine({ mode: "local_dev" }), null);
 });
 
@@ -157,7 +158,7 @@ test("输入框：运行模式在“+”右边；任务模型只读显示（不�
 test("设置：用量在“套餐与用量”一页（律师与管理员同一入口）；顶部提醒是居中胶囊", () => {
   const conn = src("pages/Connections.tsx");
   assert.match(conn, /usage: "套餐与用量",/);
-  assert.match(conn, /\{tab === "usage" && \(/);
+  assert.match(conn, /\{tab === "usage" && <PersonalUsage \/>\}/);
   assert.doesNotMatch(conn, /\["usage", "用量"\]/, "管理页不再重复一个用量子页");
   assert.match(src("App.tsx"), /className=\{`top-notice \$\{reminder\.tone === "red" \? "tone-red" : "tone-orange"\}`\}/);
   assert.match(src("pages/FirmUsage.tsx"), /我的使用明细（最近 20 条）/);

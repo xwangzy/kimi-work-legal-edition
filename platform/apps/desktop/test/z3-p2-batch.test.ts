@@ -17,7 +17,8 @@ const css = src("styles.css");
 test("#16 首页场景卡不再逐张标“试用”，场景区标题旁统一一行", () => {
   const home = src("pages/Home.tsx");
   assert.doesNotMatch(home, /tag-beta">试用/);
-  assert.match(home, /全部场景试用中 · 结果须律师复核/);
+  // 第 66 批：首页固定页脚去掉（说明按场景出现在开始面板右栏、复核与“数据去向”）
+  assert.doesNotMatch(home, /全部场景试用中 · 结果须律师复核/);
 });
 
 test("#17 设置里的分段选择选中态为黑底白字", () => {

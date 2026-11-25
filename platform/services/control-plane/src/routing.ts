@@ -52,6 +52,72 @@ export interface ModelRouteRecord {
   allow_cross_vendor: boolean;
   default_max_tokens: number;
   updated_at: string;
+  // —— 第 66 批（V40）：客户端模型目录的展示与能力字段（只经 GET /v1/models 下发给客户端；网关订阅不带）。缺省值见 modelMetaOf ——
+  /** 给律师看的一句说明（如“适合复杂问题”，≤ 60 字）。 */
+  description?: string | null;
+  /** 排序（小者在前；缺省 100）。 */
+  sort?: number;
+  /** 深度思考怎么控制：effort = 始终思考、调强度（K3 系列）；toggle = 开 / 关（K2.6）；none = 不可控。 */
+  thinking?: ThinkingControl;
+  /** effort 型允许的档位。 */
+  efforts?: ModelEffort[];
+  /** 能力标签（任务入口要求 tool_use）。 */
+  capabilities?: ModelCapability[];
+  /** 在哪些入口可选：qa = 问答，task = 任务。 */
+  scopes?: ModelScope[];
+  /** false = 只作内部别名（不出现在客户端选择器、不下发）。 */
+  client_visible?: boolean;
+  /** 给任务引擎的上下文窗口（token；null = 缺省 262144）。 */
+  max_context?: number | null;
+}
+
+export type ThinkingControl = "effort" | "toggle" | "none";
+export type ModelEffort = "low" | "high" | "max";
+export type ModelCapability = "tool_use" | "thinking" | "long_context";
+export type ModelScope = "qa" | "task";
+export const THINKING_CONTROLS: readonly ThinkingControl[] = ["effort", "toggle", "none"];
+export const MODEL_EFFORTS: readonly ModelEffort[] = ["low", "high", "max"];
+export const MODEL_CAPABILITIES: readonly ModelCapability[] = ["tool_use", "thinking", "long_context"];
+export const MODEL_SCOPES: readonly ModelScope[] = ["qa", "task"];
+
+/** 模型展示与能力的完整取值（缺省已补齐）。 */
+export interface ModelMeta {
+  label: string;
+  description: string | null;
+  sort: number;
+  thinking: ThinkingControl;
+  efforts: ModelEffort[];
+  capabilities: ModelCapability[];
+  scopes: ModelScope[];
+  client_visible: boolean;
+  max_context: number | null;
+}
+
+/**
+ * 内置别名的缺省展示与能力（按第 65 批之前客户端写死的口径）：K3 问答与任务都可选、按强度思考；K2.6 只在问答可选、开关思考
+ * （任务里它是子 Agent 的模型，主任务不选它——任务入口只列 scopes 含 task 的）。
+ */
+export const BUILTIN_MODEL_META: Readonly<Record<string, Omit<ModelMeta, "label"> & { label: string }>> = Object.freeze({
+  "legal/k3": { label: "K3", description: "适合复杂问题", sort: 10, thinking: "effort", efforts: ["low", "high", "max"], capabilities: ["tool_use", "thinking", "long_context"], scopes: ["qa", "task"], client_visible: true, max_context: 262_144 },
+  "legal/k2.6": { label: "K2.6", description: "更快、更省额度，复杂问题效果略弱", sort: 20, thinking: "toggle", efforts: [], capabilities: ["tool_use", "thinking"], scopes: ["qa"], client_visible: true, max_context: 262_144 },
+});
+/** 首次部署时内置别名的占位名称（第 44 批）：给律师看时换成 K3 / K2.6。 */
+const PLACEHOLDER_LABELS = new Set(["主任务模型", "子任务模型"]);
+
+/** 补齐缺省值后的展示与能力（旧状态里没有这些字段：内置别名按 BUILTIN_MODEL_META，其余按“只在问答可选、不可控思考”）。 */
+export function modelMetaOf(m: ModelRouteRecord): ModelMeta {
+  const b = BUILTIN_MODEL_META[m.alias];
+  return {
+    label: b && PLACEHOLDER_LABELS.has(m.label) ? b.label : m.label,
+    description: m.description !== undefined ? m.description : (b?.description ?? null),
+    sort: m.sort ?? b?.sort ?? 100,
+    thinking: m.thinking ?? b?.thinking ?? "none",
+    efforts: m.efforts ?? b?.efforts ?? [],
+    capabilities: m.capabilities ?? b?.capabilities ?? [],
+    scopes: m.scopes ?? b?.scopes ?? ["qa"],
+    client_visible: m.client_visible ?? b?.client_visible ?? true,
+    max_context: m.max_context !== undefined ? m.max_context : (b?.max_context ?? null),
+  };
 }
 
 export interface PriceItem {
@@ -213,7 +279,7 @@ export function bootstrapRouting(t: number, b?: { provider?: { id?: string; labe
   const defaults: Record<string, string> = { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k3.1-pro" };
   for (const alias of BUILTIN_ALIASES) {
     const model = b?.models?.[alias] ?? defaults[alias]!;
-    r.models.push({ alias, label: alias === "legal/k3" ? "主任务模型" : "子任务模型", enabled: true, is_default: alias === "legal/k3", targets: base && MODEL_RE.test(model) ? [{ provider: pid, model, priority: 1 }] : [], allow_cross_vendor: false, default_max_tokens: 8192, updated_at: at });
+    r.models.push({ alias, label: BUILTIN_MODEL_META[alias]!.label, enabled: true, is_default: alias === "legal/k3", targets: base && MODEL_RE.test(model) ? [{ provider: pid, model, priority: 1 }] : [], allow_cross_vendor: false, default_max_tokens: 8192, updated_at: at });
   }
   if (b?.prices) r.prices[0]!.items = validatePrices(b.prices);
   else if (b?.pricing === "official") r.prices[0] = officialPricingTable(r, 1, t);
@@ -691,7 +757,10 @@ export function upsertModel(r: RoutingState, alias: string, b: Record<string, un
   // 跨厂商切换须显式打开（“不静默跨供应商”）：目标跨厂商而开关没开 → 拒绝，提示运营确认
   const vendors = new Set(targets.map((x) => r.providers.find((p) => p.id === x.provider)!.vendor));
   if (vendors.size > 1 && !cross) throw new RoutingError(400, "cross_vendor_not_allowed", "目标分属不同厂商：须同时打开“允许跨厂商切换”（并更新对外的数据去向说明）");
-  const rec: ModelRouteRecord = { alias, label: (label as string).trim(), enabled, is_default: isDefault, targets: targets.sort((a, b2) => a.priority - b2.priority), allow_cross_vendor: cross, default_max_tokens: maxTok, updated_at: at };
+  const meta = validateModelMeta(b, cur);
+  const rec: ModelRouteRecord = { alias, label: (label as string).trim(), enabled, is_default: isDefault, targets: targets.sort((a, b2) => a.priority - b2.priority), allow_cross_vendor: cross, default_max_tokens: maxTok, updated_at: at, ...meta };
+  // 第 66 批：设为缺省时，它要让律师在问答与任务里都能选到（客户端没选时按它发）；事故中停用缺省模型照常允许（客户端按目录改用其他可用模型）
+  if (b.is_default === true && (modelMetaOf(rec).client_visible === false || !modelMetaOf(rec).scopes.includes("task"))) throw new RoutingError(400, "model_default_invalid", "缺省模型须对客户端可见、且能在任务入口选（入口勾选“任务”）");
   if (isDefault) for (const m of r.models) if (m.alias !== alias) m.is_default = false;
   if (cur) Object.assign(cur, rec);
   else {
@@ -702,6 +771,97 @@ export function upsertModel(r: RoutingState, alias: string, b: Record<string, un
   syncDerivedItems(r);
   bump(r, t, by);
   return !cur;
+}
+
+/**
+ * 第 66 批：校验模型的展示与能力字段（给了才改，没给沿用当前值；旧记录没有的字段保持未设，读时按 modelMetaOf 补缺省）。
+ */
+function validateModelMeta(b: Record<string, unknown>, cur: ModelRouteRecord | undefined): Partial<ModelRouteRecord> {
+  const out: Partial<ModelRouteRecord> = {};
+  const pick = <K extends keyof ModelRouteRecord>(k: K): unknown => (b[k] === undefined ? cur?.[k] : b[k]);
+  const desc = pick("description");
+  if (desc !== undefined) {
+    if (desc !== null && !(typeof desc === "string" && desc.length <= 60)) throw new RoutingError(400, "model_description_invalid", "说明须为至多 60 个字符");
+    out.description = desc === null || !(desc as string).trim() ? null : (desc as string).trim();
+  }
+  const sort = pick("sort");
+  if (sort !== undefined) {
+    if (typeof sort !== "number" || !Number.isSafeInteger(sort) || sort < 0 || sort > 9999) throw new RoutingError(400, "model_sort_invalid", "排序须为 0–9999 的整数");
+    out.sort = sort;
+  }
+  const thinking = pick("thinking");
+  if (thinking !== undefined) {
+    if (!(THINKING_CONTROLS as readonly unknown[]).includes(thinking)) throw new RoutingError(400, "model_thinking_invalid", "思考方式须为 effort（调强度）、toggle（开关）或 none（不可控）");
+    out.thinking = thinking as ThinkingControl;
+  }
+  const set = <T extends string>(k: "efforts" | "capabilities" | "scopes", all: readonly T[], msg: string): void => {
+    const v = pick(k);
+    if (v === undefined) return;
+    if (!Array.isArray(v) || v.length > all.length || v.some((x) => !(all as readonly unknown[]).includes(x))) throw new RoutingError(400, `model_${k}_invalid`, msg);
+    (out as Record<string, unknown>)[k] = all.filter((x) => v.includes(x));
+  };
+  set("efforts", MODEL_EFFORTS, "档位只能是 low、high、max");
+  set("capabilities", MODEL_CAPABILITIES, "能力只能是 tool_use、thinking、long_context");
+  set("scopes", MODEL_SCOPES, "入口只能是 qa（问答）、task（任务）");
+  const th = out.thinking ?? cur?.thinking;
+  if (th !== undefined && th !== "effort" && (out.efforts ?? []).length > 0) throw new RoutingError(400, "model_efforts_invalid", "只有“调强度”的模型才有档位");
+  if ((out.scopes ?? []).includes("task") && out.capabilities !== undefined && !out.capabilities.includes("tool_use")) throw new RoutingError(400, "model_scopes_invalid", "任务入口要求模型支持工具调用（能力勾选 tool_use）");
+  const vis = pick("client_visible");
+  if (vis !== undefined) {
+    if (typeof vis !== "boolean") throw new RoutingError(400, "model_flag_invalid", "客户端可见须为 true 或 false");
+    out.client_visible = vis;
+  }
+  const ctx = pick("max_context");
+  if (ctx !== undefined) {
+    if (ctx !== null && (typeof ctx !== "number" || !Number.isSafeInteger(ctx) || ctx < 8192 || ctx > 2_000_000)) throw new RoutingError(400, "model_max_context_invalid", "上下文窗口须为 8192–2000000 的整数");
+    out.max_context = ctx as number | null;
+  }
+  return out;
+}
+
+/** 客户端模型目录里一项“为什么不可用”。 */
+export type CatalogReason = "not_in_plan" | "unpriced" | "no_route" | "disabled";
+
+/** 客户端模型目录的一项（第 66 批）：只有展示与能力字段——绝不含目标、上游、地址、密钥或上游型号。 */
+export interface ClientCatalogModel {
+  id: string;
+  label: string;
+  description: string | null;
+  sort: number;
+  thinking: ThinkingControl;
+  efforts: ModelEffort[];
+  capabilities: ModelCapability[];
+  scopes: ModelScope[];
+  max_context: number | null;
+  default: boolean;
+  available: boolean;
+  reason: CatalogReason | null;
+}
+
+/**
+ * 某个律所的客户端模型目录（签名前的文档，信封 kwl-model-catalog；纯函数）。
+ * - 只列对客户端可见的别名（client_visible !== false）；停用的也列、标 disabled（律师记住的选择被停用时界面能说清）；
+ * - available = 启用 && 有启用的上游目标（没有目标 = 未配上游、网关用本机兜底，不算缺线路）&& 套餐允许（PlanSpec.models，null = 全部）&& （金额套餐时）每个目标型号都已定价；
+ * - version = 路由版本（运营改模型、目标、价目都会升）；同一版本内套餐变化按 issued_at 先后（客户端按 (version, issued_at) 只进不退）。
+ */
+export function modelCatalogBody(r: RoutingState, plan: { models: readonly string[] | null; quota_unit: "tokens" | "cny" }, t: number, who: { tid: string; uid: string | null }) {
+  const table = currentPrices(r);
+  const live = new Set(r.providers.filter((p) => p.enabled).map((p) => p.id));
+  const def = r.models.find((m) => m.is_default)?.alias ?? "legal/k3";
+  const models: ClientCatalogModel[] = r.models
+    .map((m) => ({ m, meta: modelMetaOf(m) }))
+    .filter(({ meta }) => meta.client_visible)
+    .map(({ m, meta }) => {
+      let reason: CatalogReason | null = null;
+      if (!m.enabled) reason = "disabled";
+      // 没有目标的只可能是“首次部署未配上游”的内置别名：网关此时用本机兜底上游，不算没有线路
+      else if (m.targets.length > 0 && !m.targets.some((x) => live.has(x.provider))) reason = "no_route";
+      else if (plan.models && !plan.models.includes(m.alias)) reason = "not_in_plan";
+      else if (plan.quota_unit === "cny" && unpricedAliasesIn(r, table, [m.alias]).length > 0) reason = "unpriced";
+      return { id: m.alias, label: meta.label, description: meta.description, sort: meta.sort, thinking: meta.thinking, efforts: [...meta.efforts], capabilities: [...meta.capabilities], scopes: [...meta.scopes], max_context: meta.max_context, default: m.alias === def, available: reason === null, reason };
+    })
+    .sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id));
+  return { version: r.version, issued_at: new Date(t).toISOString(), tid: who.tid, uid: who.uid, default: def, models };
 }
 
 export function deleteModel(r: RoutingState, alias: string, t: number, by: string | null): void {
@@ -776,7 +936,8 @@ export function routingView(r: RoutingState, keyId: string | null) {
     updated_by: r.updated_by,
     routing_key_id: keyId,
     providers: r.providers.map((x) => ({ id: x.id, label: x.label, vendor: x.vendor, base_url: x.base_url, enabled: x.enabled, key_set: x.key_sealed !== null, use_local_key: x.use_local_key, key_hint: x.key_hint, key_set_at: x.key_set_at, max_concurrency: x.max_concurrency, header_timeout_ms: x.header_timeout_ms, idle_timeout_ms: x.idle_timeout_ms, probe_requested_at: x.probe_requested_at, health: mergedHealth(r, x.id) })),
-    models: r.models.map((m) => ({ ...m, builtin: (BUILTIN_ALIASES as readonly string[]).includes(m.alias) })),
+    // 第 66 批：展示与能力字段按缺省补齐后给控制台（旧记录没有这些字段）
+    models: r.models.map((m) => ({ ...m, ...modelMetaOf(m), label: m.label, builtin: (BUILTIN_ALIASES as readonly string[]).includes(m.alias) })),
     prices: { version: p.version, effective_at: p.effective_at, items: p.items, basis: p.basis ?? "alias" },
     price_history: r.prices.map((x) => ({ version: x.version, effective_at: x.effective_at, by: x.by, basis: x.basis ?? "alias" })).reverse(),
   };

@@ -132,3 +132,106 @@ export function elementStateText(e: NonNullable<OutlineBasisView["elements"]>[nu
   if (e.status === "undisputed") return { text: "双方无争议", tone: "gray" };
   return { text: "对方举证", tone: "gray" };
 }
+
+/* ── 第 66 批（V40 P0-1）：确认卡重构——先给结论与要你判断的事，细节按需展开 ── */
+
+export type OutlineTone = "ok" | "warn" | "risk" | "gray";
+
+/** 依据的短标（卡上一眼看的徽标）与完整说法（展开后看）。完整说法仍是 basisStateText，口径不变。纯函数。 */
+export function basisBadge(b: Pick<OutlineBasisView, "check" | "article_text" | "demo"> & { matched?: string | null }): { label: string; tone: OutlineTone; detail: string } {
+  const detail = basisStateText(b);
+  if (b.check === "intercepted" && b.matched === null) return { label: "法规库未收录", tone: "risk", detail };
+  if (b.check === "intercepted") return { label: "核对未通过", tone: "risk", detail };
+  if (b.check === "unverified_offline" || b.check === "unchecked") return { label: "未核实", tone: "warn", detail };
+  if (b.demo) return { label: "演示数据", tone: "warn", detail };
+  return { label: b.check === "version_verified" ? "版本已核" : b.check === "source_verified" ? "来源已核" : "已核到条", tone: "ok", detail };
+}
+
+/** 一处要律师判断的地方（卡顶“需要你判断”逐条列出，点了展开对应论点）。 */
+export interface OutlineAttention {
+  arg_id: string;
+  /** 论点序号（从 1 起）。 */
+  n: number;
+  kind: "fact" | "basis" | "analogy" | "to_prove" | "element_gap";
+  tone: "warn" | "risk";
+  text: string;
+}
+
+const clip = (s: string, n = 28) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+/**
+ * 留下的论点里要律师判断的地方（去掉的论点、去掉的依据不算）。顺序：按论点，再按“依据核对 → 类推 → 要件待证 → 事实未确认”。
+ * 同一条事实挂在多处只报一次（第一次出现的论点）。纯函数。
+ */
+export function outlineAttention(o: Pick<OutlineView, "items">, d: OutlineDraft, plain: (s: string) => string = (s) => s): OutlineAttention[] {
+  const out: OutlineAttention[] = [];
+  const seenFacts = new Set<string>();
+  o.items.forEach((x, i) => {
+    if (d.drop[x.arg_id]) return;
+    const n = i + 1;
+    const off = new Set(d.dropBasis[x.arg_id] ?? []);
+    x.basis.forEach((b, bi) => {
+      if (off.has(bi)) return;
+      const name = `《${b.matched ?? b.law}》${b.article ? `第 ${b.article} 条` : ""}`;
+      const badge = basisBadge(b);
+      if (badge.tone !== "ok") out.push({ arg_id: x.arg_id, n, kind: "basis", tone: badge.tone === "risk" ? "risk" : "warn", text: `${name}：${badge.label}，须你查官方文本` });
+      if (b.mode === "analogy") out.push({ arg_id: x.arg_id, n, kind: "analogy", tone: "warn", text: `${name}：类推适用，无直接依据` });
+      for (const e of b.elements ?? []) {
+        if (e.status === "to_prove") out.push({ arg_id: x.arg_id, n, kind: "to_prove", tone: "warn", text: `要件「${clip(plain(e.element))}」待证` });
+        else if (e.status === "fact" && e.facts.length === 0) out.push({ arg_id: x.arg_id, n, kind: "element_gap", tone: "warn", text: `要件「${clip(plain(e.element))}」标了有事实，但没挂事实` });
+      }
+    });
+    // 论点直接挂的与要件里挂的事实：只报未确认的
+    const pending = [
+      ...x.facts.filter((f) => !f.confirmed).map((f) => ({ id: f.fact_id, statement: f.statement })),
+      ...x.basis.flatMap((b, bi) => (off.has(bi) ? [] : (b.elements ?? []).flatMap((e) => e.facts.filter((f) => !f.confirmed).map((f) => ({ id: f.fact_id, statement: f.statement }))))),
+    ];
+    for (const f of pending) {
+      const key = f.id ?? `s:${f.statement}`;
+      if (seenFacts.has(key)) continue;
+      seenFacts.add(key);
+      out.push({ arg_id: x.arg_id, n, kind: "fact", tone: "warn", text: `事实「${clip(plain(f.statement))}」未经你确认` });
+    }
+  });
+  return out;
+}
+
+/** 一条论点的概况（折叠时那一行）：依据几条、要件里有事实的几条、要判断的几处。纯函数。 */
+export function argSummary(x: OutlineItemView, d: OutlineDraft, attention: readonly OutlineAttention[]): { basis: number; elements: number; elementsWithFacts: number; attention: number } {
+  const off = new Set(d.dropBasis[x.arg_id] ?? []);
+  const kept = x.basis.filter((_, i) => !off.has(i));
+  const els = kept.flatMap((b) => b.elements ?? []);
+  return {
+    basis: kept.length,
+    elements: els.length,
+    elementsWithFacts: els.filter((e) => e.status !== "to_prove" && !(e.status === "fact" && e.facts.length === 0)).length,
+    attention: attention.filter((a) => a.arg_id === x.arg_id).length,
+  };
+}
+
+/**
+ * “需要你判断”的汇总（第 66 批真实走查：起诉状一张卡 31 处，多数是原告本就要举证的“要件待证”，逐条列出又成了堆叠）。
+ * 规则：依据核对问题与类推逐条列（少而要紧）；待证要件、没挂事实的要件按论点各合成一行；未确认事实合成一行（底部可一并确认）。
+ * 顺序：风险（依据核对不过）→ 类推 → 各论点的要件 → 事实。纯函数。
+ */
+export function attentionDigest(list: readonly OutlineAttention[]): OutlineAttention[] {
+  const out: OutlineAttention[] = [];
+  const risk = list.filter((a) => a.kind === "basis");
+  const analogy = list.filter((a) => a.kind === "analogy");
+  out.push(...risk.filter((a) => a.tone === "risk"), ...risk.filter((a) => a.tone !== "risk"), ...analogy);
+  const byArg = new Map<string, { n: number; toProve: number; gap: number }>();
+  for (const a of list) {
+    if (a.kind !== "to_prove" && a.kind !== "element_gap") continue;
+    const g = byArg.get(a.arg_id) ?? { n: a.n, toProve: 0, gap: 0 };
+    if (a.kind === "to_prove") g.toProve++;
+    else g.gap++;
+    byArg.set(a.arg_id, g);
+  }
+  for (const [arg_id, g] of byArg) {
+    const parts = [g.toProve > 0 ? `${g.toProve} 个要件待证` : "", g.gap > 0 ? `${g.gap} 个要件标了有事实但没挂事实` : ""].filter(Boolean).join("，");
+    out.push({ arg_id, n: g.n, kind: g.gap > 0 ? "element_gap" : "to_prove", tone: "warn", text: `${parts}：看证据是否够` });
+  }
+  const facts = list.filter((a) => a.kind === "fact");
+  if (facts.length > 0) out.push({ arg_id: facts[0]!.arg_id, n: facts[0]!.n, kind: "fact", tone: "warn", text: `${facts.length} 条事实未经你确认（底部可一并确认）` });
+  return out;
+}

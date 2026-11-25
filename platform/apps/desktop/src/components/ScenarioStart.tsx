@@ -10,6 +10,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RuleSet, type RunPolicyView } from "../api.ts";
+import { ModelPicker, useModelCatalog } from "./ModelPicker.tsx";
+import { modelChoices } from "../lib/model-choices.ts";
 import { matterFactHints, RULES_SKILLS, type HintField } from "../lib/matter-hints.ts";
 import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.ts";
 import { notifyDataChanged } from "../lib/events.ts";
@@ -31,6 +33,7 @@ import { SendSummary } from "./SendSummary.tsx";
 import { SendPoints } from "./SendPoints.tsx";
 import { stanceLabel } from "../lib/labels.ts";
 import { RolePills, Select, type MaterialRole } from "./Select.tsx";
+import { scenarioIcon } from "./ScenarioIcon.tsx";
 import "../styles-start.css";
 
 interface Props {
@@ -69,6 +72,10 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const [extra, setExtra] = useState(() => startPanelInitial(card, initialExtra).extra);
   // 案情（第 55 批）：律师在输入框里写的长段话预填进来；开始时存成本事项的一份材料
   const [brief, setBrief] = useState(() => startPanelBrief(card, initialExtra));
+  // 第 66 批：有材料时案情栏收成一行，点开再写；材料多于 4 份时清单先收起
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
   const day = useMemo(() => localDay(), []);
   /** 已经存过的案情（同一段文字不重复存：点了“下一步：确认”又返回时）。 */
   const savedBrief = useRef<{ matter: string; text: string; id: string } | null>(null);
@@ -181,7 +188,10 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const hints = matterFactHints(card.skill, matter ? { ...matter, ...filled } : null);
   // 勾选材料的文件名按勾选顺序（回稿重审的上一稿 / 回稿、文稿体检的那一份，第 31 批）；用字符串作依赖，材料未载入时的空数组每次都是新对象
   const pickedNames = docIds.map((id) => documents.find((d) => d.document_version_id === id)?.filename ?? "").filter(Boolean).join("\n");
-  const opts = useMemo(() => ({ ...(card.skill ? { skill: card.skill } : {}), label: card.title, ...(card.skill ? { skillArgs: { ...skillArgsOf(card, values), ...docArgsFor(card, pickedNames ? pickedNames.split("\n") : []) } } : {}), ...(rules && !useRules ? { reviewRules: false } : {}), ...primaryOpt(primaryOutputOf(card, values)) }), [card, values, rules, useRules, pickedNames]);
+  // 第 66 批（V40 P0-4）：任务模型（云端模型目录；与首页同一份选择，记在本机）
+  const [models, setModels] = useModelCatalog("task", card.scenario === "a1.agent_task");
+  const model = card.scenario === "a1.agent_task" ? (models?.selected ?? null) : null;
+  const opts = useMemo(() => ({ ...(model ? { model } : {}), ...(card.skill ? { skill: card.skill } : {}), label: card.title, ...(card.skill ? { skillArgs: { ...skillArgsOf(card, values), ...docArgsFor(card, pickedNames ? pickedNames.split("\n") : []) } } : {}), ...(rules && !useRules ? { reviewRules: false } : {}), ...primaryOpt(primaryOutputOf(card, values)) }), [card, values, rules, useRules, pickedNames, model]);
 
   // 疑似姓名核对之后重新估价
   const [reestimateTick, setReestimateTick] = useState(0);
@@ -315,7 +325,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
     return Array.isArray(v) && v.length > 0 ? v : [""];
   };
   const renderField = (f: ScenarioField) => (
-    <div key={f.key} className={`ss-field${f.kind === "long" || f.kind === "list" ? " ss-field-long" : ""}`}>
+    <div key={f.key} data-field={f.key} className={`ss-field${f.kind === "long" || f.kind === "list" ? " ss-field-long" : ""}`}>
       <span className="ss-label">
         {f.label}
         {f.required ? <span className="ss-req" aria-label="必填">*</span> : null}
@@ -386,10 +396,118 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   // 转到发起确认：放在全部 hook 之后（第 29 批真实走查：早退在第 26 批新增的 useState/useEffect 之前，点“下一步：确认”整页报错）
   if (confirm) return <RunSheet pending={confirm} onClose={() => setConfirm(null)} />;
 
+  // 第 66 批（V40 P0-2）：材料段头一行写清“助手读哪些”，长句留在悬停说明里
+  const scopeShort = !docsReady || documents.length === 0 ? "" : docIds.length === 0 ? `读取全部 ${documents.length} 份` : `已选 ${docIds.length}/${documents.length} 份`;
+  const footWhy = !ready && !busy && (missing.length > 0 || needDocs > 0 || !!wordGap || noCase) ? (missing.length > 0 ? `先填写：${missing.map((f) => f.label).join("、")}` : wordGap ? "先添加或勾选要修改的 Word 文书（.docx）" : needDocs > 0 ? "先选择材料" : `先写${card.brief!.label}，或添加材料`) : "";
+  const hasDecide = mainFields.length > 0 || moreFields.length > 0 || !!rules;
+  const focusMissing = () => {
+    const root = panelRef.current;
+    if (!root) return;
+    const key = missing[0]?.key;
+    const el = key ? root.querySelector<HTMLElement>(`[data-field="${CSS.escape(key)}"]`) : needDocs > 0 || wordGap ? root.querySelector<HTMLElement>(".ss-docs") : root.querySelector<HTMLElement>(".ss-brief, .ss-brief-open");
+    if (!el) return;
+    if (key && missing[0]?.more) setMoreOpen(true);
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    requestAnimationFrame(() => el.querySelector<HTMLElement>("input, textarea, button, [tabindex]")?.focus());
+  };
+  const briefOpenDefault = !!brief || (docsReady && documents.length === 0);
+  const showBrief = !!matter && !!card.brief && (briefOpen || briefOpenDefault);
+  // 第 66 批：有必填项的卡把“这次要定的事”排在当事人之前（1440×900 下必填栏原来落在首屏外）
+  const hasParties = !!matter && !!card.needsParties && docsReady;
+  const decideFirst = card.fields.some((f) => f.required && !f.more);
+  const decideStep = decideFirst || !hasParties ? 2 : 3;
+  const partiesStep = decideFirst ? 3 : 2;
+  const shownDocs = docsOpen || documents.length <= 4 ? documents : documents.filter((d, i) => i < 3 || docIds.includes(d.document_version_id));
+  const hiddenDocs = documents.length - shownDocs.length;
+  const partiesSection = !matter ? null : (
+              <section className="ss-sec ss-step ss-parties" aria-label="当事人">
+                <div className="ss-sec-head">
+                  <div className="ss-h"><span className="ss-n" aria-hidden="true">{partiesStep}</span>当事人</div>
+                  {partiesEditable && parties.doc && (
+                    <button type="button" className="btn-ghost btn-sm ss-parties-edit" disabled={parties.loading} onClick={() => setPartiesOpen(true)}>
+                      修改
+                    </button>
+                  )}
+                </div>
+                {!parties.doc ? (
+                  <div className="ss-parties-empty ss-parties-line" title="存一次，起诉状、答辩状等文书的首部都按它写">
+                    <span className="muted">还没填：起草首部会写【待填】。</span>
+                    {partiesEditable && (
+                      <button type="button" className="btn-link" onClick={() => setPartiesOpen(true)}>
+                        现在填 →
+                      </button>
+                    )}
+                  </div>
+                ) : parties.loading ? (
+                  <div className="ss-parties-empty muted" role="status">
+                    <BusyLabel busy>载入中…</BusyLabel>
+                  </div>
+                ) : partyRows.length > 0 ? (
+                  <ul className="ss-pl">
+                    {partyRows.map((r, i) => (
+                      <li key={i} className="ss-pl-row">
+                        <div className="ss-pl-main">
+                          <span className="ss-pl-role">{r.role}</span>
+                          <span className="ss-pl-name">{r.name}</span>
+                          <span className="ss-pl-kind">{r.kind}</span>
+                          <span className={`ss-pl-state${r.missing.length > 0 ? " due" : ""}`} title={r.missing.length > 0 ? `待补：${r.missing.join("、")}` : undefined}>
+                            {r.missing.length > 0 ? `已填 ${r.filled}/${r.expected} · 待补 ${r.missing.length} 项` : `已填 ${r.filled}/${r.expected}`}
+                          </span>
+                        </div>
+                        {r.agents.length > 0 && <div className="ss-pl-agent">{agentsLine(r.agents, partiesAgentLabel)}</div>}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="ss-parties-empty muted">{parties.parties ? "已建，还没有写内容" : "已填（格式改过，点“修改”看原文）"}</div>
+                )}
+                {partiesOpen && (
+                  <PartiesDialog
+                    matter={matter}
+                    info={parties}
+                    cardId={card.id}
+                    onClose={() => setPartiesOpen(false)}
+                    onSaved={({ id, replaced }) => {
+                      setPartiesOpen(false);
+                      // 新版本不按“新导入的自动勾选”勾上（一份都没勾时勾上反而把范围缩成只有它）；勾过旧版的换成新版
+                      known.current.add(id);
+                      setDocIds((ids) => (replaced && ids.includes(replaced) ? ids.map((x) => (x === replaced ? id : x)) : ids));
+                      onDocsChanged?.();
+                    }}
+                  />
+                )}
+              </section>
+  );
+  const decideSection = (
+            <section className="ss-sec ss-step" aria-label={hasDecide ? "这次要定的事" : "补充要求"}>
+              <div className="ss-h"><span className="ss-n" aria-hidden="true">{decideStep}</span>{hasDecide ? "这次要定的事" : "补充要求"}</div>
+              {mainFields.map(renderField)}
+              {rules && (
+                <label className="ss-rules">
+                  <input type="checkbox" checked={useRules} onChange={(e) => setUseRules(e.target.checked)} />
+                  按本事项审查要点「{rules.title}」第 {rules.version} 版（{rules.rules.length} 条）{card.skill === "contract-draft" ? "起草" : "审查"}
+                </label>
+              )}
+              {moreFields.length > 0 && (
+                <>
+                  <button type="button" className={`btn-link ss-more${moreShown ? " open" : ""}`} aria-expanded={moreShown} onClick={() => setMoreOpen(!moreShown)}>
+                    <Icon.chevron /> 更多选项<span className="muted">（{moreFields.slice(0, 2).map((f) => f.label).join("、")}{moreFields.length > 2 ? ` 等 ${moreFields.length} 项` : ""}）</span>
+                  </button>
+                  {moreShown && moreFields.map(renderField)}
+                </>
+              )}
+              <label className="ss-field ss-field-long">
+                <span className="ss-label">{hasDecide ? "补充要求（可选）" : "给助手的话（可选）"}</span>
+                {/* V13 第 38 批真实走查 W3：审合同这类没有主要请求栏的卡，律师的具体指示（要哪几份文件、谈判优先级）都写在这里（346 字），单行框只看得到末尾 */}
+                <textarea aria-label="补充要求" rows={2} value={extra} placeholder="例如：重点看交割前提条件" onChange={(e) => setExtra(e.target.value)} />
+              </label>
+            </section>
+  );
+
   return (
-    <Modal title={card.title} onClose={onClose} wide>
-      <div className="ss">
-        <div className="ss-matter">
+    <Modal title={card.title} onClose={onClose} size="xl" icon={scenarioIcon(card)} subtitle={<>{LINE_LABELS[card.line]} · 交付 {getsPlain(card)[0]}{getsPlain(card).length > 1 ? ` 等 ${getsPlain(card).length} 份` : ""}</>}>
+      <div className="ss ss2" ref={panelRef}>
+        <div className="ss-matter ss-ctx">
           <span className="ss-label">事项</span>
           <span className="ss-matter-pick">
             <button type="button" className="chip" aria-haspopup="listbox" aria-expanded={matterMenu} onClick={() => setMatterMenu((v) => !v)} title={matter?.title ?? "新建事项"}>
@@ -424,9 +542,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
               </div>
             )}
           </span>
-          {matter && <span className="muted">我方：{stanceLabel(matter.stance)}</span>}
+          {matter && <span className="ss-ctx-stance">我方：{stanceLabel(matter.stance)}</span>}
+          {matter && lineMismatchText(card, matter) && <span className="ss-ctx-warn">{lineMismatchText(card, matter)}</span>}
         </div>
-        {matter && lineMismatchText(card, matter) && <div className="muted ss-mismatch">{lineMismatchText(card, matter)}</div>}
         {matter && hints.length > 0 && <FactHints matter={matter} hints={hints} onSaved={(f, v) => setFilled((cur) => ({ ...cur, [f]: v }))} />}
         {!matter && (
           <div className="ss-need">
@@ -434,265 +552,234 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             <button className="btn-link" onClick={onNewMatter}>新建事项</button>
           </div>
         )}
-        <section className="ss-sec">
-          <div className="ss-h">{card.brief ? "案情与材料" : "材料"}</div>
-          <div className="ss-hint">{card.gives}</div>
-          {matter ? (
-            <div className="ss-docs" role="group" aria-label="选择材料">
-              {!docsReady && <ListSkeleton rows={3} label="正在载入这个事项的材料" />}
-              {documents.map((d) => {
-                const on = docIds.includes(d.document_version_id);
-                return (
-                  <div key={d.document_version_id} className="ss-doc-row">
-                  <label className={`ss-doc${on ? " on" : ""}`}>
-                    <input
-                      type="checkbox"
-                      aria-label={d.filename}
-                      checked={on}
-                      onChange={() => setDocIds((ids) => (on ? ids.filter((x) => x !== d.document_version_id) : [...ids, d.document_version_id]))}
-                    />
-                    <span className="ss-doc-name">{d.filename}</span>
-                    {card.scenario === "s1b.draft_compare" && on && <span className="tag tag-gray">{order(d.document_version_id) === 1 ? "基线稿" : "对方回稿"}</span>}
-                  </label>
-                  {/* 勾选材料时顺手标用途（Z3 #15、D-4 余项），与材料表同一份数据 */}
-                  <RolePills
-                    name={d.filename}
-                    value={d.document_version_id in roles ? roles[d.document_version_id] : d.role}
-                    onChange={(v) => {
-                      setRoles((r) => ({ ...r, [d.document_version_id]: v }));
-                      void api.setMaterialRole(d.document_version_id, v).catch(() => setRoles((r) => {
-                        const { [d.document_version_id]: _, ...rest } = r;
-                        return rest;
-                      }));
-                    }}
-                  />
-                  </div>
-                );
-              })}
-              {/* V18 第 43 批：勾选就是边界——助手只读勾选的材料；一份都没勾时才可读本事项全部材料。把这条规则写在勾选框下面 */}
-              {card.scenario === "a1.agent_task" && docsReady && documents.length > 0 && <div className="ss-scope muted">{materialScopeText(docIds.length, documents.length)}</div>}
-              {/* 第 55 批：上传入口任何时候都在（原来没有材料、又不强制材料的卡连“添加文件”都不显示）；可以拖放 */}
-              {docsReady && (
-                <div
-                  className={`ss-drop${dragOver ? " over" : ""}${documents.length === 0 ? " ss-drop-empty" : ""}`}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOver(true);
-                  }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOver(false);
-                    if (e.dataTransfer.files.length > 0) void addFiles(e.dataTransfer.files);
-                  }}
-                >
-                  <span className="ss-drop-icon" aria-hidden="true"><Icon.attach /></span>
-                  {adding ? (
-                    <span role="status"><BusyLabel busy>正在添加…</BusyLabel></span>
-                  ) : (
-                    <span>
-                      {documents.length === 0 ? "本事项还没有材料。把文件拖到这里，或" : "还有材料？拖到这里，或"}
-                      <button type="button" className="btn-link ss-add" onClick={() => void pickMaterials(fileRef.current, addFiles)}>选择文件</button>
-                    </span>
-                  )}
-                </div>
-              )}
-              <input
-                ref={fileRef}
-                type="file"
-                multiple
-                hidden
-                accept={MATERIAL_ACCEPT}
-                onChange={(e) => {
-                  if (e.target.files && e.target.files.length > 0) void addFiles(e.target.files);
-                  e.target.value = "";
-                }}
-              />
-              {wordGap && <div className="ss-need">{wordGap}</div>}
-              {!wordGap && needDocs > 0 && !(canPartial && partial) && (
-                <div className="ss-need">
-                  {missingMaterialsText(card, needDocs)}
-                  {canPartial && (
-                    <button className="btn-link" onClick={() => setPartial(true)}>
-                      先开始，缺的稍后补
-                    </button>
-                  )}
-                </div>
-              )}
-              {canPartial && partial && (
-                <div className="muted">
-                  材料还不齐：会先按已有材料做，缺的列为“待补充”，无法核实的内容不会推测。{" "}
-                  <button className="btn-link" onClick={() => setPartial(false)}>
-                    改回等材料齐了再开始
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : null}
-          {/* 案情（第 55 批）：没有材料时先把情况写在这里；有材料时写材料里没有的情况 */}
-          {matter && card.brief && (
-            <label className="ss-brief">
-              <span className="ss-brief-head">
-                <span className="ss-label">
-                  {card.brief.label}
-                  {noCase ? <span className="ss-req" aria-label="必填">*</span> : null}
-                </span>
-                <span className="ss-brief-tip muted">{docsReady && documents.length === 0 && (factCounts ? factCounts.confirmed + factCounts.proposed === 0 : true) ? "没有材料时，先把情况写在这里" : "材料里没有的情况写在这里（可选）"}</span>
-              </span>
-              <textarea aria-label={card.brief.label} rows={documents.length > 0 ? 3 : 5} placeholder={card.brief.placeholder} value={brief} onChange={(e) => setBrief(e.target.value)} />
-              <span className="ss-field-help muted">会存成本事项的一份材料《{briefFilename(day).replace(/\.txt$/, "")}》，后面的任务接着用；助手把它当作你的陈述，其中的事实列为待你确认。</span>
-            </label>
-          )}
-          {/* 本事项已有的事实：开工前就说助手手里有什么 */}
-          {card.scenario === "a1.agent_task" && factCounts && factCounts.confirmed + factCounts.proposed > 0 && (
-            <div className="ss-facts muted">
-              <span className="ss-facts-dot" aria-hidden="true" />
-              {factCounts.confirmed > 0
-                ? `本事项已有 ${factCounts.confirmed} 条你确认过的事实${factCounts.proposed > 0 ? `、${factCounts.proposed} 条待确认` : ""}：确认过的直接采用${factCounts.proposed > 0 ? "，待确认的写得保守并列进核对清单" : ""}。`
-                : `本事项有 ${factCounts.proposed} 条事实还没确认：文书里会写得保守并列进核对清单；先到事项页“事实”里确认，写出来更扎实。`}
-            </div>
-          )}
-        </section>
-        {/* 当事人（D-224；第 64 批单独成段）：事项里存一次，文书首部按它写；不强制，没填不挡开始 */}
-        {matter && card.needsParties && docsReady && (
-          <section className="ss-sec ss-parties" aria-label="当事人">
-            <div className="ss-sec-head">
-              <div className="ss-h">当事人</div>
-              {partiesEditable && (
-                <button type="button" className="btn-ghost btn-sm ss-parties-edit" disabled={parties.loading} onClick={() => setPartiesOpen(true)}>
-                  {parties.doc ? "修改" : "填写当事人信息"}
-                </button>
-              )}
-            </div>
-            {!parties.doc ? (
-              <div className="ss-parties-empty">
-                <span className="muted">还没填：起草首部会写【待填】。</span>
-                {partiesEditable && (
-                  <button type="button" className="btn-link" onClick={() => setPartiesOpen(true)}>
-                    现在填 →
-                  </button>
+
+        <div className="ss-grid">
+          <div className="ss-main">
+            <section className="ss-sec ss-step" aria-label={card.brief ? "案情与材料" : "材料"}>
+              <div className="ss-sec-head">
+                <div className="ss-h"><span className="ss-n" aria-hidden="true">1</span>{card.brief ? "案情与材料" : "材料"}</div>
+                {scopeShort && (
+                  <span className="ss-scope-short" title={card.scenario === "a1.agent_task" ? materialScopeText(docIds.length, documents.length) : undefined}>
+                    {scopeShort}
+                    {docIds.length > 0 && card.scenario === "a1.agent_task" && (
+                      <button type="button" className="btn-link" onClick={() => setDocIds([])}>改为全部</button>
+                    )}
+                  </span>
                 )}
               </div>
-            ) : parties.loading ? (
-              <div className="ss-parties-empty muted" role="status">
-                <BusyLabel busy>载入中…</BusyLabel>
-              </div>
-            ) : partyRows.length > 0 ? (
-              <ul className="ss-pl">
-                {partyRows.map((r, i) => (
-                  <li key={i} className="ss-pl-row">
-                    <div className="ss-pl-main">
-                      <span className="ss-pl-role">{r.role}</span>
-                      <span className="ss-pl-name">{r.name}</span>
-                      <span className="ss-pl-kind">{r.kind}</span>
-                      <span className={`ss-pl-state${r.missing.length > 0 ? " due" : ""}`} title={r.missing.length > 0 ? `待补：${r.missing.join("、")}` : undefined}>
-                        {r.missing.length > 0 ? `已填 ${r.filled}/${r.expected} · 待补 ${r.missing.length} 项` : `已填 ${r.filled}/${r.expected}`}
-                      </span>
+              <div className="ss-hint">{card.gives}</div>
+              {matter ? (
+                <div className="ss-docs" role="group" aria-label="选择材料">
+                  {!docsReady && <ListSkeleton rows={3} label="正在载入这个事项的材料" />}
+                  {documents.length > 0 && (
+                    <div className="ss-doclist">
+                      {shownDocs.map((d) => {
+                        const on = docIds.includes(d.document_version_id);
+                        return (
+                          <div key={d.document_version_id} className={`ss-doc-row${on ? " on" : ""}`}>
+                            <label className={`ss-doc${on ? " on" : ""}`}>
+                              <input
+                                type="checkbox"
+                                aria-label={d.filename}
+                                checked={on}
+                                onChange={() => setDocIds((ids) => (on ? ids.filter((x) => x !== d.document_version_id) : [...ids, d.document_version_id]))}
+                              />
+                              <span className="ss-doc-ico" aria-hidden="true"><Icon.file /></span>
+                              <span className="ss-doc-name" title={d.filename}>{d.filename}</span>
+                              {(card.scenario === "s1b.draft_compare" || card.skill === "redraft-review") && on && <span className="tag tag-gray">{order(d.document_version_id) === 1 ? (card.skill === "redraft-review" ? "上一稿" : "基线稿") : order(d.document_version_id) === 2 ? (card.skill === "redraft-review" ? "回稿" : "对方回稿") : `第 ${order(d.document_version_id)} 份`}</span>}
+                            </label>
+                            {/* 勾选材料时顺手标用途（Z3 #15、D-4 余项），与材料表同一份数据；第 66 批：没标的平时收起，悬停或聚焦本行时显示 */}
+                            <RolePills
+                              name={d.filename}
+                              value={d.document_version_id in roles ? roles[d.document_version_id] : d.role}
+                              onChange={(v) => {
+                                setRoles((r) => ({ ...r, [d.document_version_id]: v }));
+                                void api.setMaterialRole(d.document_version_id, v).catch(() => setRoles((r) => {
+                                  const { [d.document_version_id]: _, ...rest } = r;
+                                  return rest;
+                                }));
+                              }}
+                            />
+                          </div>
+                        );
+                      })}
+                      {hiddenDocs > 0 && (
+                        <button type="button" className="ss-doc-more" onClick={() => setDocsOpen(true)}>
+                          展开其余 {hiddenDocs} 份 <Icon.down />
+                        </button>
+                      )}
                     </div>
-                    {r.agents.length > 0 && <div className="ss-pl-agent">{agentsLine(r.agents, partiesAgentLabel)}</div>}
-                  </li>
+                  )}
+                  {/* V18 第 43 批：勾选就是边界——助手只读勾选的材料；一份都没勾时才可读本事项全部材料（第 66 批：规则写在段头“读取全部 / 已选”的悬停说明里，不再重复一行） */}
+                  {/* 第 55 批：上传入口任何时候都在；可以拖放 */}
+                  {docsReady && (
+                    <div
+                      className={`ss-drop${dragOver ? " over" : ""}${documents.length === 0 ? " ss-drop-empty" : ""}`}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setDragOver(true);
+                      }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setDragOver(false);
+                        if (e.dataTransfer.files.length > 0) void addFiles(e.dataTransfer.files);
+                      }}
+                    >
+                      <span className="ss-drop-icon" aria-hidden="true"><Icon.attach /></span>
+                      {adding ? (
+                        <span role="status"><BusyLabel busy>正在添加…</BusyLabel></span>
+                      ) : (
+                        <span>
+                          {documents.length === 0 ? "本事项还没有材料。把文件拖到这里，或" : "还有材料？拖到这里，或"}
+                          <button type="button" className="btn-link ss-add" onClick={() => void pickMaterials(fileRef.current, addFiles)}>选择文件</button>
+                          <span className="ss-drop-note">存入本事项，原件只读</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    multiple
+                    hidden
+                    accept={MATERIAL_ACCEPT}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) void addFiles(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                  {wordGap && <div className="ss-need">{wordGap}</div>}
+                  {!wordGap && needDocs > 0 && !(canPartial && partial) && (
+                    <div className="ss-need">
+                      {missingMaterialsText(card, needDocs)}
+                      {canPartial && (
+                        <button className="btn-link" onClick={() => setPartial(true)}>
+                          先开始，缺的稍后补
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {canPartial && partial && (
+                    <div className="muted">
+                      材料还不齐：会先按已有材料做，缺的列为“待补充”，无法核实的内容不会推测。{" "}
+                      <button className="btn-link" onClick={() => setPartial(false)}>
+                        改回等材料齐了再开始
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+              {/* 案情（第 55 批）：没有材料时先把情况写在这里（展开、必填）；有材料时收成一行“补充材料里没有的情况” */}
+              {matter && card.brief && !showBrief && (
+                <button type="button" className="btn-link ss-brief-open" onClick={() => setBriefOpen(true)}>
+                  <Icon.plus /> 补充材料里没有的情况（可选）
+                </button>
+              )}
+              {showBrief && card.brief && (
+                <label className="ss-brief">
+                  <span className="ss-brief-head">
+                    <span className="ss-label">
+                      {card.brief.label}
+                      {noCase ? <span className="ss-req" aria-label="必填">*</span> : null}
+                    </span>
+                    <span className="ss-brief-tip muted">{docsReady && documents.length === 0 && (factCounts ? factCounts.confirmed + factCounts.proposed === 0 : true) ? "没有材料时，先把情况写在这里" : "材料里没有的情况写在这里（可选）"}</span>
+                  </span>
+                  <textarea aria-label={card.brief.label} rows={documents.length > 0 ? 3 : 5} placeholder={card.brief.placeholder} value={brief} onChange={(e) => setBrief(e.target.value)} />
+                  <span className="ss-field-help muted">会存成本事项的一份材料《{briefFilename(day).replace(/\.txt$/, "")}》，后面的任务接着用；助手把它当作你的陈述，其中的事实列为待你确认。</span>
+                </label>
+              )}
+              {/* 本事项已有的事实：开工前就说助手手里有什么 */}
+              {card.scenario === "a1.agent_task" && factCounts && factCounts.confirmed + factCounts.proposed > 0 && (
+                <div className="ss-facts muted">
+                  <span className="ss-facts-dot" aria-hidden="true" />
+                  {factCounts.confirmed > 0
+                    ? `本事项已有 ${factCounts.confirmed} 条你确认过的事实${factCounts.proposed > 0 ? `、${factCounts.proposed} 条待确认` : ""}：确认过的直接采用${factCounts.proposed > 0 ? "，待确认的写得保守并列进核对清单" : ""}。`
+                    : `本事项有 ${factCounts.proposed} 条事实还没确认：文书里会写得保守并列进核对清单；先到事项页“事实”里确认，写出来更扎实。`}
+                </div>
+              )}
+            </section>
+            {decideFirst && decideSection}
+            {hasParties && partiesSection}
+            {!decideFirst && decideSection}
+          </div>
+
+          <aside className="ss-aside" aria-label="你得到什么">
+            <div className="ss-aside-block">
+              <div className="ss-aside-h">你得到什么</div>
+              <ul className="ss-gets">
+                {getsPlain(card).map((g) => (
+                  <li key={g}><Icon.check /> {g}</li>
                 ))}
               </ul>
-            ) : (
-              <div className="ss-parties-empty muted">{parties.parties ? "已建，还没有写内容" : "已填（格式改过，点“修改”看原文）"}</div>
-            )}
-            <span className="ss-field-help muted">存一次，起诉状、答辩状等文书的首部都按它写；不填也能开始，没填的项写【待填】。</span>
-            {partiesOpen && (
-              <PartiesDialog
-                matter={matter}
-                info={parties}
-                cardId={card.id}
-                onClose={() => setPartiesOpen(false)}
-                onSaved={({ id, replaced }) => {
-                  setPartiesOpen(false);
-                  // 新版本不按“新导入的自动勾选”勾上（一份都没勾时勾上反而把范围缩成只有它）；勾过旧版的换成新版
-                  known.current.add(id);
-                  setDocIds((ids) => (replaced && ids.includes(replaced) ? ids.map((x) => (x === replaced ? id : x)) : ids));
-                  onDocsChanged?.();
-                }}
-              />
-            )}
-          </section>
-        )}
-        <section className="ss-sec">
-          {(mainFields.length > 0 || moreFields.length > 0) && <div className="ss-h">这次要定的事</div>}
-          {mainFields.map(renderField)}
-          {rules && (
-            <label className="ss-rules">
-              <input type="checkbox" checked={useRules} onChange={(e) => setUseRules(e.target.checked)} />
-              按本事项审查要点「{rules.title}」第 {rules.version} 版（{rules.rules.length} 条）{card.skill === "contract-draft" ? "起草" : "审查"}
-            </label>
-          )}
-          {moreFields.length > 0 && (
-            <>
-              <button type="button" className={`btn-link ss-more${moreShown ? " open" : ""}`} aria-expanded={moreShown} onClick={() => setMoreOpen(!moreShown)}>
-                <Icon.chevron /> 更多选项<span className="muted">（{moreFields.map((f) => f.label).join("、")}）</span>
+              <button className="btn-link ss-how" aria-expanded={how} onClick={() => setHow((v) => !v)}>
+                这个方法会怎么做 <span className={`ss-how-chev${how ? " up" : ""}`}><Icon.down /></span>
               </button>
-              {moreShown && moreFields.map(renderField)}
-            </>
-          )}
-          <label className="ss-field ss-field-long">
-            <span className="ss-label">补充要求（可选）</span>
-            {/* V13 第 38 批真实走查 W3：审合同这类没有主要请求栏的卡，律师的具体指示（要哪几份文件、谈判优先级）都写在这里（346 字），单行框只看得到末尾 */}
-            <textarea aria-label="补充要求" rows={2} value={extra} placeholder="例如：重点看交割前提条件" onChange={(e) => setExtra(e.target.value)} />
-          </label>
-        </section>
-        <section className="ss-sec">
-          <div className="ss-h">你得到什么</div>
-          <ul className="ss-gets">
-            {getsPlain(card).map((g) => (
-              <li key={g}>{g}</li>
-            ))}
-          </ul>
-          <button className="btn-link ss-how" aria-expanded={how} onClick={() => setHow((v) => !v)}>
-            这个方法会怎么做 {how ? "▾" : "▸"}
-          </button>
-          {how && (
-            <ol className="ss-steps">
-              {card.steps.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ol>
-          )}
-          <div className="ss-est" aria-live="polite">
-            {estimate ? (
-              <>
-                {estimate.estimate.points_display}
-                {/* 第 46 批：要重新登录、额度暂停时，开始前就说清原因与入口（不用等点了开始才知道） */}
-                {startHintOf(estimate.estimate.data_where?.start_hint) && <StartHintBanner hint={startHintOf(estimate.estimate.data_where?.start_hint)!} onAction={onClose} />}
-              </>
-            ) : estErr ? (
-              <span className="ss-need">{estErr}</span>
-            ) : ready ? (
-              <span className="muted" role="status">
-                <BusyLabel busy>正在估算…</BusyLabel>
-              </span>
-            ) : (
-              <span className="muted">{missing.length > 0 ? `请先填写：${missing.map((f) => f.label).join("、")}` : wordGap ? "请先选择要修改的 Word 文书" : needDocs > 0 ? "请先选择材料" : noCase ? `请先写${card.brief!.label}，或添加材料` : ""}</span>
-            )}
-          </div>
-          {/* 发送什么、发给谁：与开始前确认同一块（第 27 批，评审 U3-01：卡片路径原来只有一段折叠长句，风险句埋在括号里）。
-              发送摘要不放在 aria-live 区域里（复核 S5B-06：发送视图与核对表不应被整段朗读） */}
-          {matter && estimate && (
-            <SendPoints dataWhere={estimate.estimate.data_where}>
-              {estimate.estimate.data_where?.send_summary && (
-                <SendSummary
-                  matterId={matter.matter_id}
-                  summary={estimate.estimate.data_where.send_summary}
-                  documentIds={docIds}
-                  goal={goal}
-                  mustReview={estimate.estimate.data_where.block_kind === "suspects"}
-                  onReviewed={() => setReestimateTick((n) => n + 1)}
-                />
+              {how && (
+                <ol className="ss-steps">
+                  {card.steps.map((s) => (
+                    <li key={s}>{s}</li>
+                  ))}
+                </ol>
               )}
-            </SendPoints>
-          )}
-          {confirmedFacts === 0 && (
-            <p className="banner banner-orange">这个事项还没有确认过的事实：AI 会先用材料载明的事实做矩阵（标【未确认】，评估写“初步判断”）。到事项页“事实”里逐条确认后再做，结论更可靠。</p>
-          )}
-          {hasPrefs && <p className="ss-note muted">按你的写作偏好写（设置 · 文书与写作里可改）。</p>}
-          <p className="ss-note muted">结果都是草稿，需要你复核后使用。{card.scenario === "a1.agent_task" ? "处理中需要联网或用到当事人信息时，会先问你。" : ""}</p>
-        </section>
+            </div>
+            {models && models.models.length > 1 && (
+              <div className="ss-aside-block ss-model">
+                <div className="ss-aside-h">模型</div>
+                <ModelPicker
+                  title="任务模型"
+                  choices={modelChoices(models)}
+                  value={models.selected}
+                  onChange={(id) => void api.modelsSelect("task", id).then(() => setModels((v) => (v ? { ...v, selected: id } : v))).catch(() => {})}
+                  foot="主要步骤用所选模型，辅助步骤用 K2.6。"
+                />
+              </div>
+            )}
+            <div className="ss-aside-block ss-est" aria-live="polite">
+              <div className="ss-aside-h">预计用量</div>
+              {estimate ? (
+                <>
+                  <div className="ss-est-v">{estimate.estimate.points_display}</div>
+                  {/* 第 46 批：要重新登录、额度暂停时，开始前就说清原因与入口（不用等点了开始才知道） */}
+                  {startHintOf(estimate.estimate.data_where?.start_hint) && <StartHintBanner hint={startHintOf(estimate.estimate.data_where?.start_hint)!} onAction={onClose} />}
+                </>
+              ) : estErr ? (
+                <span className="ss-need">{estErr}</span>
+              ) : ready ? (
+                <span className="muted" role="status">
+                  <BusyLabel busy>正在估算…</BusyLabel>
+                </span>
+              ) : (
+                <span className="muted">填好左侧后估算</span>
+              )}
+            </div>
+            {/* 发送什么、发给谁：与开始前确认同一块（第 27 批，评审 U3-01）。发送摘要不放在 aria-live 区域里（复核 S5B-06） */}
+            {matter && estimate && (
+              <div className="ss-aside-block ss-aside-send">
+                <SendPoints dataWhere={estimate.estimate.data_where}>
+                  {estimate.estimate.data_where?.send_summary && (
+                    <SendSummary
+                      matterId={matter.matter_id}
+                      summary={estimate.estimate.data_where.send_summary}
+                      documentIds={docIds}
+                      goal={goal}
+                      mustReview={estimate.estimate.data_where.block_kind === "suspects"}
+                      onReviewed={() => setReestimateTick((n) => n + 1)}
+                    />
+                  )}
+                </SendPoints>
+              </div>
+            )}
+            <div className="ss-aside-notes">
+              {hasPrefs && <p className="ss-note muted">按你的写作偏好写（设置 · 文书与写作里可改）。</p>}
+              <p className="ss-note muted">结果都是草稿，需要你复核后使用。{card.scenario === "a1.agent_task" ? "处理中需要联网或用到当事人信息时，会先问你。" : ""}</p>
+            </div>
+          </aside>
+        </div>
+
+        {confirmedFacts === 0 && (
+          <p className="banner banner-orange">这个事项还没有确认过的事实：AI 会先用材料载明的事实做矩阵（标【未确认】，评估写“初步判断”）。到事项页“事实”里逐条确认后再做，结论更可靠。</p>
+        )}
         {/* 选项指向别的卡（第 26 批，评审 S2-03）：例如“收到的是劳动仲裁申请书”改用“劳动仲裁应对” */}
         {fieldRedirect(card, values) && (
           <div className="banner banner-orange">
@@ -709,7 +796,12 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
         {err && <div className="banner banner-red">{err}</div>}
         {/* 底部按钮贴底（第 26 批走查：1280×720 下“开始审查”在首屏之外，要先滚到底才看得到）；还不能开始时左边写缺什么 */}
         <div className="modal-actions modal-actions-sticky">
-          {!ready && !busy && (missing.length > 0 || needDocs > 0 || !!wordGap || noCase) && <span className="muted ss-foot-why">{missing.length > 0 ? `先填写：${missing.map((f) => f.label).join("、")}` : wordGap ? "先添加或勾选要修改的 Word 文书（.docx）" : needDocs > 0 ? "先选择材料" : `先写${card.brief!.label}，或添加材料`}</span>}
+          {!ready && !busy && footWhy && (
+            // 第 66 批：点“先填写：X”滚到并聚焦第一个没填的栏（必填栏可能在首屏外）
+            <button type="button" className="btn-link ss-foot-why" onClick={() => focusMissing()}>
+              {footWhy}
+            </button>
+          )}
           {card.scenario === "a1.agent_task" && (
             <label className="ss-plan-first" title="勾选后，助手先把打算怎么做写给你，你同意了才开始；不勾就直接按这张卡的步骤做。">
               <input type="checkbox" checked={planFirst} onChange={(e) => setPlanFirst(e.target.checked)} />
@@ -756,33 +848,41 @@ function FactHints({ matter, hints, onSaved }: { matter: Matter; hints: ReturnTy
     }
   };
   const readOnly = (matter.lifecycle ?? "active") !== "active" || !!matter.is_sample;
+  // 第 66 批：几项补全合成一行（“这个事项还缺：阶段、事件时点”），点哪项就地填哪项
+  const cur = hints.find((h) => h.field === open) ?? null;
   return (
     <div className="ss-hints muted">
-      {hints.map((h) => (
-        <div key={h.field} className="ss-hint-row">
-          这个事项还没填{h.label}：{h.why}。
-          {!readOnly && open !== h.field && (
-            <button className="btn-link" onClick={() => { setOpen(h.field); setV(""); setErr(""); }}>
-              填写
-            </button>
+      <div className="ss-hint-row">
+        这个事项还缺：
+        {hints.map((h, i) => (
+          <span key={h.field}>
+            {i > 0 ? "、" : ""}
+            {readOnly ? (
+              <span title={h.why}>{h.label}</span>
+            ) : (
+              <button className="btn-link ss-hint-btn" title={h.why} aria-expanded={open === h.field} onClick={() => { setOpen(open === h.field ? null : h.field); setV(""); setErr(""); }}>
+                {h.label}
+              </button>
+            )}
+          </span>
+        ))}
+        <span className="ss-hint-why">{cur ? `（${cur.why}）` : "（填了更准，不填也能开始）"}</span>
+      </div>
+      {cur && (
+        <span className="ss-hint-edit">
+          {cur.field === "stage" ? (
+            <Select aria-label={cur.label} value={v} placeholder="选一个阶段" onChange={(x) => void save("stage", x)} options={stagesFor(matter.stance).map((st) => ({ value: st, label: STAGE_LABELS[st] }))} />
+          ) : (
+            <>
+              <input aria-label={cur.label} value={v} onChange={(e) => setV(e.target.value)} placeholder={cur.field === "event_date" ? "2023-05 或 2023-05-06" : "如 上海市"} maxLength={cur.field === "region" ? 20 : 10} size={14} />
+              <button className="btn-ghost btn-sm" disabled={busy || !v.trim()} aria-busy={busy} onClick={() => void save(cur.field, v)}>
+                <BusyLabel busy={busy} busyText="正在保存…">保存</BusyLabel>
+              </button>
+            </>
           )}
-          {open === h.field && (
-            <span className="ss-hint-edit">
-              {h.field === "stage" ? (
-                <Select aria-label={h.label} value={v} placeholder="选一个阶段" onChange={(x) => void save("stage", x)} options={stagesFor(matter.stance).map((st) => ({ value: st, label: STAGE_LABELS[st] }))} />
-              ) : (
-                <>
-                  <input aria-label={h.label} value={v} onChange={(e) => setV(e.target.value)} placeholder={h.field === "event_date" ? "2023-05 或 2023-05-06" : "如 上海市"} maxLength={h.field === "region" ? 20 : 10} size={14} />
-                  <button className="btn-ghost btn-sm" disabled={busy || !v.trim()} aria-busy={busy} onClick={() => void save(h.field, v)}>
-                    <BusyLabel busy={busy} busyText="正在保存…">保存</BusyLabel>
-                  </button>
-                </>
-              )}
-              <button className="btn-link" onClick={() => setOpen(null)}>取消</button>
-            </span>
-          )}
-        </div>
-      ))}
+          <button className="btn-link" onClick={() => setOpen(null)}>取消</button>
+        </span>
+      )}
       {err && <div className="ss-need">{err}</div>}
     </div>
   );

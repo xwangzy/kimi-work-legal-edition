@@ -104,7 +104,8 @@ test("首页（Kimi 版式；第 47 批）：字标、输入框上方提示条�
   assert.match(home, /className="scene-list"/);
   assert.match(home, /const CHIP_LIMIT = 6;/);
   assert.match(home, /HOME_TABS: HomeTab\[\] = \["recommended", "litigation", "transactional", "inhouse", "general"\]/);
-  assert.match(home, /className="home-foot"/);
+  // 第 66 批：首页固定页脚去掉（说明按场景出现）
+  assert.doesNotMatch(home, /className="home-foot"/);
   assert.doesNotMatch(home, /className="cards scenario-cards"/, "首屏不再放大块卡片网格");
   const composer = src("components/Composer.tsx");
   assert.match(composer, /className="composer-notice"/);

@@ -5,11 +5,15 @@
  * 第 47 批：运行模式移到“+”右边、右下显示模型（只读）、托盘没选事项时写“选择事项”。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type RunPolicyView } from "../api.ts";
+import { api, MATERIAL_ACCEPT, pickMaterials, type Matter, type MaterialFile, type MaterialImportResult, type RunPolicyView } from "../api.ts";
+import { MaterialPicker } from "./MaterialPicker.tsx";
+import { RolePills, type MaterialRole } from "./Select.tsx";
+import { ModelPicker, type ModelChoice } from "./ModelPicker.tsx";
 import { Icon } from "./Icons.tsx";
 import { ModeSelector, type ModeChoice } from "./ModeSelector.tsx";
 import { clipTitle, SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
 import { getsPlain, LINE_LABELS, SCENARIOS, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
+import "../styles-composer.css";
 
 /** 发送快捷键的写法：macOS 写 ⌘ + Enter，其余写 Ctrl + Enter。 */
 const SEND_KEY = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform) ? "⌘ + Enter" : "Ctrl + Enter";
@@ -34,7 +38,17 @@ export function Composer(props: {
   policy: RunPolicyView | null | undefined;
   value: ComposerValue;
   onChange: (v: ComposerValue) => void;
-  onImport: (files: FileList | MaterialFile[]) => void;
+  onImport: (files: FileList | MaterialFile[] | File[]) => void;
+  /** 第 66 批：弹层里逐份导入（与开始面板、事项页、追问同一个 MaterialPicker），返回 materials.import 的结果。 */
+  importOne?: (file: MaterialFile) => Promise<MaterialImportResult>;
+  /** 一批导入完：刷新材料列表。 */
+  onImported?: () => void;
+  /** 勾选 / 取消一份材料（函数式更新，批量导入时逐份自动勾上不丢）。 */
+  onToggleDoc?: (documentVersionId: string, on: boolean) => void;
+  /** 第 66 批：任务模型（来自云端模型目录；不传时只显示“K3”）。 */
+  models?: ModelChoice[];
+  model?: string | null;
+  onModelChange?: (id: string) => void;
   onSubmit: () => void;
   busy?: boolean;
   /** 忙时“不能发送”的原因（第 51 批）：导入材料时写“正在导入材料…”，不再一律写“正在发起…”。 */
@@ -55,6 +69,11 @@ export function Composer(props: {
   const { value, onChange } = props;
   const [menu, setMenu] = useState<"method" | "material" | "matter" | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // 第 66 批（V40 P0-4）：拖到输入框上的文件；没选事项时先暂存，选好事项再存进去
+  const [dragOver, setDragOver] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  /** 弹层里刚改过的用途（保存失败即撤回）。 */
+  const [roles, setRoles] = useState<Record<string, MaterialRole | null>>({});
   const boxRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
   // ⌘ / Ctrl + K（新建任务）：把光标放进输入框
@@ -72,10 +91,50 @@ export function Composer(props: {
     return () => document.removeEventListener("mousedown", close);
   }, [menu]);
   const matter = props.matters?.find((m) => m.matter_id === props.matterId) ?? null;
+  useEffect(() => {
+    if (!props.matterId || !pendingFiles) return;
+    props.onImport(pendingFiles);
+    setPendingFiles(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.matterId, pendingFiles]);
+  const pickFiles = () => void pickMaterials(fileRef.current, props.onImport);
+  const takeDrop = (files: FileList) => {
+    const list = Array.from(files);
+    if (list.length === 0) return;
+    if (props.matterId) props.onImport(list);
+    else {
+      setPendingFiles(list);
+      setMenu("material");
+    }
+  };
   const canSend = !props.busy && !!props.matterId && (value.goal.trim().length > 0 || value.scenario !== "a1.agent_task");
   const blockedReason = props.busy ? (props.busyText ?? "正在发起…") : !props.matterId ? "先选事项" : "先写任务目标";
   return (
-    <div className="composer-shell" ref={boxRef} data-tour="composer">
+    <div
+      className={`composer-shell${dragOver ? " drag-over" : ""}`}
+      ref={boxRef}
+      data-tour="composer"
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+      }}
+      onDrop={(e) => {
+        setDragOver(false);
+        // 弹层里的材料组件已经接住了（它会 preventDefault）：外层不再导入一次
+        if (e.defaultPrevented || !e.dataTransfer.files.length) return;
+        e.preventDefault();
+        takeDrop(e.dataTransfer.files);
+      }}
+    >
+      {dragOver && (
+        <div className="composer-drop" aria-hidden="true">
+          <Icon.attach /> {matter ? <>松手即存入「{clipTitle(matter.title)}」</> : "松手后选择要放进的事项"}
+        </div>
+      )}
       {props.notice && <div className="composer-notice">{props.notice}</div>}
       <div className="composer">
       <textarea
@@ -129,7 +188,7 @@ export function Composer(props: {
       )}
       <div className="composer-bar">
         {/* Kimi 同款左下“+”：导入材料（Word、PDF、图片……）；方法与事项材料在下方托盘 */}
-        <button className="tool tool-plus" title={props.matterId ? "导入材料" : "先选事项，再导入材料"} aria-label="导入材料" disabled={!props.matterId} onClick={() => void pickMaterials(fileRef.current, props.onImport)}><Icon.plus /></button>
+        <button className="tool tool-plus" title={props.matterId ? `添加材料到「${matter?.title ?? "本事项"}」` : "添加材料（先选放进哪个事项）"} aria-label="添加材料" onClick={() => (props.matterId ? pickFiles() : setMenu("material"))}><Icon.plus /></button>
         <input
           ref={fileRef}
           type="file"
@@ -145,7 +204,11 @@ export function Composer(props: {
         {value.scenario === "a1.agent_task" && <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />}
         <span className="spacer" />
         {/* 模型（Kimi 输入框右下同位）：任务固定用 K3（子步骤用 K2.6），具体型号由律所的云端路由决定——只显示、不做假的下拉 */}
-        <span className="model-label" title="任务由 Kimi K3 处理（辅助步骤用 K2.6）；具体型号由律所的云端路由决定">K3</span>
+        {props.models && props.models.length > 0 && props.onModelChange ? (
+          <ModelPicker title="任务模型" choices={props.models} value={props.model ?? null} onChange={props.onModelChange} foot="任务的主要步骤用所选模型，辅助步骤用 K2.6；按实际用量计入你的额度。" />
+        ) : (
+          <span className="model-label" title="任务由 Kimi K3 处理（辅助步骤用 K2.6）">K3</span>
+        )}
         {/* 可以发送时提示快捷键（Z3 §8.2 #32）；不能发送时写原因（余项续复核 RC-B-15） */}
         {/* 只缺任务目标时不再写“先写任务目标”（占位符已经说了，U1 §1.2）；读屏标签与悬停仍说明原因 */}
         <span className="send-hint muted" aria-live="polite">{canSend ? `${SEND_KEY} 发送` : blockedReason === "先写任务目标" ? "" : blockedReason}</span>
@@ -167,8 +230,8 @@ export function Composer(props: {
         <button className="tray-btn" title="法律方法（也可以在输入框里打 /）" onClick={() => setMenu(menu === "method" ? null : "method")} aria-haspopup="listbox" aria-expanded={menu === "method"}>
           <Icon.plug /> 方法
         </button>
-        <button className="tray-btn" title="选用本事项的材料（也可以在输入框里打 @）" disabled={!props.matterId} onClick={() => setMenu(menu === "material" ? null : "material")} aria-haspopup="listbox" aria-expanded={menu === "material"}>
-          <Icon.at /> 材料
+        <button className={`tray-btn${value.documentIds.length > 0 ? " on" : ""}`} title="选用或添加本事项的材料（也可以在输入框里打 @）" onClick={() => setMenu(menu === "material" ? null : "material")} aria-haspopup="dialog" aria-expanded={menu === "material"}>
+          <Icon.at /> 材料{props.matterId && props.documents.length > 0 ? <span className="tray-count">{value.documentIds.length > 0 ? `${value.documentIds.length}/${props.documents.length}` : props.documents.length}</span> : null}
         </button>
         <span className="spacer" />
         {(matter?.stance ?? props.stance) ? <span className="ctx-stance">我方：{stanceLabel(matter?.stance ?? props.stance)}</span> : null}
@@ -210,27 +273,80 @@ export function Composer(props: {
         </div>
       )}
       {menu === "material" && (
-        <div className="popover composer-menu">
-          <div className="menu-title">事项材料（原件只读；助手看到的是已替换代号的版本）</div>
-          {props.documents.length === 0 && <div className="menu-empty">本事项还没有材料，先“导入”。</div>}
-          {props.documents.map((d) => {
-            const on = value.documentIds.includes(d.document_version_id);
-            return (
+        <div className="popover composer-menu mat-pop" role="dialog" aria-label="事项材料">
+          {!props.matterId ? (
+            // 没选事项：先定放进哪个事项（文件必须有归属，D-203 事项即保密边界）
+            <>
+              <div className="mat-pop-head">
+                <div className="mat-pop-title">{pendingFiles ? `${pendingFiles.length} 份文件放进哪个事项？` : "先选择要放进的事项"}</div>
+                <div className="mat-pop-sub">材料按事项保存与处理，代号替换与客户授权都跟着事项走</div>
+              </div>
+              <div className="mat-pop-list">
+                {(props.matters ?? []).map((m) => (
+                  <button key={m.matter_id} className="menu-item" onClick={() => props.onMatterChange?.(m.matter_id)}>
+                    <span className="menu-label"><Icon.folder /> {m.title}</span>
+                    <span className="menu-desc">我方：{stanceLabel(m.stance)}</span>
+                  </button>
+                ))}
+              </div>
               <button
-                key={d.document_version_id}
-                className={`menu-item${on ? " selected" : ""}`}
-                onClick={() =>
-                  onChange({
-                    ...value,
-                    goal: value.goal.replace(/@$/, ""),
-                    documentIds: on ? value.documentIds.filter((x) => x !== d.document_version_id) : [...value.documentIds, d.document_version_id],
-                  })
-                }
+                className="menu-item menu-new"
+                onClick={() => {
+                  props.onNewMatter?.();
+                  setMenu(null);
+                }}
               >
-                <span className="menu-label">{on ? "✓ " : ""}{d.filename}</span>
+                <span className="menu-label"><Icon.plus /> {pendingFiles ? "用这些文件新建事项" : "新建事项"}</span>
               </button>
-            );
-          })}
+            </>
+          ) : (
+            <>
+              <div className="mat-pop-head">
+                <div className="mat-pop-title">
+                  <Icon.folder /> {clipTitle(matter?.title ?? "本事项")}
+                  <span className="mat-pop-count">{props.documents.length} 份材料</span>
+                </div>
+                <div className="mat-pop-sub">原件只读；发给 AI 的是替换过代号的版本。{value.documentIds.length > 0 ? `本次只读勾选的 ${value.documentIds.length} 份。` : props.documents.length > 0 ? `不勾选时，AI 可读全部 ${props.documents.length} 份。` : ""}</div>
+              </div>
+              <div className="mat-pop-body">
+                <MaterialPicker
+                  matterTitle={matter?.title ?? "本事项"}
+                  documents={props.documents}
+                  selected={value.documentIds}
+                  onToggle={(id, on) =>
+                    props.onToggleDoc
+                      ? props.onToggleDoc(id, on)
+                      : onChange({ ...value, goal: value.goal.replace(/@$/, ""), documentIds: on ? [...value.documentIds, id] : value.documentIds.filter((x) => x !== id) })
+                  }
+                  {...(props.importOne ? { onImport: props.importOne } : {})}
+                  {...(props.onImported ? { onImported: () => props.onImported?.() } : {})}
+                  // 用途（我方 / 对方 / 参考）在这里也能直接改，与开始面板、事项页同一份数据
+                  rowExtra={(d) => (
+                    <RolePills
+                      name={d.filename}
+                      value={d.document_version_id in roles ? roles[d.document_version_id] : ((d as { role?: MaterialRole | null }).role ?? null)}
+                      onChange={(v) => {
+                        setRoles((r) => ({ ...r, [d.document_version_id]: v }));
+                        void api.setMaterialRole(d.document_version_id, v).catch(() =>
+                          setRoles((r) => {
+                            const { [d.document_version_id]: _drop, ...rest } = r;
+                            return rest;
+                          }),
+                        );
+                      }}
+                    />
+                  )}
+                  compact
+                />
+              </div>
+              {value.documentIds.length > 0 && (
+                <div className="mat-pop-foot">
+                  <span>已选 {value.documentIds.length} 份</span>
+                  <button className="btn-link" onClick={() => onChange({ ...value, documentIds: [] })}>改为可读全部</button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
       {menu === "matter" && props.matters && (

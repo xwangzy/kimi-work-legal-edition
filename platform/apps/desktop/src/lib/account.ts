@@ -229,7 +229,7 @@ export function deviceLine(d: AccountDevice, now = Date.now()): { title: string;
   const seen = d.last_seen_on && regDay && /^\d{4}-\d{2}-\d{2}$/.test(d.last_seen_on) && d.last_seen_on < regDay ? regDay : d.last_seen_on;
   const version = d.client_version && d.client_version !== "legacy" ? d.client_version : null;
   const meta = [`${dayLabel(d.registered_at, now)}登记`, seen ? `最近使用 ${dayLabel(seen, now)}` : "", version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
-  const state = d.revoked_at ? { text: "已解绑", tone: "bad" as const } : d.session === "active" ? { text: "已登录", tone: "ok" as const } : { text: "未登录", tone: "gray" as const };
+  const state = d.revoked_at ? { text: "已移除", tone: "bad" as const } : d.session === "active" ? { text: "已登录", tone: "ok" as const } : { text: "未登录", tone: "gray" as const };
   return { title, meta, state };
 }
 

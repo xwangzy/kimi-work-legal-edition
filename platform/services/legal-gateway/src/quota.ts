@@ -355,9 +355,10 @@ export class LeaseQuota implements QuotaSource {
   private take(key: string, req: ReserveRequest, price: UnitPricer): QuotaHold | ReserveResult | null {
     const list = this.usable(key);
     for (const l of list) {
+      // 第 66 批：先判套餐权限、后判价格——金额套餐下未定价又不在套餐里的别名，应报“套餐不含”（客户端据此置灰并提示换模型），而不是“未定价”
+      if (l.allowedAliases && !l.allowedAliases.has(req.alias)) return { ok: false, status: 403, code: "model_not_allowed", message: "本所的套餐不含这个模型：请联系律所管理员" };
       const units = price(l.unit);
       if (units === null) return PRICE_UNCONFIGURED;
-      if (l.allowedAliases && !l.allowedAliases.has(req.alias)) return { ok: false, status: 403, code: "model_not_allowed", message: "本所的套餐不含这个模型：请联系律所管理员" };
       if (l.remaining >= units) {
         l.remaining -= units;
         l.holds += 1;

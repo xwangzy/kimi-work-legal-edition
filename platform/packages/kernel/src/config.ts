@@ -127,7 +127,7 @@ export function validActivation(raw: unknown): ActivationFile | null {
     // 设备编号只许本成员的第 1～9 台（不能借激活记录冒用别人的编号）
     if (a.device_id !== undefined) {
       const base = `dev_${a.firm_slug}_${a.member_slug}`;
-      if (typeof a.device_id !== "string" || !(a.device_id === base || (a.device_id.startsWith(base) && /^_D[2-9]$/.test(a.device_id.slice(base.length))))) return null;
+      if (typeof a.device_id !== "string" || !(a.device_id === base || (a.device_id.startsWith(base) && /^_D(?:[2-9]|[1-9]\d{1,2})$/.test(a.device_id.slice(base.length))))) return null;
     }
     return a as ActivationFile;
   } catch {

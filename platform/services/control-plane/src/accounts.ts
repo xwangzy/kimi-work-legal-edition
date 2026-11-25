@@ -44,6 +44,30 @@ export interface AccountRecord {
   phone?: AccountPhone | null;
   /** 第 62 批：凭哪个注册邀请码注册（inv_…；运营的使用记录据此关联）。 */
   invite_id?: string | null;
+  /**
+   * 第 66 批（V40）：最近的登录与新电脑自动登记（至多 20 条，新的在前）。只记时刻、客户端平台与版本、设备编号与粗粒度网段
+   * （IPv4 前两段、IPv6 前两组；不存完整 IP、不做地理定位）——“登录过的电脑”与“新电脑登录”提醒、短时多地判断用。
+   */
+  logins?: LoginRecord[];
+}
+
+export interface LoginRecord {
+  at: string;
+  kind: "login" | "enroll";
+  device_id: string | null;
+  platform: string | null;
+  version: string | null;
+  net: string;
+}
+
+/** 粗粒度网段（第 66 批）：IPv4 → a.b.x.x；IPv6 → 前两组 + ::/32；回环与未知原样归类。 */
+export function coarseNet(addr: string | null | undefined): string {
+  const a = String(addr ?? "").replace(/^::ffff:/i, "");
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(a);
+  if (v4) return `${v4[1]}.${v4[2]}.x.x`;
+  if (a === "::1") return "本机";
+  if (/^[0-9a-f:]+$/i.test(a) && a.includes(":")) return `${a.split(":").slice(0, 2).join(":")}::/32`;
+  return "未知";
 }
 
 export interface AccountPhone {
@@ -102,6 +126,12 @@ export const LOCK_AFTER_FAILURES = 10;
 export const LOCK_WINDOW_MS = 15 * 60_000;
 export const LOCK_MS = 15 * 60_000;
 export const MAX_DEVICES_PER_ACCOUNT = 9;
+/**
+ * 第 66 批（V40，D-292）：个人账号不设套餐台数上限，只留防滥用硬上限——同时有效的电脑超过 20 台时自动吊销最久未用的一台（不拒绝登录）；
+ * 编号不复用，个人账号的编号到 _D999 为止。
+ */
+export const PERSONAL_DEVICE_HARD_CAP = 20;
+export const PERSONAL_DEVICE_NUMBER_MAX = 999;
 
 const EMAIL_RE = /^[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+$/;
 const SCRYPT = { N: 32768, r: 8, p: 1, maxmem: 96 * 1024 * 1024 } as const;
@@ -238,6 +268,7 @@ export function accountDeviceId(firmSlug: string, memberSlug: string, n: number)
 export function accountDeviceIndex(firmSlug: string, memberSlug: string, deviceId: string): number {
   const base = `dev_${firmSlug}_${memberSlug}`;
   if (deviceId === base) return 1;
-  const m = /^_D([2-9])$/.exec(deviceId.slice(base.length));
+  // 第 66 批：个人账号的编号可到 _D999（多人律所仍在 _D9 以内，由 MAX_DEVICES_PER_ACCOUNT 管）
+  const m = /^_D([2-9]|[1-9]\d{1,2})$/.exec(deviceId.slice(base.length));
   return deviceId.startsWith(base) && m ? Number(m[1]) : 0;
 }

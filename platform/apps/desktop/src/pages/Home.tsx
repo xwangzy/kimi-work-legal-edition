@@ -5,10 +5,13 @@
  * 描述任务即可，命中业务场景时给出建议、不自动切换；点胶囊是两段式开始面板（“给什么 → 得到什么”的完整口径在面板里与悬停提示里）。
  * 所有场景尚未通过法律质量门槛：胶囊上不逐张标“试用”，页脚统一写一行（Z3 #16、V-a）。
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, type Matter, type MaterialFile, type QuotaStatus, type ReminderItem, type RunPolicyView } from "../api.ts";
+import { modelChoices } from "../lib/model-choices.ts";
+import { useModelCatalog } from "../components/ModelPicker.tsx";
 import { consumeNewMatterRequest, nav, NEW_MATTER } from "../App.tsx";
 import { quotaNotice } from "../lib/quota-notice.ts";
+import { importResultText, visibleMaterials, type MaterialLike } from "../lib/material-folder.ts";
 import { recommendedCards } from "../lib/recommend.ts";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { defaultChoice } from "../components/ModeSelector.tsx";
@@ -53,20 +56,8 @@ function tabIcon(t: HomeTab): ReactNode {
 }
 
 
-/** 场景胶囊的图标：按场景名里的动作挑一个（Kimi 能力胶囊每个都带线性图标）。 */
-export function scenarioIcon(c: Pick<ScenarioCard, "title">): ReactNode {
-  const t = c.title;
-  if (/函|催告/.test(t)) return Icon.mail();
-  if (/测算|计算/.test(t)) return Icon.calc();
-  if (/审|核|比对|体检/.test(t)) return Icon.fileCheck();
-  if (/起草|申请|决议|董事会|代理词|对外版|文件/.test(t)) return Icon.pen();
-  if (/争点|分析|策略|评估|风险|质证|庭审/.test(t)) return Icon.scale();
-  if (/研究|问答|答复|检索|法规/.test(t)) return Icon.book();
-  if (/尽调|调查/.test(t)) return Icon.search();
-  if (/清单|纪要|案卷|整理/.test(t)) return Icon.folder();
-  if (/汇报|报告/.test(t)) return Icon.board();
-  return Icon.compass();
-}
+import { scenarioIcon } from "../components/ScenarioIcon.tsx";
+export { scenarioIcon };
 
 export function Home({ presetMatterId, startScenario }: { presetMatterId?: string | undefined; startScenario?: string | undefined }) {
   const [matters, setMatters] = useState<Matter[]>([]);
@@ -166,7 +157,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
         }
         setMatters(open);
         setMattersLoaded(true);
-        setMatterId((cur) => (cur && open.some((m) => m.matter_id === cur) ? cur : open[0]?.matter_id ?? null));
+        // 第 66 批：缺省停在上次用过的事项（原来一律停在第一个，导入的文件容易放错事项）
+        setMatterId((cur) => (cur && open.some((m) => m.matter_id === cur) ? cur : lastMatterOf(open) ?? open[0]?.matter_id ?? null));
       })
       .catch(() => setMsg(backendDownText(import.meta.env.DEV)));
   }, []);
@@ -183,6 +175,21 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   useEffect(() => {
     void api.quotaStatus().then(setQuota).catch(() => setQuota(null));
   }, []);
+  // 第 66 批（V40 P0-4）：任务模型来自云端模型目录（套餐与路由决定哪些可选）；选了记在本机，发起任务时带给内核
+  const [taskModels, setTaskModels] = useModelCatalog("task");
+  const [modelMsg, setModelMsg] = useState("");
+  const unavail = taskModels?.selected_unavailable;
+  useEffect(() => {
+    if (unavail) setModelMsg(`上次选的「${unavail.label}」暂时不能用（${unavail.reason_text ?? "云端已调整"}），已换回「${taskModels?.models.find((m) => m.id === taskModels.default)?.label ?? "缺省模型"}」。`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unavail?.id]);
+  const chooseTaskModel = (id: string) => {
+    setModelMsg("");
+    void api
+      .modelsSelect("task", id)
+      .then(() => setTaskModels((v) => (v ? { ...v, selected: id } : v)))
+      .catch((e) => setModelMsg((e as Error).message));
+  };
   useEffect(() => {
     loadMatters();
     api.pending().then((r) => setPendingReview(r.pending)).catch(() => {});
@@ -218,6 +225,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   useEffect(() => {
     if (matterId) loadMatter(matterId);
   }, [matterId, loadMatter]);
+  // 材料弹层只列当前有效的那一版（同一位置被新版本取代的旧版不列，与开始面板同一口径）
+  const visibleDocs = useMemo(() => visibleMaterials(docs as MaterialLike[], { hideOldVersions: true }), [docs]);
   const submit = async () => {
     const matter = matters.find((m) => m.matter_id === matterId);
     if (!matter) return setNewMatter(true);
@@ -227,7 +236,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
       // 没勾材料 = 全部材料（第 48 批：不含被同一位置新版本取代的旧版本）
       const old = new Set(docs.map((d) => (d as { supersedes?: string | null }).supersedes).filter((x): x is string => !!x));
       const v = value.documentIds.length === 0 && value.scenario !== "a1.agent_task" ? { ...value, documentIds: docs.filter((d) => !old.has(d.document_version_id)).map((d) => d.document_version_id) } : value;
-      setSheet(await prepareStart(matter, v, { docNames: docs.filter((d) => v.documentIds.includes(d.document_version_id)).map((d) => d.filename) }));
+      setSheet(await prepareStart(matter, v, { docNames: docs.filter((d) => v.documentIds.includes(d.document_version_id)).map((d) => d.filename), ...(taskModels?.selected ? { model: taskModels.selected } : {}) }));
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -235,8 +244,9 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     }
   };
 
-  const importFiles = async (files: FileList | MaterialFile[]) => {
+  const importFiles = async (files: FileList | MaterialFile[] | File[]) => {
     if (!matterId) return;
+    const title = matters.find((m) => m.matter_id === matterId)?.title ?? "本事项";
     setBusy(true);
     // 逐个导入：一份失败（例如带密级标志被拒）不影响其余文件，结果逐条告诉律师
     const lines: string[] = [];
@@ -248,9 +258,10 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
       for (const [i, f] of list.entries()) {
         setImporting({ done: i, total: list.length, name: f.name, since });
         try {
-          const r = await api.importMaterial(matterId, f);
-          setValue((v) => ({ ...v, documentIds: [...v.documentIds, r.document_version_id] }));
-          lines.push(`已添加 ${f.name}（${r.chars.toLocaleString()} 字）${r.marking_notice ? `。${r.marking_notice}` : ""}`);
+          const r = (await api.importMaterial(matterId, f as MaterialFile)) as Awaited<ReturnType<typeof api.importMaterial>> & { duplicate?: boolean; filename?: string };
+          setValue((v) => ({ ...v, documentIds: v.documentIds.includes(r.document_version_id) ? v.documentIds : [...v.documentIds, r.document_version_id] }));
+          // 第 66 批：写明存进了哪个事项；同一份内容已在本事项时不重复保存（内核按内容摘要去重）
+          lines.push(`「${title}」· ${f.name}：${importResultText(f.name, r)}`);
         } catch (e) {
           fails.push(importFailText(f.name, (e as Error).message));
         }
@@ -340,13 +351,18 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             onMatterChange={(id) => {
               matterChosen.current = true;
               setMatterId(id);
+              rememberMatter(id);
             }}
             onNewMatter={() => setNewMatter(true)}
-            documents={docs}
+            documents={visibleDocs}
             policy={policy}
             value={value}
             onChange={setValue}
             onImport={(f) => void importFiles(f)}
+            importOne={(f) => api.importMaterial(matterId!, f)}
+            onImported={() => matterId && loadMatter(matterId)}
+            {...(taskModels ? { models: modelChoices(taskModels), model: taskModels.selected, onModelChange: chooseTaskModel } : {})}
+            onToggleDoc={(id, on) => setValue((v) => ({ ...v, goal: v.goal.replace(/@$/, ""), documentIds: on ? (v.documentIds.includes(id) ? v.documentIds : [...v.documentIds, id]) : v.documentIds.filter((x) => x !== id) }))}
             onSubmit={() => void submit()}
             busy={busy}
             {...(importing ? { busyText: "正在导入材料…" } : {})}
@@ -371,6 +387,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
               longHint="扫描件、图片要先识别文字，会慢一些；导入完会在这里逐份列出结果。"
             />
           )}
+          {modelMsg && <p className="muted home-msg" role="status">{modelMsg}</p>}
           {msg && <p className="muted home-msg" role="status" style={{ whiteSpace: "pre-line" }}>{msg}</p>}
           {failMsg && <div className="banner banner-red home-msg" role="alert" style={{ whiteSpace: "pre-line" }}>{failMsg}</div>}
           {/* 能力胶囊（第 47 批对照 Kimi 首页一行胶囊）：推荐 + 三条业务线 + 通用；下方列出该组场景（标题 + 得到什么），点一行打开开始面板 */}
@@ -436,7 +453,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
           </section>
         )}
         {/* Kimi 首页页脚同位：一行灰字 */}
-        <p className="home-foot">全部场景试用中 · 结果须律师复核 · 案卷在这台电脑上处理，只把替换过代号的内容发给 AI</p>
+        {/* 第 66 批：去掉固定页脚（试用中 / 须复核 / 数据去向）。这些说明在开始面板右栏、成果复核与“设置 · 数据去向”里按场景出现 */}
       </div>
       {sheet && <RunSheet pending={sheet} onClose={() => setSheet(null)} />}
       {starting && (
@@ -466,10 +483,29 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             setMatters((ms) => [m, ...ms]);
             matterChosen.current = true;
             setMatterId(m.matter_id);
+            rememberMatter(m.matter_id);
             setStarting((st) => (st ? { ...st, matterId: m.matter_id } : st));
           }}
         />
       )}
     </main>
   );
+}
+
+/** 上次在首页用过的事项（第 66 批）：只存事项编号，读写失败时退回缺省。 */
+const LAST_MATTER_KEY = "kwl.home.lastMatter";
+function lastMatterOf(open: readonly { matter_id: string }[]): string | null {
+  try {
+    const id = localStorage.getItem(LAST_MATTER_KEY);
+    return id && open.some((m) => m.matter_id === id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+function rememberMatter(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(LAST_MATTER_KEY, id);
+  } catch {
+    // 记不住时下次按缺省
+  }
 }

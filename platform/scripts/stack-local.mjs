@@ -56,6 +56,17 @@ mkdirSync(join(dir, "cfg"), { recursive: true, mode: 0o700 });
 const init = join(dir, "init");
 if (!existsSync(init)) run("cloud-init-secrets.mjs", ["--env", "test", "--out", init, "--id", "e1", "--mount", join(init, "secrets")]);
 const sec = (f) => join(init, "secrets", f);
+// 第 66 批（V40，D-292）：第 66 批之前建的本机栈没有账号设备签发钥——补一把（与 cloud-init-secrets 同名同路径），个人账号新电脑即可直接登录
+{
+  const keysFile = join(init, "public", "signer-keys.json");
+  const ks = JSON.parse(readFileSync(keysFile, "utf8"));
+  if (!ks.account_device_ca) {
+    const { generateKeyPairSync } = await import("node:crypto");
+    writeFileSync(sec("account-device-ca.pem"), generateKeyPairSync("ed25519").privateKey.export({ format: "pem", type: "pkcs8" }).toString(), { mode: 0o600, flag: "wx" });
+    ks.account_device_ca = { kid: "acct-ca-test-e1", private_key_file: sec("account-device-ca.pem") };
+    writeFileSync(keysFile, `${JSON.stringify(ks, null, 2)}\n`, { mode: 0o644 });
+  }
+}
 const pub = (f) => join(init, "public", f);
 
 // ─── 2. 控制台首个系统管理员（契约 §2.4）：控制面启动后经设置码设密码，见第 6 步 ───

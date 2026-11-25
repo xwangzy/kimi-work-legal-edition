@@ -86,9 +86,10 @@ test("A6 计划卡：主操作在标题行右侧，展开全文后底部再给�
   assert.match(c, /disabled=\{busy \|\| !feedback\.trim\(\)\}/, "没写意见不能退回（V14 第 39 批）不变");
   assert.match(c, /<div className="cc-top">\s*<div className="cc-head"><Icon\.question \/> 需要你定一下/);
   const o = src("components/OutlineConfirm.tsx");
-  assert.match(o, /className="card-confirm card-outline outline-card"/);
-  assert.match(o, /<div className="cc-head">起草前请确认/);
-  assert.match(o, /<div className="cc-actions">/);
+  assert.match(o, /className="card-confirm card-outline outline-card[ "]/);
+  // 第 66 批：标题改为“确认××的论点与依据”（前缀“起草前”成了徽标），操作区仍是 cc-actions
+  assert.match(o, /className="cc-head oc-title">确认\{outline\.doc_kind\}的论点与依据/);
+  assert.match(o, /className="cc-actions oc-actions"/);
   const css = src("styles.css");
   assert.match(rule(css, ".card-plan .cc-plan"), /max-height: none/);
   assert.match(rule(css, ".card-plan .cc-plan"), /overflow: visible/);

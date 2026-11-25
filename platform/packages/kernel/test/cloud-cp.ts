@@ -54,8 +54,9 @@ export interface CloudCp {
   close(): Promise<void>;
 }
 
-export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm"; seats?: number; cp?: Partial<ControlPlaneOptions> }): Promise<CloudCp> {
-  const keys = devControlPlaneKeys();
+export async function startCloudCp(o: { tenant: string; edition?: "team" | "firm"; seats?: number; cp?: Partial<ControlPlaneOptions>; accountCa?: boolean }): Promise<CloudCp> {
+  // 第 66 批（V40，D-292）：accountCa = 签名者带账号设备签发钥（个人账号新电脑直接登录）
+  const keys = devControlPlaneKeys({ accountCa: o.accountCa === true });
   const serviceSecret = `svc-${Math.random().toString(36).slice(2)}`;
   const cp = createControlPlane({ ...(o.cp ?? {}), keys, serviceSecret });
   let available = true;

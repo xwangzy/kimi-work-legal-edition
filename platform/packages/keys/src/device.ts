@@ -51,6 +51,12 @@ export interface DeviceCertificateInput {
    * ECDSA P-256 设备（TPM 或软件新安装）必须写明。签发与核验都要求它与 signPublicKeyPem 的实际类型一致。
    */
   signAlg?: SignAlg;
+  /**
+   * 签发者（第 66 批，V40）：缺省 = 律所根（存量证书没有此字段，签名字节不变）；"account_ca" = 控制面的账号设备签发钥
+   * （只给个人账号的新电脑，D-292）。字段在签名范围内：律所根签的证书写不成 account_ca，反之亦然。
+   * 团队功能（成员日志、团队共享、批准成员、发布策略）只认律所根签发的证书。
+   */
+  issuer?: "account_ca";
 }
 
 export interface DeviceCertificate extends DeviceCertificateInput {
@@ -101,6 +107,7 @@ function checkCertificateFields(c: DeviceCertificateInput): string | null {
   }
   if (!DEVICE_ID_PATTERN.test(c.deviceId)) return "设备编号只允许字母、数字、下划线与连字符（1–128 位）";
   if (!DeviceRoles.includes(c.role)) return `角色非法：${String(c.role)}（应为 ${DeviceRoles.join("/")}）`;
+  if (c.issuer !== undefined && c.issuer !== "account_ca") return `签发者非法：${String(c.issuer)}`;
   if (Number.isNaN(Date.parse(c.issuedAt))) return "issuedAt 不是合法时间";
   if (Number.isNaN(Date.parse(c.expiresAt))) return "expiresAt 不是合法时间";
   if (Date.parse(c.expiresAt) <= Date.parse(c.issuedAt)) return "expiresAt 须晚于 issuedAt";

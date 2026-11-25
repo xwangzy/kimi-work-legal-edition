@@ -30,6 +30,7 @@ import {
   type DeviceKeys,
   type DeviceRole,
 } from "@zr-legal/keys";
+import { verifyDeviceCertificateAny } from "@zr-legal/firm-trust";
 import type { KernelDb } from "./db.ts";
 import type { Identity } from "./identity.ts";
 import type { LedgerSigner } from "./ledger-signer.ts";
@@ -37,6 +38,8 @@ import type { LedgerSigner } from "./ledger-signer.ts";
 export interface FirmIdentityRow {
   rootPublicKeyPem: string;
   recoveryPublicKeyPem: string;
+  /** 第 66 批（V40，D-292）：本机证书由控制面账号设备签发钥签发时，那把钥的公钥（迁移 0074）；律所根签发的电脑为 null。 */
+  accountCaPublicKeyPem?: string | null;
 }
 
 export interface KernelKeyContext {
@@ -149,11 +152,11 @@ export function readSecretFile<T>(path: string): T {
  * 同一律所多设备共用同一根（证书链一致的前提）；恢复托管公钥无法从文件恢复（份额仍在），
  * 以占位空串登记并如实注释（M-of-N 恢复流程不依赖库内该公钥，仅用份额）。 */
 export function ensureFirmIdentity(db: KernelDb, keysDir: string, tenantId: string): FirmIdentityRow {
-  const existing = db.get<{ root_public_key_pem: string; recovery_public_key_pem: string }>(
-    `SELECT root_public_key_pem, recovery_public_key_pem FROM firm_identity WHERE tenant_id = ?`,
+  const existing = db.get<{ root_public_key_pem: string; recovery_public_key_pem: string; account_ca_public_key_pem: string | null }>(
+    `SELECT root_public_key_pem, recovery_public_key_pem, account_ca_public_key_pem FROM firm_identity WHERE tenant_id = ?`,
     [tenantId],
   );
-  if (existing) return { rootPublicKeyPem: existing.root_public_key_pem, recoveryPublicKeyPem: existing.recovery_public_key_pem };
+  if (existing) return { rootPublicKeyPem: existing.root_public_key_pem, recoveryPublicKeyPem: existing.recovery_public_key_pem, accountCaPublicKeyPem: existing.account_ca_public_key_pem ?? null };
 
   const rootFile = join(keysDir, "firm-root.json");
   if (existsSync(rootFile)) {
@@ -243,6 +246,8 @@ export interface StagedJoin {
   root_public_key_pem: string;
   recovery_public_key_pem: string;
   keys: DeviceKeys;
+  /** 第 66 批（V40，D-292）：个人账号新电脑自动登记——证书由这把账号设备签发钥签（已在取回时按控制面签名信封验过）。 */
+  account_ca_public_key_pem?: string;
 }
 
 /**
@@ -255,7 +260,8 @@ export function applyStagedJoin(db: KernelDb, keysDir: string, identity: Identit
   if (!existsSync(path)) return { applied: false };
   const st = readSecretFile<StagedJoin>(path);
   const deviceId = slugs.deviceId ?? `dev_${slugs.firmSlug}_${slugs.userSlug}`;
-  const vr = verifyDeviceCertificate(st.cert, st.root_public_key_pem);
+  // 第 66 批：个人账号新电脑的证书由账号设备签发钥签（issuer = account_ca），只对那把钥验；其余只对律所根验
+  const vr = verifyDeviceCertificateAny(st.cert, { root: st.root_public_key_pem, accountCa: st.account_ca_public_key_pem ?? null });
   if (!vr.ok) return { applied: false, rejected: "cert_invalid" };
   if (st.cert.deviceId !== deviceId || st.cert.memberId !== identity.userId) return { applied: false, rejected: "identity_mismatch" };
   if (st.cert.signPublicKeyPem !== st.keys.signPublicKeyPem || st.cert.encPublicKeyPem !== st.keys.encPublicKeyPem) return { applied: false, rejected: "key_mismatch" };
@@ -263,7 +269,8 @@ export function applyStagedJoin(db: KernelDb, keysDir: string, identity: Identit
   if (existing && existing.root_public_key_pem !== st.root_public_key_pem) return { applied: false, rejected: "root_mismatch" };
   const roleOf: Record<string, string> = { admin: "firm_admin", partner: "partner", assistant: "paralegal", lawyer: "lawyer" };
   db.tx(() => {
-    if (!existing) db.run(`INSERT INTO firm_identity (tenant_id, root_public_key_pem, recovery_public_key_pem) VALUES (?,?,?)`, [identity.tenantId, st.root_public_key_pem, st.recovery_public_key_pem]);
+    if (!existing) db.run(`INSERT INTO firm_identity (tenant_id, root_public_key_pem, recovery_public_key_pem, account_ca_public_key_pem) VALUES (?,?,?,?)`, [identity.tenantId, st.root_public_key_pem, st.recovery_public_key_pem, st.account_ca_public_key_pem ?? null]);
+    else if (st.account_ca_public_key_pem) db.run(`UPDATE firm_identity SET account_ca_public_key_pem = ? WHERE tenant_id = ?`, [st.account_ca_public_key_pem, identity.tenantId]);
     db.run(`UPDATE memberships SET role = ? WHERE tenant_id = ? AND user_id = ?`, [roleOf[st.cert.role] ?? "lawyer", identity.tenantId, identity.userId]);
     db.run(
       `INSERT INTO devices (device_id, tenant_id, member_id, role, sign_pub_pem, enc_pub_pem, cert_json, status, key_epoch_at_issue)

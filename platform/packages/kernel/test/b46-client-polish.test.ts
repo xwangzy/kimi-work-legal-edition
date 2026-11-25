@@ -211,7 +211,7 @@ test("控制面客户端：缓存最近一次验过签的用量视图；426 clie
 
 test("问答取不到回答：额度、登录类按闸门附上的代码说人话，其余照原话并去掉代码", async () => {
   const { qaFailureText } = await import("../src/services/qa-chat.ts");
-  assert.match(qaFailureText("402 本所本期 AI 额度不足（预占失败） [kwl:quota_exhausted]"), /^本所 AI 额度暂时用到限制/);
+  assert.match(qaFailureText("402 本所本期 AI 额度不足（预占失败） [kwl:quota_exhausted]"), /^你的 AI 额度暂时用到限制/);
   assert.match(qaFailureText("401 登录已失效，请重新登录 [kwl:seat_session_inactive]"), /^登录已失效或这台电脑暂时没有取得 AI 使用授权/);
   assert.equal(qaFailureText("模型通道不可达 [kwl:x_y]"), "模型通道不可达");
   assert.equal(qaFailureText("超时"), "超时");

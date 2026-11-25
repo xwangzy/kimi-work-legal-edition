@@ -23,15 +23,17 @@ test("律师一句话（第 44 批 v2）：本人占分母（个人上限 / 每�
   ];
   for (const l of lines) assert.doesNotMatch(l, JARGON, l);
   for (const l of lines) assert.doesNotMatch(l, /点|积分/, `不出现点数：${l}`);
-  assert.equal(lines[0], "你本期已用每人额度的 30%；本所已用 40%；将于 11 月 1 日 0:00 重置");
-  assert.match(lines[1]!, /本所已用 40%（上限 90%）；将于 11 月 1 日 0:00 重置$/);
-  assert.match(lines[2]!, /即将用完/);
-  assert.match(lines[3]!, /已到律所设的上限，AI 处理暂停/);
+  // 第 66 批（V40）：个人口径——“你已用 / 剩余”，不再出现“本所已用”；旧控制面（没有 personal）回退到 own 与本所剩余
+  assert.equal(lines[0], "你本期已用 30%，剩余 60%；将于 11 月 1 日 0:00 重置");
+  for (const l of lines) assert.doesNotMatch(l, /本所/, l);
+  assert.match(lines[3]!, /已到设定的用量上限，AI 处理暂停/);
   assert.match(lines[4]!, /还没有用量/);
-  assert.match(quotaLawyerLine({ ...base, own: { ...own, denominator: "account_limit", enforced: true } }), /已用个人上限的 30%/);
+  // 有 personal 时按它（真正卡住你的那一项）：剩余 5% → 即将用完；暂停按 limited_by 说原因
+  assert.equal(quotaLawyerLine({ ...base, personal: { used_ratio: 0.5, remaining_ratio: 0.05, limited_by: "burst", paused: null } }), "你本期已用 50%，剩余 5%；将于 11 月 1 日 0:00 重置；你的额度即将用完");
+  assert.match(quotaLawyerLine({ ...base, personal: { used_ratio: 0.5, remaining_ratio: 0, limited_by: "burst", paused: "burst" } }), /最近 5 小时用得太快/);
   // 本期额度用完（100%）同样写明暂停（复核 S9A-13）
   const full = quotaLawyerLine({ ...base, firm: { ...firm, used_ratio: 1, paused: "allowance" } });
-  assert.match(full, /本期 AI 额度已用完，AI 处理暂停/);
+  assert.match(full, /AI 额度已用完，AI 处理暂停/);
   assert.doesNotMatch(full, JARGON);
 });
 

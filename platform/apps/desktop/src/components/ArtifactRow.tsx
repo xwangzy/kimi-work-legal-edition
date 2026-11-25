@@ -85,14 +85,14 @@ const openOnKey = (fn: () => void) => (e: KeyboardEvent) => {
  * 第 49 批：改为单行——左边类型方块 + 名称（同族文件的共同前缀淡化、差异加粗，见 nameParts）+ 状态；右边“第 N 版”（有旧版时可展开）、
  * 给谁、时间、悬停出现的“提交复核”、下载。原来的第二行说明与“版本记录（n）”合并进“第 N 版”，一份文件只占一行。
  */
-export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownload, onSubmit, busyId, downloadingId, parts, primary = false }: { entry: FileEntry<T>; showStatus: boolean; onOpen: (r: T) => void; onDownload: (r: ListRow) => void; onSubmit?: (r: T) => void; busyId?: string | null; downloadingId?: string | null; parts?: { head: string; tail: string } | undefined; primary?: boolean }) {
-  const [open, setOpen] = useState(false);
+export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownload, onSubmit, busyId, downloadingId, parts, primary = false, selectedId = null }: { entry: FileEntry<T>; showStatus: boolean; onOpen: (r: T) => void; onDownload: (r: ListRow) => void; onSubmit?: (r: T) => void; busyId?: string | null; downloadingId?: string | null; parts?: { head: string; tail: string } | undefined; primary?: boolean; /** 第 66 批：成果页右侧预览中的那一版（行高亮）。 */ selectedId?: string | null }) {
+  const [open, setOpen] = useState(() => !!selectedId && entry.older.some((o) => o.artifact_version_id === selectedId));
   const r = entry.latest;
   const head = parts?.head ?? "";
   const tail = parts ? parts.tail : r.display;
   return (
     <>
-      <div className={`dl-row${primary ? " is-primary" : ""}`} role="listitem" tabIndex={0} title={r.filename} onClick={() => onOpen(r)} onKeyDown={openOnKey(() => onOpen(r))}>
+      <div className={`dl-row${primary ? " is-primary" : ""}${selectedId === r.artifact_version_id ? " is-selected" : ""}`} role="listitem" tabIndex={0} aria-current={selectedId === r.artifact_version_id ? "true" : undefined} title={r.filename} onClick={() => onOpen(r)} onKeyDown={openOnKey(() => onOpen(r))}>
         <FileTypeIcon filename={r.filename} />
         <div className="dl-row-main">
           <span className="dl-row-title">
@@ -135,14 +135,14 @@ export function FileRows<T extends ListRow>({ entry, showStatus, onOpen, onDownl
       </div>
       {open &&
         entry.older.map((o) => (
-          <div key={o.artifact_version_id} className="dl-row dl-row-sub" role="listitem" title={o.filename}>
+          <div key={o.artifact_version_id} className={`dl-row dl-row-sub${selectedId === o.artifact_version_id ? " is-selected" : ""}`} role="listitem" tabIndex={0} title={o.filename} onClick={() => onOpen(o)} onKeyDown={openOnKey(() => onOpen(o))}>
             <span className="dl-sub-mark" aria-hidden="true" />
             <div className="dl-row-main">
               <span className="dl-row-meta">
                 第 {o.version} 版 · {ARTIFACT_STATUS_LABELS[o.status] ?? o.status}
               </span>
             </div>
-            <div className="dl-row-side">
+            <div className="dl-row-side" onClick={(e) => e.stopPropagation()}>
               <span className="dl-when" title={fmtTime(o.created_at)}>{fmtWhen(o.created_at)}</span>
               <DownloadButton r={o} onDownload={onDownload} busy={downloadingId === o.artifact_version_id} />
             </div>

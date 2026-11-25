@@ -2,7 +2,8 @@
  * 首次启动（第 13 批开通与成员入组；第 44 批改为登录 / 注册，主文 §2）。
  * 这台电脑还没有激活时，整个应用只显示这一页：缺省“登录”，可切“注册”“忘记密码”；
  * 原来的“输入开通码或邀请码”“从备份恢复”保留为次要入口。
- * 登录或注册后按中软的答复走：创始开通 → 等后台按新身份重启；成员入组（凭邀请码，或同一账号的新电脑）→ 等批准并核对 12 位核对码；
+ * 登录或注册后按中软的答复走：创始开通 → 等后台按新身份重启；成员入组（凭邀请码，或多人律所同一账号的新电脑）→ 等批准并核对 12 位核对码；
+ * 第 66 批（V40，D-292）：个人账号的新电脑由云端直接登记——登录后自动完成，不等别的电脑批准；短时间内多台新电脑登录时暂停，用短信验证码确认是本人；
  * 不能继续（设备已满、这台电脑属于别的成员、律所还没开通）→ 写明原因与已登记的电脑。
  * 律师层不出现“证书、密钥、签名、令牌”等词；登录只把邮箱和密码（第 63 批起也可以是手机号和短信验证码）发给中软核对，不上传任何案件材料。
  */
@@ -121,16 +122,21 @@ const FOOT_TEXT = "登录与开通只把邮箱或手机号、密码或短信验�
 
 type View = "login" | "register" | "forgot" | "code" | "restore";
 type Blocked = { message: string; devices: AccountDevice[] };
+/** 第 66 批：个人账号新电脑自动登记被风控暂停（要短信验证码确认是本人；没绑手机号或短信不可用时只说明原因）。 */
+type SmsHold = { message: string; sms_available: boolean; phone_masked: string | null };
 
 /** 登录 / 注册之后按中软的答复走下一步（创始开通、入组等待、不能继续）。 */
-function authOutcome(onPending: (s: Status) => void, setDone: (t: string) => void, setBlocked: (b: Blocked) => void, stuck: (t: string) => void) {
+function authOutcome(onPending: (s: Status) => void, setDone: (t: string) => void, setBlocked: (b: Blocked) => void, stuck: (t: string) => void, setHold?: (h: SmsHold) => void) {
   return (r: any) => {
     if (r?.next === "restart") {
-      setDone(`已为「${r.firm?.name ?? "本所"}」开通，正在打开…`);
+      // 第 66 批：个人账号的新电脑已由云端直接登记（auto）——不是“开通”，这台电脑的事项与文件与别的电脑各自独立
+      setDone(r.auto ? "这台电脑已登记为你的电脑，正在打开…" : `已为「${r.firm?.name ?? "本所"}」开通，正在打开…`);
       // 开通向导：激活后先到“开通的最后一步”（恢复包、试一下、备份位置），再进首页
       void waitForActivated(stuck, "#/welcome");
     } else if (r?.next === "wait") {
       onPending({ mode: "member_pending", firm: r.firm, member: r.member ?? { name: r.account?.name ?? null, role: r.account?.role ?? "" }, check_code: r.check_code, requested_at: new Date().toISOString(), ...(r.via_account ? { via_account: true } : {}) });
+    } else if (r?.next === "sms_confirm" && setHold) {
+      setHold({ message: String(r.message ?? "为安全起见已暂停自动登记这台电脑：请用账号绑定的手机号接收验证码确认是本人"), sms_available: r.sms_available === true, phone_masked: typeof r.phone_masked === "string" ? r.phone_masked : null });
     } else if (r?.next === "blocked") {
       setBlocked({ message: String(r.message ?? "这台电脑暂时不能用这个账号继续，请联系客服"), devices: Array.isArray(r.devices) ? r.devices : [] });
     } else {
@@ -152,12 +158,13 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
   const [note, setNote] = useState("");
   const [done, setDone] = useState<string | null>(null);
   const [blocked, setBlocked] = useState<Blocked | null>(null);
+  const [hold, setHold] = useState<SmsHold | null>(null);
   const stuck = (t: string) => {
     setDone(null);
     if (view === "restore") setView("login");
     setErr(t);
   };
-  const outcome = authOutcome(onPending, setDone, setBlocked, stuck);
+  const outcome = authOutcome(onPending, setDone, setBlocked, stuck, setHold);
   const go = (v: View) => {
     setErr("");
     setNote("");
@@ -172,6 +179,7 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
     );
   }
   if (blocked) return <BlockedView b={blocked} onBack={() => setBlocked(null)} />;
+  if (hold) return <AutoEnrollConfirm hold={hold} onBack={() => setHold(null)} onResult={outcome} />;
   if (view === "restore")
     return (
       <RestoreFromBackup
@@ -620,6 +628,54 @@ function ForgotPassword(p: { meta: RegistrationMeta | null; email: string; setEm
   );
 }
 
+/**
+ * 第 66 批（V40，D-292）：个人账号新电脑自动登记被暂停（24 小时内已有 3 台新电脑、或短时间多处登录）——用账号绑定手机号的验证码确认是本人后继续。
+ * 没绑手机号或短信暂不可用：只说明原因与办法（在已登录的电脑上移除不认识的电脑并改密码，过后再试）。
+ */
+function AutoEnrollConfirm({ hold, onBack, onResult }: { hold: SmsHold; onBack: () => void; onResult: (r: any) => void }) {
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Frame>
+      <h1 className="activate-title">确认是你本人在登录</h1>
+      <p className="activate-notice" role="status">
+        {hold.message}
+      </p>
+      {hold.sms_available ? (
+        <>
+          {hold.phone_masked && <p className="muted">账号绑定的手机号：{hold.phone_masked}</p>}
+          <SmsCodeFields phone={phone} setPhone={setPhone} code={code} setCode={setCode} purpose="login" codeLength={6} resendSeconds={60} setErr={setErr} autoFocus />
+          {err && (
+            <p className="activate-error" role="alert">
+              {err}
+            </p>
+          )}
+          <button
+            className="btn-primary activate-submit"
+            disabled={busy || !phoneLooksValid(phone) || !smsCodeLooksValid(code, 6)}
+            onClick={() => {
+              setBusy(true);
+              setErr("");
+              onboarding
+                .deviceConfirm(phone, code)
+                .then(onResult)
+                .catch((e) => setErr((e as Error).message || "没有确认成功，请稍后重试"))
+                .finally(() => setBusy(false));
+            }}
+          >
+            {busy ? "正在确认…" : "确认并登记这台电脑"}
+          </button>
+        </>
+      ) : null}
+      <button type="button" className="btn-link" onClick={onBack}>
+        返回登录
+      </button>
+    </Frame>
+  );
+}
+
 function BlockedView({ b, onBack }: { b: Blocked; onBack: () => void }) {
   return (
     <Frame>
@@ -641,7 +697,7 @@ function BlockedView({ b, onBack }: { b: Blocked; onBack: () => void }) {
               );
             })}
           </ul>
-          <p className="muted">解绑旧电脑：在那台电脑上打开“设置 → 账号与团队 → 我的电脑”；那台电脑已经不在手边的，请律所管理员或客服处理。</p>
+          <p className="muted">移除旧电脑：在那台电脑上打开“设置 → 账号与团队 → 登录过的电脑”；那台电脑已经不在手边的，请律所管理员或客服处理。</p>
         </>
       )}
       <div className="activate-actions">

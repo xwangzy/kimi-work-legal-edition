@@ -15,8 +15,12 @@ import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { issueDeviceCertificate, SoftwareSigner, verifyBytes, verifyDeviceCertificate, type DeviceCertificate, type DeviceKeys, type DeviceRole } from "@zr-legal/keys";
 import {
+  deviceEnrollProofBytes,
   firmBundleBytes,
   firmCheckCode,
+  openEnvelope,
+  parsePublicKeyMap,
+  verifyDeviceCertificateAny,
   formatActivationCode,
   joinCheckCode,
   joinProofBytes,
@@ -123,8 +127,14 @@ function cpErrorText(code: string): string {
   }
 }
 
-async function cpPost(relay: CpRelay, path: string, body: unknown, method: "POST" | "GET" = "POST"): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string; retry_after_s?: number }> {
-  const r = await relay({ method, path, headers: {}, body: method === "GET" ? "" : JSON.stringify(body) });
+async function cpPost(
+  relay: CpRelay,
+  path: string,
+  body: unknown,
+  method: "POST" | "GET" = "POST",
+  headers: Record<string, string> = {},
+): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string; retry_after_s?: number; hold?: { reason: string; sms_available: boolean; phone_masked: string | null } }> {
+  const r = await relay({ method, path, headers, body: method === "GET" ? "" : JSON.stringify(body) });
   // 证书类、安装包配置类的代码原样保留（cp_tls_*、cp_upstream_*），其余通道错误并成 cp_unreachable
   if (!r.ok) return { ok: false, code: r.reason.startsWith("cp_") && !cloudFailureText(r.reason) ? "cp_unreachable" : r.reason };
   let json: Record<string, any> = {};
@@ -143,6 +153,10 @@ async function cpPost(relay: CpRelay, path: string, body: unknown, method: "POST
       ...(typeof json?.error?.min_version === "string" && json.error.min_version.length <= 40 ? { min_version: json.error.min_version } : {}),
       // 第 62 批：验证码重发还要等几秒
       ...(Number.isSafeInteger(json?.error?.retry_after_s) && json.error.retry_after_s > 0 && json.error.retry_after_s <= 86_400 ? { retry_after_s: json.error.retry_after_s } : {}),
+      // 第 66 批（V40，D-292）：新电脑自动登记被风控暂停时的原因与能否用短信确认
+      ...(json?.error?.code === "device_enroll_hold"
+        ? { hold: { reason: String(json.error.reason ?? ""), sms_available: json.error.sms_available === true, phone_masked: typeof json.error.phone_masked === "string" && json.error.phone_masked.length <= 20 ? json.error.phone_masked : null } }
+        : {}),
     };
   return { ok: true, json };
 }
@@ -399,7 +413,7 @@ export class OnboardingService {
     const state = String(onb.state ?? "");
     const keysDir = this.keysDirFor(firmSlug);
     // 会话令牌：能在这台电脑上继续时才暂存（入组等待期间也算已登录；重启后按新身份读回）；不能继续的不留会话文件
-    const proceed = state === "needs_founder_setup" || state === "needs_device_join";
+    const proceed = state === "needs_founder_setup" || state === "needs_device_join" || state === "needs_device_auto";
     if (proceed) {
       writeAccountSession(keysDir, { token: j.session_token, ...account });
       // 第 64 批：同一工作区留有“要重新登录”的旧记录时一并删掉（开通 / 入组之后按新会话打开）
@@ -428,9 +442,108 @@ export class OnboardingService {
       const r = await this.submitJoin({ tid: account.tid, activation_id: c.activation_id, claim_secret: c.claim_secret, firmSlug, firmName, memberSlug, memberName, role }, viaInvite ? inviteSecret : null, deviceId);
       return { ...view, ...r };
     }
+    // 第 66 批（V40，D-292）：个人账号的新电脑——云端用账号设备签发钥直接签发设备证书，不等另一台电脑批准（复用“暂存批准结果 → 重启”）
+    if (state === "needs_device_auto") {
+      const deviceId = String(onb.device_id ?? "");
+      const sid = String(j.session?.sid ?? "");
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(deviceId) || !deviceId.startsWith(`dev_${firmSlug}_${memberSlug}`) || !/^ses_[A-Za-z0-9_-]{16}$/.test(sid) || !/^acc_[A-Za-z0-9_-]{1,64}$/.test(account.aid))
+        throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
+      this.autoPending = { tid: account.tid, aid: account.aid, sid, token: j.session_token, deviceId, firmSlug, firmName, memberSlug, memberName, role, gen: null };
+      return { ...view, ...(await this.autoEnroll(null)) };
+    }
     // 不能在这台电脑上继续的状态：如实告诉律师（处理好后再登录即可）。文案与正常模式的 account.login 同一份（account-session.ts，第 46 批）；
     // ready（控制面认得这台电脑是该成员的设备，但本机没有对应工作区，例如重装后）也说清怎么办，不再落到“请联系客服”
     return { ...view, next: "blocked", message: onboardingStateText(state, { admin: role === "admin" }), devices: Array.isArray(onb.devices) ? onb.devices : [] };
+  }
+
+  /** 第 66 批：正在自动登记的新电脑（登录应答里的会话与预分配编号；风控暂停后用短信验证码重试时沿用同一对设备密钥）。只在内存里。 */
+  private autoPending: {
+    tid: string;
+    aid: string;
+    sid: string;
+    token: string;
+    deviceId: string;
+    firmSlug: string;
+    firmName: string;
+    memberSlug: string;
+    memberName: string | null;
+    role: Role;
+    gen: ReturnType<typeof generateJoinDeviceKeys> | null;
+  } | null = null;
+
+  /**
+   * 第 66 批（V40，D-292）：个人账号新电脑自动登记。本机生成设备密钥，用本次登录的会话 + 持有证明请云端签发；应答是控制面签名信封
+   * （按内置的控制面公钥验），证书须由信封里的账号设备签发钥签、编号成员公钥都是本机的、律所公钥包须由律所根签名——任何一项不符都不采用。
+   * 通过即暂存 join-approved.json、写激活记录、请求重启（与“另一台电脑批准”之后的路径相同）。风控暂停时返回 next = sms_confirm。
+   */
+  private async autoEnroll(sms: { phone: string; sms_code: string } | null): Promise<Record<string, unknown>> {
+    const a = this.autoPending;
+    if (!a) throw new DomainError("conflict", "请重新登录后再登记这台电脑", 409);
+    a.gen ??= generateJoinDeviceKeys();
+    const { keys, signer } = a.gen;
+    const proof = signer.signSync(deviceEnrollProofBytes({ tid: a.tid, aid: a.aid, sid: a.sid, deviceId: a.deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem }));
+    const r = await cpPost(
+      this.d.relay,
+      "/v1/auth/devices/enroll",
+      { device_id: a.deviceId, sign_pub: keys.signPublicKeyPem, enc_pub: keys.encPublicKeyPem, proof, client: this.clientInfo(), ...(sms ? { phone: sms.phone, sms_code: sms.sms_code } : {}) },
+      "POST",
+      { "x-kwl-session": a.token },
+    );
+    if (!r.ok) {
+      slog.event("KERNEL_ONBOARDING_AUTO_ENROLL_FAILED", { reason: /^[a-z_]{1,40}$/.test(r.code) ? r.code : "other" });
+      if (r.hold)
+        return {
+          kind: "member",
+          next: "sms_confirm",
+          auto: true,
+          hold_reason: r.hold.reason,
+          sms_available: r.hold.sms_available,
+          phone_masked: r.hold.phone_masked,
+          message: r.hold.sms_available ? (r.message ?? onboardingStateText("device_enroll_hold")) : "短时间内有多台新电脑登录这个账号，为安全起见已暂停自动登记。账号没有绑定手机号（或短信暂不可用）：请先在已登录的电脑上移除不认识的电脑并修改密码，24 小时后再试，或联系客服",
+        };
+      const known = ["session_not_fresh", "device_auto_unavailable", "sms_phone_mismatch", "sms_code_invalid", "sms_code_expired", "sms_code_attempts"];
+      throw new DomainError(r.code.startsWith("sms_") ? "validation" : "provider_unavailable", known.includes(r.code) ? (r.message ?? accountErrorText(r.code)) : cpErrorText(r.code), r.code.startsWith("sms_") ? 400 : 502, { reason: r.code });
+    }
+    const o = openEnvelope<{ tid: string; device_id: string; cert: DeviceCertificate; root_public_key_pem: string; firm_bundle: FirmBundle; ca: { kid: string; public_key_pem: string } }>(r.json, "kwl-device-enroll", parsePublicKeyMap(this.d.config.env.ZR_CONTROL_PLANE_KEYS));
+    const b = o.ok ? o.body : null;
+    const caPem = typeof b?.ca?.public_key_pem === "string" ? b.ca.public_key_pem : null;
+    const rootPub = typeof b?.root_public_key_pem === "string" ? b.root_public_key_pem : "";
+    const cert = b?.cert;
+    const certOk =
+      !!b &&
+      !!cert &&
+      b.tid === a.tid &&
+      b.device_id === a.deviceId &&
+      cert.issuer === "account_ca" &&
+      verifyDeviceCertificateAny(cert, { root: rootPub, accountCa: caPem }).ok &&
+      cert.deviceId === a.deviceId &&
+      cert.memberId === `usr_${a.firmSlug}_${a.memberSlug}` &&
+      cert.signPublicKeyPem === keys.signPublicKeyPem &&
+      cert.encPublicKeyPem === keys.encPublicKeyPem;
+    const fb = b?.firm_bundle;
+    const fbOk = !!fb && !!rootPub && typeof fb.recovery_public_key_pem === "string" && typeof fb.sig === "string" && verifyBytes(rootPub, firmBundleBytes(a.tid, rootPub, fb.recovery_public_key_pem), fb.sig);
+    if (!certOk || !fbOk || !caPem) {
+      slog.event("KERNEL_ONBOARDING_CERT_REJECTED", {});
+      throw new DomainError("provider_unavailable", "收到的登记结果核对不通过，没有采用。请重新登录；如反复出现请联系客服", 502);
+    }
+    const keysDir = this.keysDirFor(a.firmSlug);
+    writeStagedSecret(join(keysDir, "join-approved.json"), { cert: cert!, root_public_key_pem: rootPub, recovery_public_key_pem: fb!.recovery_public_key_pem, keys, account_ca_public_key_pem: caPem });
+    const role = (ROLES.includes(cert!.role as Role) ? cert!.role : a.role) as Role;
+    this.writeActivation({ tid: a.tid, firm_slug: a.firmSlug, firm_name: a.firmName, member_slug: a.memberSlug, member_name: a.memberName, role, kind: "member", ...(a.deviceId !== expectedJoinDeviceId(a.firmSlug, a.memberSlug) ? { device_id: a.deviceId } : {}) });
+    this.autoPending = null;
+    slog.event("KERNEL_ONBOARDING_AUTO_ENROLLED", {});
+    this.restartSoon();
+    return { kind: "member", next: "restart", auto: true, firm_check_code: firmCheckCode(a.tid, rootPub) };
+  }
+
+  /** 第 66 批：新电脑自动登记被风控暂停后，用账号绑定手机号收到的验证码（/v1/auth/sms/send purpose = login）确认是本人，再登记一次。 */
+  async deviceConfirm(p: { phone?: unknown; sms_code?: unknown }): Promise<Record<string, unknown>> {
+    const phone = typeof p.phone === "string" ? p.phone.replace(/\s+/g, "") : "";
+    const code = typeof p.sms_code === "string" ? p.sms_code.replace(/\s+/g, "") : "";
+    if (!/^1\d{10}$/.test(phone)) throw new DomainError("validation", "请填写账号绑定的 11 位手机号", 400);
+    if (!/^\d{4,8}$/.test(code)) throw new DomainError("validation", "请填写短信验证码", 400);
+    if (!this.autoPending) throw new DomainError("conflict", "这次登录已结束：请重新登录", 409);
+    return this.autoEnroll({ phone, sms_code: code });
   }
 
   private async accountCall(path: string, body: unknown): Promise<Record<string, any>> {
@@ -713,7 +826,7 @@ export const membersApi = (d: MembersDeps) => {
       // 账号新设备（D-186）：成员须是本所已有成员、角色与本机记录一致（控制面不能借此提权）、设备编号属于这位成员（_D2～_D9）
       const m = d.db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, `usr_${d.config.firmSlug}_${snap.member_slug}`]);
       const base = expectedJoinDeviceId(d.config.firmSlug, snap.member_slug);
-      const ok = !!m && ROLE_OF_MEMBERSHIP[m.role] === snap.role && MEMBER_SLUG_PATTERN.test(snap.member_slug) && /^_D[2-9]$/.test(snap.device_id.slice(base.length)) && snap.device_id.startsWith(base);
+      const ok = !!m && ROLE_OF_MEMBERSHIP[m.role] === snap.role && MEMBER_SLUG_PATTERN.test(snap.member_slug) && /^_D(?:[2-9]|[1-9]\d{1,2})$/.test(snap.device_id.slice(base.length)) && snap.device_id.startsWith(base);
       return { local: undefined, snap, verified: ok };
     }
     const verified =

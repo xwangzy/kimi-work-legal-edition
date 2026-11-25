@@ -10,7 +10,8 @@ import { buildPreviewDoc, previewFrameKey, type PreviewCite } from "../lib/safe-
 import { Markdown } from "./Markdown.tsx";
 
 /** cites：引用角标（v9.4 第 20 批 C-03），见 lib/citation-review.ts previewCites。 */
-export function SafePreview({ filename, text, tokenMap, office, cites }: { filename: string; text: string; tokenMap?: Map<string, string | null>; office?: boolean; cites?: PreviewCite[] }) {
+/** compactNote（第 66 批）：说明收成“近似预览”，完整说法放悬停提示（成果页右侧预览空间小）。 */
+export function SafePreview({ filename, text, tokenMap, office, cites, compactNote }: { filename: string; text: string; tokenMap?: Map<string, string | null>; office?: boolean; cites?: PreviewCite[]; compactNote?: boolean }) {
   const lower = filename.toLowerCase();
   // office：内核把 DOCX/XLSX 渲染成的白名单 HTML（修订、批注、表格），同样在隔离框架中显示
   const isHtml = office || lower.endsWith(".html") || lower.endsWith(".htm");
@@ -22,7 +23,11 @@ export function SafePreview({ filename, text, tokenMap, office, cites }: { filen
     return (
       <div className="safe-preview">
         <div className="sp-note">
-          <span>{office ? "预览（排版为近似效果，修订以绿色插入、红色删除显示；以 Word 打开为准）" : "隔离预览：不执行脚本、不加载任何外部资源、链接不可点击。"}</span>
+          {compactNote ? (
+            <span title={office ? "排版为近似效果，修订以绿色插入、红色删除显示；以 Word 打开为准" : "不执行脚本、不加载任何外部资源、链接不可点击"}>{office ? "近似预览 · 以 Word 打开为准" : "隔离预览"}</span>
+          ) : (
+            <span>{office ? "预览（排版为近似效果，修订以绿色插入、红色删除显示；以 Word 打开为准）" : "隔离预览：不执行脚本、不加载任何外部资源、链接不可点击。"}</span>
+          )}
           <button type="button" className="btn-link sp-reload" onClick={() => setReloads((n) => n + 1)} title="预览区没有显示内容时，点这里重新载入">
             重新载入预览
           </button>

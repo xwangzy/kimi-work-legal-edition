@@ -70,6 +70,9 @@ secret("cp-envelope.pem", env_.priv);
 secret("cp-envelope-next.pem", envNext.priv);
 secret("seat.pem", seat.priv);
 for (const [k, v] of Object.entries(aud)) secret(`seat-${k}.pem`, v.priv);
+// 第 66 批（V40，D-292）：账号设备签发钥——只给个人账号的新电脑签设备证书（与信封钥、席位钥分开）
+const acctCa = ed();
+secret("account-device-ca.pem", acctCa.priv);
 
 // 网关路由密钥对（第 44 批，主文 §3.2）：控制台在浏览器里用公钥加密上游密钥，控制面只存密文；私钥只给网关
 const routing = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
@@ -87,6 +90,7 @@ pubFile("signer-keys.json", {
   envelope: { kid: kid.envelope, private_key_file: `${mount}/cp-envelope.pem` },
   seat: { kid: kid.seat, private_key_file: `${mount}/seat.pem` },
   seat_audiences: Object.fromEntries(Object.keys(aud).map((k) => [k, { kid: `seat-${k}-${env}-${id}`, private_key_file: `${mount}/seat-${k}.pem` }])),
+  account_device_ca: { kid: `acct-ca-${env}-${id}`, private_key_file: `${mount}/account-device-ca.pem` },
 });
 
 console.log(`[cloud-init-secrets] 已生成 → ${outDir}（环境 ${env}，密钥编号后缀 ${id}；下一把控制面密钥 ${kid.envelopeNext} 离线保管）

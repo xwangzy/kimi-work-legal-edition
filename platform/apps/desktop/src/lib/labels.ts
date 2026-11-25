@@ -399,3 +399,12 @@ export function materialsLine(n: number, names?: string[]): string {
   if (list.length === 0) return `${n} 份`;
   return `${list.slice(0, 3).join("、")}${n > 3 ? ` 等 ${n} 份` : ""}`;
 }
+
+/**
+ * 材料为什么不能用了（第 66 批 D8）：律师移除的与带国家秘密标志被隔离的分开写（两者在内核走同一套隔离，quarantine_reason 区分）；
+ * 还能用的返回 null。原因未知的按国家秘密标志口径（更严的一边）。
+ */
+export function materialStateLabel(d: { quarantined_at?: string | null; quarantine_reason?: string | null }): string | null {
+  if (!d.quarantined_at) return null;
+  return d.quarantine_reason === "removed_by_lawyer" ? "已移除（律师移除）" : "已隔离（国家秘密标志）";
+}

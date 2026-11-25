@@ -183,3 +183,10 @@ details.progress-panel > summary { cursor: pointer; }
 .card-confirm { border: 1px solid var(--status-warning-border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
 .card-plan, .card-question, .card-outline { border: 1px solid var(--accent-border); border-left-color: var(--accent-border); }
 @media (prefers-reduced-motion: reduce) { .card-confirm { animation: none; } }
+
+/* ── 第 66 批（V40 P0-2）计划卡、提问卡、审批卡与论点确认卡同一外观：白底细边框、大圆角、轻阴影，标题 15px 半粗；
+   不再用左侧 3px 色条区分（色条与正文争视线），“等你处理”的信号由标题图标与操作按钮承担 ── */
+.card-confirm:not(.oc) { border: 1px solid var(--border-subtle); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); padding: var(--sp-4) var(--sp-5); background: var(--bg-surface); }
+.card-confirm:not(.oc) .cc-head { font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); }
+.card-confirm:not(.oc) .cc-head svg { width: 16px; height: 16px; color: var(--accent-text); }
+.card-confirm:not(.oc) .cc-why { font-size: var(--fs-caption); line-height: 1.65; }
