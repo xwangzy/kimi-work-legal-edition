@@ -59,7 +59,7 @@ test("提交 → 文书被挡 → 律师逐条确认（删一条、改写一条�
   const sub = await a.call("outline.submit", {
     doc_kind: "起诉状",
     arguments: [
-      { claim: "被告应支付货款", basis: [{ law: "中华人民共和国民法典", article: 509, note: "全面履行义务" }, { law: "民法典", article: 585, note: "违约金" }], facts: [{ fact_id: "fct_ok" }, { fact_id: "fct_open" }] },
+      { claim: "被告应支付货款", basis: [{ law: "中华人民共和国民法典", article: 509, note: "全面履行义务", mode: "direct", elements: [{ element: "合同有效成立", status: "undisputed" }, { element: "被告未按约付款", status: "to_prove" }], exceptions: "无但书" }, { law: "民法典", article: 585, note: "违约金" }], facts: [{ fact_id: "fct_ok" }, { fact_id: "fct_open" }] },
       { claim: "被告应承担违约金", basis: [{ law: "民法典", article: 585, note: "约定违约金" }] },
       { claim: "被告应赔偿律师费", basis: [{ law: "宇宙条约", article: 1 }], counter: "律师费须有约定" },
     ],
@@ -101,6 +101,12 @@ test("提交 → 文书被挡 → 律师逐条确认（删一条、改写一条�
   assert.deepEqual(got.confirmed_arguments.map((x: any) => x.arg_id), ["a1", "a2"]);
   assert.deepEqual(got.dropped, ["a3"]);
   assert.deepEqual(got.confirmed_arguments[0].basis.map((b: any) => b.article), [509], "去掉的依据不给");
+  // 第 65 批（D-281）：确认版交给起草轮时带上适用方式、要件对照与但书处理（原先在工具出口被压掉）
+  const b0 = got.confirmed_arguments[0].basis[0];
+  assert.equal(b0.mode, "direct");
+  assert.deepEqual(b0.elements.map((e: any) => [e.element, e.status]), [["合同有效成立", "undisputed"], ["被告未按约付款", "to_prove"]]);
+  assert.equal(b0.exceptions, "无但书");
+  assert.match(got.note, /待证/);
   assert.equal(got.confirmed_arguments[1].lawyer_edited, true);
   assert.match(got.confirmed_arguments[1].claim, /〔自然人/, "律师改写里的姓名交回 Agent 前换成代号");
   assert.equal(got.lawyer_note, "违约金按合同第 8.2 条计算");

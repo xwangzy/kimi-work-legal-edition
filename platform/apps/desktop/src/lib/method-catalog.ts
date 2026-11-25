@@ -13,7 +13,7 @@ export const CATALOG_LINE_LABELS: Record<CatalogLine, string> = { ...LINE_LABELS
 /** 各业务线下的阶段与卡片顺序（卡片 id）。 */
 const STAGES: Record<CatalogLine, readonly { stage: string; ids: readonly string[] }[]> = {
   litigation: [
-    { stage: "接案与案情", ids: ["intake-lit", "casefile", "casefile-deep", "issues", "case-analysis", "procedure", "amount"] },
+    { stage: "接案与案情", ids: ["intake-lit", "casefile", "casefile-deep", "issues", "case-analysis", "procedure", "amount", "litigation-budget"] },
     { stage: "起诉与应诉", ids: ["pleading", "defense", "ruling-digest", "appeal", "arbitration-app", "preservation"] },
     { stage: "庭审", ids: ["cross-exam", "hearing-outline", "agency"] },
     { stage: "执行与汇报", ids: ["enforcement", "case-report-lit"] },

@@ -75,7 +75,7 @@
     },
     {
       "name": "calc.deadline",
-      "version": "2",
+      "version": "3",
       "sideEffect": "read",
       "resource": "pure",
       "purposes": [
@@ -85,7 +85,7 @@
         "legal_research",
         "drafting"
       ],
-      "schemaHash": "43f6a9b1d62acfcf0d183ee31204782fd4fd25283f25c874d73eeaa8504da294"
+      "schemaHash": "2e0bb8f316b8de568076246156c692ee98f7f17c7fa8f513a5eff679fbfef2e0"
     },
     {
       "name": "redact.scan",
@@ -420,6 +420,20 @@
         "drafting"
       ],
       "schemaHash": "5a5b5f1781ef7b5702e53919f6ec606a008426d3874d2176cec52c3f14046adb"
+    },
+    {
+      "name": "calc.litigation_budget",
+      "version": "1",
+      "sideEffect": "read",
+      "resource": "pure",
+      "purposes": [
+        "legal_analysis",
+        "contract_review",
+        "case_file",
+        "legal_research",
+        "drafting"
+      ],
+      "schemaHash": "790c3f5f300e30ecd85f02fe1ac89745f7b65f0d74afd4d220251fc72924565c"
     }
   ]
 }

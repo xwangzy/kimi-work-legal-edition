@@ -86,3 +86,12 @@ test("提交与确认版：要件对照挂的事实要在本事项、带回陈�
   validateParams(schema, { doc_kind: "起诉状", arguments: [{ claim: "x", basis: [{ law: "民法典", article: 577, mode: "referral", elements: [{ element: "y", status: "to_prove", fact_ids: [] }], exceptions: "无" }] }] });
   assert.throws(() => validateParams(schema, { doc_kind: "起诉状", arguments: [{ claim: "x", basis: [{ law: "民法典", mode: "guess" }] }] }));
 });
+
+test("第 65 批：论点写“参照”而依据按直接适用提交的报回；第二、三条依据的但书也查", async () => {
+  const { reasoningChecks } = await import("../src/services/argument-outlines.ts");
+  const item = (claim: string, basis: any[]) => ({ arg_id: "a1", claim, basis, facts: [], counter: null }) as any;
+  const r = reasoningChecks([item("被告应参照买卖合同的规定承担瑕疵担保责任", [{ law: "民法典", article: 617, note: "", check: "version_verified", matched: "中华人民共和国民法典", article_text: "出卖人交付的标的物不符合质量要求的，买受人可以依据本法第五百八十二条至第五百八十四条的规定请求承担违约责任。", demo: false, elements: [{ element: "交付不符", status: "to_prove", facts: [] }] }])], "起诉状");
+  assert.ok(r.some((m) => /参照、类推或类比/.test(m)));
+  const r2 = reasoningChecks([item("被告应支付货款", [{ law: "民法典", article: 626, note: "", check: "version_verified", matched: "中华人民共和国民法典", article_text: "买受人应当按照约定的数额和支付方式支付价款。", demo: false, mode: "direct", elements: [{ element: "到期未付", status: "to_prove", facts: [] }] }])], "起诉状");
+  assert.ok(!r2.some((m) => /参照、类推或类比/.test(m)));
+});

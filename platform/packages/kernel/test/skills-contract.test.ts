@@ -100,6 +100,8 @@ function argsFor(tool: string, skill: string): Record<string, unknown> {
       return { title: "本所采购合同标准（草稿）", rules: [{ topic: "付款", standard: "验收合格后六十日内付款", fallback: "不超过九十日", red_line: "不接受预付全款" }] };
     case "calc.deadline": // 第 61 批：研读与履约体检把期间工具列为必需；程序期间写 type（期间与依据由目录给出）
       return skill === "performance-check" ? { start: "2026-09-28", period: { unit: "day", n: 10 }, rule: "civil" } : { start: "2026-09-28", type: "appeal_judgment" };
+    case "calc.litigation_budget": // 第 65 批：诉讼成本与回收测算（给 title 直接成表）
+      return { title: `${skill}-测算`, side: "plaintiff", claims: [{ label: "货款本金", amount_yuan: 310000 }, { label: "违约金", amount_yuan: 40000 }], scenarios: [{ label: "全部支持", support: 1 }, { label: "只支持本金", items: { 货款本金: 1 } }, { label: "全部驳回", support: 0 }], costs: [{ label: "律师费", amount_yuan: 30000 }] };
     case "calc.court_fee": // 第 61 批：研读复算受理费
       return { kind: "case_property", amount_yuan: 313762, reductions: ["simple_procedure"] };
     case "outline.submit":

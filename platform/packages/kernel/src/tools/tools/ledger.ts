@@ -170,6 +170,12 @@ export interface LedgerTotals {
   payments_total_yuan: number;
   unallocated_yuan: number;
   total_outstanding_yuan: number;
+  /**
+   * 第 65 批（V39，D-280）：履行期尚未届满的本金余额（最后履行日在暂计截止日当日或之后、起算日在截止日之后的本金）与已届满部分合计。
+   * V35 三张卡（争点矩阵、管辖与时效、保全）把未到期的质保金混进“未清偿合计”当起诉标的，只靠旁注提醒——拆成两段小计后起诉类方法引用已届满部分。
+   */
+  principal_not_due_yuan: number;
+  total_due_outstanding_yuan: number;
 }
 
 export interface LedgerPenaltyCheckResult {
@@ -675,6 +681,9 @@ export function calcLedger(p: LedgerParams): LedgerResult {
   if (allocated !== totals.payments_total) throw new DomainError("internal", "calc.ledger 内部勾稽不平（付款合计与各项抵充之和不等），未出结果", 500);
   const doubledOutstanding = doubledAccrued - doubledPaid;
   const totalOutstanding = totals.principal_outstanding + outstanding.interest + outstanding.penalty + totals.cost_outstanding + doubledOutstanding;
+  // 履行期未届满的本金（起算日在暂计截止日之后）：利息、违约金在本口径下为 0，只把本金余额拆出来
+  const notDueLines = lines.filter((l) => l.kind === "principal" && l.start !== null && l.start >= end && l.out > 0n);
+  const principalNotDue = notDueLines.reduce((n, l) => n + l.out, 0n);
 
   if (usesLpr && p.as_of > LPR_CHECKED_THROUGH) warnings.push(`${LPR_CHECKED_THROUGH} 之后的 LPR 报价没有收录，这之后按最后一次报价计：请到全国银行间同业拆借中心核对后再定稿`);
 
@@ -746,6 +755,8 @@ export function calcLedger(p: LedgerParams): LedgerResult {
     payments_total_yuan: yuan(totals.payments_total),
     unallocated_yuan: yuan(unallocated),
     total_outstanding_yuan: yuan(totalOutstanding),
+    principal_not_due_yuan: yuan(principalNotDue),
+    total_due_outstanding_yuan: yuan(totalOutstanding - principalNotDue),
   };
   const name = (typeof p.name === "string" && p.name.trim() ? p.name.trim() : "测算").slice(0, 40);
   const pieces: string[] = [];
@@ -760,7 +771,9 @@ export function calcLedger(p: LedgerParams): LedgerResult {
   if (hasPenalty) piece("penalty", "违约金");
   if (totals.cost_original > 0n) pieces.push(`费用未付 ${fmt(totals.cost_outstanding)} 元`);
   if (doubledRate) pieces.push(`加倍部分债务利息未付 ${fmt(doubledOutstanding)} 元`);
-  const summary = `${name}：截至 ${p.as_of}（含当日），${pieces.join("，")}，合计 ${fmt(totalOutstanding)} 元。`;
+  const notDueText = principalNotDue > 0n ? `；其中履行期尚未届满的本金 ${fmt(principalNotDue)} 元（${notDueLines.map((l) => l.label).join("、").slice(0, 80)}），已届满部分合计 ${fmt(totalOutstanding - principalNotDue)} 元` : "";
+  const summary = `${name}：截至 ${p.as_of}（含当日），${pieces.join("，")}，合计 ${fmt(totalOutstanding)} 元${notDueText}。`;
+  if (principalNotDue > 0n) warnings.push(`未清偿合计里有履行期尚未届满的本金 ${fmt(principalNotDue)} 元（${notDueLines.map((l) => l.label).join("、").slice(0, 80)}）：起诉、申请仲裁或保全的请求金额一般以已届满部分（${fmt(totalOutstanding - principalNotDue)} 元）为准；要一并主张未届满部分的，须有约定的加速到期或解除等依据，并写明这一前提`);
 
   const anyPenaltyLike = hasPenalty && allocation !== "principal_only" && usable.length > 0;
   const lineCaps = lines.filter((l) => l.cap !== null);

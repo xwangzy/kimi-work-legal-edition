@@ -14,7 +14,8 @@ import { localToday } from "../services/local-date.ts";
 import { prefsPromptLine } from "../services/writing-prefs.ts";
 import { matterFactsLine } from "../services/matter-facts.ts";
 import { sourceDocumentTexts } from "../services/source-learning.ts";
-import { outlineOpenItems, outlineState } from "../services/argument-outlines.ts";
+import { confirmedView, latestOutline, outlineOpenItems, outlineState } from "../services/argument-outlines.ts";
+import { downgradeAgainstConfirmed } from "../services/review-vs-outline.ts";
 import { DomainError, RUN_TRANSITIONS, RunStatus, canTransitionRun, isTerminalRun, newId, sha256Hex } from "@zr-legal/domain";
 import { replaceDirectIdentifiers } from "@zr-legal/pseudonym";
 import { nicknameLegend, relationLegend } from "@zr-legal/tokenizer";
@@ -40,6 +41,7 @@ import { errFields, slog } from "@zr-legal/safe-log";
 import { runLineage } from "../services/artifact-lineage.ts";
 import { LIVE_ARTIFACT, reviveSuperseded, supersedeEarlierAttempts } from "../services/attempt-supersede.ts";
 import { isMachineFinding, issueKey, machineFindings, MACHINE_FINDINGS_MAX, newIssuesSince, runAmountIssues } from "./amount-reconcile.ts";
+import { docFindings, runDocIssues } from "./doc-reconcile.ts";
 import { scrubLocalPaths } from "../services/reply-local-paths.ts";
 import { materialRepealedPromptLine, materialRepealedReviewLines } from "../services/material-repealed.ts";
 import { REVIEW_KIND_OF_SKILL, findingLevel, reviewItems, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, lawExcerptLines, lawRefsIn, parseFindings, workbookText, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind, followUpMessages, followUpSection, parseFollowUp, quoteHints, type FollowUpItem } from "../services/independent-review.ts";
@@ -1033,7 +1035,7 @@ export function methodPromptLine(skill: string | null, skillArgs: Record<string,
       `本方法的主交付物是 Word 文书《${primaryOutput.replace(WORD_OUTPUT, "")}》，必须用 docx.render_report 生成；Excel 表格只作附件，不能代替文书（文书里要成表的内容用 docx.render_report 的 table 画在 Word 里）；事实或身份信息不全照样出草稿，文书非填不可、材料里又没有的填空项写“【待填】”；要发给对方或交给法院的文书正文不留“【待确认】”“律师提示”“待补”和给律师的期限提醒——未经律师确认或材料之间矛盾的事实，正文用附条件或对我方站得住的保守表述，待确认事项写进给律师的核对附件和最终答复；方法规定先向律师要的核心材料（例如答辩要回应的起诉状）不在事项里时，按方法先问律师。`
     : // Excel 主交付物（第 31 批，审查 B-12）：金额测算、引用核验等的成果是表本身，只在答复里贴表格或文字不算交付
       primaryOutput && SHEET_OUTPUT.test(primaryOutput)
-      ? `本方法的主交付物是 Excel 表《${primaryOutput.replace(SHEET_OUTPUT, "")}》，必须用 xlsx.render_table 生成（欠款、利息、违约金的计算表用 calc.ledger 给 title 直接成表），不能只在答复里列表格或写文字；信息不全照样出表；要作为附页递交法院或发给对方的表不留“【待确认】”等给律师的标记，未经律师确认的数据写进给律师的核对附件和最终答复（内部分析用的表按方法标注）。`
+      ? `本方法的主交付物是 Excel 表《${primaryOutput.replace(SHEET_OUTPUT, "")}》，必须用 xlsx.render_table 生成（欠款、利息、违约金的计算表用 calc.ledger 给 title 直接成表；诉讼成本与回收测算用 calc.litigation_budget 给 title 直接成表），不能只在答复里列表格或写文字；信息不全照样出表；要作为附页递交法院或发给对方的表不留“【待确认】”等给律师的标记，未经律师确认的数据写进给律师的核对附件和最终答复（内部分析用的表按方法标注）。`
       : "";
   const staged = wantsRedlineStage(skill, skillArgs) ? REDLINE_STAGE_ONE_LINE : "";
   return skill ? `【方法】先调用 Skill 工具加载方法模板“${skill}”，按其步骤、工具约定与输出规格执行；${argsLine}${deliver}${staged}模板与律师的任务说明冲突时，以律师的说明为准（工作准则列明的底线除外），不为此再提问。\n` : "";
@@ -2104,7 +2106,7 @@ async function runReviewStage(
   const amountSources = (): string[] => [p.goalSent, ...p.snapshot.map((m) => m.text), ...mergeAnswerLines(ledgerAnswers(db, chain), chain.flatMap((rid) => agentClient.answered?.(rid) ?? [])), ...calcResultTexts(chain)];
 
   // ① 复核（检查点：重试时不重复调用模型）
-  const review = await ctx.step("independent_review", async (): Promise<{ ok: boolean; text: string; findings: ReviewFinding[]; amountKeys?: string[]; error?: string }> => {
+  const review = await ctx.step("independent_review", async (): Promise<{ ok: boolean; text: string; findings: ReviewFinding[]; amountKeys?: string[]; docKeys?: string[]; error?: string }> => {
     assertNotCancelled(db, runId);
     const docTexts = tok([...targets.docs.map((d) => d.text), ...targets.diff, targets.reply, ...targets.inventory]);
     const docs = targets.docs.map((d, i) => ({ filename: tok([d.filename])[0]!, text: docTexts[i]! }));
@@ -2157,23 +2159,27 @@ async function runReviewStage(
         if (!text.trim()) throw new Error("复核没有给出意见（模型输出为空，可能是推理用尽了输出上限）");
         recordToolOperation(db, runId, attemptId, "model", "review", { route: "legal/k3" }, "succeeded");
         // “未发现实质问题”由 parseFindings 判断：复核人写“1. …｜必须改”又在末尾写“其余未发现实质问题”的，意见照样认出
-        const parsed = parseFindings(text);
+        // 复核意见推翻律师已确认论点所依据的文件（第 65 批，D-290）：降为“建议改”、交律师决定，修改轮不自动执行
+        const parsed = againstConfirmedOutline(db, runId, parseFindings(text));
         // 整单金额勾稽（D-229）：写出来的算式逐条复算、文书里的金额要在最新计算表或材料里有出处——机器核对出的不一致并入意见、列为必须改
         const amountIssues = runAmountIssues(ctx.deps, runId, run.matter_id, amountSources());
         const machine = machineFindings(amountIssues, parsed.reduce((n, f) => Math.max(n, f.no), 0) + 1, { orphanMust: p.snapshot.every((m) => m.text.trim().length > 0) });
-        const findings: ReviewFinding[] = [...parsed.slice(0, 15 - Math.min(machine.length, MACHINE_FINDINGS_MAX)), ...machine];
+        // 整单期限复算与跨交付件核对（第 65 批，D-285、D-287）：同一层并入，编号接在金额勾稽之后
+        const docIssues = runDocIssues(ctx.deps, runId, run.matter_id);
+        const docMachine = docFindings(docIssues, [...parsed, ...machine].reduce((n, f) => Math.max(n, f.no), 0) + 1);
+        const findings: ReviewFinding[] = [...parsed.slice(0, Math.max(0, 15 - Math.min(machine.length, MACHINE_FINDINGS_MAX) - docMachine.length)), ...machine, ...docMachine];
         appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.completed, "review.completed", {
           kind: picked.kind,
           findings: findings.length,
           must: findings.filter((f) => f.must).length,
-          ...(machine.length > 0 ? { machine: machine.length } : {}),
+          ...(machine.length + docMachine.length > 0 ? { machine: machine.length + docMachine.length } : {}),
           seconds: Math.round((Date.now() - started) / 1000),
           request_id: s.requestId,
           // 逐条意见（D-223，代号形态、各栏截断、至多 15 条）：任务页据此列出“复核建议”，律师勾选后可按意见修改
           items: reviewItems(findings),
         });
         // 复核时机器核对出的全部条目（第 58 批）：回看时在最新版上重跑，修改轮新带进来的算式不等由此认出
-        return { ok: true, text, findings, amountKeys: amountIssues.map(issueKey) };
+        return { ok: true, text, findings, amountKeys: amountIssues.map(issueKey), docKeys: docIssues.map((i) => i.key) };
       } catch (e) {
         recordToolOperation(db, runId, attemptId, "model", "review", { route: "legal/k3" }, "failed");
         const error = String((e as Error)?.message ?? e).slice(0, 200);
@@ -2360,10 +2366,14 @@ async function runReviewStage(
       // 机器核对出的意见（D-229）由内核重跑同一项核对判断，不交给模型回看；模型只回看它自己提的
       const current = runAmountIssues(ctx.deps, runId, run.matter_id, amountSources());
       const stillThere = new Set(current.map(issueKey));
+      // 期限复算与跨交付件核对（D-285、D-287）同样由内核在最新版上重跑；修改轮新带进来的必须改项列进系统核对结论
+      const docNow = runDocIssues(ctx.deps, runId, run.matter_id);
+      for (const i of docNow) stillThere.add(i.key);
+      const freshDoc = review.docKeys === undefined ? [] : docFindings(docNow.filter((i) => i.must && !review.docKeys!.includes(i.key)), 1).map((f) => `${f.where}：${f.problem}`);
       // 修改轮新引入的算式不等（第 58 批，V31 企业催告函：修改轮把违约金基数原额改成 0，回看只核对上一轮报过的几条，没发现）：
       // 复核时没有、最新版里出现的，列进系统核对结论（旧检查点没有 amountKeys 的不比）
       const freshIssues = review.amountKeys === undefined ? [] : newIssuesSince(review.amountKeys, current).filter((i) => i.kind === "equation");
-      const fresh = machineFindings(freshIssues, 1).map((f) => `${f.where}：${f.problem}`);
+      const fresh = [...machineFindings(freshIssues, 1).map((f) => `${f.where}：${f.problem}`), ...freshDoc];
       const machineItems: FollowUpItem[] = mustList.filter(isMachineFinding).map((f) => {
         const open = stillThere.has(f.machine_key ?? "");
         return { no: f.no, verdict: open ? ("open" as const) : ("done" as const), note: open ? "系统重新核对：这处不一致还在最新版文件里" : "系统重新核对：最新版文件里已经一致" };
@@ -2470,7 +2480,7 @@ async function runReviewStage(
         if (!row) return { ok: false };
         const notes = fu.items.filter((i) => i.verdict === "open").map((i) => `第 ${i.no} 条${i.note ? `（${i.note}）` : ""}`);
         const openPart = notes.length > 0 ? `修改之后，系统只对照最新版文件又核对了一遍独立复核标为“必须改”的意见，${notes.join("；")}没有落实到文件里。下文“独立复核处理情况”对这几条的说法与文件不一致的，以这段核对结论为准；详见《独立复核意见》末尾的“回看”一节。` : "";
-        const freshPart = fresh.length > 0 ? `修改轮之后系统重新复算，发现修改带进来的算式不等：${fresh.join("；")}。请核对改正后再使用。` : "";
+        const freshPart = fresh.length > 0 ? `修改轮之后系统重新核对，发现修改带进来的不一致（算式、期限或文件之间）：${fresh.join("；")}。请核对改正后再使用。` : "";
         const head = `> **系统核对**：${openPart}${freshPart}\n\n`;
         const stored = ctx.deps.blobs.put(Buffer.concat([Buffer.from(head, "utf8"), ctx.deps.blobs.read(row.storage_uri)]), run.matter_id);
         db.tx(() => registerArtifact(ctx, run, runId, attemptId, { kind: row.kind, filename: row.filename, sha256: stored.sha256, storage_uri: stored.storage_uri, manifest: { stage: "independent_review_followup", note: "最终答复：前面加了回看的核对结论（与文件不一致的说法以核对结论为准）" } }, REVIEW_SEQ.replyNote));
@@ -2479,7 +2489,7 @@ async function runReviewStage(
       return {
         remaining: [
           ...(open.length > 0 ? [`独立复核标为必须改的意见里，第 ${open.join("、")} 条没有落实到最新版文件：详见《独立复核意见》末尾的“回看”一节，处理后再使用`] : []),
-          ...(fresh.length > 0 ? [`修改轮之后系统重新复算，发现 ${fresh.length} 处修改带进来的算式不等：${fresh.slice(0, 3).join("；")}`] : []),
+          ...(fresh.length > 0 ? [`修改轮之后系统重新核对，发现 ${fresh.length} 处修改带进来的不一致（算式、期限或文件之间）：${fresh.slice(0, 3).join("；")}`] : []),
         ],
         partial: true,
       };
@@ -2647,6 +2657,24 @@ async function ensureFactsTimeline(ctx: Ctx, run: RunRow, runId: string, attempt
  * 到工作时限时本任务已交出的文书或表格（第 35 批真实走查 N1）：方法有主交付物的，须主交付物已登记；没有的，登记了任一 Word 文书或 Excel 表即可。
  * 都没有返回 null（照常记超时）。返回给律师的说明写清“文书已交出、收尾没完成”；limitMs 是本次运行实际下发的工作时限。纯查询。
  */
+/** 复核意见与律师已确认的论点对照（D-290）：本任务没有确认过的提纲时原样返回；对照本身出错也原样返回。 */
+export function againstConfirmedOutline(db: KernelDb, runId: string, findings: ReviewFinding[]): ReviewFinding[] {
+  try {
+    const o = latestOutline(db, runId);
+    if (!o || o.status !== "confirmed") return findings;
+    const args = confirmedView(o).map((a) => ({
+      claim: a.claim,
+      texts: [
+        ...a.basis.flatMap((b) => [b.law, b.note ?? "", b.exceptions ?? "", ...(b.elements ?? []).flatMap((e) => [e.element, ...e.facts.map((f) => f.statement)])]),
+        ...a.facts.map((f) => f.statement),
+      ],
+    }));
+    return downgradeAgainstConfirmed(findings, args).findings;
+  } catch {
+    return findings;
+  }
+}
+
 export function deliveredBeforeDeadline(db: KernelDb, runId: string, primaryOutput: string | null, limitMs: number = AGENT_WORK_LIMIT_MS): { files: string[]; note: string } | null {
   if (primaryOutput && (WORD_OUTPUT.test(primaryOutput) || SHEET_OUTPUT.test(primaryOutput)) && primaryDeliverableMissing(db, runId, primaryOutput)) return null;
   const rows = db.all<{ filename: string }>(

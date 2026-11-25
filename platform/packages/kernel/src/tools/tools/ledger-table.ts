@@ -131,6 +131,8 @@ function summaryLayout(results: LedgerResult[]): Layout {
   keys.push({ key: "pay", label: "本表录入的付款合计（元）" });
   if (any((r) => r.totals.unallocated_yuan > 0)) keys.push({ key: "free", label: "未冲（多付）（元）" });
   keys.push({ key: "total", label: "未清偿合计（元）" });
+  // 第 65 批（D-280）：有履行期未届满的本金时拆成两段小计，起诉类文书引用“已届满部分合计”
+  if (any((r) => r.totals.principal_not_due_yuan > 0)) keys.push({ key: "nd", label: "其中：履行期未届满的本金（元）" }, { key: "due", label: "已届满部分合计（元）" });
   if (any((r) => !!r.cap)) keys.push({ key: "cap", label: "约定上限" });
   if (any((r) => !!r.penalty_check)) keys.push({ key: "loss", label: "损失数额（元）" }, { key: "ref", label: "损失的 130%（元）" }, { key: "check", label: "违约金调减参照" });
   if (any((r) => r.payments.length > 0)) keys.push({ key: "order", label: "抵充顺序" });
@@ -192,6 +194,8 @@ function summarySheet(results: LedgerResult[], layout: Layout, refs: { seg: stri
     put("pay", r.payments.length > 0 ? T.payments_total_yuan : "未录入", payCell("amount"));
     put("free", T.unallocated_yuan, payCell("free"));
     put("total", T.total_outstanding_yuan, ["po", "io", "no", "co", "do"].filter((k) => at[k] !== undefined).map(cell).join("+"));
+    put("nd", T.principal_not_due_yuan);
+    put("due", T.total_due_outstanding_yuan, at.nd !== undefined ? `${cell("total")}-${cell("nd")}` : undefined);
     put("cap", r.cap ? `${r.cap.applies_to} ${money(r.cap.cap_yuan)} 元；${r.cap.applied ? `各段累计已超过，按上限计（${r.cap.reached_on ?? ""} 达到）` : r.cap.reached_on ? `尚未达到，按现有日累计额推算约 ${r.cap.reached_on} 达到（推算）` : "尚未达到"}` : "无");
     const pc = r.penalty_check;
     if (pc) {

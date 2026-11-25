@@ -156,6 +156,8 @@ const LAWYER_WORDS: readonly [RegExp, string][] = [
   [/ ?`?calc\.court_fee`? ?/g, "诉讼费计算工具"],
   [/ ?`?calc\.labor`? ?/g, "劳动补偿计算工具"],
   [/ ?`?calc\.ledger`? ?/g, "欠款台账计算工具"],
+  [/ ?`?calc\.litigation_budget`? ?/g, "诉讼成本测算工具"],
+  [/ ?`?evidence\.rules_check`? ?/g, "证据形式规则核对"],
   [/ ?`?citations\.verify`? ?/g, "引用核验"],
   [/ ?`?materials\.list`? ?/g, "材料目录"],
   [/ ?`?docx\.compare`? ?/g, "两稿比对"],

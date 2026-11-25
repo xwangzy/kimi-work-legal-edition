@@ -160,6 +160,11 @@ export function reasonText(v: Pick<CitationVerdict, "reasons" | "state" | "sugge
  * - 事件时点适用的版本与现行版本不同 → 须核对引的是哪一版、条号与内容是否对得上；只到月且当月内版本有变化的如实说；
  * - 地方性法规的地域与事项地域不同 → 须核对是否适用。
  */
+/** 适用于“民法典施行后的法律事实引起的民事案件”的解释（合同编通则解释第六十九条第二款、总则编解释第三十九条第二款，库内原文已核）。 */
+const CIVIL_CODE_FACTS = /合同编通则若干问题的解释|总则编若干问题的解释/;
+/** 专门处理新旧法衔接、按审理状态适用的规定（民法典时间效力规定第二十八条、公司法时间效力规定）：不按事件时点提示。 */
+const PENDING_CASES = /时间效力的若干规定/;
+
 export function timingNote(lawdb: Pick<Lawdb, "findLawVersions">, law: string, article: number, asOf: string, eventDate: string | null, region: string | null): string | null {
   let rows = lawdb.findLawVersions(law);
   for (const name of lawNameCandidates(law)) {
@@ -178,6 +183,14 @@ export function timingNote(lawdb: Pick<Lawdb, "findLawVersions">, law: string, a
   const atFrom = versionAt(rows, range.from);
   const atTo = versionAt(rows, range.to);
   const when = eventDate!;
+  // 第 65 批（V39，外部第二轮评估 R1）：司法解释多按案件审理状态适用（施行后尚未审结、尚未终审或新受理的案件，见各解释的时间效力条款），
+  // 不按事件时点——原先事件早于解释施行日的一律提示“事件发生时没有有效版本”，方向反了（合同编通则解释第六十九条、民法典时间效力规定第二十八条）
+  if (rows[0]!.law_level === "司法解释") {
+    const first = rows[0]!.effective;
+    if (CIVIL_CODE_FACTS.test(name)) return range.to < "2021-01-01" ? `本解释只适用于民法典施行后（2021-01-01 起）的法律事实引起的案件（见其最后一条），事件发生在 ${when}：请改按当时的法律与司法解释核对` : null;
+    if (PENDING_CASES.test(name)) return null;
+    if (!atFrom && !atTo && first > range.to) return `司法解释按案件审理状态适用（多数为施行后尚未审结或新受理的案件），不按事件时点：事件发生在 ${when}、本解释 ${first} 起施行，不当然排除适用，请按该解释的时间效力条款核对`;
+  }
   if (!atFrom && !atTo) {
     // 法规库可能没收早期版本：不说“还没有施行”，只说库里没有当时有效的版本
     const first = rows[0]!.effective;

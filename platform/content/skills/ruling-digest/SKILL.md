@@ -6,12 +6,12 @@ when_to_use: 事项里有一份新收到的裁判文书（判决、裁定、调�
 arguments: [side, purpose, served_on]
 kwl:
   id: ruling-digest
-  version: 1.0.0
+  version: 1.2.0
   lines: [诉讼仲裁, 企业法务]
   chain: litigation
   tier: beta
   tools_required: [materials.list, materials.read_excerpt, calc.deadline, calc.court_fee, citations.verify, docx.render_report, xlsx.render_table]
-  tools_optional: [law.get_article, law.search, calc.ledger, evidence.rules_check, facts.list, facts.submit, xlsx.edit_cells, docx.edit_draft]
+  tools_optional: [law.get_article, law.search, calc.ledger, calc.litigation_budget, evidence.rules_check, facts.list, facts.submit, xlsx.edit_cells, docx.edit_draft]
   outputs: [裁判文书研读报告.docx, 判项与期限核对表.xlsx]
   source_lineage: [spec:V35第61批, research:R2-legal-document-summarization, research:R2-multi-document-summarization]
 ---
@@ -36,7 +36,11 @@ kwl:
    - 判项里的利息、违约金只写了口径没写数额的，需要给客户一个截至某日的数时用 `calc.ledger` 按判项口径算到分析截止日，写明这是按判项口径的测算、以执行时法院计算为准；口径不清（LPR 期限、起算日）的列两种算法。
    - **受理费**用 `calc.court_fee` 按诉讼请求金额复算（简易程序减半、调解撤诉减半照文书写的情形），与文书写的数额对照；负担比例与各方负担金额核对加总。复算与文书不一致的，写出两者与差额，不擅自认定法院算错（可能有本方法看不到的请求变更）。
    - 迟延履行加倍债务利息的告知照写，引的条号用核验结果。
-3. **期限**（工作表“期限”）：一律用 `calc.deadline` 的程序期间目录算，不自己数日子——判决上诉期 `type: appeal_judgment`、裁定上诉期 `appeal_ruling`（当事人在境内没有住所的加 `foreign_domicile: true`）、商事仲裁裁决申请撤销 `arbitration_award_setaside`、劳动仲裁裁决起诉 `labor_award_suit`（用人单位对终局裁决申请撤销用 `labor_award_setaside_employer`）、判决生效后申请执行 `enforcement_application`（起算为判项规定的履行期间最后一日；履行期间多从“判决生效之日起”算，生效日以法院出具的生效证明为准——未上诉的，各方上诉期都届满后生效，各方送达日不同的以最晚届满的一方为准，写明这一推算并请律师以生效证明核对）、申请再审 `retrial_application`。每行写 期限 / 起算事实与出处 / 届满日 / 依据（工具返回的条号）/ 要做的动作 / 提醒。起算事实不明的给分支，不写“已过 / 未过”的结论。
+3. **期限**（工作表“期限”）：一律用 `calc.deadline` 的程序期间目录算，不自己数日子——判决上诉期 `type: appeal_judgment`、裁定上诉期 `appeal_ruling`（当事人在境内没有住所的加 `foreign_domicile: true`）、商事仲裁裁决申请撤销 `arbitration_award_setaside`、劳动仲裁裁决起诉 `labor_award_suit`（用人单位对终局裁决申请撤销用 `labor_award_setaside_employer`）、判决生效后申请执行 `enforcement_application`（起算为判项规定的履行期间最后一日；履行期间多从“判决生效之日起”算，生效日以法院出具的生效证明为准——未上诉的，各方上诉期都届满后生效，各方送达日不同的以最晚届满的一方为准，写明这一推算并请律师以生效证明核对）、申请再审 `retrial_application`。**先分文书种类再选期限**（第 65 批：原先裁定一律按十日上诉算，保全裁定会被算错救济途径）：
+   - **裁定**：只有不予受理、管辖权异议、驳回起诉三种裁定可以上诉（民事诉讼法第一百五十七条第二款，`appeal_ruling`）；**保全、先予执行裁定不能上诉**，只能自收到裁定书之日起五日内向作出裁定的法院申请复议一次（`preservation_reconsideration`，复议期间不停止执行）；执行异议裁定按 `enforcement_objection_review`（十日内向上一级法院申请复议）、案外人异议裁定按 `third_party_objection_suit`（与原判决无关的十五日内起诉）；其他裁定（准许撤诉、中止或终结诉讼、补正笔误等）写明“不能上诉”，不算上诉期。
+   - **调解书**：经双方签收即具有法律效力，不能上诉（民事诉讼法第一百条第三款）；研读写明签收日即生效日、履行期限与申请执行期间；认为调解违反自愿原则或内容违法的，只写“可考虑申请再审（民事诉讼法第二百一十二条），须律师核对再审条件”，不算上诉期。
+   - **二审判决、裁定**：是终审，不写上诉期；写申请再审期限（`retrial_application`）与申请执行期间。
+   每行写 期限 / 起算事实与出处 / 届满日 / 依据（工具返回的条号）/ 要做的动作 / 提醒。起算事实不明的给分支，不写“已过 / 未过”的结论。
 4. **争点与裁判理由**：按法院归纳的争点逐项写（法院没有明确归纳的，按“本院认为”的段落顺序归纳并标“据裁判理由归纳”）：争点 → 法院结论 → 理由要点（逐字摘最关键的一两句，其余概括）→ 所依证据与条文 → 对我方的影响。专门检查四类最常见的可争议之处，有就写、没有就不写：
    - **举证责任分配**：谁负举证责任、因谁举证不能而败诉；对照民诉法解释第九十条、第九十一条与民事证据规定（用 `law.get_article` 取原文），看法院是否把本应由对方证明的事实的不利后果分给了我方。
    - **证据认定**：对单方证据、复印件、电子数据、鉴定意见的采信理由是否成立（可用 `evidence.rules_check` 核对形式规则）。
@@ -45,7 +49,7 @@ kwl:
 5. **援引条文核验**（工作表“援引条文核验”）：把裁判文书援引的全部条文按裁判日用一次 `citations.verify` 批量核验，逐条写 法名 / 条号 / 裁判时版本 / 核验结果 / 与现行版本是否一致 / 条文要点（`law.get_article` 取原文后用自己的话概括）/ 与本案认定是否对应。条号对不上的（例如引用已改号的旧条号）写出来，作为上诉理由时写明“援引错误本身不必然导致改判，要看适用结果是否错误”。
 6. **救济评估**（`purpose` 为上诉评估时必做；汇报时写一段简要版）：
    - 逐项列可主张的上诉或撤销理由：类型（事实认定 / 法律适用 / 程序 / 裁量）→ 一审原文（逐字）→ 我方观点 → 依据（条文、证据、可补充的新证据）→ 强弱（较强 / 一般 / 较弱，写主要理由；不写百分比）。
-   - 同时列**对方可能上诉的判项**与我方的应对（对方上诉后我方的最坏情况）。
+   - 同时列**对方可能上诉的判项**与我方的应对（对方上诉后我方的最坏情况）。二审围绕当事人的上诉请求审理（民事诉讼法第一百七十五条；民诉法解释第三百二十一条：没有提出请求的不予审理，但一审判决违反法律禁止性规定或者损害国家利益、社会公共利益、他人合法权益的除外）——只我方上诉时，二审一般不会就对方没有上诉的部分改得对我方更不利；对方也上诉（或在上诉期内另行上诉）时不在此限，写清这一差别。上诉理由依赖申请鉴定的，写明鉴定是双向的：结论也可能对我方更不利（第 65 批真实验收 v39-L1b 评分）。
    - 上诉的成本：二审案件受理费用 `calc.court_fee` 按不服判项的金额算（上诉请求数额），写明预估；律师费、时间成本由律师补。
    - 上诉与不上诉各自的后果：不上诉的，判决何时生效、对方履行期限、申请执行期间；上诉的，二审期间判决不生效、对方上诉对我方的影响。按工作准则第 6 条，这是律师与客户的决定：写利弊，不替客户决定；需要律师选择的（是否上诉、上诉范围）在最终答复里列为待决定事项。
 7. **成文**：用 `docx.render_report` 出《裁判文书研读报告》（title：`裁判文书研读报告-<案件简称>`），用 `xlsx.render_table` 出《判项与期限核对表》（title：`判项与期限核对表-<案件简称>`）。

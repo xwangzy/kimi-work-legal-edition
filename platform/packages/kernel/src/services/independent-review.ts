@@ -60,6 +60,8 @@ export const REVIEW_KIND_OF_SKILL: Readonly<Record<string, ReviewKind>> = Object
   "ruling-digest": "opinion",
   "privacy-compliance": "opinion",
   "performance-check": "opinion",
+  // 第 65 批（V39，D-288）：诉讼成本与回收测算的《测算说明》按意见类清单复核（金额复算、推理链）——真实验收 v39-B2 首单没有复核环节（漏登记）
+  "litigation-budget": "opinion",
   "redraft-review": "review",
   "contract-redline": "review",
   // 整理审查要点：交付的是存进事项的审查要点草稿（不是文件），复核读这份草稿；修改轮用 rules.propose 重交
