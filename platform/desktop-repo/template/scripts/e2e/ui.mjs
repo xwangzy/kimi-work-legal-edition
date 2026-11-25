@@ -286,17 +286,26 @@ async function openRegister() {
   await page.locator('[data-auth-page="activate"] button.btn-link').filter({ hasText: /^\s*注册\s*$/ }).first().click();
 }
 
-/** 第 64 批：登录页先显示“正在取得登录方式”的骨架，取到才出表单；取不到会显示“暂时取不到登录方式”（如实失败，不再等到超时）。 */
+/** 第 64 批：登录页先显示“正在取得登录方式”的骨架，取到才出表单；取不到会显示“暂时取不到登录方式”（如实失败，不再等到超时）。
+ * 记首屏证据：从开始等到表单出现用了多久、期间是否见过骨架、表单出现时有哪几种登录方式（Windows 首启“验证码登录迟到”的回归核对）。 */
 async function authFormReady(ms = 60000) {
+  const t0 = Date.now();
+  let sawSkeleton = false;
   await until(
     async () => {
       if (await page.locator(".auth-unavailable").count()) throw new Error(`登录页取不到登录方式：${mask(await page.locator(".auth-unavailable").innerText())}`);
+      if (await page.locator(".auth-skeleton").count()) sawSkeleton = true;
       return (await page.locator('[data-auth-page] form, .auth-seg, .login-box').count()) > 0 && !(await page.locator(".auth-skeleton").count()) ? true : null;
     },
     ms,
-    500,
+    250,
     "登录表单",
   );
+  const methods = await page.getByRole("tab").allInnerTexts().catch(() => []);
+  const ev = { form_ready_ms: Date.now() - t0, saw_skeleton: sawSkeleton, methods: methods.filter((x) => /登录/.test(x)).map((x) => x.trim()), app_uptime_s: Math.round((Date.now() - t0) / 1000) };
+  log("登录页首屏：", JSON.stringify(ev));
+  state.auth_first_screen ??= ev;
+  saveState();
 }
 
 /** 开通页上回到登录（第 64 批：注册页的“已有账号？登录”；旧版本是页签）。 */
