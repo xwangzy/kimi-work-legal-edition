@@ -308,7 +308,11 @@ async function loginSms() {
   await ready();
   const onActivate = (await page.getByRole("tablist", { name: "登录或注册" }).count()) > 0;
   if (onActivate) await page.getByRole("tab", { name: "登录", exact: true }).click();
-  else await go("#/connections/account");
+  else {
+    // 就地登录框只在打开时取一次登录方式：先离开再回来，取到的是云端此刻的策略（例如断网恢复之后）
+    await go("#/matters");
+    await go("#/connections/account");
+  }
   // 登录方式由云端 /v1/meta 异步取回后才出现
   const smsTab = page.getByRole("tab", { name: "验证码登录" });
   await smsTab.first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});

@@ -128,6 +128,11 @@ export interface QuotaView {
 }
 
 type CallResult = { ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number; message?: string; retry_after_s?: number };
+/**
+ * 账号接口路径（本地先粗查，闸门白名单再精确核对）。第 63 批：原来只认小写，第 2～9 台电脑的设备编号（…_D2）与登录编号（ses_ 后面是
+ * base64url，大小写都有）在本机就被拒——“我的电脑 → 解绑”“登录记录 → 让这处下线”自第 44 批起在桌面端从没成功过（报“没有完成，请稍后重试”）。
+ */
+export const ACCOUNT_PATH = /^\/v1\/auth\/[A-Za-z0-9/_-]{2,120}$/;
 const SESSION_PROBLEMS: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch"]);
 
 export class ControlPlaneClient {
@@ -551,7 +556,7 @@ export class ControlPlaneClient {
 
   /** 账号接口原样调用（带设备签名与会话头）；失败抛带 code 的错误。 */
   async account(method: "GET" | "POST", path: string, body?: unknown): Promise<Record<string, unknown>> {
-    if (!/^\/v1\/auth\/[a-z0-9/_-]{2,80}$/.test(path)) throw new Error("account_path_invalid");
+    if (!ACCOUNT_PATH.test(path)) throw new Error("account_path_invalid");
     const r = await this.call(method, path, method === "GET" ? undefined : (body ?? {}));
     if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null, retryAfter: r.retry_after_s ?? null, ...(r.error === "client_outdated" ? { minVersion: this.outdated?.min_version ?? null } : {}) });
     return r.json;

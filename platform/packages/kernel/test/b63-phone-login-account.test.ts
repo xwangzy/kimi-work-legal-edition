@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { startCloudCp, type CloudCp } from "./cloud-cp.ts";
 import { loginBody, registrationMetaOf } from "../src/services/onboarding.ts";
 import { accountFailure } from "../src/account-session.ts";
+import { ACCOUNT_PATH } from "../src/control-plane/client.ts";
 import type { Kernel } from "../src/index.ts";
 
 const PW = "Lawyer2026secure";
@@ -75,6 +76,9 @@ test("纯函数：策略归一（旧云端 legacy；新云端 phone_login / phon
   assert.equal(accountFailure("auth_invalid", "随便什么").text, "邮箱或密码不正确");
   assert.deepEqual([accountFailure("sms_probe_limit").status, accountFailure("sms_login_disabled").status, accountFailure("phone_same").status], [429, 502, 409]);
   assert.equal(accountFailure("phone_taken", "这个手机号已绑定在别的账号上：请换一个手机号").text, "这个手机号已绑定在别的账号上：请换一个手机号");
+  // 第 63 批线上验收查出：第 2 台电脑的设备编号与登录编号有大写，账号接口路径在本机被拒（解绑电脑、让别处下线从没成功过）
+  for (const ok of ["/v1/auth/devices/dev_kwlb63mac_kwlb63mac_D2/unbind", "/v1/auth/sessions/ses_eclBf5_IQS8DVBa3/revoke", "/v1/auth/phone", "/v1/auth/sms/send", "/v1/auth/me"]) assert.ok(ACCOUNT_PATH.test(ok), ok);
+  for (const bad of ["/v1/ops/accounts", "/v1/auth/../ops", "/v1/auth/a b", "/v1/auth/x?y=1"]) assert.ok(!ACCOUNT_PATH.test(bad), bad);
 });
 
 test("待激活：验证码登录策略；没注册的号说清原因；手机号注册开通 → 已激活：验证码登录恢复席位；换绑要当前密码；第二台电脑用验证码登录照设备上限处理", { timeout: 300_000 }, async () => {
