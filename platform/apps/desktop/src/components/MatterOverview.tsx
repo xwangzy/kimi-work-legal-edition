@@ -12,7 +12,7 @@ import { dueText, dueTone } from "../lib/reminders.ts";
 import { ASSIGNEE_LABELS, derivedTodoText, todoMeta } from "../lib/todos.ts";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
-import { partiesSummary } from "../lib/parties.ts";
+import { agentLabelFor, agentsLine, partiesDigest } from "../lib/parties.ts";
 import { PartiesDialog, usePartiesInfo, type PartiesDocRow } from "./PartiesInfo.tsx";
 
 export function StageStrip({ matter, readOnly, onChanged }: { matter: Matter; readOnly: boolean; onChanged: () => void }) {
@@ -104,13 +104,14 @@ export function StageStrip({ matter, readOnly, onChanged }: { matter: Matter; re
 }
 
 /**
- * 当事人信息（D-224）：事项里存一次、各文书首部自动带入。没填时一行安静的提示；填了每方一行（名称 · 已填几项）。
- * 点开是 PartiesDialog，保存成本事项的一份材料（新版本替换旧版本）。
+ * 当事人信息（D-224）：事项里存一次、各文书首部自动带入。没填时一行安静的提示；填了每方一行（称谓 名称 · 已填几项），
+ * 有委托诉讼代理人的下面再一行（第 64 批）。点开是 PartiesDialog，保存成本事项的一份材料（新版本替换旧版本）。
  */
 export function PartiesInfoRow({ matter, docs, readOnly, onChanged }: { matter: Matter; docs: PartiesDocRow[]; readOnly: boolean; onChanged: () => void }) {
   const info = usePartiesInfo(docs);
   const [open, setOpen] = useState(false);
-  const rows = info.parties ? partiesSummary(info.parties) : [];
+  const rows = info.parties ? partiesDigest(info.parties) : [];
+  const label = agentLabelFor(null, info.text);
   return (
     <div className="pi-row">
       <span className="pi-k">当事人信息</span>
@@ -122,9 +123,14 @@ export function PartiesInfoRow({ matter, docs, readOnly, onChanged }: { matter: 
         <span className="pi-v pi-list">
           {rows.map((r, i) => (
             <span key={i} className="pi-item">
-              <span className="pi-side">{r.side}</span>
-              <span className="pi-name">{r.name}</span>
-              <span className="muted">· 已填 {r.filled} 项</span>
+              <span className="pi-item-main">
+                <span className="pi-side">{r.role}</span>
+                <span className="pi-name">{r.name}</span>
+                <span className={`pi-state${r.missing.length > 0 ? " pi-state-due" : ""}`} title={r.missing.length > 0 ? `待补：${r.missing.join("、")}` : undefined}>
+                  · 已填 {r.filled}/{r.expected}
+                </span>
+              </span>
+              {r.agents.length > 0 && <span className="pi-agentline">{agentsLine(r.agents, label)}</span>}
             </span>
           ))}
         </span>

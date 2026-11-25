@@ -98,7 +98,8 @@ test("界面：无边框类名与平台类、明暗变化通知主进程（只�
     g.MutationObserver = prev;
   }
   const css = src("src/styles-window.css");
-  assert.match(css, /html\.frameless \.shell \{ -webkit-app-region: drag; \}/);
+  assert.match(css, /html\.frameless \.window-drag \{ display: block; position: fixed; top: 0; left: 0; right: 0; height: 40px; -webkit-app-region: drag; pointer-events: none; \}/, "只有顶部 40px 能拖动");
+  assert.match(src("src/App.tsx"), /<div className="shell">\s*\{\/\*[^*]*\*\/\}\s*<div className="window-drag" aria-hidden="true" \/>/);
   assert.match(css, /html\.frameless \.shell-main \{ -webkit-app-region: no-drag; margin-top: 40px; \}/);
   assert.match(css, /html\.frameless \.modal-mask, html\.frameless \.guide-layer, html\.frameless \.select-list \{ -webkit-app-region: no-drag; \}/, "弹层不可拖动");
   assert.match(src("src/styles-auth.css"), /\.auth-page \.auth-card \{ -webkit-app-region: no-drag; \}/);

@@ -42,7 +42,20 @@
 .ss-more.open svg { transform: rotate(90deg); }
 .ss-more .muted { font-weight: 400; }
 
-/* 当事人信息（D-224）：要写身份首部的卡在“案情与材料”里一行，与“本事项已有的事实”同一种安静写法 */
-.ss-parties { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-caption); line-height: 1.6; }
-.ss-parties-k { color: var(--text-secondary); }
-.ss-parties .btn-link { font-size: inherit; }
+/* 当事人（D-224；第 64 批单独成段）：段标题 + 右侧编辑按钮；每方一行（称谓 · 名称 · 类型，右侧完成度），代理人在下面一行；
+   清单是一只 12px 圆角细边框的卡片，行间细线分隔；没填时同样大小的浅底框写一句提示。颜色只用中性色，“待补”用警示文字色点到为止 */
+.ss-sec-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 28px; }
+.ss-sec-head .ss-h { font-size: var(--fs-subtitle); font-weight: 600; }
+.ss-parties-edit { flex: none; }
+.ss-parties-empty { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--border-default); border-radius: var(--r-md); background: var(--bg-subtle); font-size: var(--fs-caption); line-height: 1.6; }
+.ss-parties-empty .btn-link { padding: 0; font-size: inherit; }
+.ss-pl { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); overflow: hidden; }
+.ss-pl-row { display: flex; flex-direction: column; gap: 2px; padding: 10px var(--sp-4); min-width: 0; }
+.ss-pl-row + .ss-pl-row { border-top: 1px solid var(--border-subtle); }
+.ss-pl-main { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; font-size: var(--fs-body); }
+.ss-pl-role { flex: none; color: var(--text-secondary); font-size: var(--fs-caption); }
+.ss-pl-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--text-primary); }
+.ss-pl-kind { flex: none; padding: 0 6px; border-radius: var(--r-xs); background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-xs); line-height: 18px; }
+.ss-pl-state { flex: none; margin-left: auto; color: var(--text-secondary); font-size: var(--fs-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ss-pl-state.due { color: var(--status-warning-text); }
+.ss-pl-agent { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: var(--fs-caption); }

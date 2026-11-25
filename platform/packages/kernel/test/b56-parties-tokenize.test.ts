@@ -78,3 +78,68 @@ test("当事人信息材料：发往模型的形态不含身份真值；机构�
   assert.ok(text.includes("原告：华诚贸易有限公司，统一社会信用代码：91310115MA1H7K2X3Q，住所：上海市浦东新区张江路1288号（3幢）501室，法定代表人：王建国，职务：执行董事，联系电话：021-58881234。"), text);
   assert.ok(text.includes("被告：李秀英，女，1985年3月2日出生，公民身份号码110105198503021241，住北京市朝阳区建国路88号院(2号楼)1203室，联系电话13912345678。"), text);
 });
+
+// 第 64 批：新格式（民族、委托诉讼代理人、末尾按各项生成的“文书首部写法”）。与界面 serializeParties 的输出逐字相同
+// （apps/desktop/test/b56-parties.test.ts“内核令牌化用例的新格式样例”逐字核对）
+const TEXT_B64 = [
+  "【当事人信息（律师填写）】本文件由承办律师填写，文书首部的当事人身份事项以此为准。",
+  "",
+  "一、我方（原告）：王超（自然人）",
+  "性别：男",
+  "民族：汉族",
+  "出生日期：1966年2月5日",
+  "公民身份号码：110105196602051234",
+  "住址：北京市朝阳区建国路88号院(2号楼)1203室",
+  "联系电话：13912345678",
+  "委托诉讼代理人一：张明远（律师）",
+  "执业机构：北京某某律师事务所",
+  "联系电话：13800001111",
+  "授权范围：特别授权（代为承认、放弃、变更诉讼请求，进行和解，提起反诉、上诉）",
+  "",
+  "二、对方（被告）：上海某某有限公司（法人）",
+  "统一社会信用代码：91310115MA1H7K2X3Q",
+  "住所：上海市浦东新区张江路1288号3幢501室",
+  "法定代表人：李建国，职务：执行董事",
+  "联系电话：021-58881234",
+  "",
+  "——以下为文书首部写法（按上面各项自动生成，照抄即可）——",
+  "原告：王超，男，汉族，1966年2月5日出生，公民身份号码110105196602051234，住北京市朝阳区建国路88号院(2号楼)1203室，联系电话13912345678。",
+  "委托诉讼代理人：张明远，北京某某律师事务所律师，联系电话13800001111。",
+  "被告：上海某某有限公司，统一社会信用代码91310115MA1H7K2X3Q，住所上海市浦东新区张江路1288号3幢501室，联系电话021-58881234。",
+  "法定代表人：李建国，执行董事。",
+  "",
+].join("\n");
+const SECRETS_B64 = ["王超", "1966年2月5日", "110105196602051234", "建国路88号院", "13912345678", "张明远", "13800001111", "91310115MA1H7K2X3Q", "张江路1288号", "李建国", "021-58881234"];
+
+test("第 64 批 当事人信息新格式：代理人姓名与电话、首部写法里的身份真值都换成代号；模型照抄首部写法，导出 Word 时逐字还原", async () => {
+  tk ??= await makeKernel({}, "b56-parties-tokenize-firm");
+  const { matter } = await tk.inv("matters.create", { title: "王超诉上海某某公司买卖合同纠纷", client_name: "王超", counterparty: "上海某某有限公司", stance: "原告", consent_status: "not_required" });
+  const mid = matter.matter_id;
+  await importText(tk.inv, mid, "当事人信息（律师填写）.txt", TEXT_B64);
+  // 界面保存时把代理人登记进当事人词典（称谓是自由文字“委托诉讼代理人”）
+  await tk.inv("matters.parties.upsert", { matter_id: mid, name: "张明远", kind: "person", aliases: [], role: "委托诉讼代理人" });
+  assert.ok((await tk.inv("matters.parties.list", { matter_id: mid })).parties.some((p: { name: string; role: string | null }) => p.name === "张明远" && p.role === "委托诉讼代理人"));
+
+  const store = new MatterTokenStore(tk.kernel.db);
+  const sent = store.tokenize(mid, TEXT_B64).text;
+  for (const s of SECRETS_B64) assert.equal(sent.includes(s), false, `真值原文发出：${s}\n${sent}`);
+  // 律所名称、民族、授权范围按设计原文
+  assert.ok(sent.includes("执业机构：北京某某律师事务所") && sent.includes("民族：汉族") && sent.includes("授权范围：特别授权（代为承认、放弃、变更诉讼请求，进行和解，提起反诉、上诉）"), sent);
+  // 同一真值在各方各项与首部写法里是同一个代号（照抄不会出现对不上的代号）
+  const lines = sent.split("\n");
+  const agentTok = /^委托诉讼代理人一：(〔自然人·[0-9A-Z]{6}〕)（律师）$/m.exec(sent)?.[1];
+  assert.ok(agentTok, sent);
+  assert.ok(sent.includes(`委托诉讼代理人：${agentTok}，北京某某律师事务所律师，联系电话〔电话·`), sent);
+
+  // 模型照抄首部写法（代号形态）→ Word 草稿 → 导出还原：首部逐字回到律师填写的真值
+  const head = lines.slice(lines.indexOf("——以下为文书首部写法（按上面各项自动生成，照抄即可）——") + 1).filter(Boolean);
+  assert.equal(head.length, 4);
+  assert.equal(findTokens(head.join("")).some((t) => !store.table(mid).some((e) => e.token === t)), false, "首部写法里的代号都在本事项令牌表里");
+  const docx = createDocx("民事起诉状", [{ heading: "", paragraphs: head }]);
+  const out = restoreArtifactBytes("民事起诉状（草稿）.docx", docx, (t) => store.restore(mid, t));
+  assert.deepEqual(out.unresolved, []);
+  const text = (readZipText(out.bytes, "word/document.xml") ?? "").replace(/<[^>]+>/g, "");
+  assert.equal(findTokens(text).length, 0, text);
+  const want = TEXT_B64.split("\n").slice(-5, -1);
+  for (const l of want) assert.ok(text.includes(l), `导出后应有：${l}\n${text}`);
+});

@@ -18,7 +18,7 @@ import type { ScenarioCard } from "../lib/scenarios.ts";
 import type { ScenarioField } from "../lib/scenarios.ts";
 import { briefFilename, briefGoalLine, buildGoal, canStartPartial, caseGap, materialScopeText, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelBrief, startPanelInitial, wordDocGap } from "../lib/scenarios.ts";
 import { localDay } from "../lib/recovery-reminder.ts";
-import { PARTIES_PREFIX, partiesShort, withPartiesDoc } from "../lib/parties.ts";
+import { agentLabelFor, agentsLine, PARTIES_PREFIX, partiesDigest, withPartiesDoc } from "../lib/parties.ts";
 import { PartiesDialog, usePartiesInfo } from "./PartiesInfo.tsx";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
@@ -75,6 +75,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   // 当事人信息（D-224）：要写身份首部的卡显示本事项已填 / 未填；发起时自动计入可读材料
   const parties = usePartiesInfo(card.needsParties && docsReady ? documents : null);
   const [partiesOpen, setPartiesOpen] = useState(false);
+  const partyRows = parties.parties ? partiesDigest(parties.parties) : [];
+  const partiesAgentLabel = agentLabelFor(card.id);
+  const partiesEditable = !!matter && (matter.lifecycle ?? "active") === "active" && !matter.is_sample;
   const [dragOver, setDragOver] = useState(false);
   const [adding, setAdding] = useState(false);
   const [docIds, setDocIds] = useState<string[]>(() => preselectDocs(card, documents));
@@ -540,34 +543,6 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
               <span className="ss-field-help muted">会存成本事项的一份材料《{briefFilename(day).replace(/\.txt$/, "")}》，后面的任务接着用；助手把它当作你的陈述，其中的事实列为待你确认。</span>
             </label>
           )}
-          {/* 当事人信息（D-224）：事项里存一次，文书首部按它写；不强制 */}
-          {matter && card.needsParties && docsReady && (
-            <div className="ss-parties">
-              <span className="ss-parties-k">当事人信息</span>
-              <span className={parties.doc ? "" : "muted"}>
-                {!parties.doc ? "未填，文书首部会留【待填】" : parties.loading ? "载入中…" : parties.parties && partiesShort(parties.parties) ? `已填（${partiesShort(parties.parties)}）` : "已填"}
-              </span>
-              {(matter.lifecycle ?? "active") === "active" && !matter.is_sample && (
-                <button type="button" className="btn-link" disabled={parties.loading} onClick={() => setPartiesOpen(true)}>
-                  {parties.doc ? "修改" : "现在填"}
-                </button>
-              )}
-            </div>
-          )}
-          {partiesOpen && matter && (
-            <PartiesDialog
-              matter={matter}
-              info={parties}
-              onClose={() => setPartiesOpen(false)}
-              onSaved={({ id, replaced }) => {
-                setPartiesOpen(false);
-                // 新版本不按“新导入的自动勾选”勾上（一份都没勾时勾上反而把范围缩成只有它）；勾过旧版的换成新版
-                known.current.add(id);
-                setDocIds((ids) => (replaced && ids.includes(replaced) ? ids.map((x) => (x === replaced ? id : x)) : ids));
-                onDocsChanged?.();
-              }}
-            />
-          )}
           {/* 本事项已有的事实：开工前就说助手手里有什么 */}
           {card.scenario === "a1.agent_task" && factCounts && factCounts.confirmed + factCounts.proposed > 0 && (
             <div className="ss-facts muted">
@@ -578,6 +553,67 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             </div>
           )}
         </section>
+        {/* 当事人（D-224；第 64 批单独成段）：事项里存一次，文书首部按它写；不强制，没填不挡开始 */}
+        {matter && card.needsParties && docsReady && (
+          <section className="ss-sec ss-parties" aria-label="当事人">
+            <div className="ss-sec-head">
+              <div className="ss-h">当事人</div>
+              {partiesEditable && (
+                <button type="button" className="btn-ghost btn-sm ss-parties-edit" disabled={parties.loading} onClick={() => setPartiesOpen(true)}>
+                  {parties.doc ? "修改" : "填写当事人信息"}
+                </button>
+              )}
+            </div>
+            {!parties.doc ? (
+              <div className="ss-parties-empty">
+                <span className="muted">还没填：起草首部会写【待填】。</span>
+                {partiesEditable && (
+                  <button type="button" className="btn-link" onClick={() => setPartiesOpen(true)}>
+                    现在填 →
+                  </button>
+                )}
+              </div>
+            ) : parties.loading ? (
+              <div className="ss-parties-empty muted" role="status">
+                <BusyLabel busy>载入中…</BusyLabel>
+              </div>
+            ) : partyRows.length > 0 ? (
+              <ul className="ss-pl">
+                {partyRows.map((r, i) => (
+                  <li key={i} className="ss-pl-row">
+                    <div className="ss-pl-main">
+                      <span className="ss-pl-role">{r.role}</span>
+                      <span className="ss-pl-name">{r.name}</span>
+                      <span className="ss-pl-kind">{r.kind}</span>
+                      <span className={`ss-pl-state${r.missing.length > 0 ? " due" : ""}`} title={r.missing.length > 0 ? `待补：${r.missing.join("、")}` : undefined}>
+                        {r.missing.length > 0 ? `已填 ${r.filled}/${r.expected} · 待补 ${r.missing.length} 项` : `已填 ${r.filled}/${r.expected}`}
+                      </span>
+                    </div>
+                    {r.agents.length > 0 && <div className="ss-pl-agent">{agentsLine(r.agents, partiesAgentLabel)}</div>}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="ss-parties-empty muted">{parties.parties ? "已建，还没有写内容" : "已填（格式改过，点“修改”看原文）"}</div>
+            )}
+            <span className="ss-field-help muted">存一次，起诉状、答辩状等文书的首部都按它写；不填也能开始，没填的项写【待填】。</span>
+            {partiesOpen && (
+              <PartiesDialog
+                matter={matter}
+                info={parties}
+                cardId={card.id}
+                onClose={() => setPartiesOpen(false)}
+                onSaved={({ id, replaced }) => {
+                  setPartiesOpen(false);
+                  // 新版本不按“新导入的自动勾选”勾上（一份都没勾时勾上反而把范围缩成只有它）；勾过旧版的换成新版
+                  known.current.add(id);
+                  setDocIds((ids) => (replaced && ids.includes(replaced) ? ids.map((x) => (x === replaced ? id : x)) : ids));
+                  onDocsChanged?.();
+                }}
+              />
+            )}
+          </section>
+        )}
         <section className="ss-sec">
           {(mainFields.length > 0 || moreFields.length > 0) && <div className="ss-h">这次要定的事</div>}
           {mainFields.map(renderField)}

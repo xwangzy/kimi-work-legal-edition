@@ -419,6 +419,8 @@ export function App() {
     );
   return (
     <div className="shell">
+      {/* 第 64 批：无边框窗口顶部 40px 拖动条（只在桌面端显示；macOS 红绿灯、Windows 窗口控件在其中） */}
+      <div className="window-drag" aria-hidden="true" />
       <Sidebar route={route} />
       <div className="shell-main">
         {kernelNotice && <div className={`banner ${kernelNotice.status === "stopped" ? "banner-red" : "banner-orange"} kernel-banner`}>{kernelNotice.message ?? "后台服务正在恢复…"}</div>}

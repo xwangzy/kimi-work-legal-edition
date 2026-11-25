@@ -115,24 +115,65 @@
 .w-row b.due-red { color: var(--status-danger-text); }
 .w-row b.due-orange { color: var(--status-warning-text); }
 
-/* ── 当事人信息（D-224）：阶段条下面一行；没填时一句安静的提示，填了每方一行（名称 · 已填几项）──
-   对话框：每方一组，组与组之间一条细线分区，不套描边盒子 */
+/* ── 当事人信息（D-224；第 64 批重做）：阶段条下面一行；没填时一句安静的提示，填了每方一行（称谓 名称 · 已填几项 · 代理人）──
+   对话框：每方一张 12px 圆角细边卡片（头部：哪一方、称谓、类型、删去；名称单独一行；身份事项两栏；卡内“委托诉讼代理人”小节） */
 .pi-row { display: flex; align-items: baseline; gap: var(--sp-1) var(--sp-4); flex-wrap: wrap; margin: 0 0 var(--sp-4); padding: 0 0 var(--sp-3); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-body); }
 .pi-k { flex: none; color: var(--text-secondary); }
 .pi-v { flex: 1 1 auto; min-width: 0; }
-.pi-list { display: flex; flex-direction: column; gap: 2px; }
-.pi-item { display: inline-flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.pi-list { display: flex; flex-direction: column; gap: var(--sp-1); }
+.pi-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pi-item-main { display: inline-flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
 .pi-side { color: var(--text-secondary); font-size: var(--fs-caption); }
 .pi-name { font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pi-state { font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; }
+.pi-state-due { color: var(--status-warning-text); }
+.pi-agentline { font-size: var(--fs-caption); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pi-edit { flex: none; margin-left: auto; }
-.pi-lead { margin: 0 0 var(--sp-3); font-size: var(--fs-caption); line-height: 1.7; }
-.pi-groups { display: flex; flex-direction: column; }
-.pi-group { padding: var(--sp-3) 0 var(--sp-4); border-top: 1px solid var(--border-subtle); }
-.pi-group:first-child { border-top: 0; padding-top: 0; }
-.pi-group-head { display: flex; align-items: center; gap: var(--sp-2) var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-3); }
-.pi-group-head .select-trigger { min-width: 112px; }
-.pi-role { flex: 1 1 180px; min-width: 0; }
+
+.pi-lead { margin: 0 0 var(--sp-4); font-size: var(--fs-caption); line-height: 1.7; }
+.pi-groups { display: flex; flex-direction: column; gap: var(--sp-3); }
+.pi-card { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); }
+.pi-group-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.pi-group-head .select-trigger { min-width: 104px; }
+.pi-combo { position: relative; display: inline-flex; align-items: center; flex: 1 1 200px; min-width: 0; }
+.pi-combo .pi-role { width: 100%; padding-right: 30px; }
+.pi-combo-btn { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-label); }
+.pi-combo-btn:hover { background: var(--bg-hover); }
+.pi-combo-btn svg { width: 14px; height: 14px; transform: rotate(90deg); }
+.pi-combo-list { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; min-width: 100%; max-height: 240px; overflow: auto; margin: 0; padding: var(--sp-1); list-style: none; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-md); box-shadow: var(--shadow-md); }
+.pi-combo-opt { padding: 6px var(--sp-2); border-radius: var(--r-xs); font-size: var(--fs-body); white-space: nowrap; cursor: pointer; }
+.pi-combo-opt:hover, .pi-combo-opt.active { background: var(--bg-hover); }
+.pi-combo-opt.on { font-weight: 500; }
+.pi-kind { flex: none; }
 .pi-remove { margin-left: auto; color: var(--text-secondary); }
-.pi-add { align-self: flex-start; margin-top: var(--sp-1); font-size: var(--fs-caption); }
+.pi-remove svg { width: 16px; height: 16px; }
+.pi-name input { width: 100%; height: 40px; font-size: var(--fs-md); font-weight: 500; }
+.pi-flabel { display: inline-flex; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-caption); color: var(--text-label); }
+.pi-hint { font-size: var(--fs-xs); color: var(--text-secondary); font-weight: 400; }
+.pi-due { font-style: normal; font-size: var(--fs-xs); color: var(--status-warning-text); font-weight: 400; }
+.pi-grid { gap: var(--sp-3) var(--sp-4); }
+.pi-field input { width: 100%; }
+.pi-field .select-trigger { width: 100%; }
+.pi-more { align-self: flex-start; display: inline-flex; align-items: center; gap: 2px; padding: 0; font-size: var(--fs-caption); color: var(--text-label); }
+.pi-more svg { width: 14px; height: 14px; transition: transform var(--motion-fast) var(--ease-standard); }
+.pi-more.open svg { transform: rotate(90deg); }
+.pi-more .muted { font-weight: 400; }
+.pi-foot { font-size: var(--fs-xs); }
+.pi-agents { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-1); padding-top: var(--sp-3); border-top: 1px solid var(--border-subtle); }
+.pi-agents-head { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; font-size: var(--fs-xs); }
+.pi-agents-title { font-size: var(--fs-caption); font-weight: 600; color: var(--text-strong); }
+.pi-agent { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3); border-radius: var(--r-sm); background: var(--bg-subtle); }
+.pi-agent-head { display: flex; align-items: center; gap: var(--sp-2); }
+.pi-agent-n { font-size: var(--fs-caption); font-weight: 500; color: var(--text-label); }
+.pi-fillme { font-size: var(--fs-caption); }
+.pi-agent-add { align-self: flex-start; padding: 0; font-size: var(--fs-caption); }
+.pi-scope { align-self: flex-start; }
+.pi-powers { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-4); margin-top: var(--sp-2); font-size: var(--fs-caption); }
+.pi-power { display: inline-flex; align-items: center; gap: 6px; color: var(--text-primary); }
+.pi-power-all { padding: 0; font-size: var(--fs-caption); }
+.pi-add { align-self: flex-start; }
 .pi-raw textarea { font: inherit; line-height: 1.7; }
 .pi-note { margin: var(--sp-3) 0 0; font-size: var(--fs-xs); }
+@media (max-width: 640px) {
+  .pi-grid { grid-template-columns: 1fr; }
+}

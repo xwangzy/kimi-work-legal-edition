@@ -1,14 +1,14 @@
 /*
  * 无边框窗口（第 64 批，对照 Kimi 客户端）：html.frameless 由 lib/window-chrome.ts 在桌面端打上（网页开发形态没有）。
- * - 顶部 40px 是拖动条：外壳（.shell）整体是拖动区，主区面板、侧栏里的各块、弹层都挖成不可拖动——空白处可以拖动窗口，按钮照常点；
+ * - 顶部 40px 是拖动条（.window-drag，整窗宽、不接收点按）：只有这一条能拖动窗口；落在条里的按钮（Windows 侧栏品牌行、macOS 红绿灯旁的
+ *   搜索与收起）挖成不可拖动，照常点按；侧栏其余空白不拖动（双击不会误把窗口最大化）；
  * - 主区面板从 40px 处开始（上方就是拖动条；Windows 的最小化 / 最大化 / 关闭由系统画在拖动条右端）；
  * - macOS：侧栏顶部 40px 让给红绿灯，搜索与收起按钮放进这一行的右侧（Kimi 同款），品牌组合在下一行；
  * - Windows：侧栏的品牌行就是拖动条那一行（40px 高，品牌 + 搜索 + 收起）。
  */
-html.frameless .shell { -webkit-app-region: drag; }
+.window-drag { display: none; }
+html.frameless .window-drag { display: block; position: fixed; top: 0; left: 0; right: 0; height: 40px; -webkit-app-region: drag; pointer-events: none; }
 html.frameless .shell-main { -webkit-app-region: no-drag; margin-top: 40px; }
-html.frameless .sidebar > * { -webkit-app-region: no-drag; }
-html.frameless .sidebar > .brand { -webkit-app-region: drag; }
 html.frameless .sidebar > .brand button, html.frameless .sidebar > .brand a { -webkit-app-region: no-drag; }
 /* 弹层盖住整窗：期间不拖动窗口，点按都落在弹层上 */
 html.frameless .modal-mask, html.frameless .guide-layer, html.frameless .select-list { -webkit-app-region: no-drag; }

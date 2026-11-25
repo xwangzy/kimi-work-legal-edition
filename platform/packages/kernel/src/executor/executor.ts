@@ -1086,7 +1086,8 @@ export const PREFLIGHT_KNOWN_RULE = "这一行的份数、条数是给你安排�
 export const PREFLIGHT_UNSELECTED_RULE = "本事项还有材料这次没有勾选、你读不到：结论因为缺某类材料下不了时，在回报里写明“事项里还有未勾选的材料，补勾后可以继续”，不要写成“律师未提供”；要列材料清单的，这些材料按目录里的文件名标“事项内已有（本次未读）”，不标“待提供”，也不凭文件名推断内容；";
 /** 当事人信息材料的固定文件名前缀（与界面 apps/desktop/src/lib/parties.ts PARTIES_PREFIX 一致）。 */
 export const PARTIES_MATERIAL_PREFIX = "当事人信息（律师填写）";
-export const PREFLIGHT_PARTIES_RULE = "本事项有《当事人信息（律师填写）》：文书首部的当事人身份事项以它为准，它没写的项写【待填】，不向律师追问。";
+// 第 64 批：材料里加了委托诉讼代理人与按各项自动生成的“文书首部写法”（apps/desktop/src/lib/parties.ts headerLines），首部照抄、不再由模型自己拼
+export const PREFLIGHT_PARTIES_RULE = "本事项有《当事人信息（律师填写）》：文书首部的当事人身份事项与委托诉讼代理人以它为准（材料末尾“文书首部写法”可直接照抄，称谓按本文书的诉讼地位改写），它没写的项写【待填】，不向律师追问。";
 export const PREFLIGHT_EMPTY_RULE =
   "本事项没有材料、也没有确认过的事实：案情以任务说明为准，不必先查材料目录；任务说明里也没有案情的，第一步就用提问工具一次问清（纠纷类型、基本事实、请求、对方是谁），不要先起草。";
 
@@ -2532,7 +2533,7 @@ export function agentFailureText(reason: string | null, error: string | null): s
   // 第 54 批：网关内容安全策略拦截（422 content_blocked_*）——同样的材料重新运行仍会被拦，说清原因
   if ((code ?? "").startsWith("content_blocked")) return "发给 AI 的内容被云端内容安全策略拦截，任务没有完成：同样的材料重新运行仍会被拦，请调整所选材料或联系律所管理员；已完成且可验证的部分保留";
   // 第 46 批：登录与 AI 使用授权（网关 401 seat_*、闸门 503 seat_unavailable）——单独说，不说成“连不上”
-  if (has("seat_session_inactive", /登录已失效/)) return "登录已失效，任务没有完成：请在页面顶部重新登录，然后点“重新运行”；已完成且可验证的部分保留";
+  if (has("seat_session_inactive", /登录已失效/)) return "登录已失效，任务没有完成：请重新登录，然后点“重新运行”；已完成且可验证的部分保留";
   if (has("seat_device_revoked") || has("seat_seat_revoked")) return "这台电脑的 AI 使用授权已被收回，任务没有完成：请联系律所管理员；已完成且可验证的部分保留";
   if (has("seat_token_missing") || has("seat_unavailable") || (code ?? "").startsWith("seat_") || /\bseat_[a-z_]+\b|AI 使用授权/.test(err)) {
     return "这台电脑暂时没有取得 AI 使用授权（还没登录，或联网续期还没完成），任务没有完成：请确认已登录并联网，稍等一两分钟后点“重新运行”；已完成且可验证的部分保留";
