@@ -36,6 +36,12 @@ declare global {
   }
 }
 
+/** 第 64 批：无边框窗口要用的 preload 接口（是否无边框、平台、给 Windows 窗口控件浮层换色）；渲染层只经这里接触 preload。 */
+export function windowBridge(): { zrKernel?: { frameless?: boolean; platform?: string; setWindowTheme?: (t: "light" | "dark") => void } } {
+  const k = window.zrKernel;
+  return k ? { zrKernel: { ...(k.frameless !== undefined ? { frameless: k.frameless } : {}), ...(k.platform !== undefined ? { platform: k.platform } : {}), ...(k.setWindowTheme ? { setWindowTheme: k.setWindowTheme } : {}) } } : {};
+}
+
 /** 主进程对话框选中的文件（渲染进程拿不到路径）。 */
 export interface PickedFile {
   handle: string;
