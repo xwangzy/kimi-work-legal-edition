@@ -64,3 +64,45 @@
 .mat-pop-body { mask-image: linear-gradient(to bottom, var(--bg-surface) calc(100% - 28px), transparent); padding-bottom: var(--sp-5); }
 .mat-pop .mp-list { max-height: none; }
 .mat-pop .mp-row .role-pill:not(.on) { color: var(--text-label); border-color: transparent; background: transparent; }
+
+/* ── 第 67 批（V41 工作线 G）首页上传材料：“+”小菜单 + 材料弹层 ──
+   “+”菜单：两项（上传文件 / 选用已有材料），每项一行标题 + 一行去向，图标落在 32px 浅底方块里；从按钮下方 6px 弹出（140ms 透明度 + 2px 位移）。
+   材料弹层：标题栏写事项与“上传文件”，第二行一句读取范围；清单无外框；整块接拖放（拖入时整块高亮）；底栏一句隐私说明。 */
+.plus-wrap { position: relative; display: inline-flex; }
+.composer-bar .tool-plus { transition: background var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard); }
+.composer-bar .tool-plus:hover, .composer-bar .tool-plus.open { background: var(--bg-hover); }
+.composer-bar .tool-plus svg { transition: transform 160ms var(--ease-standard); }
+.composer-bar .tool-plus.open svg { transform: rotate(45deg); }
+@keyframes kwl-pop-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+
+.mat-pop { border-radius: var(--r-lg); box-shadow: var(--shadow-md); animation: kwl-pop-in 140ms var(--ease-standard); }
+.mat-pop-head { padding: 14px 16px 10px; }
+.mat-pop-title { justify-content: space-between; gap: 12px; }
+.mat-pop-name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-body); font-weight: 600; color: var(--text-strong); }
+.mat-pop-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mat-pop-upload { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--r-sm); font-size: var(--fs-caption); font-weight: 500; }
+.mat-pop-upload svg { width: 14px; height: 14px; }
+.mat-pop-sub { margin-top: 4px; font-size: var(--fs-caption); }
+.mat-pop-sub b { font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.mat-pop-body { padding: 4px 8px 12px; }
+.mat-pop .mp-list { border-radius: 0; }
+.mat-pop .mp-row { min-height: 40px; padding: 0 8px 0 6px; border-radius: var(--r-md); }
+.mat-pop .mp-row + .mp-row { border-top: 0; }
+.mat-pop .mp-row:hover { background: var(--bg-hover-soft); }
+.mat-pop .mp-row.on { background: var(--accent-bg); }
+.mat-pop-foot { gap: 12px; padding: 10px 16px; background: var(--bg-subtle); }
+.mat-pop-privacy { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-xs); color: var(--text-secondary); }
+.mat-pop-privacy svg { flex: none; width: 13px; height: 13px; color: var(--status-success-text); }
+@media (prefers-reduced-motion: reduce) { .mat-pop { animation: none; } .composer-bar .tool-plus svg { transition: none; } }
+/* 第 67 批第二轮（独立评审 R1-12）：“+”菜单向上弹出（不压住下方事项条）；材料弹层去掉底部渐隐（渐隐让底下的卡片透出来）；
+   用途“我方 / 对方 / 参考”做成带选中态的分段控件 */
+.mat-pop-body { mask-image: none; padding-bottom: 8px; }
+.mat-pop .role-pills { display: inline-flex; gap: 0; padding: 2px; border-radius: var(--r-sm); background: var(--bg-muted); }
+.mat-pop .mp-row .role-pill, .mat-pop .mp-row .role-pill:not(.on), .mat-pop .mp-row:hover .role-pill:not(.on), .mat-pop .mp-row:focus-within .role-pill:not(.on) { height: 22px; padding: 0 8px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-secondary); font-size: var(--fs-xs); }
+.mat-pop .mp-row .role-pill.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
+.mat-pop .mp-row .role-pill:hover:not(.on) { color: var(--text-primary); }
+/* 第三轮（独立评审 R2-11）：材料弹层与输入框同宽，盖住下面推荐卡的图标（原来比下方卡片窄，左缘露出图标） */
+.mat-pop { left: 0; right: 0; }
+
+/* 第四轮（独立评审 R3）：用途分段控件选中态加深——白底 + 深色细框 + 半粗，未选为次要色 */
+.mat-pop .mp-row .role-pill.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 600; box-shadow: inset 0 0 0 1px var(--border-strong); }

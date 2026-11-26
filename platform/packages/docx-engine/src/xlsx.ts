@@ -58,7 +58,13 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </styleSheet>`;
 
 /** 数字的样式：带小数的两位千分位；一万以上的整数千分位；小整数（序号、日数、年份）原样。 */
-const numStyle = (n: number) => (!Number.isInteger(n) ? 4 : Math.abs(n) >= 10000 ? 3 : 5);
+/**
+ * 数字格式（样式序号：3 = #,##0、4 = #,##0.00、5 = 常规）。
+ * 第 67 批（工作线 E 复核发现，P0）：原来所有小数一律 #,##0.00——计算明细里的“利率数值”0.0005（日万分之五）在 Excel 里显示成 0.00。
+ * 两位小数以内（金额）照旧 #,##0.00；超过两位小数的（利率、系数、比例）用常规格式，按原值显示，不四舍五入成 0.00。
+ */
+const moreThan2Decimals = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) > 1e-7 * Math.max(1, Math.abs(n * 100));
+const numStyle = (n: number) => (!Number.isInteger(n) ? (moreThan2Decimals(n) ? 5 : 4) : Math.abs(n) >= 10000 ? 3 : 5);
 
 /** 文字显示宽度（中文与全角按 2）。 */
 function textWidth(s: string): number {

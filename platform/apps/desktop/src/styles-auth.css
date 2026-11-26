@@ -130,3 +130,20 @@
 .auth-reloginwho-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-body); }
 .auth-reloginwho-text b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .auth-reloginwho-text small { font-size: var(--fs-meta); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── 第 67 批（V41 工作线 F）登录与注册一致：卡片固定在同一高度起排（切换时品牌条不跳）；两页同一级标题、同一行切换入口 ── */
+.auth-page { place-items: start center; padding-top: max(40px, calc(50vh - 360px)); }
+.auth-card { box-shadow: var(--shadow-composer); }
+.auth-card .auth-method-single { font-size: var(--fs-lg); line-height: 1.4; }
+.auth-card .auth-method { min-height: 28px; }
+.auth-card .auth-sub { margin: -10px 0 4px; font-size: var(--fs-caption); line-height: 1.6; color: var(--text-secondary); }
+.auth-card .auth-check { margin: 2px 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.auth-card .pw-rules { margin-top: -2px; }
+.auth-links-note { margin-left: auto; font-size: var(--fs-meta); color: var(--text-label); }
+.auth-foot-lead { display: block; margin-bottom: 4px; }
+/* 第 67 批第二轮（独立评审 R1-11）：主按钮可点时黑底白字，不可点时同色降到 30%（原来浅灰与输入框同色，像一个输入框）；复选框下的一句说明 */
+/* 第三轮：不用半透明（半透明在部分合成层上出现竖向接缝），改为实心中灰白字——既不像输入框，也不像可点的黑按钮 */
+.auth-card .activate-submit:disabled, .auth-card .auth-btn:disabled { background: var(--border-hover); color: var(--text-on-solid); opacity: 1; }
+.auth-card .auth-check-note { margin: -6px 0 0 22px; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-secondary); }
+/* 第三轮（独立评审 R2-13）：页脚披露按句均衡折行，不把“核对”拆成两行 */
+.auth-card-foot { text-wrap: balance; }

@@ -53,3 +53,8 @@ label.mp-doc { cursor: pointer; }
 .mp-ico .dl-ficon { width: 20px; height: 20px; font-size: var(--fs-xs); border-radius: var(--r-xs); }
 .mp-filter { width: 100%; font-size: var(--fs-caption); padding: 6px 10px; border-radius: var(--r-sm); }
 .mp-none { padding: var(--sp-2) var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); }
+/* 第 67 批：整块接拖放（首页材料弹层）——拖入时整块蒙一层浅蓝与虚线，写明存入哪个事项；有材料时不显示虚线添加框 */
+.mp-rootdrop { position: relative; }
+.mp-over { position: absolute; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1.5px dashed var(--focus-ring); border-radius: var(--r-md); background: var(--accent-bg); color: var(--accent-text); font-size: var(--fs-body); font-weight: 500; pointer-events: none; }
+.mp-over svg { width: 16px; height: 16px; }
+.mp-drop-hidden { display: none; }

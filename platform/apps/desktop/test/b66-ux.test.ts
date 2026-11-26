@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { attentionDigest, basisBadge, emptyDraft, outlineAttention, type OutlineView } from "../src/lib/outline.ts";
+import { basisBadge } from "../src/lib/outline.ts";
 import { personalView } from "../src/lib/personal-usage.ts";
 import { modelChoices, modelLabelOf } from "../src/lib/model-choices.ts";
 import { personalUsedRatio, quotaMenuLine } from "../src/lib/quota-notice.ts";
@@ -14,41 +14,8 @@ import type { QuotaStatus } from "../src/api.ts";
 
 const src = (p: string) => readFileSync(fileURLToPath(new URL(`../src/${p}`, import.meta.url)), "utf8");
 
-const outline: OutlineView = {
-  outline_id: "o1",
-  run_id: "r1",
-  doc_kind: "民事起诉状",
-  title: null,
-  status: "proposed",
-  decisions: null,
-  lawyer_note: null,
-  items: [
-    {
-      arg_id: "a1",
-      claim: "被告应支付货款",
-      counter: null,
-      facts: [{ fact_id: "f1", statement: "双方签订合同", confirmed: false }],
-      basis: [
-        {
-          law: "中华人民共和国民法典",
-          matched: "中华人民共和国民法典",
-          article: 626,
-          note: "支付价款",
-          check: "version_verified",
-          article_text: "买受人应当按照约定的数额和支付方式支付价款。",
-          demo: false,
-          elements: [
-            { element: "存在有效合同", status: "to_prove", facts: [] },
-            { element: "已到期", status: "to_prove", facts: [] },
-            { element: "尚欠价款", status: "fact", facts: [{ fact_id: "f2", statement: "欠 31 万", confirmed: false }] },
-          ],
-        },
-        { law: "某地方条例", matched: null, article: 3, note: null, check: "intercepted", article_text: null, demo: false },
-      ],
-    },
-    { arg_id: "a2", claim: "支付违约金", counter: null, facts: [{ fact_id: "f1", statement: "双方签订合同", confirmed: false }], basis: [{ law: "民法典", matched: "中华人民共和国民法典", article: 585, note: null, check: "source_verified", article_text: "x", demo: false, mode: "analogy" }] },
-  ],
-};
+// 论点确认卡的“需要你判断”清单与汇总（outlineAttention / attentionDigest）已在第 67 批（V41 工作线 A）换成每条论点一句结论信号 + 卡顶一行汇总，
+// 对应用例移到 b67-outline-card.test.ts（同一组样例数据，覆盖同样的情形：依据问题、类推、待证要件、事实去重、去掉的论点与依据不算）。
 
 test("依据徽标：核过的短标 + 原口径完整说法；未收录与核对未通过是风险", () => {
   assert.deepEqual([basisBadge({ check: "version_verified", article_text: "x", demo: false }).label, basisBadge({ check: "version_verified", article_text: "x", demo: false }).tone], ["版本已核", "ok"]);
@@ -56,30 +23,6 @@ test("依据徽标：核过的短标 + 原口径完整说法；未收录与核�
   assert.equal(basisBadge({ check: "intercepted", article_text: null, demo: false, matched: null }).label, "法规库未收录");
   assert.equal(basisBadge({ check: "intercepted", article_text: null, demo: false, matched: "x" }).tone, "risk");
   assert.equal(basisBadge({ check: "unchecked", article_text: null, demo: false }).label, "未核实");
-});
-
-test("需要你判断：逐条找出依据问题、类推、待证要件与未确认事实；同一事实只报一次；去掉的论点不算", () => {
-  const all = outlineAttention(outline, emptyDraft());
-  assert.equal(all.filter((a) => a.kind === "basis").length, 1);
-  assert.equal(all.filter((a) => a.kind === "analogy").length, 1);
-  assert.equal(all.filter((a) => a.kind === "to_prove").length, 2);
-  // f1 挂在两条论点上只报一次；f2 在要件里
-  assert.equal(all.filter((a) => a.kind === "fact").length, 2);
-  const dropped = outlineAttention(outline, { ...emptyDraft(), drop: { a2: true } });
-  assert.equal(dropped.filter((a) => a.kind === "analogy").length, 0);
-  const noBasis = outlineAttention(outline, { ...emptyDraft(), dropBasis: { a1: [1] } });
-  assert.equal(noBasis.filter((a) => a.kind === "basis").length, 0, "去掉的依据不再要你判断");
-});
-
-test("汇总（真实走查：一张起诉状卡 31 处）：依据问题与类推逐条在前，待证要件按论点合一行，事实合成一行", () => {
-  const d = attentionDigest(outlineAttention(outline, emptyDraft()));
-  assert.deepEqual(d.map((x) => x.kind), ["basis", "analogy", "to_prove", "fact"]);
-  assert.match(d[2]!.text, /^2 个要件待证/);
-  assert.match(d[3]!.text, /^2 条事实未经你确认（底部可一并确认）$/);
-  const card = src("components/OutlineConfirm.tsx");
-  assert.match(card, /digest\.slice\(0, 8\)/);
-  assert.match(card, /确认并开始起草（\{kept\} 条论点）/, "评测驱动按这个按钮前缀点（eval/driver.js、e2e ui.mjs）");
-  assert.match(card, /签发时须写明不确认的理由/);
 });
 
 const q = (over: Partial<QuotaStatus>): QuotaStatus => ({ mode: "control_plane", firm: { used_ratio: 0.06, remaining_ratio: 0.94, in_flight_ratio: 0.19, paused: null, cap_pct: null, boost_pct: 0, legacy_used_ratio: null, used: null, total: null, seats: 1 }, ...over }) as QuotaStatus;
@@ -141,11 +84,10 @@ test("首页：无固定页脚；@材料弹层直接上传（统一组件）；�
   assert.match(c, /用这些文件新建事项/);
 });
 
-test("开始面板：两栏；有必填项时“这次要定的事”排在当事人之前；底部“先填写”可点并聚焦", () => {
+test("开始面板：段序随业务形态（第 67 批取代第 66 批两栏）；起草类“要定的事”排在当事人之前；底部“先填写”可点并聚焦", () => {
   const s = src("components/ScenarioStart.tsx");
-  assert.match(s, /<div className="ss-grid">/);
-  assert.match(s, /<aside className="ss-aside"/);
-  assert.match(s, /const decideFirst = card\.fields\.some\(\(f\) => f\.required && !f\.more\);/);
-  assert.match(s, /\{decideFirst && decideSection\}\s*\{hasParties && partiesSection\}\s*\{!decideFirst && decideSection\}/);
+  // 第 67 批：右栏取消，单栏；段的顺序由 lib/card-layout.ts 按形态给出（起草：要点 → 当事人 → 材料）
+  assert.doesNotMatch(s, /<aside className="ss-aside"/);
+  assert.match(s, /const sectionKeys = sectionOrder\(form\)\.filter\(\(k\) => k !== "parties" \|\| hasParties\);/);
   assert.match(s, /onClick=\{\(\) => focusMissing\(\)\}/);
 });

@@ -84,7 +84,8 @@ test("A6 计划卡：主操作在标题行右侧，展开全文后底部再给�
   assert.match(c, /<div className="cc-bottom">[\s\S]*?\{planActions\("bottom"\)\}/);
   assert.match(c, /展开全文（另有/);
   assert.match(c, /disabled=\{busy \|\| !feedback\.trim\(\)\}/, "没写意见不能退回（V14 第 39 批）不变");
-  assert.match(c, /<div className="cc-top">\s*<div className="cc-head"><Icon\.question \/> 需要你定一下/);
+  // 第 67 批：与论点卡同卡时卡头改为“还要你定 n 件事”，其余情形仍是“需要你定一下”
+  assert.match(c, /<div className="cc-top">\s*<div className="cc-head"><Icon\.question \/> \{outlineLock \? `还要你定 \$\{others\.length\} 件事` : `需要你定一下/);
   const o = src("components/OutlineConfirm.tsx");
   assert.match(o, /className="card-confirm card-outline outline-card[ "]/);
   // 第 66 批：标题改为“确认××的论点与依据”（前缀“起草前”成了徽标），操作区仍是 cc-actions

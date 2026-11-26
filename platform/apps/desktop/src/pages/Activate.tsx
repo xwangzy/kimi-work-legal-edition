@@ -119,6 +119,7 @@ function Frame({ children, foot, wide = false }: { children: React.ReactNode; fo
 
 /** 页脚：登录与开通发给云端的只有这些（第 63 批原文，不改）。 */
 const FOOT_TEXT = "登录与开通只把邮箱或手机号、密码或短信验证码、开通码或邀请码发给 Kimi Work 服务核对；你的案卷不会上传。";
+const FOOT_TEXT_NO_SMS = "登录与开通只把邮箱、密码、开通码或邀请码发给 Kimi Work 服务核对；你的案卷不会上传。";
 
 type View = "login" | "register" | "forgot" | "code" | "restore";
 type Blocked = { message: string; devices: AccountDevice[] };
@@ -202,7 +203,7 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
   // 其他方式（Kimi 登录框“企业 SSO 登录”的位置）：凭码激活、从备份恢复
   const alt = (
     <div className="auth-alt">
-      {view !== "code" && (
+      {view !== "code" && view !== "register" && (
         <button type="button" className="btn-link" onClick={() => go("code")}>
           有开通码或邀请码
         </button>
@@ -212,9 +213,11 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
       </button>
     </div>
   );
+  // 第 67 批第二轮（独立评审 R1-11）：云端没开短信时，页脚不提手机号与验证码（页面上也没有这两个入口）
+  const smsOn = metaState.status === "ready" && !!(metaState.meta as { sms_available?: boolean } | null)?.sms_available;
   const foot = (
     <>
-      {FOOT_TEXT}
+      {smsOn ? FOOT_TEXT : FOOT_TEXT_NO_SMS}
       {legacy.length > 0 && (
         <span className="auth-foot-note" role="note">
           这台电脑上还有以前留下的数据（{legacy.join("、")}，例如旧版本试用或没有完成的入组）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
@@ -437,31 +440,25 @@ function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmai
   };
   return (
     <form
-      className="auth-form"
+      className="auth-form quiet"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      <div className="auth-title-row">
-        <h1 className="activate-title">注册账号</h1>
-        <span className="muted">
-          已有账号？
-          <button type="button" className="btn-link" onClick={p.onLogin}>
-            登录
-          </button>
-        </span>
-      </div>
-      <p className="activate-lead">{f.code === "required" ? "注册后这台电脑就是你的第一台电脑。现在凭邀请码注册：请填入收到的邀请码（律所负责人填开通码，同事填律所发的邀请码）。" : "注册后这台电脑就是你的第一台电脑。律所负责人收到的开通码、同事收到的邀请码，请在下面勾选后填入。"}</p>
+      {/* 第 67 批（V41 工作线 F）：注册与登录同一骨架——同一级标题、只留占位文字（标题给读屏软件）、表单下方同一行切换入口；
+          “这台电脑就是第一台电脑”“凭码以码为准”等说明收到复选框与卡片页脚，不再在标题下放一段两行说明 */}
+      <h1 className="auth-method-single">注册账号</h1>
+      {f.code === "required" && <p className="auth-sub">现在凭邀请码注册：律所负责人填开通码，同事填律所发的邀请码。</p>}
       <label className="field">
         <span>邮箱</span>
-        <input className="auth-input" type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} autoComplete="username" autoFocus spellCheck={false} />
+        <input className="auth-input" type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} autoComplete="username" autoFocus spellCheck={false} placeholder="请输入邮箱" />
         {p.email && !emailLooksValid(p.email) && <span className="field-warn">邮箱格式不对</span>}
       </label>
-      <PasswordField label="密码" value={pw} onChange={setPw} rules email={p.email} />
+      <PasswordField label="密码" value={pw} onChange={setPw} rules email={p.email} placeholder="设置密码" />
       <label className="field">
         <span>姓名</span>
-        <input className="auth-input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={40} placeholder="同事和客户看到的名字" />
+        <input className="auth-input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={40} placeholder="姓名（同事和客户看到的名字）" />
         {/* 第 56 批：凭邀请码（36 位）加入的，本所里显示的是管理员写在邀请上的姓名 */}
         {codeOn && codeLen > 20 && <span className="muted">凭邀请码加入时，在本所显示的是管理员写在邀请上的姓名。</span>}
       </label>
@@ -469,7 +466,7 @@ function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmai
       {orgShown && (
         <label className="field">
           <span>律所或工作室名称（可不填）</span>
-          <input className="auth-input" value={org} onChange={(e) => setOrg(e.target.value)} autoComplete="organization" maxLength={60} placeholder="不填则用你的姓名" />
+          <input className="auth-input" value={org} onChange={(e) => setOrg(e.target.value)} autoComplete="organization" maxLength={60} placeholder="律所或工作室名称（可不填，不填用你的姓名）" />
         </label>
       )}
       {f.code === "checkbox" && (
@@ -477,6 +474,7 @@ function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmai
           <input type="checkbox" checked={hasCode} onChange={(e) => setHasCode(e.target.checked)} /> {f.legacy ? "我有开通码或邀请码" : "我有邀请码或开通码"}
         </label>
       )}
+      {f.code === "checkbox" && !codeOn && <p className="auth-check-note" title="不填码即自助注册：为你开通一个试用的个人工作室，之后可以邀请同事加入。">不勾选即自助注册试用的个人工作室，本机为第一台电脑</p>}
       {codeOn && (
         <label className="field">
           <span>{f.legacy ? "开通码或邀请码" : f.code === "required" ? "邀请码或开通码（必填）" : "邀请码或开通码"}</span>
@@ -492,7 +490,14 @@ function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmai
       <button type="submit" className="btn-primary activate-submit" disabled={!ready || busy}>
         {busy ? "正在注册…" : "注册并继续"}
       </button>
-      {!codeOn && <p className="muted activate-foot">不填码即自助注册：为你开通一个试用的个人工作室，之后可以邀请同事加入。</p>}
+      <div className="auth-links">
+        <span>
+          已有账号？
+          <button type="button" className="btn-link" onClick={p.onLogin}>
+            登录
+          </button>
+        </span>
+      </div>
     </form>
   );
 }

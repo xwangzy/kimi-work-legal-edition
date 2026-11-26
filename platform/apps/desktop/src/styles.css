@@ -485,7 +485,7 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 
 /* ── 安全预览与 Markdown ── */
 .safe-preview { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); overflow: hidden; }
-.sp-note { font-size: var(--fs-xs); color: var(--text-secondary); padding: 6px 10px; border-bottom: 1px solid var(--border-subtle); }
+.sp-note { font-size: var(--fs-xs); color: var(--text-secondary); min-height: 32px; padding: 4px 12px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-surface); }
 .sp-frame { width: 100%; height: 62vh; border: 0; display: block; background: var(--bg-preview); } /* 隔离框架内文书自带浅色样式：深色模式也保持纸面白 */
 .sp-md { padding: 10px 14px; }
 .md { font-size: var(--fs-base); line-height: 1.75; }
@@ -1830,7 +1830,7 @@ button.sidebar-empty:hover { color: var(--text-primary); }
 
 /* 第 62 批：预览说明行右侧“重新载入预览”；Office 预览生成失败的说明与重试 */
 .sp-note { display: flex; align-items: center; gap: 8px; }
-.sp-note > span { flex: 1; min-width: 0; }
+.sp-note > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-note .sp-reload { flex: none; font-size: var(--fs-xs); color: var(--text-secondary); }
 .sp-error { padding: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .sp-error p { margin: 0; }

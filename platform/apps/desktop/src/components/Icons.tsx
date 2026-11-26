@@ -33,6 +33,7 @@ export const Icon = {
   down: () => <Svg><path d="M6 9l6 6 6-6" /></Svg>,
   eye: () => <Svg><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="2.8" /></Svg>,
   lock: () => <Svg><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></Svg>,
+  upload: () => <Svg><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9" /><path d="M5 14v3.5A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5V14" /></Svg>,
   attach: () => <Svg><path d="M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.7 17.2a1.7 1.7 0 0 1-2.4-2.4L15 7" /></Svg>,
   slash: () => <Svg><path d="M15 4L9 20" /></Svg>,
   at: () => <Svg><circle cx="12" cy="12" r="3.5" /><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.3 6.7" /></Svg>,

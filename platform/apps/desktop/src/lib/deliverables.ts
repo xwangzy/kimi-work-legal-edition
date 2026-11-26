@@ -326,3 +326,145 @@ export function reviewSteps(status: string): { key: string; label: string; state
     state: at < 0 ? "todo" : i < at || (i === at && status === "approved") ? "done" : i === at ? "now" : "todo",
   }));
 }
+
+/* ── 第 67 批（V41 工作线 D）：成果列表的短名——文件是主角，事项与案号是归属信息 ──
+   改前的列表直接用完整名称：“01-设备买卖合同（RC-XS-2025-118）（修订稿）/（清洁稿）/（修订稿·对外版）/（修改对照表）”
+   四行在 440px 的列里都截成“01-设备买卖合同（RC-XS-2025-118…”，看起来像同一份文件重复了四次；
+   “提交前核对清单-锐川诉禾丰买卖合同纠纷”后半截又是分组标题已经写过的事项名。
+   这里把名称拆成“是什么文书”（标题）与“针对哪份文件 / 哪件事”（对象）：标题进第一行，对象在一次任务里只说一次，
+   和事项名重复的对象不再写。只改显示，完整名称在悬停提示与预览头里照旧。纯函数。 */
+
+/** 一份文件在列表里的两段名称：title 是文书种类（如“修订稿”“审查意见书（内部稿）”），subject 是它针对的文件或事（可为空）。 */
+export interface DocTitle {
+  title: string;
+  subject: string;
+}
+
+/** 材料文件名常带的序号前缀（“01-”“3、”）。 */
+const ORDINAL = /^\d{1,3}\s*[-_.、]\s*/;
+const HAS_CJK = /[一-鿿]/;
+
+/**
+ * 拆名称。familyHead：同一次任务里几份文件共用的前缀（nameParts 给的 head）。
+ * 1) 同族文件“〈对象〉（修订稿）”：标题取括号里的差异，对象是共用前缀；
+ * 2) “〈文书〉-〈对象〉”（审查意见书（内部稿）-设备买卖合同RC-XS-2025-118、计算明细-…）：连接符前是文书名（2～16 字、含汉字、不以数字开头）；
+ * 3) 其余整名就是标题。
+ */
+export function docTitle(display: string, familyHead = ""): DocTitle {
+  const d = display.trim();
+  if (familyHead && d.startsWith(familyHead) && d.length > familyHead.length) {
+    const m = /^[（(]([^（）()]+)[）)]$/.exec(d.slice(familyHead.length).trim());
+    if (m) return { title: m[1]!.trim(), subject: familyHead.trim() };
+  }
+  const m = /^([^-—–]{2,16}?)\s*[-—–]\s*(.+)$/.exec(d);
+  if (m && HAS_CJK.test(m[1]!) && !/^\d/.test(m[1]!)) return { title: m[1]!.trim(), subject: m[2]!.trim() };
+  return { title: d, subject: "" };
+}
+
+/** 对象的比较键：去掉序号前缀、括号、空白与连接符（“01-设备买卖合同（RC-XS-2025-118）”与“设备买卖合同RC-XS-2025-118”同键）。 */
+export function subjectKey(s: string): string {
+  return s.replace(ORDINAL, "").replace(/[（）()【】[\]\s\-—–_·.、,，]/g, "").toLowerCase();
+}
+
+/** 对象显示用的样子：去掉序号前缀（完整名称仍在悬停提示里）。 */
+export function subjectText(s: string): string {
+  return s.replace(ORDINAL, "").trim();
+}
+
+const bigrams = (s: string): string[] => {
+  const out: string[] = [];
+  for (let i = 0; i + 1 < s.length; i++) out.push(s.slice(i, i + 2));
+  return out;
+};
+
+/**
+ * 对象是不是和事项名重复（“锐川诉禾丰买卖合同纠纷”之于事项“锐川诉禾丰设备买卖合同纠纷（起诉状）”）：
+ * 汉字两两相连的片段有 3/4 以上出现在事项名里，且没有事项名里没有的编号（合同号、案号这类字母数字串不算重复）。
+ */
+export function subjectRedundant(subject: string, matterTitle: string): boolean {
+  if (!subject || !matterTitle) return false;
+  const s = subjectText(subject);
+  const codes = s.match(/[A-Za-z0-9][A-Za-z0-9\-_.]{2,}/g) ?? [];
+  const mt = matterTitle.toLowerCase();
+  if (codes.some((c) => !mt.includes(c.toLowerCase()))) return false;
+  const grams = bigrams(s.replace(/[^一-鿿]/g, ""));
+  if (grams.length === 0) return codes.length > 0;
+  const m = matterTitle.replace(/[^一-鿿]/g, "");
+  return grams.filter((g) => m.includes(g)).length / grams.length >= 0.75;
+}
+
+/**
+ * 对象开头和事项名重复的当事人简称去掉（“锐川诉禾丰验收款-截至2026-11-30”之于事项“锐川诉禾丰设备买卖合同纠纷（起诉状）”
+ * → “验收款-截至2026-11-30”）：开头连续 3 个字以上出现在事项名里、去掉后还剩 2 个字以上且以汉字开头才去
+ * （“设备买卖合同RC-XS-2025-118”不去：剩下的只是编号，丢了“设备买卖合同”反而看不懂）；整个对象都在事项名里的不动。纯函数。
+ */
+export function trimMatterPrefix(subject: string, matterTitle: string): string {
+  if (!subject || !matterTitle || matterTitle.includes(subject)) return subject;
+  let k = 0;
+  for (let i = 3; i <= subject.length - 2; i++) if (HAS_CJK.test(subject[i - 1]!) && matterTitle.includes(subject.slice(0, i))) k = i;
+  if (k < 3) return subject;
+  const rest = subject.slice(k).replace(/^[\s\-—–·_]+/, "");
+  return rest.length >= 2 && HAS_CJK.test(rest[0]!) ? rest : subject;
+}
+
+/**
+ * 一次任务里各份文件的短名与这次任务共同的对象（纯函数）：
+ * - 和事项名重复的对象一律不写；
+ * - 两份及以上文件针对同一个对象、且没有别的对象时，对象只在任务那一行说一次（shared），各行不再重复；
+ * - 对象各不相同时留在各自那一行。
+ */
+export function taskTitles(displays: readonly string[], matterTitle = ""): { names: Map<string, DocTitle>; shared: string } {
+  const parts = nameParts(displays);
+  const names = new Map<string, DocTitle>();
+  for (const d of new Set(displays)) {
+    const t = docTitle(d, parts.get(d)?.head ?? "");
+    names.set(d, subjectRedundant(t.subject, matterTitle) ? { title: t.title, subject: "" } : t);
+  }
+  const withSubject = [...names.values()].filter((t) => t.subject);
+  const keys = new Set(withSubject.map((t) => subjectKey(t.subject)));
+  if (withSubject.length < 2 || keys.size !== 1) {
+    // 各行各写自己的对象：开头和事项名重复的当事人简称去掉
+    for (const [d, t] of names) if (t.subject) names.set(d, { title: t.title, subject: trimMatterPrefix(t.subject, matterTitle) });
+    return { names, shared: "" };
+  }
+  // 显示用出现最多的那种写法（去掉序号前缀）
+  const freq = new Map<string, number>();
+  for (const t of withSubject) freq.set(subjectText(t.subject), (freq.get(subjectText(t.subject)) ?? 0) + 1);
+  const shared = [...freq.entries()].sort((a, b) => b[1] - a[1])[0]![0];
+  for (const [d, t] of names) if (t.subject) names.set(d, { title: t.title, subject: "" });
+  return { names, shared };
+}
+
+/** 预览头里的“N 处待填”：文书里还留着几处“【待填】”占位（签发前要补上）。 */
+export function pendingFillCount(text: string): number {
+  return (text.match(/【\s*待填/g) ?? []).length;
+}
+
+/** 列表与预览里的时间：fmtWhen 当天超过一小时只给“00:58”，读起来像时长；补成“今天 00:58”（第 67 批）。 */
+export function whenText(fmtted: string): string {
+  return /^\d{1,2}:\d{2}$/.test(fmtted) ? `今天 ${fmtted}` : fmtted;
+}
+
+/**
+ * 同一事项里同一种任务跑了几次（第 67 批第三轮，独立评审 #2）：最新一次照常列出，更早的几次收在它下面一行“更早 N 次运行”。
+ * tasks 按新到旧传入（成果页的分组顺序）；nameOf 给任务名（不含时间，空串表示不归并，如“其他”组）；titlesOf 给这次运行各份文件的短名。
+ * renewed：更早几次里的每一份，最新一次都出了同名的文书（可以写“已有新版”）；有一份没再出就是 false，不替律师下这个结论。纯函数。
+ */
+export function foldEarlierRuns<T>(tasks: readonly T[], nameOf: (t: T) => string, titlesOf: (t: T) => readonly string[]): { task: T; earlier: T[]; renewed: boolean }[] {
+  const out: { task: T; earlier: T[]; renewed: boolean }[] = [];
+  const at = new Map<string, number>();
+  for (const t of tasks) {
+    const k = nameOf(t);
+    const i = k ? at.get(k) : undefined;
+    if (i === undefined) {
+      if (k) at.set(k, out.length);
+      out.push({ task: t, earlier: [], renewed: false });
+    } else out[i]!.earlier.push(t);
+  }
+  for (const g of out) {
+    if (g.earlier.length === 0) continue;
+    const now = new Set(titlesOf(g.task));
+    g.renewed = now.size > 0 && g.earlier.every((e) => titlesOf(e).every((x) => now.has(x)));
+  }
+  return out;
+}

@@ -74,7 +74,9 @@ test("成果页接线：一个事项一张卡片、单行文件、第 N 版合�
   const page = src("pages/Deliverables.tsx");
   // 第 51 批：复核流程条即筛选器（每段写份数与含义）
   assert.match(page, /className="dl-flow" role="tablist" aria-label="按复核流程筛选"/);
-  assert.match(page, /className="dl-card"/);
+  // 第 67 批（V41 D）：一个视图最多一层带边框的容器——事项不再套卡片，是一行分组标题（容器只剩右侧预览）
+  assert.doesNotMatch(page, /className="dl-card"/);
+  assert.match(page, /className="dl-matter-head"/);
   assert.match(page, /<span className="dl-flow-n">/);
   assert.match(page, /nameParts\(t\.files\.map/);
   const row = src("components/ArtifactRow.tsx");

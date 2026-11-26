@@ -28,9 +28,10 @@ test("DOCX：标题、段落、修订（插入/删除）与批注", () => {
 test("XLSX：表头与数据行、转义、行数上限说明", () => {
   const rows: (string | number | null)[][] = [["条款", "问题", "金额"], ["7.1", "违约金<过低>", 100], ...Array.from({ length: 600 }, (_, i) => [`r${i}`, "x", i])];
   const r = renderXlsxHtml(createXlsx([{ name: "问题清单", rows }]));
-  assert.match(r.html, /<h3>问题清单<\/h3>/);
-  assert.match(r.html, /<th>条款<\/th><th>问题<\/th><th>金额<\/th>/);
-  assert.match(r.html, /<td>违约金&lt;过低&gt;<\/td><td>100<\/td>/);
+  // V41 第 67 批：表名放在 section 的 data-sheet-name（界面做表签）；首行与其他行一样是单元格（表头的粗体、底色走样式类）
+  assert.match(r.html, /<section class="kwl-sheet" data-sheet-name="问题清单">/);
+  assert.match(r.html, />条款<\/td><td[^>]*>问题<\/td><td[^>]*>金额<\/td>/);
+  assert.match(r.html, />违约金&lt;过低&gt;<\/td><td[^>]*>100<\/td>/);
   assert.equal(r.truncated, true);
 });
 
@@ -63,7 +64,8 @@ test("ZIP 条目实际比声明的小（写入器缺陷或损坏，复核 R2B-30
 
 test("XLSX 预览：日期格按 yyyy-mm-dd 显示，不显示序列号（第 59 批 116 复验：金额测算表“暂计截止日”预览成 46335）", () => {
   const r = renderXlsxHtml(createXlsx([{ name: "汇总", rows: [["项目", "日期", "金额"], ["暂计截止日", 46335, 66970]], dates: ["B2"] }]));
-  assert.match(r.html, /<td>2026-11-09<\/td>/);
+  assert.match(r.html, />2026-11-09<\/td>/);
   assert.doesNotMatch(r.html, /46335/);
-  assert.match(r.html, /<td>66970<\/td>/, "不是日期格的数照原样");
+  // V41 第 67 批：不是日期格的数按它自己的数字格式显示（本产品写一万以上的整数用 #,##0，Excel 里就是 66,970）
+  assert.match(r.html, />66,970<\/td>/, "金额按 #,##0 显示千分位");
 });

@@ -147,91 +147,178 @@ export function basisBadge(b: Pick<OutlineBasisView, "check" | "article_text" | 
   return { label: b.check === "version_verified" ? "版本已核" : b.check === "source_verified" ? "来源已核" : "已核到条", tone: "ok", detail };
 }
 
-/** 一处要律师判断的地方（卡顶“需要你判断”逐条列出，点了展开对应论点）。 */
-export interface OutlineAttention {
-  arg_id: string;
-  /** 论点序号（从 1 起）。 */
-  n: number;
-  kind: "fact" | "basis" | "analogy" | "to_prove" | "element_gap";
-  tone: "warn" | "risk";
-  text: string;
-}
+/* ── 第 67 批（V41 工作线 A）：按律师的判断路径重排——每条论点一个结论信号（绿 / 橙 / 红），细节按“法律依据 → 事实依据 → 风险提示”展开 ──
+ * 取代第 66 批的“需要你判断”清单（outlineAttention / attentionDigest / argSummary）：那份清单把同一句“n 个要件待证：看证据是否够”
+ * 按论点重复五遍，论点行上又再写一遍“n 处待你看”，计数口径两套。现在每条论点只有一句结论，卡顶最多一行汇总，数字由同一个函数算出。 */
 
-const clip = (s: string, n = 28) => (s.length > n ? `${s.slice(0, n)}…` : s);
+export type VerdictTone = "ok" | "warn" | "risk";
+
+type FactRef = { fact_id: string | null; statement: string; confirmed: boolean };
 
 /**
- * 留下的论点里要律师判断的地方（去掉的论点、去掉的依据不算）。顺序：按论点，再按“依据核对 → 类推 → 要件待证 → 事实未确认”。
- * 同一条事实挂在多处只报一次（第一次出现的论点）。纯函数。
+ * 事实的现状。内核确认事实后只刷新论点直接挂的事实（argument-outlines.ts refreshOutlineFacts），要件里挂的是提纲提交那一刻的快照——
+ * 同一事实编号以论点上那份为准，否则律师确认过的事实在要件行里仍显示“待你确认”。纯函数。
  */
-export function outlineAttention(o: Pick<OutlineView, "items">, d: OutlineDraft, plain: (s: string) => string = (s) => s): OutlineAttention[] {
-  const out: OutlineAttention[] = [];
-  const seenFacts = new Set<string>();
-  o.items.forEach((x, i) => {
-    if (d.drop[x.arg_id]) return;
-    const n = i + 1;
-    const off = new Set(d.dropBasis[x.arg_id] ?? []);
-    x.basis.forEach((b, bi) => {
-      if (off.has(bi)) return;
-      const name = `《${b.matched ?? b.law}》${b.article ? `第 ${b.article} 条` : ""}`;
-      const badge = basisBadge(b);
-      if (badge.tone !== "ok") out.push({ arg_id: x.arg_id, n, kind: "basis", tone: badge.tone === "risk" ? "risk" : "warn", text: `${name}：${badge.label}，须你查官方文本` });
-      if (b.mode === "analogy") out.push({ arg_id: x.arg_id, n, kind: "analogy", tone: "warn", text: `${name}：类推适用，无直接依据` });
-      for (const e of b.elements ?? []) {
-        if (e.status === "to_prove") out.push({ arg_id: x.arg_id, n, kind: "to_prove", tone: "warn", text: `要件「${clip(plain(e.element))}」待证` });
-        else if (e.status === "fact" && e.facts.length === 0) out.push({ arg_id: x.arg_id, n, kind: "element_gap", tone: "warn", text: `要件「${clip(plain(e.element))}」标了有事实，但没挂事实` });
-      }
-    });
-    // 论点直接挂的与要件里挂的事实：只报未确认的
-    const pending = [
-      ...x.facts.filter((f) => !f.confirmed).map((f) => ({ id: f.fact_id, statement: f.statement })),
-      ...x.basis.flatMap((b, bi) => (off.has(bi) ? [] : (b.elements ?? []).flatMap((e) => e.facts.filter((f) => !f.confirmed).map((f) => ({ id: f.fact_id, statement: f.statement }))))),
-    ];
-    for (const f of pending) {
-      const key = f.id ?? `s:${f.statement}`;
-      if (seenFacts.has(key)) continue;
-      seenFacts.add(key);
-      out.push({ arg_id: x.arg_id, n, kind: "fact", tone: "warn", text: `事实「${clip(plain(f.statement))}」未经你确认` });
-    }
-  });
-  return out;
+export function liveFactState(o: Pick<OutlineView, "items">): Map<string, boolean> {
+  const m = new Map<string, boolean>();
+  for (const x of o.items) for (const f of x.facts) if (f.fact_id) m.set(f.fact_id, (m.get(f.fact_id) ?? false) || f.confirmed);
+  return m;
+}
+const confirmedNow = (f: FactRef, live: ReadonlyMap<string, boolean>) => (f.fact_id && live.has(f.fact_id) ? live.get(f.fact_id)! : f.confirmed);
+const factKey = (f: FactRef) => f.fact_id ?? `s:${f.statement}`;
+
+/** 《法名》第 n 条（卡上的全称）。 */
+export const basisName = (b: Pick<OutlineBasisView, "law" | "matched" | "article">) => `《${b.matched ?? b.law}》${b.article ? `第 ${b.article} 条` : ""}`;
+
+/** 短称（事实依据、风险提示里分组用）：去掉“中华人民共和国”，司法解释写成“××法解释”。 */
+export function basisShort(b: Pick<OutlineBasisView, "law" | "matched" | "article">): string {
+  const law = (b.matched ?? b.law).trim();
+  const interp = /^最高人民法院关于适用《(?:中华人民共和国)?(.+?)》的解释$/.exec(law);
+  const name = interp ? `${interp[1]}解释` : law.replace(/^中华人民共和国/, "");
+  return `${name}${b.article ? `第 ${b.article} 条` : ""}`;
 }
 
-/** 一条论点的概况（折叠时那一行）：依据几条、要件里有事实的几条、要判断的几处。纯函数。 */
-export function argSummary(x: OutlineItemView, d: OutlineDraft, attention: readonly OutlineAttention[]): { basis: number; elements: number; elementsWithFacts: number; attention: number } {
+/** 一条论点引用的事实（论点直接挂的在前，要件里挂的补在后；同一事实只列一次，编号从 1 起）。去掉的依据里的不算。纯函数。 */
+export interface ArgFact {
+  n: number;
+  fact_id: string | null;
+  statement: string;
+  confirmed: boolean;
+}
+export function argFacts(x: OutlineItemView, d: OutlineDraft, live: ReadonlyMap<string, boolean>): ArgFact[] {
+  const off = new Set(d.dropBasis[x.arg_id] ?? []);
+  const seen = new Map<string, ArgFact>();
+  const add = (f: FactRef) => {
+    const k = factKey(f);
+    if (!seen.has(k)) seen.set(k, { n: seen.size + 1, fact_id: f.fact_id, statement: f.statement, confirmed: confirmedNow(f, live) });
+  };
+  x.facts.forEach(add);
+  x.basis.forEach((b, i) => {
+    if (!off.has(i)) for (const e of b.elements ?? []) e.facts.forEach(add);
+  });
+  return [...seen.values()];
+}
+
+/** 一个要件有没有证据（事实依据一栏的右侧）：refs = 引用的事实编号（argFacts 的 n）。 */
+export function elementEvidence(
+  e: NonNullable<OutlineBasisView["elements"]>[number],
+  facts: readonly ArgFact[],
+  live: ReadonlyMap<string, boolean>,
+): { tone: "ok" | "warn" | "gray"; text: string; refs: number[] } {
+  if (e.status === "to_prove") return { tone: "warn", text: "缺证据", refs: [] };
+  if (e.status === "undisputed") return { tone: "gray", text: "双方无争议", refs: [] };
+  if (e.status === "opponent_burden") return { tone: "gray", text: "对方举证", refs: [] };
+  if (e.facts.length === 0) return { tone: "warn", text: "缺证据（标了有事实，但没挂上）", refs: [] };
+  const refs = e.facts.map((f) => facts.find((a) => (f.fact_id ? a.fact_id === f.fact_id : a.statement === f.statement))?.n ?? 0).filter((n) => n > 0).sort((a, b) => a - b);
+  return e.facts.every((f) => confirmedNow(f, live)) ? { tone: "ok", text: "已确认", refs } : { tone: "warn", text: "待你确认", refs };
+}
+
+/** 一条论点的结论信号（折叠时那一行）。 */
+export interface ArgVerdict {
+  tone: VerdictTone;
+  /** 依据已核 / 有疑点 / 依据有问题 */
+  label: string;
+  /** 最要紧的一件事（一句话）。 */
+  issue: string;
+  /** 另外还有的（至多一句），没有为 null。 */
+  more: string | null;
+  basis: number;
+  elements: number;
+  /** 缺证据的要件（待证 + 标了有事实却没挂事实）。 */
+  missing: number;
+  /** 条文需核对的依据（核对不过、未收录、未核实、演示数据、类推）。 */
+  basisIssues: number;
+  basisRisk: number;
+  /** 本条论点引用的待确认事实（论点上与要件里的合并去重）。 */
+  pendingFacts: number;
+  /** 其中也被别的（留下的）论点引用的条数。 */
+  pendingShared: number;
+}
+
+/**
+ * 被两条以上留下的论点引用、且还没确认的事实（事实键）。第 67 批第二轮（独立评审）：卡顶写“共 13 条”、各行写 6/4/6/2/2，
+ * 加起来 20，律师以为数据错了——各行要写明“其中 n 条与其他论点共用”。纯函数。
+ */
+export function sharedPendingFacts(o: Pick<OutlineView, "items">, d: OutlineDraft, live: ReadonlyMap<string, boolean>): Set<string> {
+  const count = new Map<string, number>();
+  for (const x of o.items) {
+    if (d.drop[x.arg_id]) continue;
+    for (const f of argFacts(x, d, live)) if (!f.confirmed) count.set(factKey(f), (count.get(factKey(f)) ?? 0) + 1);
+  }
+  return new Set([...count].filter(([, n]) => n > 1).map(([k]) => k));
+}
+
+const clip = (s: string, n = 16) => (s.length > n ? `${s.slice(0, n)}…` : s);
+
+/**
+ * 一条论点的结论：红 = 条文核对不过或法规库未收录；橙 = 条文未核实 / 类推 / 要件缺证据 / 事实待你确认；绿 = 都没有。
+ * 只说最要紧的一件事，顺序：依据有问题 → 条文须核 → 类推 → 要件缺证据 → 事实待确认。去掉的依据不算。纯函数。
+ */
+export function argVerdict(x: OutlineItemView, d: OutlineDraft, live: ReadonlyMap<string, boolean>, plain: (s: string) => string = (s) => s, shared: ReadonlySet<string> = new Set()): ArgVerdict {
   const off = new Set(d.dropBasis[x.arg_id] ?? []);
   const kept = x.basis.filter((_, i) => !off.has(i));
+  const risk = kept.filter((b) => basisBadge(b).tone === "risk");
+  const warn = kept.filter((b) => basisBadge(b).tone === "warn");
+  const analogy = kept.filter((b) => b.mode === "analogy");
   const els = kept.flatMap((b) => b.elements ?? []);
+  const missing = els.filter((e) => e.status === "to_prove" || (e.status === "fact" && e.facts.length === 0));
+  const pending = argFacts(x, d, live).filter((f) => !f.confirmed);
+  // [完整一句, 简称]：信号行写第一件事的完整一句，其余用简称接在后面
+  const issues: [string, string][] = [];
+  if (risk.length > 0) issues.push([risk.length === 1 ? `${basisName(risk[0]!)}${basisBadge(risk[0]!).label}` : `${risk.length} 条依据核对未通过或法规库未收录`, `${risk.length} 条依据有问题`]);
+  if (warn.length > 0) issues.push([warn.length === 1 ? `${basisName(warn[0]!)}${basisBadge(warn[0]!).label}，须查官方文本` : `${warn.length} 条依据未核实，须查官方文本`, `${warn.length} 条依据未核实`]);
+  if (analogy.length > 0) issues.push([`${analogy.length === 1 ? basisName(analogy[0]!) : `${analogy.length} 条依据`}为类推适用，无直接依据`, "类推适用"]);
+  if (missing.length > 0) issues.push([`${missing.length} 个要件缺证据，如「${clip(plain(missing[0]!.element))}」`, `${missing.length} 个要件缺证据`]);
+  const pendingShared = pending.filter((f) => shared.has(factKey(f))).length;
+  if (pending.length > 0) issues.push([`引用 ${pending.length} 条待确认事实${pendingShared > 0 ? `，其中 ${pendingShared} 条与其他论点共用` : ""}`, `${pending.length} 条待确认事实`]);
+  const tone: VerdictTone = risk.length > 0 ? "risk" : issues.length > 0 ? "warn" : "ok";
+  const okText = kept.length === 0 ? "没有引用依据" : els.length > 0 ? "条文已核，要件都有事实" : "条文已核";
   return {
+    tone,
+    label: tone === "risk" ? "依据有问题" : tone === "warn" ? "有疑点" : "依据已核",
+    issue: issues[0]?.[0] ?? okText,
+    more: issues.length > 1 ? `另有 ${issues.slice(1).map((i) => i[1]).join("、")}` : null,
     basis: kept.length,
     elements: els.length,
-    elementsWithFacts: els.filter((e) => e.status !== "to_prove" && !(e.status === "fact" && e.facts.length === 0)).length,
-    attention: attention.filter((a) => a.arg_id === x.arg_id).length,
+    missing: missing.length,
+    basisIssues: risk.length + warn.length + analogy.length,
+    basisRisk: risk.length,
+    pendingFacts: pending.length,
+    pendingShared,
   };
 }
 
-/**
- * “需要你判断”的汇总（第 66 批真实走查：起诉状一张卡 31 处，多数是原告本就要举证的“要件待证”，逐条列出又成了堆叠）。
- * 规则：依据核对问题与类推逐条列（少而要紧）；待证要件、没挂事实的要件按论点各合成一行；未确认事实合成一行（底部可一并确认）。
- * 顺序：风险（依据核对不过）→ 类推 → 各论点的要件 → 事实。纯函数。
- */
-export function attentionDigest(list: readonly OutlineAttention[]): OutlineAttention[] {
-  const out: OutlineAttention[] = [];
-  const risk = list.filter((a) => a.kind === "basis");
-  const analogy = list.filter((a) => a.kind === "analogy");
-  out.push(...risk.filter((a) => a.tone === "risk"), ...risk.filter((a) => a.tone !== "risk"), ...analogy);
-  const byArg = new Map<string, { n: number; toProve: number; gap: number }>();
-  for (const a of list) {
-    if (a.kind !== "to_prove" && a.kind !== "element_gap") continue;
-    const g = byArg.get(a.arg_id) ?? { n: a.n, toProve: 0, gap: 0 };
-    if (a.kind === "to_prove") g.toProve++;
-    else g.gap++;
-    byArg.set(a.arg_id, g);
-  }
-  for (const [arg_id, g] of byArg) {
-    const parts = [g.toProve > 0 ? `${g.toProve} 个要件待证` : "", g.gap > 0 ? `${g.gap} 个要件标了有事实但没挂事实` : ""].filter(Boolean).join("，");
-    out.push({ arg_id, n: g.n, kind: g.gap > 0 ? "element_gap" : "to_prove", tone: "warn", text: `${parts}：看证据是否够` });
-  }
-  const facts = list.filter((a) => a.kind === "fact");
-  if (facts.length > 0) out.push({ arg_id: facts[0]!.arg_id, n: facts[0]!.n, kind: "fact", tone: "warn", text: `${facts.length} 条事实未经你确认（底部可一并确认）` });
+/** 卡顶唯一的一行汇总：每项写明涉及哪些论点（点了展开这些论点）。facts = 底部可一并确认的事实数（与底部同一口径）。纯函数。 */
+export interface OverviewItem {
+  key: "risk" | "basis" | "missing" | "facts";
+  tone: "warn" | "risk";
+  text: string;
+  args: string[];
+}
+export function outlineOverview(o: Pick<OutlineView, "items">, d: OutlineDraft, live: ReadonlyMap<string, boolean>): OverviewItem[] {
+  const kept = o.items.filter((x) => !d.drop[x.arg_id]).map((x) => ({ x, v: argVerdict(x, d, live) }));
+  const pick = (f: (v: ArgVerdict) => number) => kept.filter((k) => f(k.v) > 0);
+  const sum = (ks: typeof kept, f: (v: ArgVerdict) => number) => ks.reduce((n, k) => n + f(k.v), 0);
+  const out: OverviewItem[] = [];
+  const risk = pick((v) => v.basisRisk);
+  if (risk.length > 0) out.push({ key: "risk", tone: "risk", text: `${sum(risk, (v) => v.basisRisk)} 条依据有问题`, args: risk.map((k) => k.x.arg_id) });
+  const basis = pick((v) => v.basisIssues - v.basisRisk);
+  if (basis.length > 0) out.push({ key: "basis", tone: "warn", text: `${sum(basis, (v) => v.basisIssues - v.basisRisk)} 条依据需核对`, args: basis.map((k) => k.x.arg_id) });
+  const missing = pick((v) => v.missing);
+  if (missing.length > 0) out.push({ key: "missing", tone: "warn", text: `${missing.length === kept.length && kept.length > 1 ? `${missing.length} 条论点都有` : `${missing.length} 条论点有`}要件缺证据`, args: missing.map((k) => k.x.arg_id) });
+  const facts = unconfirmedFactsOf(o, d);
+  // 与底部“同时确认这 n 条事实”同一个数（内核 confirm_facts 实际确认的那些）
+  if (facts.length > 0) out.push({ key: "facts", tone: "warn", text: `共 ${facts.length} 条事实待你确认（论点之间共用的只算一次）`, args: [] });
   return out;
+}
+
+/** 底部“一并确认”的事实各被哪几条论点引用（序号从 1 起），给律师勾选前逐条看。纯函数。 */
+export function pendingFactUses(o: Pick<OutlineView, "items">, d: OutlineDraft): { fact_id: string; statement: string; args: number[] }[] {
+  return unconfirmedFactsOf(o, d).map((f) => ({ ...f, args: o.items.flatMap((x, i) => (!d.drop[x.arg_id] && x.facts.some((g) => g.fact_id === f.fact_id) ? [i + 1] : [])) }));
+}
+
+/** 一条论点的风险提示条数（留下的依据里的但书与例外 + 对方可能的反驳）；折叠行右侧显示，让风险层不用展开也看得到（第三轮评审）。纯函数。 */
+export function argRiskCount(x: Pick<OutlineItemView, "arg_id" | "basis" | "counter">, d: OutlineDraft): number {
+  const off = new Set(d.dropBasis[x.arg_id] ?? []);
+  return x.basis.filter((b, i) => !off.has(i) && !!b.exceptions?.trim()).length + (x.counter?.trim() ? 1 : 0);
 }

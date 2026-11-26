@@ -46,9 +46,20 @@ function isDataUrl(v: string): boolean {
   return /^\s*data:(image|font)\//i.test(v);
 }
 
-/** 清洗并包装为预览文档（返回 srcdoc 字符串）；给出代号表时按文本节点还原（只在隔离框架内显示）。 */
-/** 文书纸面版式（v9.2 §4.4；Y4 §5 D-8、#31）：衬线正文、较大字号与行距、纸面底色——用于 Word/Excel 成果预览。 */
-const PAPER_STYLE = "body{font-family:'Source Han Serif SC','Noto Serif CJK SC','Songti SC',SimSun,serif;font-size:16px;line-height:1.9;color:#1f1d1a;background:#fffdf9;margin:24px 40px;}";
+/**
+ * Word 成果的纸面版式（V41 第 67 批 §2.8：取消米黄纸色）：中性浅灰画布（--bg-muted 浅色值）上一张纯白 A4 纸（宽 794px 内随可用宽度缩，
+ * 比例 210:297、内容多了往下长），细描边（--border-subtle）+ 轻阴影（--shadow-sm），页边距约 72px（窄时收小），四周画布留 24～32px（窄时收小）；
+ * 正文衬线（--font-doc）16px / 1.75、段距 4px（与打印出来的文书相近；旧版内核输出没有段距规则时也按这个排）。
+ * 框架内取不到本页令牌：颜色值手抄自 tokens.css，style-tokens.test.ts 核对相等。
+ */
+const PAPER_STYLE = "html,body{background:#f4f3f2;}body{margin:0;padding:32px 28px 48px;font-family:'Source Han Serif SC','Noto Serif CJK SC','Songti SC',SimSun,serif;font-size:16px;line-height:1.75;color:#1f1d1a;}.kwl-paper{box-sizing:border-box;max-width:794px;aspect-ratio:210/297;margin:0 auto;padding:72px;background:#ffffff;border:1px solid #eeebe7;box-shadow:0 1px 6px rgba(14,18,25,0.06);overflow-wrap:break-word;}.kwl-paper p{margin:0 0 4px;}.kwl-paper h2,.kwl-paper h3,.kwl-paper h4{line-height:1.5;}@media (max-width:760px){body{padding:24px 20px 32px;}.kwl-paper{padding:48px 40px;}}@media (max-width:520px){body{padding:12px 10px 24px;}.kwl-paper{padding:28px 20px;}}";
+
+/**
+ * Excel 成果的表格版式（V41 第 67 批 §2.8：表格是表格，不套文书纸面）：白底、无边距、无衬线（等线 / 微软雅黑 / 苹方）13px，
+ * 表格本身（列宽、合并、对齐、底色、边框、固定的列号行号）由内核输出的样式排，框架里可横向、纵向滚动，不压缩列宽。
+ * 后半是旧版内核输出（没有 kwl-grid 的平铺表格）的兜底：中文不在字间断行、表头不折行，表格宽于框架时横向滚动（“证据编号”不再一字一行）。
+ */
+const SHEET_STYLE = "html,body{background:#ffffff;}body{margin:0;font-family:Calibri,'Segoe UI',BlinkMacSystemFont,'Helvetica Neue',DengXian,'等线','Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB',Arial,sans-serif;font-size:13px;line-height:1.4;color:#0e1219;}table:not(.kwl-grid){border-collapse:collapse;margin:0;}table:not(.kwl-grid) td,table:not(.kwl-grid) th{border:1px solid #e3dfda;padding:3px 8px;vertical-align:top;word-break:keep-all;overflow-wrap:break-word;}table:not(.kwl-grid) th{background:#f4f3f2;white-space:nowrap;text-align:left;font-weight:600;}";
 
 /** 预览框架的基础样式（框架内取不到本页令牌：颜色值手抄自 tokens.css 的 --p-ink、--p-white、--p-blue-600，style-tokens.test.ts 核对相等）。 */
 const BASE_STYLE = "body{font-family:'Segoe UI','Microsoft YaHei UI','Microsoft YaHei',-apple-system,'PingFang SC',sans-serif;font-size:14px;line-height:1.7;color:#0e1219;background:#ffffff;margin:16px;} .kwl-link{color:#0a66d1;text-decoration:underline dotted;cursor:default;} img{max-width:100%;} .kwl-cite{font-size:11px;font-weight:600;padding:0 2px;border-radius:4px;cursor:help;} .kwl-cite-red{color:#b42318;} .kwl-cite-orange{color:#b54708;} .kwl-cite-gray{color:#8f8a84;} .kwl-cite-confirmed{color:#5925dc;} .kwl-cite-ack{color:#0e1219;border:1px solid #8f8a84;}";
@@ -63,7 +74,34 @@ export interface PreviewCite {
   title: string;
 }
 
-export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | null>, o: { paper?: boolean; cites?: PreviewCite[] } = {}): string {
+/**
+ * 把内核的 Excel 预览拆成一张张工作表（V41 第 67 批：隔离框架不执行脚本，表签只能放在框架外，一次只给框架一张表）。
+ * 认新版的 section.kwl-sheet（data-sheet-name 为表名）与旧版的 section > h3（表名）两种写法；样式块每张表都带上，表后的说明（截断、隐藏表）附在每张表后。
+ * 只按内核输出的结构切分，每一份仍整份经 buildPreviewDoc 清洗；拆不出表（不是表格预览）返回 null。
+ */
+export interface PreviewSheet {
+  name: string;
+  html: string;
+}
+const decodeAttr = (s: string) => s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+export function splitSheets(html: string): { head: string; sheets: PreviewSheet[]; tail: string } | null {
+  const STYLE = /<style\b[^>]*>[\s\S]*?<\/style>/gi;
+  const sheets: PreviewSheet[] = [];
+  let end = -1;
+  for (const m of html.matchAll(/<section class="kwl-sheet" data-sheet-name="([^"]*)">([\s\S]*?)<\/section>|<section>\s*<h3>([\s\S]*?)<\/h3>([\s\S]*?)<\/section>/g)) {
+    if (m[1] !== undefined) sheets.push({ name: decodeAttr(m[1]), html: `<section class="kwl-sheet">${m[2]}</section>` });
+    else sheets.push({ name: decodeAttr(m[3]!.replace(/<[^>]*>/g, "")), html: `<section>${m[4]}</section>` });
+    end = m.index! + m[0].length;
+  }
+  if (sheets.length === 0) return null;
+  return { head: (html.match(STYLE) ?? []).join(""), sheets, tail: html.slice(end).replace(STYLE, "") };
+}
+
+/**
+ * 清洗并包装为预览文档（返回 srcdoc 字符串）；给出代号表时按文本节点还原（只在隔离框架内显示）。
+ * paper：Word 纸面（正文包进 .kwl-paper）；sheet：Excel 表格版式；citePrefix：分表显示时排在本表之前的各表（只用来接着数引用出现到第几次，不显示）。
+ */
+export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | null>, o: { paper?: boolean; sheet?: boolean; cites?: PreviewCite[]; citePrefix?: string } = {}): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   for (const tag of DROP_ELEMENTS) for (const el of Array.from(doc.querySelectorAll(tag))) el.remove();
   for (const a of Array.from(doc.querySelectorAll("a[href]"))) a.setAttribute("data-kwl-href", a.getAttribute("href") ?? "");
@@ -105,10 +143,20 @@ export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | nu
     const byRaw = new Map<string, PreviewCite[]>();
     for (const c of o.cites) byRaw.set(c.raw, [...(byRaw.get(c.raw) ?? []), c]);
     const seen = new Map<string, number>();
+    const raws = [...byRaw.keys()].sort((a, b) => b.length - a.length);
+    if (o.citePrefix) {
+      // 前面各表里的出现次数先数上（与内核按整份成果数的第 n 次对齐），本表的角标才落在对的那一处
+      const pre = new DOMParser().parseFromString(o.citePrefix, "text/html");
+      const pw = pre.createTreeWalker(pre.body, NodeFilter.SHOW_TEXT);
+      for (let n = pw.nextNode(); n; n = pw.nextNode()) {
+        let t = n.nodeValue ?? "";
+        if (tokenMap && tokenMap.size > 0 && t.includes("〔")) t = t.replace(TOKEN_RE, (m) => tokenMap.get(m) ?? m);
+        if (raws.some((r) => t.includes(r))) scanMarks(t, raws, seen);
+      }
+    }
     const nodes: Text[] = [];
     const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text);
-    const raws = [...byRaw.keys()].sort((a, b) => b.length - a.length);
     for (const node of nodes) {
       const text = node.nodeValue ?? "";
       if (!raws.some((r) => text.includes(r))) continue;
@@ -130,7 +178,8 @@ export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | nu
       node.replaceWith(frag);
     }
   }
-  const body = doc.body?.innerHTML ?? "";
+  const inner = doc.body?.innerHTML ?? "";
+  const body = o.paper && !o.sheet ? `<div class="kwl-paper">${inner}</div>` : inner;
   const styles = Array.from(doc.head?.querySelectorAll("style") ?? [])
     .map((s) => `<style>${s.textContent ?? ""}</style>`)
     .join("");
@@ -139,7 +188,7 @@ export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | nu
     `<meta http-equiv="Content-Security-Policy" content="${PREVIEW_CSP}">`,
     '<meta charset="utf-8">',
     `<style>${BASE_STYLE}</style>`,
-    o.paper ? `<style>${PAPER_STYLE}</style>` : "",
+    o.sheet ? `<style>${SHEET_STYLE}</style>` : o.paper ? `<style>${PAPER_STYLE}</style>` : "",
     styles,
     "</head><body>",
     body,

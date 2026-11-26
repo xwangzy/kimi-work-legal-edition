@@ -235,12 +235,25 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer, outlineLock }
   const answered = isAnswered(card.questions, draft);
   const missing = unansweredCount(card.questions, draft);
   const idBase = useId();
+  // 第 67 批（V41 工作线 A）：论点确认题和别的题同卡时，论点那题不再整组铺开（上方论点卡就是它的作答处），只留一行状态；
+  // 卡头改成“还要你定 n 件事”，只数其余的题。作答内容不变（确认后自动选上“已确认……”，buildAnswers 照旧）
+  const others = outlineLock ? card.questions.filter((q) => q.id !== outlineLock.qid) : card.questions;
+  const missingOthers = unansweredCount(others, draft);
+  // 第三轮评审：“先不起草”不再挤在状态行里，放到底部按钮区（与“跳过 / 确定”并排的文字按钮）；
+  // 点了即作答：论点题选“先不起草”，其余题按已选的交（没选的为 skipped，与“跳过”同一口径），作答形状不变
+  const lockQ = outlineLock && !outlineLock.confirmed ? card.questions.find((q) => q.id === outlineLock.qid) : undefined;
+  const stopOpt = lockQ ? (lockQ.options.find((o) => /^先不起草/.test(o.label.trim())) ?? lockQ.options.find((o) => o.id !== outlineLock!.confirm)) : undefined;
   return (
-    <div className="card-confirm card-question">
+    <div className={`card-confirm card-question${outlineLock ? " has-outline-lock" : ""}`}>
       <div className="cc-top">
-        <div className="cc-head"><Icon.question /> 需要你定一下{card.questions[0]?.header ? `：${card.questions[0].header}` : ""}</div>
+        <div className="cc-head"><Icon.question /> {outlineLock ? `还要你定 ${others.length} 件事` : `需要你定一下${card.questions[0]?.header ? `：${card.questions[0].header}` : ""}`}</div>
       </div>
-      {card.questions.map((q) => (
+      {card.questions.map((q) => outlineLock && q.id === outlineLock.qid ? (
+        <div key={q.id} className={`q-lock${outlineLock.confirmed ? " is-done" : ""}`} role="status" aria-label="论点确认">
+          <span className="q-lock-dot" aria-hidden="true" />
+          <span className="q-lock-text">{outlineLock.confirmed ? "论点已确认，按确认的论点起草" : "论点在上方卡片确认，确认后这里自动选上"}</span>
+        </div>
+      ) : (
         <div key={q.id} className="q-block">
           {/* 只有一个问题时标题已写明，不再重复 */}
           {q.header && card.questions.length > 1 && <div className="q-header">{renderTokens(q.header, tokenMap)}</div>}
@@ -248,7 +261,6 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer, outlineLock }
           <div className="q-options" role={q.multi_select ? "group" : "radiogroup"} aria-labelledby={`${idBase}-${q.id}`}>
             {q.options.map((o) => {
               const on = (sel[q.id] ?? []).includes(o.id);
-              const lockedOut = !!outlineLock && q.id === outlineLock.qid && o.id === outlineLock.confirm && !outlineLock.confirmed;
               return (
                 <button
                   key={o.id}
@@ -256,7 +268,6 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer, outlineLock }
                   role={q.multi_select ? "checkbox" : "radio"}
                   aria-checked={on}
                   className={`q-option${on ? " on" : ""}`}
-                  disabled={lockedOut}
                   onClick={() => setDraft((d) => pickOption(d, q, o.id))}
                 >
                   <span>
@@ -267,20 +278,28 @@ export function QuestionCardView({ card, tokenMap, busy, onAnswer, outlineLock }
               );
             })}
           </div>
-          {outlineLock && q.id === outlineLock.qid && (
-            <div className="cc-hint muted">{outlineLock.confirmed ? "已在上面的论点卡确认。" : "要按论点起草，请先在上面的论点卡确认；也可以选“先不起草”。"}</div>
-          )}
           {/* V16：多行、随内容自动增高（最多 4 行），律师写一句完整的话看得全；提交逻辑不变 */}
           <textarea className="q-other" rows={1} placeholder="其他（直接输入；会取代上面的选择）" aria-label="其他（直接输入）" value={other[q.id] ?? ""} ref={autoGrow} onChange={(e) => { autoGrow(e.target); setDraft((d) => typeOther(d, q, e.target.value)); }} />
         </div>
       ))}
       {/* 不能提交的原因写在卡片上（读屏与触屏也能看到），不只放在按钮的悬停提示里 */}
-      {!answered && <div className="cc-hint muted">{card.questions.length > 1 ? `还有 ${missing} 题未选：` : ""}先选一个选项，或在“其他”里写下你的意思。</div>}
+      {!answered && (
+        <div className="cc-hint muted">
+          {outlineLock && missing > missingOthers
+            ? missingOthers > 0 ? `还有 ${missingOthers} 件没选；在上方确认论点后才能点确定。` : "已选好；在上方确认论点后点确定。"
+            : `${card.questions.length > 1 ? `还有 ${missing} 题未选：` : ""}先选一个选项，或在“其他”里写下你的意思。`}
+        </div>
+      )}
       <div className="cc-actions">
         <button className="btn-primary" disabled={busy || !answered} onClick={() => onAnswer(buildAnswers(card.questions, draft))}>
           确定
         </button>
         <button className="btn-ghost" disabled={busy} onClick={() => onAnswer(Object.fromEntries(card.questions.map((q) => [q.id, { kind: "skipped" } as QuestionAnswer])))}>跳过</button>
+        {lockQ && stopOpt && (
+          <button type="button" className="btn-link q-stop" disabled={busy} onClick={() => onAnswer(buildAnswers(card.questions, pickOption(draft, lockQ, stopOpt.id)))}>
+            {renderTokens(optionLabelText(stopOpt.label), tokenMap)}
+          </button>
+        )}
       </div>
     </div>
   );

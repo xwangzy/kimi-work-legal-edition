@@ -1,78 +1,101 @@
-/* 成果列表（第 51 批重做）：页首一句话 + 复核流程条（即筛选器）+ 一个事项一张卡片（按任务分段）+ 对齐列的单行文件。
-   只用语义令牌（门禁 apps/desktop/test/style-tokens.test.ts）。后加载，覆盖 styles.css 里第 48 批的同名规则。 */
-.dl-head { align-items: flex-start; margin-bottom: var(--sp-5); }
-.dl-sub { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--sp-3); margin-top: 6px; }
-.dl-sub-lead { font-weight: 500; color: var(--text-label); }
+/* 成果（第 67 批 V41 工作线 D 重做）：文档工作区——页头横跨两栏；左栏“分段筛选 + 按事项分组的两行文件行”，右栏预览；两栏各自滚动。
+   规范：一个视图最多一层带边框的容器（只有右侧预览是容器；列表不套卡片、行间不画分隔线）；状态是色点 + 文字；全视图一个黑色主按钮（在预览头）。
+   只用语义令牌（门禁 apps/desktop/test/style-tokens.test.ts）。后加载，覆盖 styles.css 里第 48 批的同名规则。
+   .dl-search 也用在事项、方法库页，.dl-ficon 也用在 @ 材料弹层：这里的改动都限定在 .dl-page 之内，不动它们。 */
 
-/* 列表页正文限宽：名称与时间之间不拉出大片空白（宽屏下也保持一眼扫完一行） */
-.main-wide.dl-page { max-width: 1040px; }
+/* ── 页头 ── */
+.main-wide.dl-page { max-width: 860px; }
+/* 第三轮（独立评审 #6）：页头只有一行——标题与搜索框垂直居中对齐，不再有一句与“草稿 N”重复的副标题 */
+.dl-page .dl-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); min-height: 36px; margin-bottom: var(--sp-5); }
+.dl-page .dl-head .page-title { margin: 0; }
+.dl-head-text { min-width: 0; }
+.dl-page .dl-sub { margin: var(--sp-1) 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.dl-sub-lead { font-weight: 400; color: var(--text-secondary); }
+.dl-page .dl-search { flex: 0 1 260px; height: 36px; border-color: var(--border-subtle); background: var(--bg-surface); transition: border-color var(--motion-fast) ease; }
+.dl-page .dl-search:hover { border-color: var(--border-default); }
+.dl-page .dl-search:focus-within { border-color: var(--focus-ring); }
+.dl-page .dl-search .dl-search-icon svg { width: 16px; height: 16px; }
+.dl-page > .banner { margin: 0 0 var(--sp-3); }
 
-/* ── 复核流程条：草稿 → 待复核 → 已签发（→ 已退回单列）· 全部 ──
-   每段一个数字 + 名称 + 一句话；选中段浅蓝底、蓝框（Kimi 选中语言）；段与段之间一个细箭头，说明这是先后关系而不是并列的标签。 */
-.dl-flow { display: flex; align-items: stretch; gap: var(--sp-1); margin-bottom: var(--sp-6); }
-.dl-flow-step { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); text-align: left; transition: border-color var(--motion-base) ease, background-color var(--motion-base) ease, box-shadow var(--motion-base) ease; }
-.dl-flow-step:hover { border-color: var(--border-default); box-shadow: var(--shadow-xs); }
-.dl-flow-step:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.dl-flow-step.on { border-color: var(--accent-border); background: var(--accent-bg); box-shadow: none; }
-.dl-flow-step.aside { flex: 0 1 200px; margin-left: var(--sp-3); }
-.dl-flow-n { flex: none; min-width: 28px; font-size: var(--fs-xl); font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--text-primary); }
-.dl-flow-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.dl-flow-label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-body); font-weight: 500; color: var(--text-primary); }
-.dl-flow-label::before { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-neutral-solid); }
-.dl-flow-pending_review .dl-flow-label::before { background: var(--status-warning-solid); }
-.dl-flow-approved .dl-flow-label::before { background: var(--status-success-solid); }
-.dl-flow-rejected .dl-flow-label::before { background: var(--status-danger-solid); }
-.dl-flow-note { font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dl-flow-step.on .dl-flow-n { color: var(--accent-text); }
-.dl-flow-arrow { flex: none; display: grid; place-items: center; width: 16px; color: var(--border-hover); }
-.dl-flow-arrow svg { width: 14px; height: 14px; }
-.dl-flow-all { flex: none; align-self: center; margin-left: var(--sp-3); height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-full); background: transparent; color: var(--text-secondary); font-size: var(--fs-body); white-space: nowrap; }
-.dl-flow-all:hover { background: var(--bg-hover); color: var(--text-primary); }
-.dl-flow-all.on { background: var(--btn-primary); color: var(--btn-primary-text); }
-.dl-flow-all:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-@media (max-width: 860px) {
-  .dl-flow-note { display: none; }
-  .dl-flow-step { padding: var(--sp-2) var(--sp-3); }
-}
+/* ── 工作区（≥ 1100px 且有成果）：主区不再整页滚动，页头固定，下面两栏各自滚动，底边对齐 ── */
+.main.dlws-main.is-ws { display: flex; flex-direction: column; overflow: hidden; padding: 32px 32px 24px; }
+.dl-page.dl-ws { flex: 1; min-height: 0; width: 100%; max-width: 1560px; display: flex; flex-direction: column; }
+.dl-ws .dl-head, .dl-ws > .banner { flex: none; }
+.dl-split { display: block; }
+.dl-ws .dl-split { flex: 1; min-height: 0; display: grid; grid-template-columns: clamp(340px, 36%, 440px) minmax(0, 1fr); gap: var(--sp-5); }
+/* 搜索、筛选后一份都没有：收起预览栏，列表与空状态占满（第三轮，独立评审 #3） */
+.dl-ws .dl-split.dl-split-empty { grid-template-columns: minmax(0, 1fr); }
+.dl-list-col { min-width: 0; }
+.dl-ws .dl-list-col { min-height: 0; display: flex; flex-direction: column; }
+.dl-ws .dl-list { flex: 1; min-height: 0; overflow: auto; margin: 0 calc(-1 * var(--sp-2)); padding: 0 var(--sp-2) var(--sp-5); scrollbar-gutter: stable; }
+.dl-toolbar { flex: none; margin-bottom: var(--sp-4); }
 
-/* ── 事项：标题一行（右侧“n 次任务 · m 份”），下面一张卡片 ── */
-.dl-matter { margin-bottom: var(--sp-6); }
-.dl-matter-head { display: flex; align-items: baseline; gap: var(--sp-3); margin: 0 2px var(--sp-2); }
-.dl-matter-title { display: inline-flex; align-items: center; gap: 4px; min-width: 0; font-size: var(--fs-md); font-weight: 600; }
-.dl-matter-meta { margin-left: auto; flex: none; font-size: var(--fs-caption); color: var(--text-secondary); }
-.dl-matter-go { display: inline-flex; color: var(--text-secondary); transform: translateX(-2px); transition: transform var(--motion-fast) ease, color var(--motion-fast) ease; }
-.dl-matter-go svg { width: 14px; height: 14px; }
-.dl-matter-title:hover .dl-matter-go, .dl-matter-title:focus-visible .dl-matter-go { color: var(--accent-text); transform: none; }
-.dl-card { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); overflow: hidden; }
-/* 任务段：段头是一条轻标签，段与段之间留白 + 细线 */
-.dl-card .dl-task { border: 0; border-radius: 0; margin: 0; background: transparent; overflow: visible; padding-bottom: var(--sp-1); }
-.dl-card .dl-task + .dl-task { border-top: 1px solid var(--border-subtle); }
-.dl-card .dl-task-head { background: transparent; border-bottom: 0; padding: var(--sp-3) var(--sp-4) var(--sp-1); }
-.dl-card .dl-task-name { font-size: var(--fs-caption); font-weight: 600; color: var(--text-label); }
-.dl-card .dl-task-meta { font-size: var(--fs-xs); color: var(--text-secondary); }
-.dl-card .dl-task-actions { visibility: hidden; }
-.dl-card .dl-task:hover .dl-task-actions, .dl-card .dl-task:focus-within .dl-task-actions { visibility: visible; }
+/* ── 复核流程筛选：一条安静的分段（与侧栏 Work / Chat 切换同一种样子）。全部 | 草稿 › 待复核 › 已签发；含义在悬停提示 ── */
+.dl-page .dl-flow { display: inline-flex; align-items: center; gap: 0; max-width: 100%; margin: 0; padding: 3px; border-radius: var(--r-md); background: var(--bg-muted); overflow-x: auto; scrollbar-width: none; }
+.dl-flow-seg { display: inline-flex; align-items: center; }
+.dl-page .dl-flow-step { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; min-width: 0; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent; box-shadow: none; color: var(--text-secondary); font-size: var(--fs-caption); white-space: nowrap; transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease; }
+.dl-page .dl-flow-step:hover { background: transparent; color: var(--text-primary); }
+.dl-page .dl-flow-step.on, .dl-page .dl-flow-step.on:hover { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-xs); }
+.dl-page .dl-flow-step:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.dl-page .dl-flow-label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); font-weight: 400; color: inherit; white-space: nowrap; }
+.dl-page .dl-flow-step.on .dl-flow-label { font-weight: 500; }
+.dl-page .dl-flow-label::before { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-neutral-solid); }
+.dl-page .dl-flow-all .dl-flow-label::before { content: none; }
+.dl-page .dl-flow-pending_review .dl-flow-label::before { background: var(--status-warning-solid); }
+.dl-page .dl-flow-approved .dl-flow-label::before { background: var(--status-success-solid); }
+.dl-page .dl-flow-rejected .dl-flow-label::before { background: var(--status-danger-solid); }
+.dl-page .dl-flow-n { min-width: 0; font-size: var(--fs-xs); font-weight: 400; line-height: 1; letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.dl-page .dl-flow-step.on .dl-flow-n { color: var(--text-label); }
+.dl-page .dl-flow-step.zero:not(.on) { color: var(--text-secondary); }
+/* 第三轮（独立评审 #1）：只当筛选标签用，段与段之间不再画流程箭头 */
+.dl-flow-seg + .dl-flow-seg { margin-left: 2px; }
+.dl-flow-div { flex: none; width: 1px; height: 14px; margin: 0 var(--sp-1); background: var(--border-default); }
 
-/* ── 文件行：类型方块 | 名称 | 状态 | 版本 · 给谁 · 时间 | 操作；分隔线从名称起（不切过图标），整行可点 ── */
-.dl-row { position: relative; min-height: 46px; padding: 5px var(--sp-4); gap: var(--sp-3); border-top: 0; transition: background-color var(--motion-fast) ease; }
-.dl-card .dl-row { border-top: 0; }
-.dl-rows > .dl-row + .dl-row::before { content: ""; position: absolute; top: 0; left: 56px; right: var(--sp-4); border-top: 1px solid var(--border-subtle); }
-.dl-rows > .dl-row:hover + .dl-row::before, .dl-rows > .dl-row:hover::before { border-top-color: transparent; }
-.dl-rows > .dl-row { border-top: 0; }
-/* 事项页“成果”标签：每次任务一张卡片，头部与全局成果页同一种轻标签（不再是灰底标题栏） */
-.dl-in-matter .dl-task { padding-bottom: var(--sp-1); }
-.dl-in-matter .dl-task-head { background: transparent; border-bottom: 0; padding: var(--sp-3) var(--sp-4) var(--sp-1); }
-.dl-in-matter .dl-task-name { font-size: var(--fs-caption); font-weight: 600; color: var(--text-label); }
-.dl-in-matter .dl-task-meta { font-size: var(--fs-xs); }
-.dl-row:hover { background: var(--bg-hover-soft); }
-.dl-ficon { width: 26px; height: 26px; font-size: var(--fs-xs); }
-.dl-row-main { display: flex; align-items: center; gap: var(--sp-2); }
-.dl-row-title { min-width: 0; flex: 0 1 auto; font-weight: 400; color: var(--text-primary); }
-.dl-row.is-primary .dl-row-title { font-weight: 600; }
-.dl-name-head { font-weight: 400; color: var(--text-secondary); }
-.dl-row-note { flex: none; font-size: var(--fs-caption); color: var(--status-warning-text); }
-.dl-row-state { flex: none; width: 64px; }
-.dl-state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; }
+/* ── 事项：一行安静的分组标题（在列表里吸顶），不是卡片 ── */
+.dl-page .dl-matter { margin: 0 0 var(--sp-5); }
+.dl-page .dl-matter-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--sp-2); height: 32px; margin: 0; padding: 0 var(--sp-2); background: var(--bg-main); }
+.dl-page .dl-matter-title { display: inline-flex; align-items: center; gap: 2px; min-width: 0; border: 0; padding: 0; background: transparent; font-size: var(--fs-caption); font-weight: 600; color: var(--text-label); text-align: left; }
+.dl-matter-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-page .dl-matter-title:hover { color: var(--text-primary); }
+.dl-page .dl-matter-go { flex: none; display: inline-flex; color: transparent; transform: translateX(-2px); transition: transform var(--motion-fast) ease, color var(--motion-fast) ease; }
+.dl-page .dl-matter-go svg { width: 13px; height: 13px; }
+.dl-page .dl-matter-title:hover .dl-matter-go, .dl-page .dl-matter-title:focus-visible .dl-matter-go { color: var(--text-secondary); transform: none; }
+.dl-page .dl-matter-meta { margin-left: auto; flex: none; font-size: var(--fs-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+/* ── 一次任务：一行灰字（任务名 · 针对的文件 · 时间），入口悬停出现 ── */
+.dl-page .dl-task { border: 0; border-radius: 0; margin: 0; background: transparent; overflow: visible; padding: 0; }
+.dl-page .dl-task + .dl-task { margin-top: var(--sp-3); }
+.dl-page .dl-task-head { display: flex; align-items: center; gap: 0; min-height: 24px; padding: 0 var(--sp-2) var(--sp-1); border: 0; background: transparent; font-size: var(--fs-xs); color: var(--text-secondary); }
+.dl-page .dl-task-name { flex: none; font-size: var(--fs-xs); font-weight: 500; color: var(--text-label); }
+.dl-task-subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-page .dl-task-meta { flex: none; font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; }
+.dl-page .dl-task-subject::before, .dl-page .dl-task-meta:not(:empty)::before { content: "·"; margin: 0 6px; }
+.dl-page .dl-task-actions { margin-left: auto; padding-left: var(--sp-2); flex: none; display: inline-flex; gap: var(--sp-3); font-size: var(--fs-xs); visibility: hidden; }
+.dl-page .dl-task-actions .btn-link { padding: 0; font-size: var(--fs-xs); }
+.dl-page .dl-task:hover .dl-task-actions, .dl-page .dl-task-head:focus-within .dl-task-actions { visibility: visible; }
+
+/* ── 文件行：图形 | 短名 / 版本 · 时间 | 状态；操作悬停浮在行尾。行与行之间只有留白，悬停与选中是圆角色块 ── */
+.dl-page .dl-rows { display: flex; flex-direction: column; gap: 2px; }
+.dl-page .dl-row { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3); min-height: 52px; margin: 0; padding: 7px var(--sp-2); border: 0; border-radius: var(--r-sm); background: transparent; cursor: pointer; transition: background-color var(--motion-fast) ease; }
+.dl-page .dl-rows > .dl-row + .dl-row::before { content: none; }
+.dl-page .dl-row:hover { background: var(--bg-hover-soft); }
+.dl-page .dl-row.is-selected, .dl-page .dl-rows > .dl-row.is-selected { margin: 0; padding: 7px var(--sp-2); background: var(--bg-hover); border-radius: var(--r-sm); }
+.dl-page .dl-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.dl-page .dl-row-main { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+.dl-page .dl-row-title { display: block; min-width: 0; font-size: var(--fs-body); font-weight: 400; line-height: 20px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-page .dl-row.is-primary .dl-row-title, .dl-page .dl-row.is-selected .dl-row-title { font-weight: 500; }
+.dl-page .dl-name-head { font-weight: 400; color: var(--text-secondary); }
+/* 第二行是一行文字，放不下时末尾省略（第三轮：悬停露出操作时也是省略号，不是被盖住半个字） */
+.dl-page .dl-row-meta { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); line-height: 18px; color: var(--text-secondary); white-space: nowrap; }
+.dl-meta-part { display: inline; }
+.dl-meta-part + .dl-meta-part::before { content: "·"; margin: 0 6px; }
+.dl-page .dl-when { min-width: 0; text-align: left; font-variant-numeric: tabular-nums; }
+.dl-page .dl-aud { color: var(--text-label); }
+.dl-page .dl-row-note { font-size: var(--fs-xs); color: var(--status-warning-text); }
+.dl-page .dl-row-state { justify-self: end; width: auto; padding-left: var(--sp-2); }
+
+/* 状态：色点 + 文字（预览头、列表共用） */
+.dl-state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; }
 .dl-state::before { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-neutral-solid); }
 .dl-state-pending_review { color: var(--status-warning-text); }
 .dl-state-pending_review::before { background: var(--status-warning-solid); }
@@ -80,78 +103,121 @@
 .dl-state-approved::before { background: var(--status-success-solid); }
 .dl-state-rejected { color: var(--status-danger-text); }
 .dl-state-rejected::before { background: var(--status-danger-solid); }
-.dl-row-side { flex: none; display: inline-flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; cursor: default; }
-.dl-when { min-width: 64px; text-align: right; font-variant-numeric: tabular-nums; }
-.dl-aud { color: var(--text-label); }
-.dl-ver { display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 6px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-secondary); font-size: var(--fs-caption); }
-.dl-ver:hover, .dl-ver[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
-.dl-ver-chev { display: inline-flex; transition: transform 0.15s; }
-.dl-ver-chev svg { width: 12px; height: 12px; }
-.dl-ver[aria-expanded="true"] .dl-ver-chev { transform: rotate(180deg); }
-.dl-ver-static { padding: 0 6px; }
-.dl-row-sub { background: var(--bg-subtle); }
-.dl-row-sub .dl-row-meta { font-size: var(--fs-caption); }
+
+/* 行尾操作（第三轮，独立评审 #4）：和状态共用行尾同一个栏位——平时是状态，悬停、键盘聚焦这一行、或焦点在操作 / 菜单上时换成操作；
+   操作在文档流里，标题与第二行按剩下的宽度省略，不再浮在文字上面把半个字盖住 */
+.dl-page .dl-row-state, .dl-page .dl-row-acts { grid-column: 3; grid-row: 1; }
+.dl-page .dl-row-acts { display: none; align-items: center; gap: 2px; margin-right: -2px; }
+.dl-page .dl-row:hover .dl-row-acts, .dl-page .dl-row:focus-visible .dl-row-acts, .dl-page .dl-row-acts:focus-within, .dl-page .dl-row:has(.dl-menu) .dl-row-acts { display: flex; }
+.dl-page .dl-row:hover .dl-row-state, .dl-page .dl-row:focus-visible .dl-row-state, .dl-page .dl-row:has(.dl-row-acts:focus-within) .dl-row-state, .dl-page .dl-row:has(.dl-menu) .dl-row-state { display: none; }
+/* 菜单打开时这一行浮到后面几行之上（行尾操作有 transform，自成层叠上下文，菜单会被后面的行盖住） */
+.dl-page .dl-row:has(.dl-menu) { z-index: 5; }
+.dl-page .dl-row-acts .icon-btn { width: 30px; height: 30px; padding: 0; display: inline-grid; place-items: center; color: var(--text-label); }
+.dl-page .dl-row-acts .icon-btn:hover { background: var(--bg-active); color: var(--text-primary); }
+.dl-page .dl-row-acts .icon-btn svg { width: 16px; height: 16px; }
+.dl-page .dl-submit { height: 28px; padding: 0 10px; margin-right: var(--sp-1); font-size: var(--fs-xs); background: var(--bg-surface); }
 .icon-btn.dl-dl .kwl-spin { width: 14px; height: 14px; }
-.dl-proc { border-top: 1px dashed var(--border-subtle); margin-top: var(--sp-1); }
-.dl-proc-toggle { padding: 6px var(--sp-4); }
 
-/* 空状态 */
-.dl-empty { padding: var(--sp-7) 0; }
+/* 文件图形：折角的小纸片（W 蓝、X 绿、PDF 红、文 灰） */
+.dl-glyph { flex: none; display: grid; place-items: center; width: 26px; height: 32px; border-radius: var(--r-xs); clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%); background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-xs); font-weight: 600; letter-spacing: -0.02em; line-height: 1; padding-top: 3px; user-select: none; }
+.dl-glyph-word { background: var(--status-info-bg); color: var(--status-info-text); }
+.dl-glyph-excel { background: var(--status-success-bg); color: var(--status-success-text); }
+.dl-glyph-pdf { background: var(--status-danger-bg); color: var(--status-danger-text); letter-spacing: -0.06em; }
+.dl-glyph-lg { width: 28px; height: 34px; }
+.dl-page .dl-row .dl-glyph { justify-self: start; }
 
-/* ── 第 55 批：流程条收成一条轨道 ──
-   原来是三张并排的描边卡片（中间夹箭头），三段一样重，0 份的阶段和有 6 份的阶段长得一样。现在是一条浅底轨道：
-   各段平铺在轨道里，选中的一段浮起成白底；没有文件的阶段数字退成次要灰；“全部”收进轨道右端。 */
-.dl-flow { gap: 0; padding: 4px; border-radius: var(--r-lg); background: var(--bg-subtle); }
-.dl-flow-step { border: 0; background: transparent; padding: 10px var(--sp-4); border-radius: var(--r-md); }
-.dl-flow-step:hover { box-shadow: none; background: var(--bg-hover); }
-.dl-flow-step.on, .dl-flow-step.on:hover { background: var(--bg-surface); box-shadow: var(--shadow-sm); }
-.dl-flow-step.on .dl-flow-n { color: var(--text-primary); }
-.dl-flow-step.zero .dl-flow-n { color: var(--text-secondary); font-weight: 500; }
-.dl-flow-step.zero .dl-flow-label { color: var(--text-label); }
-.dl-flow-step.aside { margin-left: 0; }
-.dl-flow-arrow { width: 20px; }
-.dl-flow-all { margin: 0 var(--sp-2) 0 var(--sp-3); }
+/* 旧版（窄窗口、事项页里在列表展开）：缩进的一行 */
+.dl-page .dl-ver { display: inline-flex; align-items: center; gap: 2px; height: 20px; margin: 0 -4px; padding: 0 4px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-secondary); font-size: var(--fs-xs); }
+.dl-page .dl-ver:hover, .dl-page .dl-ver[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
+.dl-ver-chev { display: inline-flex; transition: transform var(--motion-fast) ease; }
+.dl-ver-chev svg { width: 12px; height: 12px; }
+.dl-ver[aria-expanded="true"] .dl-ver-chev, .dlp-ver-btn[aria-expanded="true"] .dl-ver-chev { transform: rotate(180deg); }
+.dl-page .dl-row-sub { min-height: 36px; padding: 4px var(--sp-2); background: transparent; cursor: pointer; }
+.dl-page .dl-row-sub:hover { background: var(--bg-hover-soft); }
+.dl-page .dl-sub-mark { width: 28px; height: 1px; }
 
-/* ── 第 66 批（V40 P0-3）成果工作区：左边列表、右边就地预览（≥ 1100px） ── */
-.dl-page.dl-split-on { max-width: 1520px; }
-.dl-split { display: block; }
-.dl-split-on .dl-split { display: grid; grid-template-columns: minmax(440px, 1fr) minmax(460px, 1.15fr); gap: var(--sp-5); align-items: start; }
-.dl-list-col { min-width: 0; }
-.dl-row.is-selected { background: var(--accent-bg); }
-.dl-row.is-selected .dl-row-title { color: var(--text-strong); }
-.dl-row-sub { cursor: pointer; }
-.dl-row-sub:hover { background: var(--bg-hover-soft); }
+/* 过程文件：默认收起的一行 */
+.dl-page .dl-proc { margin: 2px 0 0; border: 0; }
+.dl-page .dl-proc-toggle { display: flex; align-items: center; gap: 6px; width: 100%; height: 32px; padding: 0 var(--sp-2); border: 0; border-radius: var(--r-sm); background: transparent; font-size: var(--fs-xs); color: var(--text-secondary); text-align: left; white-space: nowrap; }
+.dl-page .dl-proc-toggle:hover { background: var(--bg-hover-soft); color: var(--text-primary); }
+.dl-page .dl-proc-chev { display: inline-grid; place-items: center; width: 28px; transition: transform var(--motion-fast) ease; }
+.dl-page .dl-proc-chev svg { width: 12px; height: 12px; }
+.dl-page .dl-proc-toggle[aria-expanded="true"] .dl-proc-chev { transform: rotate(90deg); }
+.dl-page .dl-proc-note { min-width: 0; margin-left: var(--sp-2); overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
+/* 同一种任务更早的几次运行（第三轮，独立评审 #2）：默认收起的一行，展开是那几次的任务行与文件 */
+.dl-page .dl-earlier { margin-top: 2px; }
+.dl-earlier-note { margin-left: 2px; color: var(--text-secondary); }
+/* 展开后是“更早那次”的内容：左侧一条细引导线缩进，看得出它属于上面那一行，不是又一次新任务 */
+.dl-page .dl-earlier-body { margin: var(--sp-1) 0 0 22px; padding: var(--sp-1) 0 0 var(--sp-2); border-left: 1px solid var(--border-subtle); }
+.dl-page .dl-earlier-body .dl-task-head .dl-task-name { color: var(--text-secondary); }
+.dl-page .dl-earlier + .dl-task, .dl-page .dl-task + .dl-earlier { margin-top: 2px; }
+.dl-page .dl-row.no-open { cursor: default; }
+.dl-page .dl-row.no-open:hover { background: transparent; }
 
-.dlp { position: sticky; top: var(--sp-4); display: flex; flex-direction: column; min-width: 0; max-height: calc(100vh - 96px); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: var(--bg-surface); box-shadow: var(--shadow-sm); overflow: hidden; animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
-.dlp-head { padding: var(--sp-4) var(--sp-5) var(--sp-3); border-bottom: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: var(--sp-2); }
-.dlp-title-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-.dlp-title { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dlp-close { flex: none; }
-.dlp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); }
-.dlp-where { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
-.dlp-where .btn-link { display: inline-flex; align-items: center; gap: 4px; padding: 0; font-size: var(--fs-caption); color: var(--text-label); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dlp-where .btn-link:hover { color: var(--accent-text); }
-.dlp-where svg { width: 13px; height: 13px; flex: none; }
-.dlp-next { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.6; }
-.dlp-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-1); }
-.dlp-versions { display: inline-flex; flex-wrap: wrap; gap: 2px; align-self: flex-start; padding: 3px; border-radius: var(--r-md); background: var(--bg-muted); margin-top: var(--sp-1); }
-.dlp-ver { border: 0; background: transparent; border-radius: var(--r-sm); height: 26px; padding: 0 var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); }
-.dlp-ver:hover:not(.on) { color: var(--text-primary); }
-.dlp-ver.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
-.dlp-body { flex: 1; min-height: 360px; overflow: auto; background: var(--bg-preview); color: var(--text-on-paper); }
+/* 空状态（搜索没有结果、这一段没有文件） */
+.dl-page .dl-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: var(--sp-7) var(--sp-4); color: var(--text-secondary); text-align: center; }
+.dl-page .dl-empty-title { font-size: var(--fs-body); color: var(--text-label); }
+
+/* ── 菜单（行尾“更多”、预览头“更多”与版本切换） ── */
+.dl-menu-wrap { position: relative; display: inline-flex; }
+.dl-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; min-width: 200px; max-width: 340px; padding: 6px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-elevated); box-shadow: var(--shadow-md); animation: dl-pop 140ms var(--ease-out-soft) both; cursor: default; }
+.dl-menu.up { top: auto; bottom: calc(100% + 4px); }
+.dl-menu.left { right: auto; left: 0; }
+.dl-menu-item { display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 36px; padding: 0 10px 0 6px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-primary); font-size: var(--fs-body); text-align: left; white-space: nowrap; }
+.dl-menu-item:hover, .dl-menu-item:focus-visible { background: var(--bg-hover); outline: none; }
+.dl-menu-check { flex: none; display: inline-grid; place-items: center; width: 16px; color: var(--text-primary); }
+.dl-menu-check svg { width: 14px; height: 14px; }
+.dl-menu:not(.radio) .dl-menu-check { display: none; }
+.dl-menu:not(.radio) .dl-menu-item { padding-left: 10px; }
+.dl-menu-label { flex: none; }
+.dl-menu-hint { min-width: 0; margin-left: auto; padding-left: var(--sp-4); overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); color: var(--text-secondary); }
+@keyframes dl-pop { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dl-menu { animation: none; } }
+
+/* ── 右侧预览：全视图唯一的带边框容器；头部两行，下面是文档 ── */
+.dlp { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); overflow: hidden; animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
+.dlp-head { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 14px var(--sp-3) 12px var(--sp-4); border-bottom: 1px solid var(--border-subtle); }
+.dlp-title-row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.dlp-title { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-md); font-weight: 600; line-height: 22px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlp-actions { flex: none; display: flex; align-items: center; gap: var(--sp-1); }
+.dlp-actions .btn-primary, .dlp-actions .btn-ghost { height: 32px; padding: 0 14px; margin-right: var(--sp-1); font-size: var(--fs-caption); white-space: nowrap; }
+.dlp-actions .icon-btn { width: 32px; height: 32px; padding: 0; display: inline-grid; place-items: center; color: var(--text-label); }
+.dlp-actions .icon-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.dlp-actions .icon-btn svg { width: 18px; height: 18px; }
+.dlp-meta { display: flex; flex-wrap: wrap; align-items: center; row-gap: 2px; min-width: 0; padding-left: 40px; font-size: var(--fs-xs); line-height: 22px; color: var(--text-secondary); }
+.dlp-meta-part { flex: none; display: inline-flex; align-items: center; }
+.dlp-meta-part + .dlp-meta-part::before, .dlp-meta-part + .dlp-where::before { content: "·"; margin: 0 6px; }
+.dlp-fills { color: var(--status-warning-text); }
+/* 主按钮旁的文字按钮（“复核页”“签发记录”）：中性色，不和黑色主按钮抢 */
+.dlp-actions .dlp-text-btn { height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-label); font-size: var(--fs-caption); white-space: nowrap; }
+.dlp-actions .dlp-text-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.dlp-actions .dlp-text-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.dlp-ver-btn { display: inline-flex; align-items: center; gap: 2px; height: 22px; margin: 0 -4px; padding: 0 4px; border: 0; border-radius: var(--r-xs); background: transparent; color: var(--text-label); font-size: var(--fs-xs); }
+.dlp-ver-btn:hover, .dlp-ver-btn[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
+.dlp-where { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
+.dlp-crumb { min-width: 0; max-width: 280px; border: 0; padding: 0; background: transparent; font-size: var(--fs-xs); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlp-crumb:hover { color: var(--accent-text); }
+.dlp-crumb-task { flex: none; max-width: 160px; }
+.dlp-crumb-sep { flex: none; display: inline-flex; margin: 0 2px; color: var(--border-hover); }
+.dlp-crumb-sep svg { width: 12px; height: 12px; }
+.dlp-body { flex: 1; min-height: 0; overflow: auto; background: var(--bg-muted); }
 .dlp-body .sp-wrap, .dlp-body > div { min-height: 100%; }
+.dlp .safe-preview { border: 0; border-radius: 0; }
 .dlp-loading { display: flex; align-items: center; justify-content: center; gap: var(--sp-2); height: 320px; font-size: var(--fs-caption); color: var(--text-secondary); }
 .dlp-empty { padding: var(--sp-6); text-align: center; font-size: var(--fs-caption); color: var(--text-secondary); }
-/* 分栏时复核流程条收紧：只留数字与名称，说明放悬停 */
-.dl-split-on .dl-flow-label { white-space: nowrap; }
-.dl-split-on .dl-head { gap: var(--sp-3); }
+.dlp-placeholder { align-items: center; justify-content: center; gap: var(--sp-2); color: var(--text-secondary); font-size: var(--fs-caption); }
+.dlp-placeholder p { margin: 0; }
+.dlp-placeholder-icon { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-md); background: var(--bg-muted); color: var(--text-label); }
+.dlp-placeholder-icon svg { width: 20px; height: 20px; }
 
-/* 第 66 批第二轮（独立评审 R5）：页头与流程条横跨两栏（说明与箭头恢复）；选中行是缩进的圆角色块；预览外框一层 */
-.dl-split-on .dl-head, .dl-split-on .dl-flow { max-width: none; }
-.dl-row.is-selected { background: var(--accent-bg); border-radius: var(--r-sm); }
-.dlp .safe-preview { border: 0; border-radius: 0; }
-.dlp .sp-note { background: transparent; border-bottom: 1px solid var(--border-subtle); }
-/* 第 66 批第三轮（独立复评）：列表栏宽一些（文件名少截断）；选中行缩进成圆角色块，两侧的分隔线让开 */
-.dl-split-on .dl-split { grid-template-columns: minmax(500px, 1fr) minmax(460px, 1fr); }
-.dl-rows > .dl-row.is-selected { margin: 0 var(--sp-2); padding-left: var(--sp-2); padding-right: var(--sp-2); }
-.dl-rows > .dl-row.is-selected::before, .dl-rows > .dl-row.is-selected + .dl-row::before { border-top-color: transparent; }
+/* 事项页“成果”标签：同一种文件行；每次任务之间留白 */
+.dl-in-matter .dl-task + .dl-task { margin-top: var(--sp-5); }
+.dl-in-matter .dl-task-head { padding-top: 0; }
+
+/* @ 材料弹层沿用的旧文件方块（第 48 批，尺寸不变） */
+.dl-ficon { width: 26px; height: 26px; font-size: var(--fs-xs); }
+
+@media (max-width: 860px) {
+  .dl-page .dl-head { flex-wrap: wrap; align-items: flex-start; }
+  .dl-page .dl-search { flex: 1 1 100%; }
+}

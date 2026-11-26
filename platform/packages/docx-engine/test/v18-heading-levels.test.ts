@@ -60,10 +60,11 @@ test("应用内预览认本产品的标题样式：标题居中、一二三级�
   ]);
   const { html } = renderDocxHtml(buf);
   assert.match(html, /<h2 class="kwl-title">[^<]*案情分析备忘录/);
-  assert.match(html, /<h2>[^<]*四、争点与证据强弱<\/h2>/);
-  assert.match(html, /<h3>[^<]*（一）付款条件是否成就<\/h3>/);
-  assert.match(html, /<h4>[^<]*1\. 验收是否完成<\/h4>/);
-  assert.match(html, /<p>[^<]*本部分按争点逐一分析。<\/p>/);
+  // V41 第 67 批：段落带上样式里的对齐与首行缩进（style 属性），层级不变
+  assert.match(html, /<h2(?: style="[^"]*")?>[^<]*四、争点与证据强弱<\/h2>/);
+  assert.match(html, /<h3(?: style="[^"]*")?>[^<]*（一）付款条件是否成就<\/h3>/);
+  assert.match(html, /<h4(?: style="[^"]*")?>[^<]*1\. 验收是否完成<\/h4>/);
+  assert.match(html, /<p(?: style="[^"]*")?>[^<]*本部分按争点逐一分析。<\/p>/);
 });
 
 test("落款后接附页（标题 + 一段说明 + 表）：落款照样右对齐，附页另起一页（V18 第 43 批真实回归：起诉状落款被排成正文）", () => {

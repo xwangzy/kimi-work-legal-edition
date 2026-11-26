@@ -57,7 +57,7 @@ test("api：materials.usage / materials.remove 两个调用；importMaterial 的
 
 test("MaterialPicker：勾选列表 + 选择文件 + 拖放 + 逐份结果；导入成功的自动勾上；样式只在自己的文件里", () => {
   const mp = src("components/MaterialPicker.tsx");
-  assert.match(mp, /onDrop=\{/);
+  assert.match(mp, /onDrop[=:] ?[{(]/); // 第 67 批：拖放处理抽成 dropHandlers，可挂在添加框或整块（dropZone="root"）
   assert.match(mp, /pickMaterials\(fileRef\.current/);
   assert.match(mp, /importResultText\(f\.name, r\)/, "结果一句话含去重提示");
   assert.match(mp, /p\.onToggle\(r\.document_version_id, true\)/, "导入后自动勾选");

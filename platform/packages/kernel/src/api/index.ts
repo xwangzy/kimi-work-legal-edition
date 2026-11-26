@@ -2574,7 +2574,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         }
         if (name.endsWith(".xlsx")) {
           const r = renderXlsxHtml(buf);
-          return { filename: art.filename, kind: "xlsx", html: r.html, summary: { sheets: r.sheets, truncated: r.truncated } };
+          // V41 第 67 批：html 里每张表一个 section.kwl-sheet（界面据此做表签）；summary 加表名与隐藏表数（只加字段，旧界面照常）
+          return { filename: art.filename, kind: "xlsx", html: r.html, summary: { sheets: r.sheets, truncated: r.truncated, sheet_names: r.sheetNames, hidden_sheets: r.hiddenSheets } };
         }
       } catch (e) {
         throw new DomainError("unsupported_file", `文件无法预览（${(e as Error).message.slice(0, 80)}），请下载后用 Word 或 Excel 打开`, 422);

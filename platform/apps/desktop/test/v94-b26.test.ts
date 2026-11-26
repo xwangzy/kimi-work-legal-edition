@@ -89,7 +89,10 @@ test("合同类型按文件名预选：先具体后宽泛，文件名优先于�
 });
 
 test("开始面板与确认卡：底部按钮贴底（1280×720 不用滚到底才看到“开始”）；还不能开始时按钮左边写缺什么", () => {
-  assert.match(read("../src/components/ScenarioStart.tsx"), /<div className="modal-actions modal-actions-sticky">\s*\{!ready && !busy/);
+  // 第 67 批：页脚左侧常驻去向一行（第二轮：不再被“先填写”顶掉）；还不能开始时“先填写：X”在开工按钮旁
+  const ss = read("../src/components/ScenarioStart.tsx");
+  assert.match(ss, /<div className="modal-actions modal-actions-sticky ss-foot">[\s\S]{0,400}<div className="ss-foot-left">/);
+  assert.match(ss, /\{!ready && !busy && footWhy && \([\s\S]{0,200}className="btn-link ss-foot-why"/);
   assert.match(read("../src/components/RunSheet.tsx"), /<div className="modal-actions modal-actions-sticky">/);
   assert.match(read("../src/styles.css"), /\.modal-actions-sticky \{ position: sticky; bottom: 0;/);
 });

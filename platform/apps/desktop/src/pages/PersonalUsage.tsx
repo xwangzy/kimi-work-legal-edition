@@ -86,47 +86,63 @@ export function PersonalUsage() {
           ? `最近 ${burst?.hours ?? 5} 小时用得太快，AI 处理暂时放缓${burst?.resets_at ? `，${bjAt(burst.resets_at)} 起恢复` : ""}。`
           : null;
 
+  const resetAt = shortDay(q.period?.resets_at) ? bjAt(q.period?.resets_at) : "";
+  // 第 67 批第二轮（独立评审 R1-4）：三项加起来就是 100%——已用 + 进行中预留 + 可用（v.available = 1 − 已用 − 预留）
+  const remaining = v.available;
+  // 套餐说明里的金额（“84 元额度（按价目计）”）不给律师看：只讲百分比，不出现金额与点数
+  const planNote = (plan?.note ?? "").replace(/[，,]?\s*[\d.]+\s*元额度（按价目计）/g, "").replace(/^[，,]\s*/, "");
+  const perks = [
+    `${per}额度按真实用量计算`,
+    ...((plan?.burst ?? (burst ? { hours: burst.hours, pct: burst.pct } : null)) ? [`任意 ${(plan?.burst ?? burst)!.hours} 小时至多用${per}额度的 ${(plan?.burst ?? burst)!.pct}%`] : []),
+    ...(plan?.models && plan.models.length > 0 ? [`可用模型 ${plan.models.join("、")}`] : []),
+  ];
+
+  // 第 67 批（V41 工作线 C）：一个视觉焦点（本期已用 %）+ 一根条 + 一句状态；按模型并进图例；5 小时一行；明细不再套卡片。
   return (
-    <div className="pu" id="sec-usage">
-      <header className="pu-plan">
-        <div className="pu-plan-main">
-          <span className="pu-plan-badge">{plan?.label?.replace(/版$/, "") ?? "套餐"}</span>
-          <div className="pu-plan-text">
-            <div className="pu-plan-name">{plan?.label ?? "当前套餐"}</div>
-            <div className="pu-plan-note">
-              {plan?.note ?? `权益额度按${q.period?.kind === "week" ? "周" : "月"}刷新`}
-              {range ? ` · 本期 ${range}` : ""}
-            </div>
+    <div className="pu pu2" id="sec-usage">
+      <header className="pu-head">
+        <div className="pu-head-main">
+          <div className="pu-plan-line">
+            <span className="pu-plan-name">{plan?.label ?? "当前套餐"}</span>
+            {range && <span className="pu-period">本期 {range}</span>}
           </div>
+          {planNote && <div className="pu-plan-note">{planNote}</div>}
         </div>
-        <ul className="pu-perks" aria-label="套餐权益">
-          <li>{per}额度按真实用量计算，用多少算多少</li>
-          {(plan?.burst ?? (burst ? { hours: burst.hours, pct: burst.pct } : null)) && (
-            <li>
-              任意 {(plan?.burst ?? burst)!.hours} 小时内至多用{per}额度的 {(plan?.burst ?? burst)!.pct}%
-            </li>
-          )}
-          {plan?.models && plan.models.length > 0 && <li>可用模型：{plan.models.join("、")}</li>}
-        </ul>
-        <p className="pu-upgrade">需要更多额度或升级套餐：联系你的客户经理或客服（暂不支持在客户端里购买）。</p>
+        <span className="pu-contact" title="暂不支持在客户端里购买">需要更多额度：联系客户经理或客服</span>
       </header>
 
-      {pausedLine && (
-        <div className={`banner ${v.paused === "burst" ? "banner-orange" : "banner-red"}`} role="alert">
-          {pausedLine}
-        </div>
-      )}
-
-      <section className="pu-card" aria-label="用量进度">
-        <div className="pu-card-h">用量进度</div>
-        <div className="pu-row">
-          <div className="pu-total">
-            <span className="pu-total-k">{per}已用</span>
-            <span className={`pu-total-v tone-${tone}`}>{fmtPct(v.used)}</span>
+      <section className="pu-hero" aria-label="用量">
+        {pausedLine && (
+          <div className={`pu-status pu-status-${v.paused === "burst" ? "warn" : "stop"}`} role="alert">
+            <i aria-hidden="true" />
+            {pausedLine}
           </div>
-          <span className="pu-reset">{shortDay(q.period?.resets_at) ? `${bjAt(q.period?.resets_at)} 重置` : ""}</span>
+        )}
+        <div className="pu-hero-top">
+          <div className="pu-big">
+            <span className="pu-big-k">{per}已用</span>
+            <span className={`pu-big-v tone-${tone}`}>{fmtPct(v.used)}</span>
+          </div>
+          <dl className="pu-facts">
+            <div>
+              <dt>可用</dt>
+              <dd>{fmtPct(remaining)}</dd>
+            </div>
+            {v.inFlight > 0.005 && (
+              <div title="进行中的任务先预留一部分额度，结束后按实际用量结算，多的退回">
+                <dt>进行中预留</dt>
+                <dd>{fmtPct(v.inFlight)}</dd>
+              </div>
+            )}
+            {resetAt && (
+              <div>
+                <dt>重置</dt>
+                <dd>{resetAt}</dd>
+              </div>
+            )}
+          </dl>
         </div>
-        {/* 按模型分段的进度条（Kimi“总使用量”同款）：每段 = 已用比例 × 该模型占比 */}
+        {/* 按模型分段的进度条：每段 = 已用比例 × 该模型占比；进行中预留浅色段；其余为可用 */}
         <div className={`pu-meter tone-${tone}`} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(1, v.used) * 100)} aria-label={`${per}已用`}>
           {models.length > 0 ? (
             models.slice(0, 4).map((m, i) => <span key={m.alias} className={`pu-seg ${SEG_TONES[i]}`} style={{ width: `${Math.min(1, v.used) * m.share * 100}%` }} />)
@@ -135,92 +151,82 @@ export function PersonalUsage() {
           )}
           {v.inFlight > 0 && <span className="pu-seg seg-flight" style={{ width: `${Math.min(1 - Math.min(1, v.used), v.inFlight) * 100}%` }} title="进行中的任务预留，结束后按实际用量结算" />}
         </div>
-        <div className="pu-legend">
-          {models.slice(0, 4).map((m, i) => (
-            <span key={m.alias} className="pu-legend-item">
-              <i className={`pu-dot ${SEG_TONES[i]}`} aria-hidden="true" />
-              {name(m)}
-            </span>
-          ))}
-          {v.inFlight > 0.005 && (
-            <span className="pu-legend-item">
-              <i className="pu-dot seg-flight" aria-hidden="true" />
-              进行中预留 {fmtPct(v.inFlight)}
-            </span>
-          )}
-          <span className="pu-left">
-            <i className="pu-dot seg-free" aria-hidden="true" />
-            可用 {fmtPct(v.available)}
-          </span>
+        <div className="pu-legend2" aria-hidden="true">
+          <span><i className="pu-dot seg-a" />已用 {fmtPct(v.used)}</span>
+          {v.inFlight > 0.005 && <span title="进行中的任务先预留一部分额度，结束后按实际用量结算，多的退回"><i className="pu-dot seg-flight" />进行中预留 {fmtPct(v.inFlight)}</span>}
+          <span><i className="pu-dot seg-free" />可用 {fmtPct(remaining)}</span>
         </div>
+        {/* 第 67 批第三轮（独立评审 R2）：只有一个模型时不再画与“已用”同色的图例点，写一行灰字 */}
+        {models.length === 1 && (
+          <p className="pu-models-one" aria-label="按模型">
+            按模型：{name(models[0]!)} {fmtPct(models[0]!.share)} · {fmtCount(models[0]!.requests)} 次
+          </p>
+        )}
+        {models.length > 1 && (
+          <ul className="pu-models2" aria-label="按模型">
+            {models.slice(0, 4).map((m, i) => (
+              <li key={m.alias}>
+                <i className={`pu-dot ${SEG_TONES[i]}`} aria-hidden="true" />
+                <span className="pu-m-name">{name(m)}</span>
+                <span className="pu-m-share">{fmtPct(m.share)}</span>
+                <span className="pu-m-n">{fmtCount(m.requests)} 次</span>
+              </li>
+            ))}
+          </ul>
+        )}
         {burst && (() => {
-          // 5 小时一栏只用窗口自己的分母：窗口上限 = 本期额度的 pct%
+          // 5 小时一行只用窗口自己的分母：窗口上限 = 本期额度的 pct%
           const w = burstView(burst, v);
           const wt = w.used >= 1 ? "full" : w.used >= 0.8 ? "high" : "ok";
           return (
-            <div className="pu-burst">
-              <div className="pu-row">
-                <span className="pu-burst-k">{burst.hours} 小时用量</span>
-                <span className="pu-reset">{burst.resets_at ? `${bjAt(burst.resets_at)} 后重置` : ""}</span>
-              </div>
-              <div className="pu-row pu-burst-v">
-                <span>已用 {fmtPct(w.used)}</span>
-                <span className="muted">这 {burst.hours} 小时还可用 {fmtPct(w.available)} · 上限为{per}额度的 {burst.pct}%</span>
+            <div className="pu-burst2">
+              <div className="pu-burst2-k">
+                <span>{burst.hours} 小时用量</span>
+                <span className="pu-burst2-sub" title={`窗口上限为${per}额度的 ${burst.pct}%`}>上限为{per}额度的 {burst.pct}%</span>
               </div>
               <div className={`pu-meter pu-meter-sm tone-${wt}`} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(1, w.used) * 100)} aria-label={`${burst.hours} 小时用量`}>
                 <span className="pu-seg seg-a" style={{ width: `${Math.min(1, w.used) * 100}%` }} />
                 {w.inFlight > 0 && <span className="pu-seg seg-flight" style={{ width: `${w.inFlight * 100}%` }} />}
               </div>
+              <div className="pu-burst2-v">
+                <span className={`tone-${wt}`}>已用 {fmtPct(w.used)}{w.inFlight > 0.005 ? ` · 预留 ${fmtPct(w.inFlight)}` : ""} · 还可用 {fmtPct(w.available)}</span>
+                <span className="muted">{burst.resets_at ? `${bjAt(burst.resets_at)} 重置` : "滚动计算"}</span>
+              </div>
             </div>
           );
         })()}
+        <ul className="pu-perks2" aria-label="套餐权益">
+          {perks.map((x) => (
+            <li key={x}>{x}</li>
+          ))}
+        </ul>
       </section>
 
-      {models.length > 0 && (
-        <section className="pu-card" aria-label="按模型">
-          <div className="pu-card-h">按模型</div>
-          <ul className="pu-models">
-            {models.map((m, i) => (
-              <li key={m.alias}>
-                <i className={`pu-dot ${SEG_TONES[Math.min(i, 3)]}`} aria-hidden="true" />
-                <span className="pu-model-name">{name(m)}</span>
-                <span className="pu-model-share">{fmtPct(m.share)}</span>
-                <span className="pu-model-n muted">{fmtCount(m.requests)} 次</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section className="pu-card" aria-label="使用明细">
-        <div className="pu-card-h">
-          使用明细
-          <span className="pu-card-sub">{per}共 {recent.length} 条已载入，不含提问与文书内容</span>
+      <section className="pu-log" aria-label="使用明细">
+        <div className="pu-log-h">
+          <span className="pu-log-title">使用明细</span>
+          <span className="pu-log-sub">已载入 {recent.length} 条 · 只记用量，不含提问与文书内容</span>
         </div>
         {recent.length === 0 ? (
           <p className="pu-none">{per}还没有 AI 调用。</p>
         ) : (
           <>
-            <table className="data pu-table">
+            <table className="pu-table2">
               <thead>
                 <tr>
                   <th>时间</th>
                   <th>用在</th>
                   <th>模型</th>
-                  <th className="num">处理量</th>
                   <th className="num">计入额度</th>
                 </tr>
               </thead>
               <tbody>
                 {shown.map((r, i) => (
                   <tr key={`${r.at}-${i}`}>
-                    <td>{fmtTime(r.at)}</td>
+                    <td className="pu-t">{bjAt(r.at) || fmtTime(r.at)}</td>
                     <td>{r.kind === "qa" ? "问答" : "任务"}</td>
                     <td>{r.label ?? (r.alias ? modelLabel(r.alias) : "—")}</td>
-                    <td className="num" title={`输入 ${fmtCount(r.tokens_in)}（其中缓存 ${fmtCount(r.tokens_cached)}）· 输出 ${fmtCount(r.tokens_out)}`}>
-                      {fmtCount(r.tokens_in + r.tokens_out)}
-                    </td>
-                    <td className="num">{recordChargeText(r).replace("占本人额度 ", "")}</td>
+                    <td className="num pu-charge" title={`处理量：读入 ${fmtCount(r.tokens_in)}（其中重复利用 ${fmtCount(r.tokens_cached)}）· 写出 ${fmtCount(r.tokens_out)}`}>{recordChargeText(r).replace("占本人额度 ", "")}</td>
                   </tr>
                 ))}
               </tbody>
@@ -228,7 +234,7 @@ export function PersonalUsage() {
             <div className="pu-more-row">
               {recent.length > 8 && (
                 <button className="btn-link pu-more" onClick={() => setAll((x) => !x)}>
-                  {all ? "收起" : `展开 ${recent.length} 条`}
+                  {all ? "收起" : `展开全部 ${recent.length} 条`}
                 </button>
               )}
               {nextBefore !== null && (
@@ -240,8 +246,8 @@ export function PersonalUsage() {
             </div>
           </>
         )}
+        <p className="pu-foot">用量按 AI 服务实际返回的处理量计算；中途中断或没有取得用量的调用不计入。</p>
       </section>
-      <p className="pu-foot">用量按 AI 服务实际返回的处理量计算；中途中断或没有取得用量的调用不计入。</p>
     </div>
   );
 }

@@ -5,7 +5,7 @@
  * - 引用的每个令牌都已在 tokens.css 定义，不写回退值；组件样式不直接用基础色板 --p-*，也不另起令牌；
  * - 填充类令牌（--risk-high/--risk-mid/--accent/--status-*-solid）不作文字色；opacity < 1 只用于禁用态；
  * - 纸面：背景用纸面类令牌的规则同时写纸面文字色；纸面容器后代的规则不得用非纸面文字令牌；
- * - 界面源码（TSX/TS）不写颜色字面量与内联颜色/字号样式——隔离预览框架的 srcdoc 两个样式常量除外，且其值必须等于令牌；
+ * - 界面源码（TSX/TS）不写颜色字面量与内联颜色/字号样式——隔离预览框架的 srcdoc 三个样式常量（纸面、表格、基础）除外，且其值必须等于令牌；
  *   主进程窗口首帧底色同样必须等于令牌；
  * - 外观偏好：跟随系统 / 浅色 / 深色的判定，持久化与打印切换（假 window/document）。
  * 每条检查都附反向样本：检查函数对已知违规写法必须判失败，防止日后把正则改松。
@@ -193,7 +193,7 @@ test("界面源码不写颜色字面量与内联颜色/字号样式（隔离预�
   const bad: string[] = [];
   for (const f of walk(join(root, "src"), /\.tsx?$/)) {
     let text = stripTs(readFileSync(f, "utf8"));
-    if (rel(f) === "src/lib/safe-preview.ts") text = text.replace(/const (PAPER_STYLE|BASE_STYLE) = "[^"\n]*";/g, "");
+    if (rel(f) === "src/lib/safe-preview.ts") text = text.replace(/const (PAPER_STYLE|SHEET_STYLE|BASE_STYLE) = "[^"\n]*";/g, "");
     for (const p of tsxColorProblems(text)) bad.push(`${rel(f)}: ${p}`);
   }
   assert.deepEqual(bad, []);
@@ -217,7 +217,17 @@ test("手抄的令牌值必须等于 tokens.css（S8B-11）：隔离预览框架
   const paper = /const PAPER_STYLE = "([^"\n]*)";/.exec(sp)![1]!;
   const base = /const BASE_STYLE = "([^"\n]*)";/.exec(sp)?.[1];
   assert.ok(base, "基础样式须为具名常量 BASE_STYLE");
-  assert.match(paper, new RegExp(`color:${tokenValue("--p-paper-ink")};background:${tokenValue("--p-paper")}`, "i"));
+  // V41 第 67 批 §2.8：Word 纸面不再用米黄纸色——画布取 --bg-muted、纸取 --p-white、描边 --border-subtle、阴影 --shadow-sm，正文字色仍是纸面墨色
+  assert.match(paper, new RegExp(`^html,body\\{background:${tokenValue("--bg-muted")};\\}`, "i"));
+  assert.match(paper, new RegExp(`color:${tokenValue("--p-paper-ink")};\\}`, "i"));
+  assert.match(paper, new RegExp(`\\.kwl-paper\\{[^}]*background:${tokenValue("--p-white")};border:1px solid ${tokenValue("--border-subtle")};box-shadow:${tokenValue("--shadow-sm").replace(/,\s+/g, ",").replace(/[().]/g, "\\$&")};`, "i"));
+  assert.doesNotMatch(paper, new RegExp(tokenValue("--p-paper"), "i"), "不再用米黄纸色");
+  const sheet = /const SHEET_STYLE = "([^"\n]*)";/.exec(sp)?.[1];
+  assert.ok(sheet, "表格样式须为具名常量 SHEET_STYLE");
+  assert.match(sheet!, new RegExp(`^html,body\\{background:${tokenValue("--p-white")};\\}`, "i"));
+  assert.match(sheet!, new RegExp(`color:${tokenValue("--p-ink")};\\}`, "i"));
+  assert.match(sheet!, new RegExp(`border:1px solid ${tokenValue("--border-default")};`, "i"));
+  assert.match(sheet!, new RegExp(`th\\{background:${tokenValue("--bg-muted")};`, "i"));
   assert.match(base!, new RegExp(`color:${tokenValue("--p-ink")};background:${tokenValue("--p-white")}`, "i"));
   assert.match(base!, new RegExp(`\\.kwl-link\\{color:${tokenValue("--p-blue-600")}`, "i"));
   // 引用角标（v9.4 第 20 批 C-03）：框架内取不到令牌，手抄值须与 tokens.css 一致

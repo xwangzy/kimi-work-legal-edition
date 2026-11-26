@@ -13,7 +13,7 @@
  * 有 onToggle 时，导入成功（含“已在本事项，未重复保存”）的那份自动勾上（autoSelect={false} 可关）。
  * onMount（可选）：多一个“只引用、不复制”入口（事项页用）。showList={false}：只要添加区与结果，不列清单。
  */
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { MATERIAL_ACCEPT, pickMaterials, type MaterialFile, type MaterialImportResult } from "../api.ts";
 import { Icon } from "./Icons.tsx";
 import { FileTypeIcon } from "./ArtifactRow.tsx";
@@ -59,6 +59,12 @@ export interface MaterialPickerProps {
   hint?: ReactNode;
   /** 每行右侧的附加内容（例如用途标签）。 */
   rowExtra?: (d: PickerDoc) => ReactNode;
+  /**
+   * 第 67 批（首页上传菜单）：dropZone="root" 时整个组件都接拖放（拖入时整块高亮），有材料时不再显示虚线添加框——
+   * 上传入口由调用方放在标题栏（经 openRef 打开本组件的选择文件，进度与结果仍在本组件里显示）。缺省 "box" 与原来相同。
+   */
+  dropZone?: "box" | "root";
+  openRef?: MutableRefObject<(() => void) | null>;
 }
 
 export function MaterialPicker(p: MaterialPickerProps) {
@@ -106,8 +112,36 @@ export function MaterialPicker(p: MaterialPickerProps) {
     }
   };
 
+  const rootDrop = p.dropZone === "root";
+  useEffect(() => {
+    if (!p.openRef) return;
+    p.openRef.current = p.onImport && !disabled ? () => void pickMaterials(fileRef.current, (f) => run(f, "import")) : null;
+    return () => {
+      if (p.openRef) p.openRef.current = null;
+    };
+  });
+  const dropHandlers = {
+    onDragOver: (e: React.DragEvent) => {
+      e.preventDefault();
+      if (!disabled) setOver(true);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+    },
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      setOver(false);
+      if (!disabled && e.dataTransfer.files.length > 0) void run(e.dataTransfer.files, p.onImport ? "import" : "mount");
+    },
+  };
+  const showBox = !rootDrop || !!busy || (showList && docs.length === 0);
   return (
-    <div className={`mp${p.compact ? " mp-compact" : ""}`}>
+    <div className={`mp${p.compact ? " mp-compact" : ""}${rootDrop ? " mp-rootdrop" : ""}${rootDrop && over ? " over" : ""}`} {...(rootDrop ? dropHandlers : {})}>
+      {rootDrop && over && (
+        <div className="mp-over" aria-hidden="true">
+          <Icon.upload /> 松手即存入「{p.matterTitle}」
+        </div>
+      )}
       {showList && docs.length > 8 && (
         <input className="mp-filter" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={`在 ${docs.length} 份材料里找`} aria-label="按文件名筛选材料" />
       )}
@@ -145,17 +179,8 @@ export function MaterialPicker(p: MaterialPickerProps) {
       {p.hint}
       {(p.onImport || p.onMount) && (
         <div
-          className={`mp-drop${over ? " over" : ""}${showList && docs.length === 0 ? " mp-drop-empty" : ""}`}
-          onDragOver={(e) => {
-            e.preventDefault();
-            if (!disabled) setOver(true);
-          }}
-          onDragLeave={() => setOver(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setOver(false);
-            if (!disabled && e.dataTransfer.files.length > 0) void run(e.dataTransfer.files, p.onImport ? "import" : "mount");
-          }}
+          className={`mp-drop${over && !rootDrop ? " over" : ""}${showList && docs.length === 0 ? " mp-drop-empty" : ""}${showBox ? "" : " mp-drop-hidden"}`}
+          {...(rootDrop ? {} : { ...dropHandlers, onDragLeave: () => setOver(false) })}
         >
           <span className="mp-drop-icon" aria-hidden="true"><Icon.attach /></span>
           {busy ? (

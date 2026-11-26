@@ -6,6 +6,8 @@
  * renderer 经 preload 暴露的最小 IPC 调用内核 API（§15.2），本机事实都在内核。
  */
 const { app, BrowserWindow, ipcMain, utilityProcess, safeStorage, session, dialog, protocol, Menu } = require("electron");
+// 第 67 批（V41）：界面只有中文——原生日期框、数字框按中文区域显示（系统语言是英文时日期框会显示 mm/dd/yyyy）
+app.commandLine.appendSwitch("lang", "zh-CN");
 const { devToolsAllowed, appMenuTemplate } = require("./release-hardening.cjs");
 const path = require("node:path");
 const { createUrlPolicy } = require("./url-policy.cjs");

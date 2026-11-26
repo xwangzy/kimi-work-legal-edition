@@ -67,7 +67,9 @@ export function Composer(props: {
   notice?: ReactNode;
 }) {
   const { value, onChange } = props;
-  const [menu, setMenu] = useState<"method" | "material" | "matter" | null>(null);
+  const [menu, setMenu] = useState<"method" | "material" | "matter" | "add" | null>(null);
+  /** 材料弹层标题栏的“上传文件”：打开弹层里 MaterialPicker 的选择文件（进度与结果在弹层里显示）。 */
+  const pickInPop = useRef<(() => void) | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // 第 66 批（V40 P0-4）：拖到输入框上的文件；没选事项时先暂存，选好事项再存进去
   const [dragOver, setDragOver] = useState(false);
@@ -188,7 +190,24 @@ export function Composer(props: {
       )}
       <div className="composer-bar">
         {/* Kimi 同款左下“+”：导入材料（Word、PDF、图片……）；方法与事项材料在下方托盘 */}
-        <button className="tool tool-plus" title={props.matterId ? `添加材料到「${matter?.title ?? "本事项"}」` : "添加材料（先选放进哪个事项）"} aria-label="添加材料" onClick={() => (props.matterId ? pickFiles() : setMenu("material"))}><Icon.plus /></button>
+        {/* 第 67 批第四轮（独立评审 R3：“+ › 选用已有材料”与“@ 材料”是同一功能的两个入口）：一个材料面板、两种进入方式——
+            “+”= 往本事项加文件：打开材料面板并直接弹出选择文件，进度与逐份结果就在面板里（看得到存进了哪个事项）；
+            “@ 材料”= 选这次读哪些。没选事项时“+”先让律师选放进哪个事项 */}
+        <button
+          className={`tool tool-plus${menu === "material" ? " open" : ""}`}
+          title={props.matterId ? `添加材料到「${matter?.title ?? "本事项"}」` : "添加材料（先选放进哪个事项）"}
+          aria-label="添加材料"
+          aria-haspopup="dialog"
+          aria-expanded={menu === "material"}
+          onClick={() => {
+            setMenu("material");
+            // 面板挂上、材料组件登记好打开方法之后再弹选择文件（仍在这次点击的用户激活时限内）
+            if (props.matterId && props.importOne) setTimeout(() => pickInPop.current?.(), 60);
+            else if (props.matterId) pickFiles();
+          }}
+        >
+          <Icon.plus />
+        </button>
         <input
           ref={fileRef}
           type="file"
@@ -303,10 +322,17 @@ export function Composer(props: {
             <>
               <div className="mat-pop-head">
                 <div className="mat-pop-title">
-                  <Icon.folder /> {clipTitle(matter?.title ?? "本事项")}
-                  <span className="mat-pop-count">{props.documents.length} 份材料</span>
+                  <span className="mat-pop-name"><Icon.folder /> <span className="mat-pop-name-text">{clipTitle(matter?.title ?? "本事项")}</span></span>
+                  {props.importOne && (
+                    <button type="button" className="btn-ghost btn-sm mat-pop-upload" onClick={() => pickInPop.current?.()}>
+                      <Icon.upload /> 上传文件
+                    </button>
+                  )}
                 </div>
-                <div className="mat-pop-sub">原件只读；发给 AI 的是替换过代号的版本。{value.documentIds.length > 0 ? `本次只读勾选的 ${value.documentIds.length} 份。` : props.documents.length > 0 ? `不勾选时，AI 可读全部 ${props.documents.length} 份。` : ""}</div>
+                {/* 第 67 批：一行说清这次 AI 读哪些（读取范围），隐私说明放在底栏 */}
+                <div className="mat-pop-sub">
+                  {props.documents.length === 0 ? "还没有材料" : value.documentIds.length > 0 ? <>只读勾选的 <b>{value.documentIds.length}</b> 份（共 {props.documents.length} 份）</> : <>不勾选时，AI 可读全部 <b>{props.documents.length}</b> 份；勾选后只读勾选的</>}
+                </div>
               </div>
               <div className="mat-pop-body">
                 <MaterialPicker
@@ -337,14 +363,16 @@ export function Composer(props: {
                     />
                   )}
                   compact
+                  dropZone="root"
+                  openRef={pickInPop}
                 />
               </div>
-              {value.documentIds.length > 0 && (
-                <div className="mat-pop-foot">
-                  <span>已选 {value.documentIds.length} 份</span>
+              <div className="mat-pop-foot">
+                <span className="mat-pop-privacy"><Icon.lock /> 原件只读；发给 AI 前，姓名、证件号等先换成代号</span>
+                {value.documentIds.length > 0 && (
                   <button className="btn-link" onClick={() => onChange({ ...value, documentIds: [] })}>改为可读全部</button>
-                </div>
-              )}
+                )}
+              </div>
             </>
           )}
         </div>
