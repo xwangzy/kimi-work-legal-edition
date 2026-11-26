@@ -92,6 +92,10 @@ export interface SessionRecord {
   client: { version: string | null; platform: string | null };
   /** 最近一次复核（重新输入密码）的有效期：危险操作要求在此之前。 */
   reauth_until?: string | null;
+  /**
+   * 第 68 批（V42，D-295；安全复核 C-2）：新电脑登录时电脑数已满，这次会话可免密移除本账号电脑的次数（一次性票据，只在答复 device_limit 时发 1 张）。
+   */
+  limit_unbind?: number;
 }
 
 /** 一次性码（设置密码 / 重置密码 / 邮件验证码）：只存 HMAC。 */
@@ -127,7 +131,8 @@ export const LOCK_WINDOW_MS = 15 * 60_000;
 export const LOCK_MS = 15 * 60_000;
 export const MAX_DEVICES_PER_ACCOUNT = 9;
 /**
- * 第 66 批（V40，D-292）：个人账号不设套餐台数上限，只留防滥用硬上限——同时有效的电脑超过 20 台时自动吊销最久未用的一台（不拒绝登录）；
+ * 第 66 批（V40，D-292）设的防滥用硬上限；第 68 批（V42，D-295）起个人账号与多人律所一样按云端配置的电脑数上限（满了拒绝登记、可就地移除一台），
+ * 这个值只作配置值的封顶，不再自动吊销最久未用的一台；
  * 编号不复用，个人账号的编号到 _D999 为止。
  */
 export const PERSONAL_DEVICE_HARD_CAP = 20;

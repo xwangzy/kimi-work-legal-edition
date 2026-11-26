@@ -53,7 +53,7 @@ export function launchCheck(i: {
   if (!i.viaGateway) return null;
   if (i.accountProblem) {
     if (i.accountProblem === "account_disabled") return { kind: "login", code: "account_disabled", message: "账号已停用，AI 任务暂时不能开始：请联系律所管理员（本机的事项和文件照常可用）", action: null };
-    if (i.accountProblem === "session_member_mismatch") return { kind: "login", code: "session_member_mismatch", message: "这台电脑登记的是本所另一位成员：请用那位成员的账号重新登录后再开始", action: "login" };
+    if (i.accountProblem === "session_member_mismatch") return { kind: "login", code: "session_member_mismatch", message: "登录状态与这台电脑上打开的账号不一致：请重新登录后再开始", action: "login" };
     return { kind: "login", code: i.accountProblem, message: "登录已失效：请先重新登录，再开始任务（本机的事项和文件照常可用）", action: "login" };
   }
   if (i.clientOutdated) {

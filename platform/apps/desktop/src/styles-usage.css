@@ -1,127 +1,125 @@
-/* 套餐与用量（第 66 批 V40 P0-5，对照 Kimi“我的订阅”）：套餐头 + 浅灰圆角卡片（用量进度 / 按模型 / 使用明细）。只用令牌。 */
-.pu { display: flex; flex-direction: column; gap: var(--sp-5); }
-.pu-empty { padding: var(--sp-6) 0; font-size: var(--fs-body); color: var(--text-secondary); }
-.pu-plan { display: flex; flex-direction: column; gap: var(--sp-3); }
-.pu-plan-main { display: flex; align-items: center; gap: var(--sp-3); }
-.pu-plan-badge { flex: none; min-width: 44px; height: 44px; padding: 0 var(--sp-2); border-radius: var(--r-md); display: grid; place-items: center; background: var(--btn-primary); color: var(--btn-primary-text); font-size: var(--fs-md); font-weight: 600; }
-.pu-plan-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.pu-plan-name { font-size: var(--fs-xl); font-weight: 600; color: var(--text-strong); line-height: 1.3; }
-.pu-plan-note { font-size: var(--fs-caption); color: var(--text-secondary); }
-.pu-perks { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.pu-perks li { font-size: var(--fs-caption); color: var(--text-label); background: var(--bg-subtle); border: 1px solid var(--border-subtle); border-radius: var(--r-full); padding: 2px var(--sp-3); }
-
-.pu-card { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: var(--sp-4) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-2); }
-.pu-card-h { display: flex; align-items: baseline; gap: var(--sp-3); font-size: var(--fs-body); font-weight: 600; color: var(--text-strong); margin-bottom: var(--sp-1); }
-.pu-card-sub { font-size: var(--fs-xs); font-weight: 400; color: var(--text-secondary); }
-.pu-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
-.pu-total { display: flex; align-items: baseline; gap: var(--sp-2); }
-.pu-total-k { font-size: var(--fs-body); color: var(--text-primary); }
-.pu-total-v { font-size: var(--fs-2xl); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-strong); line-height: 1.2; }
-.pu-total-v.tone-high { color: var(--status-warning-text); }
-.pu-total-v.tone-full { color: var(--status-danger-text); }
-.pu-reset { font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; }
-.pu-meter { display: flex; height: 12px; border-radius: var(--r-full); background: var(--bg-active); overflow: hidden; }
-.pu-meter-sm { height: 6px; }
-.pu-seg { display: block; height: 100%; transition: width var(--motion-slow) var(--ease-out-soft); }
-.pu-seg.seg-a, .pu-dot.seg-a { background: var(--accent); }
-.pu-seg.seg-b, .pu-dot.seg-b { background: var(--btn-primary); }
-.pu-seg.seg-c, .pu-dot.seg-c { background: var(--status-success-solid); }
-.pu-seg.seg-d, .pu-dot.seg-d { background: var(--status-warning-solid); }
-.pu-meter.tone-full .pu-seg { background: var(--status-danger-solid); }
-.pu-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-caption); color: var(--text-label); }
-.pu-legend-item { display: inline-flex; align-items: center; gap: 6px; }
-.pu-dot { display: inline-block; width: 8px; height: 8px; border-radius: var(--r-xs); flex: none; }
-.pu-left { margin-left: auto; color: var(--text-secondary); }
-.pu-burst { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: var(--sp-1); }
-.pu-burst-k { font-size: var(--fs-body); color: var(--text-primary); }
-.pu-burst-v { font-size: var(--fs-caption); color: var(--text-primary); }
-.pu-models { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.pu-models li { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto 72px; align-items: center; gap: var(--sp-2); padding: var(--sp-2) 0; font-size: var(--fs-body); }
-.pu-models li + li { border-top: 1px solid var(--border-subtle); }
-.pu-model-share { font-variant-numeric: tabular-nums; color: var(--text-strong); }
-.pu-model-n { text-align: right; font-size: var(--fs-caption); }
-.pu-table { background: var(--bg-surface); border-radius: var(--r-md); overflow: hidden; }
-.pu-none { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
-.pu-more { align-self: flex-start; padding: 0; font-size: var(--fs-caption); }
-.pu-foot { margin: 0; font-size: var(--fs-xs); color: var(--text-secondary); }
-.pu-more-row { display: flex; align-items: center; gap: var(--sp-4); }
-.pu-seg.seg-flight, .pu-dot.seg-flight { background: var(--accent-border); }
-.pu-dot.seg-free { background: var(--bg-active); border: 1px solid var(--border-default); }
-.pu-left { display: inline-flex; align-items: center; gap: 6px; }
-.pu-upgrade { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
-.pu-table { background: transparent; }
-.pu-meter.tone-full .pu-seg.seg-flight { background: var(--accent-border); }
-
-/* ── 第 67 批（V41 工作线 C）：一个容器、一个焦点 ──
-   页头：套餐名 + 本期一行，右侧一句“需要更多额度”；主块：大数字 + 右侧三项事实（剩余 / 预留 / 重置）→ 分段条 → 按模型图例（占比与次数）
-   → 5 小时一行（标签 · 细条 · 数值）→ 权益一行小字；明细：不套卡片，表头 12px、行高 40、数字等宽右对齐。 */
-.pu2 { gap: 28px; }
-.pu-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
-.pu-head-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.pu-plan-line { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.pu2 .pu-plan-name { font-size: var(--fs-xl); font-weight: 600; color: var(--text-strong); line-height: 1.3; }
-.pu-period { font-size: var(--fs-caption); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.pu2 .pu-plan-note { font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.6; }
-.pu-contact { flex: none; font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; }
-
-.pu-hero { display: flex; flex-direction: column; gap: 16px; padding: 24px 28px; border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: var(--bg-surface); }
-.pu-status { display: flex; align-items: center; gap: 8px; margin: -4px 0 4px; font-size: var(--fs-caption); line-height: 1.6; }
-.pu-status i { flex: none; width: 7px; height: 7px; border-radius: 50%; }
-.pu-status-warn { color: var(--status-warning-text); }
-.pu-status-warn i { background: var(--status-warning-solid); }
-.pu-status-stop { color: var(--status-danger-text); }
-.pu-status-stop i { background: var(--status-danger-solid); }
-.pu-hero-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
-.pu-big { display: flex; flex-direction: column; gap: 2px; }
-.pu-big-k { font-size: var(--fs-caption); color: var(--text-secondary); }
-.pu-big-v { font-size: var(--fs-hero); font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-strong); }
-.pu-big-v.tone-high { color: var(--status-warning-text); }
-.pu-big-v.tone-full { color: var(--status-danger-text); }
-.pu-facts { display: flex; gap: 28px; margin: 0; }
-.pu-facts > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.pu-facts dt { font-size: var(--fs-xs); color: var(--text-secondary); }
-.pu-facts dd { margin: 0; font-size: var(--fs-md); font-weight: 500; color: var(--text-strong); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pu2 .pu-meter { height: 10px; gap: 2px; background: var(--bg-muted); }
-.pu2 .pu-meter .pu-seg:first-child { border-radius: var(--r-full) 0 0 var(--r-full); }
-.pu2 .pu-meter-sm { height: 6px; gap: 0; }
-.pu-models2 { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 28px; }
-.pu-models2 li { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-caption); color: var(--text-label); }
-.pu-models2 .pu-dot { width: 8px; height: 8px; border-radius: var(--r-xs); }
-.pu-m-name { color: var(--text-strong); font-weight: 500; }
-.pu-m-share { font-variant-numeric: tabular-nums; color: var(--text-strong); }
-.pu-m-n { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.pu-burst2 { display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; align-items: center; gap: 16px; margin-top: 4px; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
-.pu-burst2-k { display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-body); color: var(--text-primary); }
-.pu-burst2-sub { font-size: var(--fs-xs); color: var(--text-secondary); }
-.pu-burst2-v { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-size: var(--fs-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pu-burst2-v .tone-ok { color: var(--text-strong); font-weight: 500; }
-.pu-burst2-v .tone-high { color: var(--status-warning-text); font-weight: 500; }
-.pu-burst2-v .tone-full { color: var(--status-danger-text); font-weight: 500; }
-.pu-perks2 { list-style: none; margin: 0; padding: 12px 0 0; display: flex; flex-wrap: wrap; gap: 4px 0; border-top: 1px solid var(--border-subtle); font-size: var(--fs-xs); color: var(--text-secondary); }
-.pu-perks2 li + li::before { content: "·"; margin: 0 8px; color: var(--border-strong); }
-
-.pu-log { display: flex; flex-direction: column; gap: 8px; }
-.pu-log-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.pu-log-title { font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); }
-.pu-log-sub { font-size: var(--fs-xs); color: var(--text-secondary); }
-.pu-table2 { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
-.pu-table2 th { height: 32px; padding: 0 8px; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-xs); font-weight: 500; color: var(--text-secondary); text-align: left; }
-.pu-table2 td { height: 40px; padding: 0 8px; border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); }
-.pu-table2 th:first-child, .pu-table2 td:first-child { padding-left: 0; }
-.pu-table2 th:last-child, .pu-table2 td:last-child { padding-right: 0; }
-.pu-table2 .num { text-align: right; font-variant-numeric: tabular-nums; }
-.pu-table2 tbody tr:hover td { background: var(--bg-hover-soft); }
-.pu-t { color: var(--text-label); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pu-charge { color: var(--text-strong); }
-.pu2 .pu-more-row { padding-top: 4px; }
-.pu2 .pu-foot { margin-top: 4px; }
-@media (max-width: 760px) {
-  .pu-head { flex-direction: column; align-items: flex-start; }
-  .pu-burst2 { grid-template-columns: minmax(0, 1fr); }
-  .pu-burst2-v { align-items: flex-start; }
+/* 设置 · 套餐与用量（第 68 批重构，对照 Kimi 会员 / Kimi Code 用量页：一个大百分比 + 一根条 + 重置时间，短周期限制另起一行）。
+   三块：用量卡（视觉重心）→ 使用明细（不套卡片）→ 套餐（与其他设置页同一种设置行）。
+   只用设计令牌（style-tokens 用例：不另起令牌、字号只用 7 级、不降不透明度、不用颜色函数）：大数字用最大一级 --fs-2xl，
+   重心靠“卡里只有它一个大字 + 一根粗条、其余一律 12～13px 灰字”的构图，而不是再加字号。 */
+.pu {
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
 }
-/* 第 67 批第二轮：条下三色图例（已用 / 预留 / 可用，三项加起来 100%） */
-.pu-legend2 { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: -6px; font-size: var(--fs-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.pu-legend2 span { display: inline-flex; align-items: center; gap: 6px; }
-.pu-legend2 .pu-dot { width: 8px; height: 8px; border-radius: var(--r-xs); }
-.pu-models-one { margin: -8px 0 0; font-size: var(--fs-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+/* ── 用量卡 ── */
+.pu-card { display: flex; flex-direction: column; padding: 28px 32px 30px; border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: var(--bg-surface); }
+.pu-card-head { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.pu-eyebrow { margin: 0; font-size: var(--fs-body); font-weight: 600; color: var(--text-strong); white-space: nowrap; }
+.pu-range { font-size: var(--fs-caption); color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pu-plan-chip { margin-left: auto; align-self: center; padding: 2px 10px; border-radius: var(--r-full); background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-xs); font-weight: 500; white-space: nowrap; }
+
+.pu-status { display: flex; align-items: center; gap: 10px; margin: 18px 0 0; padding: 10px 14px; border-radius: var(--r-md); font-size: var(--fs-caption); line-height: 1.6; }
+.pu-status i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pu-status-stop { background: var(--status-danger-bg); color: var(--status-danger-text); }
+.pu-status-warn { background: var(--status-warning-bg-soft); color: var(--status-warning-text); }
+
+.pu-figure { display: flex; align-items: baseline; gap: 10px; margin-top: 20px; }
+.pu-num { font-size: var(--fs-2xl); font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-strong); }
+.pu-num-unit { margin-left: 2px; font-size: var(--fs-xl); font-weight: 500; letter-spacing: 0; color: var(--text-secondary); }
+.pu-card.tone-high .pu-num { color: var(--status-warning-text); }
+.pu-card.tone-full .pu-num { color: var(--status-danger-text); }
+.pu-num-k { font-size: var(--fs-body); color: var(--text-secondary); }
+
+/* 进度条：已用实色；进行中预留在已用之下多出一截浅色；被上限压住的部分斜纹；“今天”刻度 = 本期时间走到哪了 */
+.pu-gauge { position: relative; margin-top: 28px; }
+.pu-track { position: relative; height: 12px; border-radius: var(--r-full); background: var(--bg-active); overflow: hidden; }
+.pu-fill, .pu-flight { position: absolute; top: 0; bottom: 0; left: 0; border-radius: var(--r-full); transition: width var(--motion-slow) var(--ease-out-soft); }
+.pu-fill { z-index: 1; background: var(--accent); }
+.pu-flight { background: var(--accent-border); }
+.pu-card.tone-high > .pu-gauge .pu-fill { background: var(--status-warning-solid); }
+.pu-card.tone-high > .pu-gauge .pu-flight { background: var(--status-warning-border); }
+.pu-card.tone-full > .pu-gauge .pu-fill { background: var(--status-danger-solid); }
+.pu-card.tone-full > .pu-gauge .pu-flight { background: var(--status-danger-border); }
+.pu-blocked { position: absolute; top: 0; bottom: 0; right: 0; background: repeating-linear-gradient(135deg, var(--border-default) 0 2px, transparent 2px 6px); }
+.pu-today { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--border-strong); }
+.pu-today em { position: absolute; bottom: calc(100% + 3px); left: 1px; transform: translateX(-50%); font-style: normal; font-size: var(--fs-xs); line-height: 1; color: var(--text-secondary); white-space: nowrap; }
+
+.pu-gauge-foot { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; margin-top: 14px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.pu-left b { margin-left: 2px; font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.pu-aside::before { content: "·"; margin: 0 8px; color: var(--border-strong); }
+.pu-reset { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pu-countdown { margin-left: 8px; padding: 1px 8px; border-radius: var(--r-full); background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-xs); }
+
+/* 5 小时频率限制：标签 · 细条 · 数值，一行 */
+.pu-window { display: grid; grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto; align-items: center; gap: 20px; margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--border-subtle); }
+.pu-window.tone-high .pu-fill { background: var(--status-warning-solid); }
+.pu-window.tone-high .pu-flight { background: var(--status-warning-border); }
+.pu-window.tone-full .pu-fill { background: var(--status-danger-solid); }
+.pu-window.tone-full .pu-flight { background: var(--status-danger-border); }
+.pu-window-k { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--fs-body); font-weight: 500; color: var(--text-strong); }
+.pu-window-sub { font-size: var(--fs-xs); font-weight: 400; color: var(--text-secondary); }
+.pu-track.pu-track-sm { height: 6px; }
+.pu-window-v { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; min-width: 112px; }
+.pu-window-v b { font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.pu-window.tone-high .pu-window-v b { color: var(--status-warning-text); }
+.pu-window.tone-full .pu-window-v b { color: var(--status-danger-text); }
+.pu-window-v span { font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; }
+
+/* ── 使用明细 ── */
+.pu-h { margin: 0; font-size: var(--fs-sectiontitle); font-weight: 600; color: var(--text-strong); }
+.pu-sec-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 14px; }
+.pu-sec-sub { font-size: var(--fs-caption); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+
+.pu-mix { display: flex; flex-direction: column; gap: 10px; margin: 0 0 18px; }
+.pu-mix-bar { display: flex; gap: 2px; height: 6px; border-radius: var(--r-full); overflow: hidden; }
+.pu-mix-bar span { display: block; min-width: 3px; flex-basis: 0; }
+.mix-a { background: var(--accent); }
+.mix-b { background: var(--accent-text); }
+.mix-c { background: var(--accent-border); }
+.mix-d { background: var(--border-strong); }
+.pu-mix-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 28px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.pu-mix-legend li { display: inline-flex; align-items: center; gap: 8px; }
+.pu-mix-legend i { width: 8px; height: 8px; border-radius: var(--r-xs); }
+.pu-mix-name { color: var(--text-strong); }
+.pu-mix-v { color: var(--text-strong); font-weight: 500; font-variant-numeric: tabular-nums; }
+.pu-mix-n { font-variant-numeric: tabular-nums; }
+
+.pu-table { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
+.pu-table thead th { height: 32px; padding: 0 8px; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-xs); font-weight: 500; color: var(--text-secondary); text-align: left; }
+.pu-table thead th:nth-child(1) { width: 96px; }
+.pu-table thead th:nth-child(2) { width: 112px; }
+.pu-table thead th:nth-child(4) { width: 140px; }
+.pu-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.pu-day th { padding: 18px 0 6px; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-xs); font-weight: 600; color: var(--text-label); text-align: left; }
+.pu-table tbody:first-of-type .pu-day th { padding-top: 12px; }
+.pu-day-tag { margin-left: 8px; padding: 1px 6px; border-radius: var(--r-xs); background: var(--bg-muted); font-weight: 500; color: var(--text-secondary); }
+.pu-table td { height: 40px; padding: 0 8px; border-bottom: 1px solid var(--border-subtle); color: var(--text-primary); }
+.pu-table th:first-child, .pu-table td:first-child { padding-left: 0; }
+.pu-table th:last-child, .pu-table td:last-child { padding-right: 0; }
+.pu-table tbody tr:not(.pu-day):hover td { background: var(--bg-hover-soft); }
+.pu-t { color: var(--text-label); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pu-charge { color: var(--text-strong); font-weight: 500; white-space: nowrap; }
+.pu-table tr.is-free td { color: var(--text-secondary); }
+.pu-table tr.is-free .pu-charge { font-weight: 400; }
+
+.pu-more-row { display: flex; align-items: center; gap: 16px; margin-top: 14px; }
+.pu-quiet { margin: 10px 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.pu-fine { margin: 14px 0 0; font-size: var(--fs-xs); line-height: 1.6; color: var(--text-secondary); }
+
+/* ── 套餐（设置行，与通用、文书与写作页一致） ── */
+.pu-plan { display: flex; flex-direction: column; }
+.pu-plan > .pu-h { margin-bottom: 2px; }
+.pu-plan .setting-v { color: var(--text-primary); }
+.pu-plan-note { display: block; margin-top: 2px; font-size: var(--fs-caption); color: var(--text-secondary); }
+
+/* ── 没有连接服务、试用版 ── */
+.pu-empty { display: flex; flex-direction: column; gap: 6px; padding: 28px 32px; border: 1px dashed var(--border-default); border-radius: var(--r-lg); font-size: var(--fs-caption); color: var(--text-secondary); }
+.pu-empty b { font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); }
+
+@media (max-width: 760px) {
+  .pu { gap: 32px; }
+  .pu-card { padding: 20px; }
+  .pu-card-head { flex-wrap: wrap; }
+  .pu-window { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .pu-window-v { flex-direction: row; align-items: baseline; gap: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pu-fill, .pu-flight { transition: none; }
+}

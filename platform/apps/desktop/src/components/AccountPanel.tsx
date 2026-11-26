@@ -13,6 +13,9 @@ import { PasswordField } from "./PasswordField.tsx";
 import { SettingRow } from "./SettingRow.tsx";
 import { MetaGate } from "./AuthShell.tsx";
 import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta, useRegistrationMetaState } from "./SmsCodeFields.tsx";
+import { DeviceLimitList } from "./DeviceLimitList.tsx";
+import { currentProfileMark, isSwitchResult, waitForProfileSwitch } from "../lib/account-switch.ts";
+import { switchingText, type AccountDevice } from "../lib/account.ts";
 
 /** 账号状态变了（登录、退出）：App 顶部横幅据此立即刷新。 */
 export const ACCOUNT_CHANGED = "kwl:account-changed";
@@ -31,6 +34,23 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
   const [err, setErr] = useState("");
   const [unreg, setUnreg] = useState(false);
   const [forgot, setForgot] = useState(false);
+  // 第 68 批（V42，D-294/295）：登录的是另一个账号 → 切到那个账号的工作空间（过渡说明）；那个账号电脑数已满 → 列出它的电脑，可就地移除一台
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [limit, setLimit] = useState<{ devices: AccountDevice[]; canUnbind: boolean } | null>(null);
+  const afterLogin = async (r: unknown, before: string): Promise<boolean> => {
+    if (!isSwitchResult(r)) return false;
+    setLimit(null);
+    setSwitching(switchingText(r));
+    await waitForProfileSwitch(before, (t) => {
+      setSwitching(null);
+      setErr(t);
+    });
+    return true;
+  };
+  const limitOf = (e: unknown) => {
+    const d = (e as { detail?: { reason?: unknown; devices?: unknown; can_unbind?: unknown } })?.detail;
+    return d && d.reason === "device_limit" && Array.isArray(d.devices) && d.devices.length > 0 ? { devices: d.devices as AccountDevice[], canUnbind: d.can_unbind === true } : null;
+  };
   // 第 64 批：登录方式三态（取策略中 / 取不到 / 取到）——整页重新登录时取到才显示表单；设置页里的小登录框取不到时按密码登录显示
   const metaState = useRegistrationMetaState();
   const meta = metaState.status === "ready" ? metaState.meta : null;
@@ -48,21 +68,31 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
     setBusy(true);
     setErr("");
     setUnreg(false);
+    setLimit(null);
     try {
-      if (byPhone) await account.loginByPhone(phone.trim(), smsCode.trim());
-      else await account.login(email.trim(), pw);
+      const before = await currentProfileMark();
+      const r = byPhone ? await account.loginByPhone(phone.trim(), smsCode.trim()) : await account.login(email.trim(), pw);
       if (lm.methods.phone) saveLoginMethod(lm.method);
       setPw("");
       setSmsCode("");
+      if (await afterLogin(r, before)) return;
       notifyAccountChanged();
       onDone();
     } catch (e) {
       setUnreg(byPhone && phoneNotRegistered(e));
+      setLimit(limitOf(e));
       setErr((e as Error).message || "登录没有完成，请稍后重试");
     } finally {
       setBusy(false);
     }
   };
+  if (switching)
+    return (
+      <div className="login-box page auth-switching" role="status">
+        <p className="auth-switching-title">{switching}</p>
+        <p className="muted">各账号的事项、材料和成果分开保存，互不可见。</p>
+      </div>
+    );
   if (forgot) return <ResetBox email={email} onBack={() => setForgot(false)} page={page} />;
   if (page && metaState.status !== "ready") return <MetaGate state={metaState}>{() => null}</MetaGate>;
   return (
@@ -105,6 +135,20 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
         <p className="activate-error" role="alert">
           {err}
         </p>
+      )}
+      {limit && (
+        <DeviceLimitList
+          devices={limit.devices}
+          canUnbind={limit.canUnbind}
+          onUnbind={async (id) => {
+            const before = await currentProfileMark();
+            const r = await account.unbindForLogin(id);
+            if (!(await afterLogin(r, before))) {
+              setLimit(null);
+              setErr("");
+            }
+          }}
+        />
       )}
       {page ? (
         <>
@@ -501,7 +545,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
           label="登录过的电脑"
           hint={
             me.personal
-              ? `用这个账号登录过的电脑（在用 ${activeDevices.length} 台）。换电脑直接登录即可，不需要别的电脑批准；各台电脑上的事项与文件各自独立、不互相同步。不认识的电脑请马上移除并修改密码。`
+              ? `用这个账号登录过的电脑（在用 ${activeDevices.length}${typeof (me.account as { device_limit?: unknown })?.device_limit === "number" ? ` / ${(me.account as { device_limit: number }).device_limit}` : ""} 台，上限由云端设定）。换电脑直接登录即可，不需要别的电脑批准；各台电脑上的事项与文件各自独立、不互相同步。不认识的电脑请马上移除并修改密码。`
               : `用这个账号登录过的电脑（在用 ${activeDevices.length} 台）。不再用的电脑请移除；新电脑登录需律所管理员批准。`
           }
         >

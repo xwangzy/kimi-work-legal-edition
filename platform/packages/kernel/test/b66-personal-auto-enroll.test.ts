@@ -39,7 +39,7 @@ async function reboot(k: Kernel, dir: string): Promise<Kernel> {
   return boot(dir);
 }
 
-test("个人账号第二台电脑：登录即自动登记（不等第一台批准、试用套餐 1 台也不挡）→ 重启进入工作区；不持律所根；账本证书链按账号设备签发钥核；本人用量明细可翻页", { timeout: 240_000 }, async () => {
+test("个人账号第二台电脑：登录即自动登记（不等第一台批准；台数按云端配置）→ 重启进入工作区；不持律所根；账本证书链按账号设备签发钥核；本人用量明细可翻页", { timeout: 240_000 }, async () => {
   cloud = await startCloudCp({ tenant: "b66seed", accountCa: true });
   const dirA = mkdtempSync(join(tmpdir(), "kwl-b66-a-"));
   let a = await boot(dirA);
@@ -54,6 +54,8 @@ test("个人账号第二台电脑：登录即自动登记（不等第一台批�
   assert.equal(t.personal, true);
   assert.ok(t.firm_bundle, "创始电脑登记时上传了律所公钥包");
 
+  // 第 68 批（V42，D-295）：电脑数上限按云端配置（试用套餐 1 台对个人账号同样生效）——这个账号调到 2 台
+  cloud.cp.ops.account("qian@example.cn")!.device_limit = 2;
   const dirB = mkdtempSync(join(tmpdir(), "kwl-b66-b-"));
   let b = await boot(dirB);
   const rb = nextRestart(b);

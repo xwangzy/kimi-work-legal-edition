@@ -51,15 +51,28 @@ function isDataUrl(v: string): boolean {
  * 比例 210:297、内容多了往下长），细描边（--border-subtle）+ 轻阴影（--shadow-sm），页边距约 72px（窄时收小），四周画布留 24～32px（窄时收小）；
  * 正文衬线（--font-doc）16px / 1.75、段距 4px（与打印出来的文书相近；旧版内核输出没有段距规则时也按这个排）。
  * 框架内取不到本页令牌：颜色值手抄自 tokens.css，style-tokens.test.ts 核对相等。
+ *
+ * V42（预览“草稿纸”）：画布改为 --preview-canvas，加一层极淡的 20px 点阵（--preview-canvas-dot，CSS 渐变画出，不是图片请求，
+ * 不需要放宽 CSP）；点阵只画在根元素（纸外的桌面），纸面保持纯白，去掉 1px 描边改三层投影（--preview-sheet-shadow）浮起。
+ * 底纹只是界面：画在 html 上（复制时 Chromium 取的“生效底色”是最近的不透明祖先，即白纸），打印媒体下一律去掉；
+ * 导出 PDF 走内核 print-html 与隐藏窗口，与本样式无关。深色界面另加 PAPER_DARK_STYLE（只换画布，纸仍是白纸）。
  */
-const PAPER_STYLE = "html,body{background:#f4f3f2;}body{margin:0;padding:32px 28px 48px;font-family:'Source Han Serif SC','Noto Serif CJK SC','Songti SC',SimSun,serif;font-size:16px;line-height:1.75;color:#1f1d1a;}.kwl-paper{box-sizing:border-box;max-width:794px;aspect-ratio:210/297;margin:0 auto;padding:72px;background:#ffffff;border:1px solid #eeebe7;box-shadow:0 1px 6px rgba(14,18,25,0.06);overflow-wrap:break-word;}.kwl-paper p{margin:0 0 4px;}.kwl-paper h2,.kwl-paper h3,.kwl-paper h4{line-height:1.5;}@media (max-width:760px){body{padding:24px 20px 32px;}.kwl-paper{padding:48px 40px;}}@media (max-width:520px){body{padding:12px 10px 24px;}.kwl-paper{padding:28px 20px;}}";
+const PAPER_STYLE = "html{background-color:#efedea;background-image:radial-gradient(circle,rgba(14,18,25,0.12) 1px,transparent 1.3px);background-size:20px 20px;background-position:10px 10px;}body{margin:0;padding:32px 28px 48px;background:transparent;font-family:'Source Han Serif SC','Noto Serif CJK SC','Songti SC',SimSun,serif;font-size:16px;line-height:1.75;color:#1f1d1a;}.kwl-paper{box-sizing:border-box;max-width:794px;aspect-ratio:210/297;margin:0 auto;padding:72px;background:#ffffff;box-shadow:0 0 0 1px rgba(14,18,25,0.05),0 1px 2px rgba(14,18,25,0.06),0 6px 20px -6px rgba(14,18,25,0.14);overflow-wrap:break-word;}.kwl-paper p{margin:0 0 4px;}.kwl-paper h2,.kwl-paper h3,.kwl-paper h4{line-height:1.5;}@media (max-width:760px){body{padding:24px 20px 32px;}.kwl-paper{padding:48px 40px;}}@media (max-width:520px){body{padding:12px 10px 24px;}.kwl-paper{padding:28px 20px;}}@media print{html{background:none;}body{padding:0;}.kwl-paper{box-shadow:none;}}";
+
+/** 深色界面下的 Word 纸面（V42）：画布换成更深的桌面（--preview-canvas 深色值）、点阵改 7% 白，纸仍是白纸（纸面令牌不随明暗变），投影加深；滚动条随深色。 */
+const PAPER_DARK_STYLE = "html{color-scheme:dark;background-color:#161514;background-image:radial-gradient(circle,rgba(255,255,255,0.07) 1px,transparent 1.3px);}.kwl-paper{color-scheme:light;box-shadow:0 0 0 1px rgba(0,0,0,0.55),0 2px 4px rgba(0,0,0,0.35),0 14px 36px -8px rgba(0,0,0,0.6);}@media print{html{color-scheme:light;background:none;}}";
 
 /**
- * Excel 成果的表格版式（V41 第 67 批 §2.8：表格是表格，不套文书纸面）：白底、无边距、无衬线（等线 / 微软雅黑 / 苹方）13px，
+ * Excel 成果的表格版式（V41 第 67 批 §2.8：表格是表格，不套文书纸面）：无边距、无衬线（等线 / 微软雅黑 / 苹方）13px，
  * 表格本身（列宽、合并、对齐、底色、边框、固定的列号行号）由内核输出的样式排，框架里可横向、纵向滚动，不压缩列宽。
  * 后半是旧版内核输出（没有 kwl-grid 的平铺表格）的兜底：中文不在字间断行、表头不折行，表格宽于框架时横向滚动（“证据编号”不再一字一行）。
+ * V42：表格之外是画布底色（不加点阵——表格本身就是网格，点阵与格线并排是噪声），白色表格落在画布上，数据区边界一目了然；
+ * 旧版平铺表格补白底与字色，免得透出画布。
  */
-const SHEET_STYLE = "html,body{background:#ffffff;}body{margin:0;font-family:Calibri,'Segoe UI',BlinkMacSystemFont,'Helvetica Neue',DengXian,'等线','Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB',Arial,sans-serif;font-size:13px;line-height:1.4;color:#0e1219;}table:not(.kwl-grid){border-collapse:collapse;margin:0;}table:not(.kwl-grid) td,table:not(.kwl-grid) th{border:1px solid #e3dfda;padding:3px 8px;vertical-align:top;word-break:keep-all;overflow-wrap:break-word;}table:not(.kwl-grid) th{background:#f4f3f2;white-space:nowrap;text-align:left;font-weight:600;}";
+const SHEET_STYLE = "html{background:#efedea;}body{margin:0;background:transparent;font-family:Calibri,'Segoe UI',BlinkMacSystemFont,'Helvetica Neue',DengXian,'等线','Microsoft YaHei','微软雅黑','PingFang SC','Hiragino Sans GB',Arial,sans-serif;font-size:13px;line-height:1.4;color:#0e1219;}table:not(.kwl-grid){border-collapse:collapse;margin:0;background:#ffffff;color:#0e1219;}table:not(.kwl-grid) td,table:not(.kwl-grid) th{border:1px solid #e3dfda;padding:3px 8px;vertical-align:top;word-break:keep-all;overflow-wrap:break-word;}table:not(.kwl-grid) th{background:#f4f3f2;white-space:nowrap;text-align:left;font-weight:600;}@media print{html{background:none;}}";
+
+/** 深色界面下的 Excel（V42）：画布换深色、表后的说明文字用深色次级字色；表格仍是白底深字（内核 kwl-grid 自带底色与字色）。 */
+const SHEET_DARK_STYLE = "html{color-scheme:dark;background:#161514;}body{color:#a9a59f;}@media print{html{color-scheme:light;background:none;}body{color:#0e1219;}}";
 
 /** 预览框架的基础样式（框架内取不到本页令牌：颜色值手抄自 tokens.css 的 --p-ink、--p-white、--p-blue-600，style-tokens.test.ts 核对相等）。 */
 const BASE_STYLE = "body{font-family:'Segoe UI','Microsoft YaHei UI','Microsoft YaHei',-apple-system,'PingFang SC',sans-serif;font-size:14px;line-height:1.7;color:#0e1219;background:#ffffff;margin:16px;} .kwl-link{color:#0a66d1;text-decoration:underline dotted;cursor:default;} img{max-width:100%;} .kwl-cite{font-size:11px;font-weight:600;padding:0 2px;border-radius:4px;cursor:help;} .kwl-cite-red{color:#b42318;} .kwl-cite-orange{color:#b54708;} .kwl-cite-gray{color:#8f8a84;} .kwl-cite-confirmed{color:#5925dc;} .kwl-cite-ack{color:#0e1219;border:1px solid #8f8a84;}";
@@ -100,8 +113,9 @@ export function splitSheets(html: string): { head: string; sheets: PreviewSheet[
 /**
  * 清洗并包装为预览文档（返回 srcdoc 字符串）；给出代号表时按文本节点还原（只在隔离框架内显示）。
  * paper：Word 纸面（正文包进 .kwl-paper）；sheet：Excel 表格版式；citePrefix：分表显示时排在本表之前的各表（只用来接着数引用出现到第几次，不显示）。
+ * dark（V42）：界面是深色时只换纸外的画布（纸面与表格仍是白底深字）；框架内取不到界面主题，由 SafePreview 传入。
  */
-export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | null>, o: { paper?: boolean; sheet?: boolean; cites?: PreviewCite[]; citePrefix?: string } = {}): string {
+export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | null>, o: { paper?: boolean; sheet?: boolean; dark?: boolean; cites?: PreviewCite[]; citePrefix?: string } = {}): string {
   const doc = new DOMParser().parseFromString(html, "text/html");
   for (const tag of DROP_ELEMENTS) for (const el of Array.from(doc.querySelectorAll(tag))) el.remove();
   for (const a of Array.from(doc.querySelectorAll("a[href]"))) a.setAttribute("data-kwl-href", a.getAttribute("href") ?? "");
@@ -190,6 +204,8 @@ export function buildPreviewDoc(html: string, tokenMap?: Map<string, string | nu
     `<style>${BASE_STYLE}</style>`,
     o.sheet ? `<style>${SHEET_STYLE}</style>` : o.paper ? `<style>${PAPER_STYLE}</style>` : "",
     styles,
+    // 深色画布排在内核样式之后：只改 html 画布与纸的投影，不碰正文
+    o.dark && o.sheet ? `<style>${SHEET_DARK_STYLE}</style>` : o.dark && o.paper ? `<style>${PAPER_DARK_STYLE}</style>` : "",
     "</head><body>",
     body,
     "</body></html>",

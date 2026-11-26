@@ -3,7 +3,8 @@
  * - 个人租户（自助注册、1 名成员且为管理员）的新电脑：登录即 needs_device_auto → POST /v1/auth/devices/enroll（会话 + 新设备公钥 + 持有证明）
  *   → 控制面用账号设备签发钥签 365 天证书（issuer = account_ca）、直接登记，应答是签名信封 kwl-device-enroll（证书 + 律所根公钥 + 律所公钥包）；
  * - account_ca 证书不能做团队管理动作（发邀请、批准成员、发布策略）；发了成员邀请即转回团队租户、恢复“另一台电脑批准”；
- * - 防滥用硬上限：同时有效 20 台时自动吊销最久未用的一台（写审计与提醒），不拒绝登录；24 小时内第 4 台或短时多网段 → 暂停、要短信确认；
+ * - 第 68 批（V42，D-295）起：电脑数上限一律按云端配置（账号 > 套餐 > 缺省），满了拒绝并给出已登记的电脑（不再自动吊销最久未用的一台）；
+ *   刚登录的新电脑会话可就地移除一台再继续；24 小时内第 4 台或短时多网段 → 暂停、要短信确认；
  * - /v1/quota 追加 personal / own_models / plan.{note,period,burst,models}，按 uid；/v1/quota/usage 翻页（签名信封 kwl-usage-page，只含本人的行）。
  */
 import { test, before, after } from "node:test";
@@ -95,7 +96,7 @@ async function newComputer(email: string, o: { platform?: string; extra?: Record
   return { li, onb, k, enroll, session: li.json.session_token as string };
 }
 
-test("个人租户：新电脑登录即 needs_device_auto → 控制面签 account_ca 证书、直接登记（无需另一台批准、不按套餐台数挡）；应答签名信封含证书、律所根公钥与律所公钥包；/v1/meta 公布签发钥编号", async () => {
+test("个人租户：新电脑登录即 needs_device_auto → 控制面签 account_ca 证书、直接登记（无需另一台批准；台数按云端配置）；应答签名信封含证书、律所根公钥与律所公钥包；/v1/meta 公布签发钥编号", async () => {
   const meta = await get("/v1/meta");
   assert.ok(meta.json.features.includes("device_auto_enroll"));
   assert.equal(meta.json.account_device_ca.kid, "acct-ca-dev1");
@@ -104,7 +105,9 @@ test("个人租户：新电脑登录即 needs_device_auto → 控制面签 accou
   assert.equal(t.personal, true);
   assert.ok(t.firm_bundle, "开通时存下律所公钥包");
   assert.equal(t.account_device_ca?.kid, "acct-ca-dev1");
-  // 试用套餐每账号 1 台：个人账号不受此限
+  // 第 68 批（D-295）：试用套餐每账号 1 台，个人账号同样受此限——云端把这个账号调到 3 台
+  assert.equal((await newComputer("p1@example.cn")).onb.state, "device_limit", "按套餐 1 台：第二台满了");
+  cp.ops.account("p1@example.cn")!.device_limit = 3;
   const nc = await newComputer("p1@example.cn");
   assert.equal(nc.onb.state, "needs_device_auto", JSON.stringify(nc.onb));
   assert.equal(nc.onb.device_id, `${f.dev.cert.deviceId}_D2`);
@@ -164,33 +167,63 @@ test("团队租户仍须批准：发了成员邀请即转回团队租户——�
   assert.equal(r.json.error.code, "device_auto_unavailable");
 });
 
-test("防滥用硬上限：同时有效 20 台时自动吊销最久未用的一台（写审计与提醒），不拒绝登录；个人账号编号可过 _D9", async () => {
+test("第 68 批（D-295）电脑数上限按云端配置：满了 device_limit（带已登记的电脑）、登记接口同样拒绝；刚登录的新电脑会话可不输密码就地移除一台，再经 /v1/auth/onboarding 继续登记", async () => {
   const f = await signupFounder("p3@example.cn", "李律师工作室");
   const t = cp.ops.tenant(f.tid)!;
-  // 预置 19 台（旧的先登记）：连同创始设备共 20 台在用
-  for (let n = 2; n <= 20; n++) {
-    const k = generateDeviceKeys();
-    const id = accountDeviceId(f.tid.slice(4), f.slug, n);
-    t.devices.set(id, { cert: { ...f.dev.cert, deviceId: id, certId: `cert_${id}`, signPublicKeyPem: k.signPublicKeyPem, encPublicKeyPem: k.encPublicKeyPem }, registered_at: new Date(Date.now() - (30 - n) * 86400_000).toISOString(), revoked_at: null });
-  }
-  // 创始设备今天刚报到过：最久未用的是 _D2
-  t.devices.get(f.dev.cert.deviceId)!.client_seen_on = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-  const nc = await newComputer("p3@example.cn");
-  assert.equal(nc.onb.state, "needs_device_auto");
-  assert.equal(nc.onb.device_id, `${f.dev.cert.deviceId}_D21`);
-  assert.equal(accountDeviceIndex(f.tid.slice(4), f.slug, nc.onb.device_id), 21);
-  const r = await nc.enroll();
-  assert.equal(r.status, 200, JSON.stringify(r.json));
-  const o = openEnvelope<any>(r.json, "kwl-device-enroll", envKeys());
-  assert.ok(o.ok && o.body.rotated.length === 1 && o.body.rotated[0].endsWith("_D2"), JSON.stringify(o.ok && o.body.rotated));
-  assert.ok(t.devices.get(`${f.dev.cert.deviceId}_D2`)!.revoked_at, "最久未用的一台已吊销");
-  assert.equal([...t.devices.values()].filter((d) => !d.revoked_at).length, 20);
-  const acts = auditLog.list(f.tid, 0, 500).map((x: any) => x.action);
-  assert.ok(acts.includes("device.auto_enroll") && acts.includes("device.auto_revoke"), acts.join(","));
+  cp.ops.account("p3@example.cn")!.device_limit = 2;
+  // 第二台：登记成功
+  const n2 = await newComputer("p3@example.cn");
+  assert.equal(n2.onb.state, "needs_device_auto");
+  assert.equal((await n2.enroll()).status, 200);
+  // 第三台：登录即“已满”，列出两台已登记的电脑；没有 device_id、不能登记
+  const n3 = await newComputer("p3@example.cn");
+  assert.equal(n3.onb.state, "device_limit", JSON.stringify(n3.onb));
+  assert.equal(n3.onb.device_limit, 2);
+  assert.deepEqual(n3.onb.devices.map((d: any) => d.device_id).sort(), [f.dev.cert.deviceId, `${f.dev.cert.deviceId}_D2`].sort());
+  // 绕过登录应答直接登记：同样拒绝（不再自动吊销最久未用的一台）
+  const forced = await n3.enroll(`${f.dev.cert.deviceId}_D3`);
+  assert.equal(forced.status, 409);
+  assert.equal(forced.json.error.code, "device_limit");
+  assert.equal(forced.json.error.devices.length, 2);
+  assert.equal([...t.devices.values()].filter((d) => !d.revoked_at).length, 2, "没有自动移除任何一台");
+  // 就地移除：这次登录的会话（10 分钟内、还没绑电脑）不输密码即可移除本账号的一台
+  const un = await post(`/v1/auth/devices/${f.dev.cert.deviceId}_D2/unbind`, {}, { "x-kwl-session": n3.session });
+  assert.equal(un.status, 200, JSON.stringify(un.json));
+  assert.ok(t.devices.get(`${f.dev.cert.deviceId}_D2`)!.revoked_at);
+  // 再取一次“这台电脑该做什么”：可登记了（编号不复用吊销过的）
+  const ob = await post("/v1/auth/onboarding", {}, { "x-kwl-session": n3.session });
+  assert.equal(ob.status, 200, JSON.stringify(ob.json));
+  assert.equal(ob.json.onboarding.state, "needs_device_auto");
+  assert.equal(ob.json.onboarding.device_id, `${f.dev.cert.deviceId}_D3`);
+  assert.equal(ob.json.account.member_slug, f.slug);
+  const proof = sign(null, deviceEnrollProofBytes({ tid: f.tid, aid: n3.li.json.account.aid, sid: n3.li.json.session.sid, deviceId: ob.json.onboarding.device_id, signPublicKeyPem: n3.k.signPublicKeyPem, encPublicKeyPem: n3.k.encPublicKeyPem }), n3.k.signPrivateKeyPem).toString("base64url");
+  const en = await post("/v1/auth/devices/enroll", { device_id: ob.json.onboarding.device_id, sign_pub: n3.k.signPublicKeyPem, enc_pub: n3.k.encPublicKeyPem, proof }, { "x-kwl-session": n3.session });
+  assert.equal(en.status, 200, JSON.stringify(en.json));
+  // 已绑电脑的会话：移除别的电脑要密码（不计密码错误次数）；/v1/auth/onboarding 也不再给
+  assert.equal((await post(`/v1/auth/devices/${f.dev.cert.deviceId}/unbind`, {}, { "x-kwl-session": n3.session })).json.error.code, "password_required");
+  assert.equal(cp.ops.account("p3@example.cn")!.failed.count, 0);
+  assert.equal((await post("/v1/auth/onboarding", {}, { "x-kwl-session": n3.session })).json.error.code, "session_not_enrollable");
+  // 网页登录的会话也不能免密移除
+  const web = await post("/v1/auth/login", { email: "p3@example.cn", password: PW, client: { platform: "web" } });
+  assert.equal((await post(`/v1/auth/devices/${f.dev.cert.deviceId}/unbind`, {}, { "x-kwl-session": web.json.session_token })).json.error.code, "password_required");
+  // 安全复核 C-2：免密移除只凭“电脑数已满”那次登录的一次性票据——没满时的新电脑登录不能免密移除；票据用过即没有
+  cp.ops.account("p3@example.cn")!.device_limit = 5;
+  const n4 = await newComputer("p3@example.cn");
+  assert.equal(n4.onb.state, "needs_device_auto");
+  assert.equal((await post(`/v1/auth/devices/${f.dev.cert.deviceId}/unbind`, {}, { "x-kwl-session": n4.session })).json.error.code, "password_required");
+  cp.ops.account("p3@example.cn")!.device_limit = 2;
+  const n5 = await newComputer("p3@example.cn");
+  assert.equal(n5.onb.state, "device_limit");
+  const live = n5.onb.devices.map((d: any) => d.device_id) as string[];
+  assert.equal((await post(`/v1/auth/devices/${live[0]}/unbind`, {}, { "x-kwl-session": n5.session })).status, 200, "一张票据移一台");
+  assert.equal((await post(`/v1/auth/devices/${live[1]}/unbind`, {}, { "x-kwl-session": n5.session })).json.error.code, "password_required", "票据用过即没有");
+  // 关口放行新路径
+  assert.equal(cpRelayAllowed({ method: "POST", path: "/v1/auth/onboarding", headers: {}, body: "{}" }), null);
 });
 
 test("可疑时暂停：24 小时内已自动登记 3 台 → 第 4 台暂停（device_enroll_hold，没绑手机号时 sms_available=false）；1 小时内 3 个以上网段同样暂停", async () => {
   const f = await signupFounder("p4@example.cn", "吴律师工作室");
+  cp.ops.account("p4@example.cn")!.device_limit = 9;
   for (let i = 0; i < 3; i++) assert.equal((await (await newComputer("p4@example.cn")).enroll()).status, 200);
   const r = await (await newComputer("p4@example.cn")).enroll();
   assert.equal(r.status, 403);
@@ -203,6 +236,7 @@ test("可疑时暂停：24 小时内已自动登记 3 台 → 第 4 台暂停（
   // 多网段：另一个个人账号，最近 1 小时从两个别的网段登录过
   await signupFounder("p5@example.cn", "郑律师工作室");
   const a5 = cp.ops.account("p5@example.cn")!;
+  a5.device_limit = 9;
   const nc = await newComputer("p5@example.cn");
   a5.logins = [...(a5.logins ?? []), { at: new Date().toISOString(), kind: "login", device_id: null, platform: "win32", version: null, net: "10.1.x.x" }, { at: new Date().toISOString(), kind: "login", device_id: null, platform: "win32", version: null, net: "172.16.x.x" }];
   const r3 = await nc.enroll();

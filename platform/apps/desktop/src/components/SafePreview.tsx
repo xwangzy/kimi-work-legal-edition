@@ -8,13 +8,28 @@
  * V41 第 67 批（工作线 E）：Word 排成浅灰画布上的白色 A4 纸；Excel 按表格排（不套文书纸面），多张工作表在框架外做表签、
  * 框架里一次只放一张表（框架不执行脚本，表签只能在外面；切换表签即换一个新框架，同样不在原框架上改 srcdoc）。
  */
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { buildPreviewDoc, previewFrameKey, splitSheets, type PreviewCite } from "../lib/safe-preview.ts";
 import { TOKEN_RE } from "../lib/tokens.ts";
 import { Markdown } from "./Markdown.tsx";
 import "../styles-preview.css";
 
 const UNNAMED_SHEET = "（未命名）";
+
+/**
+ * 界面当前明暗（V42 预览画布）：ui-prefs 把结果写在 <html data-theme>；隔离框架里读不到，深色时由这里告诉 buildPreviewDoc 换深色画布。
+ * 主题一变 srcDoc 随之变，框架按内容摘要换新元素（不在原框架上改 srcdoc，见 previewFrameKey）。
+ */
+function subscribeTheme(onChange: () => void): () => void {
+  if (typeof MutationObserver === "undefined" || typeof document === "undefined") return () => {};
+  const mo = new MutationObserver(onChange);
+  mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  return () => mo.disconnect();
+}
+const uiIsDark = (): boolean => typeof document !== "undefined" && document.documentElement.dataset.theme === "dark";
+function useDarkUi(): boolean {
+  return useSyncExternalStore(subscribeTheme, uiIsDark, () => false);
+}
 
 /** 表签上的表名：在本机界面还原代号（与正文一样只在本机显示；React 按文字输出，不当 HTML）。 */
 function sheetLabel(name: string, map?: Map<string, string | null>): string {
@@ -35,11 +50,12 @@ export function SafePreview({ filename, text, tokenMap, office, cites, compactNo
   const count = split?.sheets.length ?? 0;
   const active = count > 0 ? Math.min(pick.file === filename ? pick.i : 0, count - 1) : 0;
   const docHtml = split && count > 0 ? split.head + split.sheets[active]!.html + split.tail : text;
+  const dark = useDarkUi();
   const citePrefix = split && active > 0 ? split.sheets.slice(0, active).map((s) => s.html).join("") : "";
-  // Word 成果用白色 A4 纸面；Excel 用表格版式
+  // Word 成果用白色 A4 纸面；Excel 用表格版式；两者都放在预览画布上（深色界面换深色画布，纸与表格仍是白底）
   const srcDoc = useMemo(
-    () => (isHtml ? buildPreviewDoc(docHtml, tokenMap, { paper: !!office && !isSheet, sheet: isSheet, ...(cites ? { cites } : {}), ...(citePrefix ? { citePrefix } : {}) }) : ""),
-    [isHtml, docHtml, tokenMap, office, isSheet, cites, citePrefix],
+    () => (isHtml ? buildPreviewDoc(docHtml, tokenMap, { paper: !!office && !isSheet, sheet: isSheet, ...(office && dark ? { dark: true } : {}), ...(cites ? { cites } : {}), ...(citePrefix ? { citePrefix } : {}) }) : ""),
+    [isHtml, docHtml, tokenMap, office, isSheet, dark, cites, citePrefix],
   );
   const frameKey = useMemo(() => previewFrameKey(srcDoc), [srcDoc]);
   const [reloads, setReloads] = useState(0);

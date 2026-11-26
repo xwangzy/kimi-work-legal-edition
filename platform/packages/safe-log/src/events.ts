@@ -52,6 +52,11 @@ export const EVENTS = {
   KERNEL_ONBOARDING_AUTO_ENROLLED: { level: "info", fields: {} },
   KERNEL_ONBOARDING_AUTO_ENROLL_FAILED: { level: "warn", fields: { reason: "ident" } },
   KERNEL_JOIN_STAGED_REJECTED: { level: "warn", fields: {} },
+  // 第 68 批（D-294）：同一台电脑上切换账号档案（只记去向种类与失败原因，不记账号与目录名）
+  KERNEL_PROFILE_SWITCH: { level: "info", fields: { to: ["existing", "enroll"] } },
+  KERNEL_PROFILE_WRITE_FAILED: { level: "warn", fields: ERR },
+  KERNEL_PROFILE_SESSION_HANDOFF: { level: "info", fields: {} },
+  KERNEL_PROFILE_SESSION_HANDOFF_FAILED: { level: "warn", fields: { "reason?": ["mismatch"], ...ERR } },
   // 第 54 批：激活后删不掉待激活占位工作区（Windows 上有文件仍被占用）——不再让内核启动失败，下次启动再删
   KERNEL_PENDING_WORKSPACE_LEFT: { level: "warn", fields: { reason: ["busy", "perm", "other"] } },
   /** 我方账号（第 44 批）：只记原因代码，不记邮箱、密码与令牌。 */
@@ -119,6 +124,10 @@ export const EVENTS = {
   MAIN_KERNEL_EXITED: { level: "warn", fields: { "code?": "int" } },
   /** 开通或入组完成：主进程按 activation.json 有序重启内核（第 13 批）。 */
   MAIN_KERNEL_IDENTITY_RESTART: { level: "info", fields: {} },
+  // 第 68 批（D-294）：切换账号档案（换用那个档案的密钥后重启内核）；密钥格的归属变更与失败
+  MAIN_PROFILE_SWITCH: { level: "info", fields: { kind: ["session", "auth"] } },
+  MAIN_KEY_SLOT_ADOPTED: { level: "info", fields: {} },
+  MAIN_KEY_SLOT_FAILED: { level: "warn", fields: { reason: ["read_failed", "rename_failed", "invalid"] } },
   MAIN_KERNEL_IDENTITY_RESTART_FAILED: { level: "error", fields: {} },
   /** 从备份恢复时采用旧电脑的数据库主密钥（第 14 批）：只记结果。 */
   MAIN_ADOPT_KEY_DONE: { level: "info", fields: {} },

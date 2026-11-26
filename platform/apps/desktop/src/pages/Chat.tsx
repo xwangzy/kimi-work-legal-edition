@@ -19,6 +19,7 @@ import { chatWaitView, deepToggleTitle, type ChatPhase, type ThinkingControl } f
 import { fmtWait } from "../lib/waiting.ts";
 import { ensureAiNotice } from "../lib/ai-notice.ts";
 import { KimiPulse, LoadError } from "../components/Loading.tsx";
+import { scopedKey } from "../lib/profile-scope.ts";
 
 /** 问答输入框下的常驻提示（D-225）：问答用于一般法律问题；具体案件在事项里发起（事项里才有该案的客户授权与令牌化规则）。 */
 export const CHAT_SCOPE_NOTE = "这里用于一般法律问题；涉及具体案件的材料与当事人，请在事项里发起。";
@@ -45,7 +46,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   // 深度思考开关（第 48 批）：关＝快速回答（通常十几秒），开＝先充分思考再答（常要 1～3 分钟）；记在本机偏好，没记过按内核缺省
   const [deep, setDeep] = useState<boolean>(() => {
     try {
-      const v = localStorage.getItem(DEEP_KEY);
+      const v = localStorage.getItem(scopedKey(DEEP_KEY));
       return v === "1";
     } catch {
       return false;
@@ -54,7 +55,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   const deepChosen = useRef<boolean>(false);
   useEffect(() => {
     try {
-      deepChosen.current = localStorage.getItem(DEEP_KEY) !== null;
+      deepChosen.current = localStorage.getItem(scopedKey(DEEP_KEY)) !== null;
     } catch {
       deepChosen.current = false;
     }
@@ -64,7 +65,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
     deepChosen.current = true;
     setDeep(next);
     try {
-      localStorage.setItem(DEEP_KEY, next ? "1" : "0");
+      localStorage.setItem(scopedKey(DEEP_KEY), next ? "1" : "0");
     } catch {
       // 记不住只影响下次打开
     }
@@ -82,7 +83,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   const [models, setModels] = useState<ChatModelChoice[]>([]);
   const [route, setRoute] = useState<string | null>(() => {
     try {
-      return localStorage.getItem(MODEL_KEY);
+      return localStorage.getItem(scopedKey(MODEL_KEY));
     } catch {
       return null;
     }
@@ -102,7 +103,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   const chooseModel = (alias: string) => {
     setRoute(alias);
     try {
-      localStorage.setItem(MODEL_KEY, alias);
+      localStorage.setItem(scopedKey(MODEL_KEY), alias);
     } catch {
       // 记不住只影响下次打开
     }

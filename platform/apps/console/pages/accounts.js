@@ -136,7 +136,7 @@ export function openAccount(aid) {
           title: "个人上限",
           fields: [
             { name: "quota_limit", label: `个人额度上限（每期，${u.unit === "cny" ? "元" : "token"}）`, type: "number", min: 0, value: a.quota_limit ?? "", hint: "空 = 不单设（按套餐每席位额度显示参考比例）" },
-            { name: "device_limit", label: "设备上限", type: "number", min: 1, max: 9, value: a.device_limit ?? "", hint: "空 = 按套餐（缺省 2 台）；同一账号最多 9 台" },
+            { name: "device_limit", label: "设备上限", type: "number", min: 1, max: 9, value: a.device_limit ?? "", hint: "空 = 按套餐（缺省 2 台）；同一账号最多 9 台；个人账号同样按此上限" },
           ],
           consequences: ["个人上限立即参与额度判定：用到上限即暂停该账号的 AI；", "设备上限只影响新设备入组，已绑定的不受影响。"],
           confirmLabel: "保存",

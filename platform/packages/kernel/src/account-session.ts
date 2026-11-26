@@ -219,10 +219,11 @@ export function accountErrorText(code: string, fallback?: string): string {
     case "session_invalid":
     case "session_expired":
       return "登录已失效，请重新登录";
+    // 第 68 批（V42，D-294）：不再有“这台电脑只许某位成员登录”——旧云端答这个代码时如实说明是云端版本问题
     case "device_mismatch":
-      return "这台电脑已登记为本所另一位成员：请用那位成员的账号登录";
+      return "云端服务暂不支持在这台电脑上切换账号：请稍后重试；仍不行请联系客服";
     case "device_limit":
-      return "账号的设备数已满：请先在别的电脑上解绑一台，或请管理员调高上限";
+      return "这个账号的电脑数已达云端设定的上限：请先移除一台不再使用的电脑";
     // 第 66 批（V40，D-292）：个人账号新电脑自动登记的几种失败
     case "device_enroll_hold":
       return "短时间内有多台新电脑登录这个账号，为安全起见已暂停自动登记：请用账号绑定的手机号接收验证码确认是本人";
@@ -307,17 +308,17 @@ export function accountFailure(code: string, cpMessage?: string | null, extra?: 
  */
 export function onboardingStateText(state: string, o: { admin?: boolean } = {}): string {
   switch (state) {
+    // 第 68 批（V42，D-295）：电脑数上限由云端设定；可在登录页就地移除一台，也可在已登录的电脑或云端控制台移除
     case "device_limit":
-      return o.admin
-        ? "这个账号的电脑数已满：请先在已登录的电脑上（设置 → 账号与团队 → 登录过的电脑）移除一台，或调高本所成员的电脑数上限"
-        : "这个账号的电脑数已满：请先在已登录的电脑上（设置 → 账号与团队 → 登录过的电脑）移除一台，或请律所管理员调高上限";
+      // 个人账号的“管理员”就是本人，调不了自己的上限（由套餐决定）：不再按角色给“调高本所成员上限”的说法
+      return "这个账号登录过的电脑已达云端设定的上限：请移除一台不再使用的电脑后继续";
     case "device_mismatch":
-      return "这台电脑已登记为本所另一位成员：请用那位成员的账号登录";
+      return "云端服务暂不支持在这台电脑上切换账号：请稍后重试；仍不行请联系客服";
     case "waiting_founder":
     case "needs_founder_setup":
       return "你的律所还没有完成开通：请律所负责人先在自己的电脑上登录完成开通";
     case "needs_device_join":
-      return "这个账号还没有登记这台电脑：请用这台电脑原来登录的账号；要换人使用，请律所管理员处理";
+      return "这个账号还没有登记这台电脑：重新登录后按提示提交登记申请，由律所管理员批准";
     // 第 66 批（V40，D-292）：个人账号的新电脑由云端直接登记（不用另一台电脑批准）；正常模式下遇到即说明换到这台电脑怎么做
     case "needs_device_auto":
       return "这台电脑还没有用这个账号登录过：退出后在登录页重新登录，会自动登记为你的电脑（不需要别的电脑批准；这台电脑上的资料与别的电脑各自独立）";

@@ -87,6 +87,8 @@ function createHandleStore(now = () => Date.now()) {
       return v.path;
     },
     size: () => map.size,
+    /** 第 68 批：切换账号档案时作废全部未用的句柄（上一个账号选过的文件不能在下一个账号里取用）。 */
+    clear: () => map.clear(),
   };
 }
 

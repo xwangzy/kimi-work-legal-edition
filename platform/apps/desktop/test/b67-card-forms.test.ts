@@ -11,8 +11,8 @@ import { cardForm, compareSlots, extraPlaceholder, materialsHint, provisionalSen
 const src = (p: string) => readFileSync(fileURLToPath(new URL(`../src/${p}`, import.meta.url)), "utf8");
 const byId = (id: string) => SCENARIO_CARDS.find((c) => c.id === id)!;
 
-test("52 张卡都有形态；要写当事人首部的一律是起草形态；比对、整理、审查、研究各有代表卡", () => {
-  assert.equal(SCENARIO_CARDS.length, 52);
+test("53 张卡都有形态（第 65 批加了诉讼成本卡）；要写当事人首部的一律是起草形态；比对、整理、审查、研究各有代表卡", () => {
+  assert.equal(SCENARIO_CARDS.length, 53);
   for (const c of SCENARIO_CARDS) {
     const f = cardForm(c);
     assert.ok(["draft", "review", "compare", "analyze", "organize"].includes(f), c.id);
@@ -119,16 +119,14 @@ test("首页上传：一个材料面板两种进入——“+”打开面板并�
   assert.match(mp, /松手即存入「\{p\.matterTitle\}」/);
 });
 
-test("套餐与用量：一个焦点（本期已用 %）、剩余 = 1 − 已用、按模型并进图例、5 小时一行；不出现点数、金额与购买按钮", () => {
+// 第 68 批：套餐与用量重构（只给本人、大数字 + 一根条 + 重置、5 小时一行、按日分组明细、套餐设置行），守护用例移到 b68-personal-usage.test.ts；
+// 这里保留第 67 批立下的底线：不出现点数、金额与购买按钮，套餐说明里的金额去掉，处理量（原始计数）不作为一列。
+test("套餐与用量（底线）：不出现点数、金额与购买按钮；套餐说明去金额；处理量不作为一列", () => {
   const s = src("pages/PersonalUsage.tsx");
-  assert.match(s, /const remaining = v\.available;/, "第二轮：可用 = 1 − 已用 − 预留，三项加起来 100%");
-  assert.match(s, /元额度（按价目计）/, "套餐说明里的金额被去掉（正则在源码里）");
-  assert.doesNotMatch(s, /<th className="num">处理量<\/th>/, "处理量（原始计数）不再作为一列给律师看");
-  assert.match(s, /className=\{`pu-big-v tone-\$\{tone\}`\}/);
-  assert.match(s, /<ul className="pu-models2" aria-label="按模型">/);
-  assert.match(s, /className="pu-burst2"/);
+  assert.match(s, /planNoteText\(plan\?\.note\)/, "套餐说明经 planNoteText 去掉金额");
+  assert.doesNotMatch(s, /<th[^>]*>处理量<\/th>/, "处理量（原始计数）不再作为一列给律师看");
   const code = s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
-  assert.doesNotMatch(code, /点数|积分|购买<\/button>|¥/);
+  assert.doesNotMatch(code, /点数|积分|购买<\/button>|¥|元/);
 });
 
 test("登录与注册同一骨架：注册不再有标题下两行说明；同一级标题；“已有账号？登录”与“还没有账号？注册”都在表单下方同一行；卡片从同一高度起排", () => {

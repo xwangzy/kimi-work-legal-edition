@@ -166,6 +166,17 @@ export interface ApiDeps {
     problem(): string | null;
     clearProblem(): void;
     setProblem(code: string): void;
+    /** 第 68 批（D-294）：当前打开的档案是哪个账号（律所编号 + 成员标识）。 */
+    current?(): { tid: string; member_slug: string };
+    /** 第 68 批：云端是否支持“带设备签名登录别的账号”（/v1/meta account_switch）；不支持则不签名登录。 */
+    signedLogin?(): Promise<boolean>;
+    /**
+     * 第 68 批：登录的是另一个账号 → 打开这台电脑上它的档案（会话随交接带过去），或为它登记新设备（换到待激活）；
+     * 不能在这台电脑上继续（设备数已满等）抛出带原因的错误。返回给界面的答复。
+     */
+    switchTo?(j: Record<string, unknown>): Record<string, unknown>;
+    /** 第 68 批：换到的账号电脑数已满时，用那次登录的会话就地移除它的一台旧电脑，再继续切换。 */
+    unbindForLogin?(deviceId: string): Promise<Record<string, unknown>>;
   };
   /** 方法模板包（Kimi Code Skills）验签结果：方法库页展示可用的方法模板，校验失败如实显示原因。 */
   skills?: SkillsBundleStatus;
@@ -4058,19 +4069,63 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
     "account.login": async (p, id) => {
       const cp = requireCpAccount();
-      // 第 63 批：也可用手机号 + 短信验证码（先 account.sms_send purpose=login）；之后与密码方式完全相同（只许登这台电脑已登记成员的账号）
-      const j = await accountCp(() => cp.account("POST", "/v1/auth/login", { ...loginBody((p ?? {}) as Record<string, unknown>), client: clientInfo() }));
+      // 第 63 批：也可用手机号 + 短信验证码（先 account.sms_send purpose=login）；之后与密码方式完全相同。
+      // 第 68 批（D-294）：不再只许登这台电脑已登记成员的账号——登录的是别的账号就打开它在这台电脑上的档案（没有则按云端策略登记新设备）。
+      // 新云端（/v1/meta account_switch）照旧带本机设备签名：同一账号当场认出这台电脑（ready、会话直接绑定），别的账号云端不再拒绝；
+      // 旧云端见到别人的设备签名会整个拒绝登录，所以不签名登录，会话在本档案第一次同步时绑定。
+      // account_switch：告诉云端这是能换账号的客户端（不再做第 56 批的“改绑”，见安全复核 C-4）
+      const body = { ...loginBody((p ?? {}) as Record<string, unknown>), client: clientInfo(), account_switch: true };
+      let signed = deps.account?.signedLogin ? await deps.account.signedLogin() : true;
+      let signFailure: string | null = null;
+      // 本档案的设备签名不成立（这台电脑在云端已被移除、还没登记上、本机时钟偏差）不该挡住登录——尤其是换别的账号：
+      // 云端在核对验证码 / 密码之前就答复这几种，改为不带签名再登录一次（验证码没有被用掉）
+      const j = await accountCp(async () => {
+        if (!signed) return cp.accountUnsigned("POST", "/v1/auth/login", body);
+        try {
+          return await cp.account("POST", "/v1/auth/login", body);
+        } catch (e) {
+          const code = String((e as { code?: unknown })?.code ?? "");
+          if (code !== "device_unknown_or_revoked" && code !== "device_revoked" && code !== "device_auth_stale" && code !== "device_auth_signature_invalid" && code !== "device_auth_missing") throw e;
+          signed = false;
+          signFailure = code;
+          return cp.accountUnsigned("POST", "/v1/auth/login", body);
+        }
+      });
       const onb = (j.onboarding ?? {}) as Record<string, any>;
       const acc = (j.account ?? {}) as Record<string, any>;
-      // 第 46 批：非 ready 的状态用准确的原因（与待激活模式同一份文案），不再一律说“登录已失效”
-      if (onb.state !== "ready") throw new DomainError("conflict", onboardingStateText(String(onb.state ?? ""), { admin: acc.role === "admin" }), 409, { reason: /^[a-z_]{1,40}$/.test(String(onb.state ?? "")) ? String(onb.state) : "unknown" });
-      if (acc.tid !== id.tenantId) throw new DomainError("conflict", accountErrorText("device_mismatch"), 409);
+      const cur = deps.account?.current?.() ?? { tid: id.tenantId, member_slug: String(acc.member_slug ?? "") };
+      const same = acc.tid === cur.tid && acc.member_slug === cur.member_slug;
+      // 安全复核 U-1：不签名重试只为“换成别的账号”。同一账号而这台电脑在云端已被移除、或本机时钟偏差——不算登录成功：
+      // 撤掉刚拿到的会话，如实说原因（移除的通知已在第一次请求时生效，内核进入停用状态）
+      if (same && (signFailure === "device_revoked" || signFailure === "device_auth_stale")) {
+        await cp.accountUnsigned("POST", "/v1/auth/logout", {}, String(j.session_token)).catch(() => undefined);
+        throw new DomainError("conflict", controlPlaneErrorText(signFailure), 409, { reason: signFailure });
+      }
+      if (!same) {
+        if (!deps.account?.switchTo) throw new DomainError("conflict", accountErrorText("device_mismatch"), 409);
+        const r = deps.account.switchTo(j);
+        audit(db, id, "account.switch", "user", id.userId, undefined, keyctx);
+        return r;
+      }
+      // 同一账号：带签名时云端应答 ready（这台电脑就是这个账号的）；不是 ready 说明这台电脑在云端已被移除等——如实说原因。
+      // 不签名（旧云端）时云端不知道是哪台电脑，状态按“新电脑”给出——本机档案就是这个账号的，照常继续（下一次同步会核对设备是否仍有效）
+      if (signed && onb.state !== "ready") throw new DomainError("conflict", onboardingStateText(String(onb.state ?? ""), { admin: acc.role === "admin" }), 409, { reason: /^[a-z_]{1,40}$/.test(String(onb.state ?? "")) ? String(onb.state) : "unknown" });
       deps.account!.save({ token: String(j.session_token), aid: String(acc.aid), email: String(acc.email), name: String(acc.name ?? ""), tid: id.tenantId, role: String(acc.role ?? "") });
       deps.account!.clearProblem();
       audit(db, id, "account.login", "user", id.userId, undefined, keyctx);
       // 登录后立即同步：席位令牌此时才签得出
       void cp.sync().catch(() => undefined);
       return { ok: true, account: { email: acc.email, name: acc.name, role: acc.role } };
+    },
+    // 第 68 批（V42，D-295）：换账号时那个账号的电脑数已满——就地移除它的一台旧电脑（云端核对这次登录 10 分钟内、会话未绑电脑），再继续切换
+    "account.unbind_for_login": async (p, id) => {
+      requireCpAccount();
+      const dev = String(p?.device_id ?? "");
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(dev)) throw validation("设备编号不合法");
+      if (!deps.account?.unbindForLogin) throw validation("这台电脑不支持在这里移除电脑");
+      const r = await accountCp(() => deps.account!.unbindForLogin!(dev));
+      audit(db, id, "account.device_unbind_for_login", "device", dev, undefined, keyctx);
+      return r;
     },
     "account.logout": async (_p, id) => {
       const cp = requireCpAccount();
@@ -5371,6 +5426,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     try {
       return await fn();
     } catch (e) {
+      // 第 68 批：本机已经说清原因的（如换账号时电脑数已满）原样给界面，不再按云端代码重译
+      if (e instanceof DomainError) throw e;
       // 第 46 批：与待激活模式（onboarding.accountCall）共用一处映射（account-session.ts accountFailure）
       const code = String((e as { code?: unknown })?.code ?? (e as Error)?.message ?? "error");
       const cpMessage = (e as { cpMessage?: unknown })?.cpMessage;

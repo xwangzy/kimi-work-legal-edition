@@ -8,12 +8,12 @@
  */
 function createIdentityRestart({ stop, start, exiting, broadcast, onError }) {
   let running = null;
-  const restart = async () => {
+  const restart = async (message = "正在完成激活…") => {
     if (running) return running;
     running = (async () => {
       try {
         if (exiting()) return "skipped";
-        broadcast({ status: "restarting", message: "正在完成激活…" });
+        broadcast({ status: "restarting", message });
         await stop();
         if (exiting()) return "skipped";
         try {

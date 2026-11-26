@@ -147,3 +147,15 @@
 .auth-card .auth-check-note { margin: -6px 0 0 22px; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-secondary); }
 /* 第三轮（独立评审 R2-13）：页脚披露按句均衡折行，不把“核对”拆成两行 */
 .auth-card-foot { text-wrap: balance; }
+
+/* 第 68 批（V42，D-295）：电脑数已满时的已登记电脑列表——一行：左侧名称与登记信息（两行），右侧“移除”小按钮 */
+.auth-devlimit { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.auth-devlimit .section-title { margin: 0; }
+.auth-card .auth-devices li.auth-device-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
+.auth-device-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.auth-device-text b { font-weight: 500; color: var(--text-strong); }
+.auth-device-text .muted { font-size: var(--fs-caption); }
+.auth-device-row > button, .auth-device-row .confirm-inline { flex: none; width: auto; }
+.auth-devlimit-hint { margin: 0; font-size: var(--fs-caption); }
+.auth-switching { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; }
+.auth-switching-title { margin: 0; font-size: var(--fs-md); font-weight: 500; color: var(--text-strong); }

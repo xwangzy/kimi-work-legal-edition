@@ -193,7 +193,7 @@ test("界面源码不写颜色字面量与内联颜色/字号样式（隔离预�
   const bad: string[] = [];
   for (const f of walk(join(root, "src"), /\.tsx?$/)) {
     let text = stripTs(readFileSync(f, "utf8"));
-    if (rel(f) === "src/lib/safe-preview.ts") text = text.replace(/const (PAPER_STYLE|SHEET_STYLE|BASE_STYLE) = "[^"\n]*";/g, "");
+    if (rel(f) === "src/lib/safe-preview.ts") text = text.replace(/const (PAPER_STYLE|PAPER_DARK_STYLE|SHEET_STYLE|SHEET_DARK_STYLE|BASE_STYLE) = "[^"\n]*";/g, "");
     for (const p of tsxColorProblems(text)) bad.push(`${rel(f)}: ${p}`);
   }
   assert.deepEqual(bad, []);
@@ -217,15 +217,31 @@ test("手抄的令牌值必须等于 tokens.css（S8B-11）：隔离预览框架
   const paper = /const PAPER_STYLE = "([^"\n]*)";/.exec(sp)![1]!;
   const base = /const BASE_STYLE = "([^"\n]*)";/.exec(sp)?.[1];
   assert.ok(base, "基础样式须为具名常量 BASE_STYLE");
-  // V41 第 67 批 §2.8：Word 纸面不再用米黄纸色——画布取 --bg-muted、纸取 --p-white、描边 --border-subtle、阴影 --shadow-sm，正文字色仍是纸面墨色
-  assert.match(paper, new RegExp(`^html,body\\{background:${tokenValue("--bg-muted")};\\}`, "i"));
+  // V41 第 67 批 §2.8：Word 纸面不再用米黄纸色；V42 预览画布：画布取 --preview-canvas + 点阵 --preview-canvas-dot（只画在 html 上），
+  // 纸取 --p-white、去描边改三层投影 --preview-sheet-shadow，正文字色仍是纸面墨色；打印媒体下画布与投影一律去掉
+  const flat = (v: string) => v.replace(/,\s+/g, ",").replace(/[().]/g, "\\$&");
+  assert.match(paper, new RegExp(`^html\\{background-color:${tokenValue("--preview-canvas")};background-image:radial-gradient\\(circle,${flat(tokenValue("--preview-canvas-dot"))} 1px,transparent 1\\.3px\\);`, "i"));
+  assert.match(paper, /body\{margin:0;padding:[^;]*;background:transparent;/, "body 透明：底纹只在 html，不在正文祖先链上叠两层");
   assert.match(paper, new RegExp(`color:${tokenValue("--p-paper-ink")};\\}`, "i"));
-  assert.match(paper, new RegExp(`\\.kwl-paper\\{[^}]*background:${tokenValue("--p-white")};border:1px solid ${tokenValue("--border-subtle")};box-shadow:${tokenValue("--shadow-sm").replace(/,\s+/g, ",").replace(/[().]/g, "\\$&")};`, "i"));
+  assert.match(paper, new RegExp(`\\.kwl-paper\\{[^}]*background:${tokenValue("--p-white")};box-shadow:${flat(tokenValue("--preview-sheet-shadow"))};`, "i"));
+  assert.match(paper, /@media print\{html\{background:none;\}[^@]*\.kwl-paper\{box-shadow:none;\}\}$/);
   assert.doesNotMatch(paper, new RegExp(tokenValue("--p-paper"), "i"), "不再用米黄纸色");
+  const paperDark = /const PAPER_DARK_STYLE = "([^"\n]*)";/.exec(sp)?.[1];
+  assert.ok(paperDark, "深色画布须为具名常量 PAPER_DARK_STYLE");
+  assert.match(paperDark!, new RegExp(`^html\\{color-scheme:dark;background-color:${tokenValue("--preview-canvas", "dark")};background-image:radial-gradient\\(circle,${flat(tokenValue("--preview-canvas-dot", "dark"))} 1px,transparent 1\\.3px\\);\\}`, "i"));
+  assert.match(paperDark!, new RegExp(`\\.kwl-paper\\{color-scheme:light;box-shadow:${flat(tokenValue("--preview-sheet-shadow", "dark"))};\\}`, "i"), "深色只换画布与投影，纸仍是白纸");
+  assert.doesNotMatch(paperDark!, /kwl-paper\{[^}]*background/, "深色不改纸色");
   const sheet = /const SHEET_STYLE = "([^"\n]*)";/.exec(sp)?.[1];
   assert.ok(sheet, "表格样式须为具名常量 SHEET_STYLE");
-  assert.match(sheet!, new RegExp(`^html,body\\{background:${tokenValue("--p-white")};\\}`, "i"));
+  assert.match(sheet!, new RegExp(`^html\\{background:${tokenValue("--preview-canvas")};\\}body\\{margin:0;background:transparent;`, "i"));
   assert.match(sheet!, new RegExp(`color:${tokenValue("--p-ink")};\\}`, "i"));
+  assert.match(sheet!, new RegExp(`table:not\\(\\.kwl-grid\\)\\{[^}]*background:${tokenValue("--p-white")};color:${tokenValue("--p-ink")};\\}`, "i"), "旧版平铺表格补白底，不透出画布");
+  const sheetDark = /const SHEET_DARK_STYLE = "([^"\n]*)";/.exec(sp)?.[1];
+  assert.ok(sheetDark, "深色表格画布须为具名常量 SHEET_DARK_STYLE");
+  assert.match(sheetDark!, new RegExp(`^html\\{color-scheme:dark;background:${tokenValue("--preview-canvas", "dark")};\\}body\\{color:${tokenValue("--text-secondary", "dark")};\\}`, "i"));
+  for (const [name, css] of [["PAPER_STYLE", paper], ["PAPER_DARK_STYLE", paperDark!], ["SHEET_STYLE", sheet!], ["SHEET_DARK_STYLE", sheetDark!]] as const) {
+    assert.doesNotMatch(css, /url\(/i, `${name}：底纹用 CSS 渐变画，不引用任何图片（含 data:），CSP 不用放宽`);
+  }
   assert.match(sheet!, new RegExp(`border:1px solid ${tokenValue("--border-default")};`, "i"));
   assert.match(sheet!, new RegExp(`th\\{background:${tokenValue("--bg-muted")};`, "i"));
   assert.match(base!, new RegExp(`color:${tokenValue("--p-ink")};background:${tokenValue("--p-white")}`, "i"));

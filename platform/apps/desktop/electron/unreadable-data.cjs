@@ -17,6 +17,8 @@ const path = require("node:path");
 const RECORD_FILES = ["activation.json", "activation.pending.json", "onboarding.json", "onboarding-failed.json"];
 /** 律所标识与工作区目录名同一规则（config.ts SLUG_PATTERN）。 */
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/;
+/** 第 68 批：同一律所另一位成员的工作区 `<律所>.<成员>`（与内核 WORKSPACE_NAME_PATTERN 同一规则）。 */
+const WORKSPACE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}\.[A-Za-z0-9][A-Za-z0-9_-]{0,52}$/;
 const PREFIX = ".unreadable-";
 
 function stamp(now) {
@@ -48,7 +50,11 @@ const README = (at, platform) =>
     "",
   ].join("\r\n");
 
-function quarantineUnreadable({ dataDir, keyFile, now = Date.now(), platform = process.platform }) {
+/**
+ * only（第 68 批，D-294）：这台电脑上有多个账号档案时只移当前档案的工作区（目录名列表；待激活为占位工作区）——别的账号各有自己的密钥，
+ * 它们的数据照常可用、不动；null / 不给 = 以前的做法（全部移走）。
+ */
+function quarantineUnreadable({ dataDir, keyFile, now = Date.now(), platform = process.platform, only = null }) {
   const moved = [];
   const dir = path.join(dataDir, `${PREFIX}${stamp(now)}`);
   try {
@@ -63,11 +69,14 @@ function quarantineUnreadable({ dataDir, keyFile, now = Date.now(), platform = p
   };
   try {
     fs.writeFileSync(path.join(dir, "说明.txt"), README(new Date(now).toISOString(), platform), { flag: "wx" });
-    for (const f of RECORD_FILES) if (fs.existsSync(path.join(dataDir, f))) move(path.join(dataDir, f), f);
+    // 安全复核 K-2：只移当前档案时，入组与恢复的中间记录（属于待激活那条登记）不随档案移——只移当前指针
+    const records = Array.isArray(only) && !only.includes("pending-activation") ? ["activation.json", "activation.pending.json"] : RECORD_FILES;
+    for (const f of records) if (fs.existsSync(path.join(dataDir, f))) move(path.join(dataDir, f), f);
     for (const e of fs.readdirSync(dataDir, { withFileTypes: true })) {
       // 只移有账本或有密钥目录的工作区（含待激活占位工作区、只有入组暂存密钥的成员工作区——那些密钥按旧主密钥封装，复核 RB16A-14）；
       // 以点开头的（本目录与以前移过的）不动
-      if (!e.isDirectory() || !SLUG.test(e.name)) continue;
+      if (!e.isDirectory() || !(SLUG.test(e.name) || WORKSPACE.test(e.name))) continue;
+      if (Array.isArray(only) && !only.includes(e.name)) continue;
       if (!fs.existsSync(path.join(dataDir, e.name, "ledger.db")) && !fs.existsSync(path.join(dataDir, e.name, "keys"))) continue;
       move(path.join(dataDir, e.name), e.name);
     }

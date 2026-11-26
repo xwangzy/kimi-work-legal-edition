@@ -17,6 +17,13 @@ export interface KernelOptions {
   userSlug?: string;
   /** 数据库主密钥（G0 第 3–4 周启用：safeStorage 解封后一次性传入）。 */
   dbKey?: string | undefined;
+  /**
+   * 第 68 批（D-294）：主进程交来的数据库密钥属于哪一格（主进程按格分别包裹保存）：legacy = 第一个档案沿用的 ledger-key；
+   * pending = 这台电脑上已有别的账号档案时，待激活另起的一把（激活后归新档案）；profile = 已激活档案自己的那把。缺省 legacy。
+   */
+  keySlot?: "legacy" | "pending" | "profile";
+  /** 第 68 批：切换账号时上一个内核留下的一次性交接（profiles.ts ProfileHandoff；主进程或开发桥经内存传入，内核启动时核对后采用）。 */
+  handoff?: unknown;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -73,6 +80,8 @@ export interface KernelConfig {
    * 安装包形态的内核环境按白名单构造、不带任何 ZR_* 变量（electron/release-config.cjs），因此正式产品永远不放演示数据。
    */
   demoSamples: boolean;
+  /** 第 68 批（D-294）：本次内核拿到的数据库密钥属于哪一格（见 KernelOptions.keySlot）；待激活时据此在激活记录里写 key_slot。 */
+  keySlot: "legacy" | "pending" | "profile";
   env: NodeJS.ProcessEnv;
 }
 
@@ -89,7 +98,17 @@ export interface ActivationFile {
   activated_at: string;
   /** 第 44 批：本机的设备编号（同一账号的第 2～9 台为 dev_<律所>_<成员>_D<n>；没有 = 第一台 dev_<律所>_<成员>）。 */
   device_id?: string;
+  /**
+   * 第 68 批（D-294，同一台电脑多个账号）：这个账号档案的工作区目录名。没有 = 律所标识（第一个档案、升级前的工作区）；
+   * 同一律所的另一位成员为 `<律所标识>.<成员标识>`（见 profiles.ts）。
+   */
+  workspace?: string;
+  /** 第 68 批：这个档案的数据库密钥在主进程里的格名（没有 = 第一个档案沿用的 ledger-key）；有则与 workspace 相同。 */
+  key_slot?: string;
 }
+
+/** 工作区目录名（第 68 批）：律所标识，或 `<律所标识>.<成员标识>`（可带 -2…-9）。 */
+export const WORKSPACE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}(?:\.[A-Za-z0-9][A-Za-z0-9_-]{0,52})?$/;
 
 /** 待激活模式的占位工作区（激活完成、按真实身份启动后删除）。 */
 export const PENDING_WORKSPACE_SLUG = "pending-activation";
@@ -124,6 +143,11 @@ export function validActivation(raw: unknown): ActivationFile | null {
       typeof a.firm_name !== "string"
     )
       return null;
+    // 第 68 批：工作区目录名只许本律所的（`<律所>` 或 `<律所>.<…>`）；密钥格名有则须与目录名相同
+    if (a.workspace !== undefined) {
+      if (typeof a.workspace !== "string" || !WORKSPACE_NAME_PATTERN.test(a.workspace) || a.workspace === PENDING_WORKSPACE_SLUG || !(a.workspace === a.firm_slug || a.workspace.startsWith(`${a.firm_slug}.`))) return null;
+    }
+    if (a.key_slot !== undefined && (typeof a.key_slot !== "string" || a.key_slot !== (a.workspace ?? a.firm_slug))) return null;
     // 设备编号只许本成员的第 1～9 台（不能借激活记录冒用别人的编号）
     if (a.device_id !== undefined) {
       const base = `dev_${a.firm_slug}_${a.member_slug}`;
@@ -365,7 +389,8 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
   const activation = explicit ? null : readActivationFile(root);
   const onboarding = !explicit && !activation && (env.ZR_ONBOARDING === "1" || env.ZR_REQUIRE_CONTROL_PLANE === "1");
   const firmSlug = checkSlug("律所标识", opts.firmSlug ?? env.ZR_FIRM_SLUG ?? (onboarding ? PENDING_WORKSPACE_SLUG : activation?.firm_slug) ?? "demo-firm");
-  const workspaceDir = join(root, firmSlug);
+  // 第 68 批（D-294）：已激活时工作区目录按档案记录（同一律所的第二位成员不与第一位共用目录）
+  const workspaceDir = join(root, !explicit && !onboarding && activation ? (activation.workspace ?? activation.firm_slug) : firmSlug);
   const { lawdbFile, lawdbSignerPub, contentKeyDev, contentKeyRefused, contentKeysExtra, contentKeysRefused } = resolveLawdb(env, workspaceDir);
   const ocrModelDir = env.ZR_OCR_MODEL_DIR ?? firstExisting([repoContentPath("ocr-models")]) ?? join(workspaceDir, "ocr-models");
   const bundleDir = typeof __dirname !== "undefined" ? __dirname : undefined;
@@ -417,6 +442,7 @@ export function loadConfig(opts: KernelOptions = {}): KernelConfig {
     activation,
     onboarding,
     demoSamples: env.ZR_DEMO_SAMPLES === "1",
+    keySlot: opts.keySlot ?? (env.ZR_KEY_SLOT === "pending" || env.ZR_KEY_SLOT === "profile" ? env.ZR_KEY_SLOT : "legacy"),
     env,
   };
 }

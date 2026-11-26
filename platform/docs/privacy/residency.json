@@ -1008,6 +1008,15 @@
       ],
       "reason": "主密钥解封失败、律师选“用恢复包恢复”后（v9.3 主文 §9 第 7 项）：激活记录、入组与恢复中间记录、有账本的工作区、DPAPI 包裹的主密钥文件**改名**到 <数据根>/.unreadable-<时刻>/（不删除、不复制、跨卷即停）；另写一份不含案件信息的说明.txt"
     },
+    "apps/desktop/electron/key-slots.cjs": {
+      "apis": [
+        "renameSync"
+      ],
+      "rows": [
+        28
+      ],
+      "reason": "第 68 批（D-294）：数据库密钥按账号档案分格保存——新档案开通后把待激活那把（ledger-key.pending）改名归它（ledger-key.p.<目录名>）；同名残留的那把改名留档（.stale-<时刻>）。只改名，不读写密钥内容（包裹与解封仍在 secret-store.cjs）"
+    },
     "apps/desktop/electron/smoke-io.cjs": {
       "apis": [
         "writeFileSync"
@@ -1198,6 +1207,17 @@
       ],
       "reason": "共享文件夹的签名段与块（密文）；中继收发件目录的段文件（第 11 批）"
     },
+    "packages/kernel/src/profiles.ts": {
+      "apis": [
+        "renameSync",
+        "writeFileSync"
+      ],
+      "rows": [
+        24,
+        28
+      ],
+      "reason": "第 68 批（D-294）：每个账号档案的工作区里写一份 profile.json（与 activation.json 同格式：律所与成员编号、显示名、工作区目录名，不含秘密；原子写），换账号时据此找回这台电脑上该账号的档案"
+    },
     "packages/kernel/src/services/onboarding.ts": {
       "apis": [
         "renameSync",
@@ -1240,7 +1260,7 @@
       "kwl.checklist.v1.<8 位摘要>": "上手清单的显示状态（值为 \"shown\" 或 \"hidden\"）；键尾同上（律所与成员标识的 FNV-1a 摘要），不写标识原文、不含案件信息；完成与否由内核按本机真实数据判定、不存这里（第 46 批；经 lib/guide-checklist.ts 的读写函数）",
       "kwl.sidebar.sections": "侧栏“事项”“任务”分组是否展开（第 47 批）",
       "kwl.home.quota-dismissed": "首页额度提示条关掉时的周期与情形键（如 2026-11:firm-low，不含任何用量数；第 47 批）",
-      "kwl.home.lastMatter": "首页上次用过的事项编号（只存编号，不含事项名称与内容；第 66 批：首页缺省停在它，减少文件放错事项）",
+      "kwl.home.lastMatter": "首页上次用过的事项编号（只存编号，不含事项名称与内容；第 66 批：首页缺省停在它，减少文件放错事项；第 68 批起按账号档案分键 kwl.home.lastMatter@<档案摘要>，换账号不带上一个账号的编号）",
       "kwl.chat.model": "问答上次选的模型别名（legal/k3 或 legal/k2.6；第 47 批）",
       "kwl.chat.deep": "问答“深度思考”开关上次的选择（1 / 0；第 48 批；不含问答内容）",
       "kwl.login.method": "登录页上次用的登录方式（phone = 验证码登录 / password = 密码登录；第 63 批；只记方式，不含手机号、邮箱或验证码）"

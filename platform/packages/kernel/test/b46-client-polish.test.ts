@@ -85,8 +85,10 @@ test("账号错误映射一处：待激活与正常模式同一套状态码与�
 });
 
 test("登录后不能直接继续的状态：待激活与正常模式同一份文案；ready 也说清怎么办", () => {
-  assert.match(onboardingStateText("device_limit"), /电脑数已满.*请律所管理员调高上限/);
-  assert.match(onboardingStateText("device_limit", { admin: true }), /调高本所成员的电脑数上限/);
+  // 第 68 批（V42，D-295）：上限由云端设定；可就地移除一台后继续
+  assert.match(onboardingStateText("device_limit"), /云端设定的上限.*移除一台/);
+  assert.doesNotMatch(onboardingStateText("device_mismatch"), /另一位成员|那位成员/);
+  assert.equal(onboardingStateText("device_limit", { admin: true }), onboardingStateText("device_limit"), "个人账号的管理员就是本人：不给“调高本所成员上限”的说法");
   assert.match(onboardingStateText("needs_device_join"), /还没有登记这台电脑/);
   assert.match(onboardingStateText("waiting_founder"), /律所还没有完成开通/);
   assert.match(onboardingStateText("ready"), /从备份恢复/);

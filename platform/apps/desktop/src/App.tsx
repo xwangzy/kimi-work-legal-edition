@@ -34,6 +34,7 @@ import { guideSeenKey, markGuideSeen } from "./lib/guide-steps.ts";
 import { newTaskHref } from "./lib/nav-target.ts";
 import { useElapsed, WaitBlock } from "./components/Loading.tsx";
 import { waitLevel } from "./lib/waiting.ts";
+import { scopedKey, setProfileScope } from "./lib/profile-scope.ts";
 
 /** 再看一遍上手指南（设置 · 通用里的按钮发这个事件）。 */
 export const OPEN_GUIDE = "kwl:guide";
@@ -68,6 +69,14 @@ export const FOCUS_COMPOSER = "kwl:focus-composer";
 
 /** “明天提醒”记在这台电脑的本地偏好（v9.4）。 */
 const SNOOZE_KEY = "kwl.recovery.snooze_until";
+/** 备份提醒的“稍后”（第 68 批：按账号档案分键，启动取到档案后再读）。 */
+function readSnooze(): string | null {
+  try {
+    return localStorage.getItem(scopedKey(SNOOZE_KEY));
+  } catch {
+    return null;
+  }
+}
 
 /** 设置页的标签（V16 IA-1；第 47 批加“套餐与用量”，对应 Kimi 设置里的“订阅 · 我的额度”）：律师版六页 + 管理员“管理”。 */
 export type SettingsTab = "general" | "writing" | "account" | "usage" | "backup" | "visibility" | "admin";
@@ -179,6 +188,9 @@ export function App() {
         .kernelStatus()
         .then((st: any) => {
           // 第 64 批：登录状态与启动状态同一次渲染生效——否则第一帧会先露出工作区，再切到重新登录页
+          // 第 68 批（V42，D-294）：与账号有关的本机偏好按当前档案分键（换账号不带上一个账号的记忆）
+          setProfileScope(st?.profile?.id ?? null);
+          setSnoozedUntil(readSnooze());
           setLogin(needsLogin(st) ? { reason: st.account?.reason ?? null, email: st.account?.email ?? st.account?.last_email ?? "" } : null);
           setBoot({
             onboarding: st?.onboarding ?? null,
@@ -202,18 +214,12 @@ export function App() {
   useEffect(loadBoot, []);
   // 恢复与备份的提醒（第 14 批；第二轮复核 R2B-05）：缺恢复包、缺备份位置只在首页与事项页提醒；备份失败、多日未成功在各页都提醒
   const [reminder, setReminder] = useState<ReturnType<typeof recoveryReminder>>(null);
-  const [snoozedUntil, setSnoozedUntil] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(SNOOZE_KEY);
-    } catch {
-      return null;
-    }
-  });
+  const [snoozedUntil, setSnoozedUntil] = useState<string | null>(null);
   const snooze = () => {
     const until = localDay(1);
     setSnoozedUntil(until);
     try {
-      localStorage.setItem(SNOOZE_KEY, until);
+      localStorage.setItem(scopedKey(SNOOZE_KEY), until);
     } catch {
       // 本地偏好写不进去时只在本次打开期间生效
     }

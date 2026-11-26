@@ -15,6 +15,7 @@
         "^\\/v1\\/auth\\/(?:register|login|logout|me|password|password-reset\\/request|password-reset\\/confirm|sms\\/send|phone)$",
         "^\\/v1\\/auth\\/devices\\/[A-Za-z0-9_-]{1,128}\\/unbind$",
         "^\\/v1\\/auth\\/devices\\/enroll$",
+        "^\\/v1\\/auth\\/onboarding$",
         "^\\/v1\\/auth\\/sessions\\/ses_[A-Za-z0-9_-]{16}\\/revoke$",
         "^\\/v1\\/connectors$",
         "^\\/v1\\/connectors\\/[a-z][a-z0-9_-]{1,40}$",

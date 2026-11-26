@@ -1618,12 +1618,20 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       throw new CpError(409, "sms_required_for_policy", "“注册必须验证手机号”要求短信通道可用：请先在短信设置里启用并配好凭据、签名与注册模板；或先关闭这一项再停用短信");
   };
   const uidOfAccount = (a: AccountRecord) => `usr_${a.tid.slice(4)}_${a.member_slug}`;
+  /**
+   * 第 68 批（V42）：本人用量的分母（“套餐与用量”大数字、明细每行、翻页共用一个）：个人上限（设了或套餐对个人生效）> 单席位律所的总额度（含加量）> 每席位额度。
+   */
+  const personalDenom = (q: QuotaState, ctx: QuotaCtx, uid: string): number => {
+    const ml = memberLimitOf(ctx, uid);
+    return Math.max(1, ml.limit ?? (ctx.seats <= 1 ? totalsOf(q, ctx).total : seatQuotaUnits(ctx.plan)));
+  };
   const orgOf = (tid: string) => ({ slug: tid.slice(4), name: tenants.get(tid)?.name ?? tid.slice(4) });
-  // 第 66 批（V40，D-292）：个人账号不按套餐台数挡（套餐 device_limit 只管多人律所），只留防滥用硬上限 PERSONAL_DEVICE_HARD_CAP
+  // 第 68 批（V42，D-295）：每个账号的电脑数上限一律由云端配置决定（账号单独设的 > 套餐的 > 缺省），个人账号与多人律所同一口径；
+  // 满了不自动挤掉旧电脑（第 66 批 D-293 的滚动吊销取消），由律师在客户端登录页或云端控制台移除一台。PERSONAL_DEVICE_HARD_CAP 只作防滥用的封顶
   const deviceLimitOf = (a: AccountRecord): number => {
     const t = tenants.get(a.tid);
-    if (t && autoEnrollReady(t)) return PERSONAL_DEVICE_HARD_CAP;
-    return Math.min(MAX_DEVICES_PER_ACCOUNT, a.device_limit ?? (t ? planFor(t).device_limit : catalog.settings.default_device_limit));
+    const configured = a.device_limit ?? (t ? planFor(t).device_limit : catalog.settings.default_device_limit);
+    return Math.max(1, Math.min(t && autoEnrollReady(t) ? PERSONAL_DEVICE_HARD_CAP : MAX_DEVICES_PER_ACCOUNT, configured));
   };
   // ─── 第 66 批（V40，D-292）：个人账号换电脑直接登录 ───
   const AUTO_ENROLL_FRESH_MS = 10 * 60_000;
@@ -1810,7 +1818,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const live = devs.filter((d) => !d.revoked_at);
     const limit = deviceLimitOf(a);
     const base = { tid: t.tid, firm, member, devices_used: live.length, device_limit: limit };
-    if (dev) return dev.cert.memberId === uidOfAccount(a) ? { state: "ready", ...base, device_id: dev.cert.deviceId } : { state: "device_mismatch", ...base };
+    // 第 68 批（V42，D-294）：签名的设备是这个账号的 → ready；是同一台电脑上别的账号的档案 → 不再回 device_mismatch，按这个账号自己的设备策略给出
+    if (dev && dev.cert.memberId === uidOfAccount(a) && dev.cert.deviceId.length > 0) return { state: "ready", ...base, device_id: dev.cert.deviceId };
+    const liveList = () => live.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null }));
     if (!t.root_public_key_pem) {
       if (a.role !== "admin") return { state: "waiting_founder", ...base };
       if (!issueClaim) return { state: "needs_founder_setup", ...base };
@@ -1818,11 +1828,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     // 第 66 批（V40，D-292）：个人账号——不等另一台电脑批准、不按套餐台数挡：由控制面用账号设备签发钥直接签（POST /v1/auth/devices/enroll）
     if (autoEnrollReady(t)) {
+      // 第 68 批（D-295）：个人账号同样按云端配置的电脑数上限（满了给出已登记的电脑，律师移除一台后再登录）
+      if (live.length >= limit) return { state: "device_limit", ...base, devices: liveList() };
       const nextId = nextDeviceId(t, a, PERSONAL_DEVICE_NUMBER_MAX);
       if (!nextId) return { state: "device_limit", ...base, devices: [] };
       return { state: "needs_device_auto", ...base, personal: true, ...(issueClaim ? { device_id: nextId } : {}) };
     }
-    if (live.length >= limit) return { state: "device_limit", ...base, devices: live.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null })) };
+    if (live.length >= limit) return { state: "device_limit", ...base, devices: liveList() };
     // 下一台的编号：1..9 里第一个从未用过的（吊销过的编号不再复用）
     const used = new Set([...devs.map((d) => accountDeviceIndex(t.tid.slice(4), a.member_slug, d.cert.deviceId)), ...[...t.preRevoked.keys()].map((id) => accountDeviceIndex(t.tid.slice(4), a.member_slug, id))]);
     for (const jr of t.joinRequests.values()) if (jr.member_slug === a.member_slug && (jr.status === "pending" || jr.status === "approved")) used.add(accountDeviceIndex(t.tid.slice(4), a.member_slug, jr.device_id));
@@ -3733,6 +3745,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (!authAllowed(src, "login", 20)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
       const b = parseJson(raw);
       minVersionGate(b.client);
+      // 第 68 批（V42）：设备签名先于核对验证码 / 密码——签名不成立（设备已移除、未登记、本机时钟偏差）时在这里就答复，
+      // 不耗掉一次性的短信验证码、不计密码错误次数；客户端据此改为不带签名再登录一次（换账号时上一个账号的电脑可能已被移除）
+      const dev = await optionalDevice(req, path, raw);
       // 第 63 批：验证码登录（给 phone + sms_code、不给 email）。核对身份之后与密码登录走同一段代码（设备签名、改绑、onboarding、会话）
       const byPhone = b.email === undefined && typeof b.phone === "string";
       let a: AccountRecord;
@@ -3768,13 +3783,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       }
       if (a.status !== "active") throw new CpError(403, "account_disabled", "账号已停用，请联系管理员");
       if (!tenants.has(a.tid)) throw new CpError(403, "account_disabled", "账号所属律所已不存在，请联系管理员");
-      const dev = await optionalDevice(req, path, raw);
       // 第 56 批（真实流程验收查出的死路）：凭邀请码注册的账号绑在那份邀请的成员编号上；管理员拒绝了那次申请、重新发邀请后，
       // 新邀请是另一个成员编号——获批的电脑属于“新成员”，账号还绑着“从未入组的旧成员”，登录报“这台电脑已登记为本所另一位成员”，
       // 而同一个邮箱又不能再注册：这个人永远进不来。改绑条件（全部满足）：同一家律所；账号原来的成员从未入组（没有登记过任何设备、
       // 没有席位）；这台已登记的电脑的成员还没有账号；角色一致。信任根不变：电脑是管理员按核对码批准的，账号只是跟到获批的成员上。
       let rebound = false;
-      if (dev && dev.cert.memberId !== uidOfAccount(a)) {
+      // 第 68 批（安全复核 C-4）：能换账号的客户端（登录体带 account_switch）不再改绑——换人登录成了正常流程，改绑会让同所一位从未入组的同事
+      // 在一位没有账号的成员的电脑上“变成”那位成员、打开那位成员的本机档案；这类客户端上本人照常可以按新电脑登记（团队成员经管理员批准），不再是死路
+      if (dev && dev.cert.memberId !== uidOfAccount(a) && b.account_switch !== true) {
         const t = tenants.get(a.tid)!;
         const oldUid = uidOfAccount(a);
         const prefix = `usr_${t.tid.slice(4)}_`;
@@ -3789,14 +3805,21 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           rebound = true;
         }
       }
-      if (dev && (!tenants.get(a.tid)!.devices.has(dev.cert.deviceId) || dev.cert.memberId !== uidOfAccount(a))) throw new CpError(409, "device_mismatch", "这台电脑已登记为本所另一位成员（或另一家律所）：请用那位成员的账号登录");
+      // 第 68 批（V42，D-294）：取消“一台电脑只许一位成员”——签名的设备不是这个账号的（同一台电脑上另一个账号的档案在签名）时，
+      // 不再拒绝登录（原 409 device_mismatch），当作没有设备：会话不绑它、onboarding 按这个账号自己的设备策略给出；
+      // 这台电脑上若已有这个账号的档案，由客户端打开那个档案（会话在那个档案第一次同步时绑定它自己的设备）
+      const own = dev && tenants.get(a.tid)!.devices.has(dev.cert.deviceId) && dev.cert.memberId === uidOfAccount(a) ? dev : null;
       a.failed = { count: 0, first_at: null, locked_until: null };
       a.last_login_at = iso();
       const kind = clientInfo(b.client).platform === "web" ? "web" : "desktop";
-      const onb = onboardingOf(a, dev, kind !== "web");
-      const { token, rec } = newSession(a, kind, dev ? dev.cert.deviceId : null, b.client);
+      // 第 68 批（安全复核 C-1）：签名的是这台电脑上别的账号的设备时，先不签发入组认领（签发会撤掉这个账号在别的新电脑上等批准的申请）——
+      // 这台电脑上可能已有这个账号的档案（客户端直接切过去）；真要为它登记新设备时，客户端再用这次会话调 /v1/auth/onboarding 取认领
+      const onb = onboardingOf(a, own, kind !== "web" && !(dev && !own));
+      const { token, rec } = newSession(a, kind, own ? own.cert.deviceId : null, b.client);
+      // 第 68 批（安全复核 C-2）：电脑数已满时给这次会话一张免密移除的一次性票据（只这一种情况）
+      if (onb.state === "device_limit" && kind === "desktop" && !own) rec.limit_unbind = 1;
       // 第 66 批（V40）：最近登录（“登录过的电脑”、短时多地判断）
-      noteLogin(a, req, "login", dev ? dev.cert.deviceId : null, b.client);
+      noteLogin(a, req, "login", own ? own.cert.deviceId : null, b.client);
       accountMark(res, a, byPhone ? "account.login_sms" : "account.login");
       // 改绑的审计随本次应答一起写（send 里“先审计、再落盘、再回复”）：不在最后一道检查之前先记“ok”（云端审计 2-B）
       if (rebound) auditCtx.get(res)!.extra = [{ tid: a.tid, actor: { kind: "account", id: a.aid }, action: "account.rebind", target: a.aid }];
@@ -3901,7 +3924,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         onboarding: dev && !dev.revoked_at ? { state: "ready", tid: t.tid, device_id: dev.cert.deviceId } : null,
         devices: devs.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, revoked_at: d.revoked_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, current: d.cert.deviceId === s.device_id, issuer: certIssuerOf(d.cert), session: liveSessionsOf(a.aid).some((x) => x.device_id === d.cert.deviceId) ? "active" : "none" })),
         sessions: liveSessionsOf(a.aid).map((x) => sessionView(x, s.sid)),
-        // 第 66 批（V40）：个人账号（新电脑直接登录、不设台数上限）与最近 5 次登录（时刻、类型、设备编号、平台、粗粒度网段）
+        // 第 66 批（V40）：个人账号（新电脑直接登录；第 68 批起台数按云端配置）与最近 5 次登录（时刻、类型、设备编号、平台、粗粒度网段）
         personal: autoEnrollReady(t),
         recent_logins: (a.logins ?? []).slice(0, 5),
       });
@@ -3969,6 +3992,17 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return send(res, 200, { ok: true });
     }
     // ─── 第 66 批（V40，D-292）：个人账号新电脑自动登记——会话鉴权 + 新设备公钥 + 持有证明 → 控制面用账号设备签发钥签 365 天证书、直接登记 ───
+    // 第 68 批（V42，D-295）：新电脑登录后按这次会话重新取一次“这台电脑该做什么”（电脑数已满、就地移除一台之后继续，不必再收一次验证码）。
+    // 只给刚登录（10 分钟内）、还没绑任何电脑的客户端会话；结果与登录应答里的 onboarding 同一口径
+    if (method === "POST" && p === "/v1/auth/onboarding") {
+      if (!authAllowed(sourceOf(req), "onboarding", 20)) throw new CpError(429, "rate_limited", "尝试过于频繁，请稍后再试");
+      if (s.kind !== "desktop" || s.device_id !== null) throw new CpError(409, "session_not_enrollable", "这次登录不能用来登记新电脑：请在新电脑上重新登录");
+      if (now() - Date.parse(s.created_at) > AUTO_ENROLL_FRESH_MS) throw new CpError(401, "session_not_fresh", "登录已超过 10 分钟：请重新登录后再登记这台电脑");
+      const onb = onboardingOf(a, null, true);
+      // 仍满（移除之后又被别的电脑占上）：再给一张一次性票据
+      s.limit_unbind = onb.state === "device_limit" ? 1 : 0;
+      return send(res, 200, { ok: true, kind: "member", session: { sid: s.sid, kind: s.kind, idle_expires_at: s.idle_expires_at }, account: accountView(a, { org: orgOf(a.tid) }), onboarding: onb });
+    }
     if (method === "POST" && p === "/v1/auth/devices/enroll") {
       const b = parseJson(raw);
       const t = tenantOf(a.tid);
@@ -4002,18 +4036,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         if (!phone || !a.phone || phoneMacOf(phone) !== a.phone.mac) throw new CpError(400, "sms_phone_mismatch", "手机号与账号绑定的不一致");
         consumeSmsCode("login", phone, b.sms_code);
       }
-      // 防滥用硬上限：同时有效的电脑已有 PERSONAL_DEVICE_HARD_CAP 台时，自动吊销最久未用的（写审计与提醒），不拒绝登录
+      // 第 68 批（V42，D-295）：电脑数上限由云端配置决定（账号 > 套餐 > 缺省），满了拒绝登记并给出已登记的电脑——不再自动挤掉最久未用的一台
       const live = accountDevices(a).filter((d) => !d.revoked_at);
       const rotated: string[] = [];
-      if (live.length >= PERSONAL_DEVICE_HARD_CAP) {
-        const lastUsed = (d: DeviceRecord) => Math.max(Date.parse(d.registered_at) || 0, d.client_seen_on ? Date.parse(`${d.client_seen_on}T00:00:00+08:00`) || 0 : 0, ...[...sessions.values()].filter((x) => x.aid === a.aid && x.device_id === d.cert.deviceId).map((x) => Date.parse(x.last_seen_at) || 0));
-        for (const d of [...live].sort((x, y) => lastUsed(x) - lastUsed(y)).slice(0, live.length - PERSONAL_DEVICE_HARD_CAP + 1)) {
-          viaRoute(() => ops.revokeDevice(a.tid, d.cert.deviceId, { by: `account:${a.aid}` }));
-          revokeSessions((x) => x.aid === a.aid && x.device_id === d.cert.deviceId, "device_auto_rotated");
-          rotated.push(d.cert.deviceId);
-        }
-        addAlert({ kind: "new_device", level: "warn", tid: t.tid, aid: a.aid, provider: null, pct: null, message: `${a.email} 登录过的电脑超过 ${PERSONAL_DEVICE_HARD_CAP} 台：已自动移除最久未用的 ${rotated.join("、")}` });
-      }
+      if (live.length >= deviceLimitOf(a))
+        throw new CpError(409, "device_limit", `这个账号的电脑数已达上限（${deviceLimitOf(a)} 台）：请先移除一台不再使用的电脑`, { device_limit: deviceLimitOf(a), devices: live.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null })) });
       const ca = accountCa()!;
       const at = now();
       let cert: DeviceCertificate;
@@ -4037,7 +4064,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const du = /^\/v1\/auth\/devices\/([A-Za-z0-9_-]{1,128})\/unbind$/.exec(p);
     if (method === "POST" && du) {
       const b = parseJson(raw);
-      if (!verifyPassword(b.password, a.pw)) {
+      // 第 68 批（V42，D-295）：电脑数已满时在新电脑的登录页就地移除一台——这次登录刚完成（10 分钟内）、会话还没绑任何电脑（就是那台新电脑），
+      // 等同于刚刚重新核对过身份（密码或短信验证码），不再要求再输一次密码（只用验证码登录的账号可能根本没有密码）；其余情况照旧要密码
+      // 安全复核 C-2：只在“电脑数已满”的那次登录里、凭一次性票据、只移一台；不给密码又没有票据 → 要密码（不计密码错误次数）
+      const freshNewDevice = s.kind === "desktop" && s.device_id === null && now() - Date.parse(s.created_at) <= AUTO_ENROLL_FRESH_MS && b.password === undefined && (s.limit_unbind ?? 0) > 0;
+      if (!freshNewDevice && b.password === undefined) throw new CpError(401, "password_required", "请输入账号密码后再移除");
+      if (freshNewDevice) s.limit_unbind = (s.limit_unbind ?? 1) - 1;
+      if (!freshNewDevice && !verifyPassword(b.password, a.pw)) {
         noteFailure(a, now());
         persistNow();
         throw new CpError(401, "auth_invalid", "密码不正确");
@@ -4065,7 +4098,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 第 62 批：registration_policy / sms_available / features 是能力字段——客户端按它们做特性检测（旧云端没有，客户端照旧流程注册）
     if (method === "GET" && p === "/v1/meta") {
       const pol = registrationPolicy();
-      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites", "phone_login", "phone_bind", ...(accountCa() ? ["device_auto_enroll"] : [])], ...(accountCa() ? { account_device_ca: { kid: accountCa()!.kid } } : {}) });
+      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites", "phone_login", "phone_bind", "account_switch", "device_limit_unbind", ...(accountCa() ? ["device_auto_enroll"] : [])], account_switch: true, ...(accountCa() ? { account_device_ca: { kid: accountCa()!.kid } } : {}) });
     }
     if (p.startsWith("/v1/me/") || p.startsWith("/v1/firm/")) return memberRoute(req, res, method, p, url, raw);
 
@@ -4440,7 +4473,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const models = view.models.map((m) => ({ ...m, label: routing.models.find((x) => x.alias === m.alias)?.label ?? m.alias }));
       // 本人的使用明细（第 47 批，对照 Kimi“我的额度”下的使用明细）：本期最近 20 条，只有本人的行；只给时间、问答或任务、模型、token、金额与结果，不含请求内容
       // 第 62 批：charge_ratio = 这一条占本人分母的比例（律师端只显示百分比，不在客户端用 charge 折算金额）；估算的行不计入（pending）
-      const ownDenom = memberLimitOf(ctx, dev.cert.memberId).limit ?? seatQuotaUnits(plan);
+      // 第 68 批（V42）：明细与 personal 大数字用同一个分母（personalDenom；原来明细按“个人上限 ?? 每席位额度”，单席位加量后两者对不上），
+      // 信封带 ratio_basis = "personal"，客户端据此不再折算
+      const ownDenom = personalDenom(q, ctx, dev.cert.memberId);
       const ownRecent = book.query({ tid: t.tid, uid: dev.cert.memberId, from: q.period_from, to: q.period_to, limit: 20 }).rows.map((r) => ({
         at: r.at,
         kind: r.qa ? ("qa" as const) : ("task" as const),
@@ -4452,7 +4487,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         charge: r.charge,
         charge_ratio: ratio(r.charge, ownDenom),
         unit: r.unit,
-        value_cny: r.value_micro === null ? null : cny(r.value_micro),
+        // 第 68 批：金额只给管理员与合伙人（律师端只显示百分比）
+        value_cny: detail && r.value_micro !== null ? cny(r.value_micro) : null,
         outcome: r.outcome,
         partial: r.partial === true,
         estimated: r.usage_source === "estimated",
@@ -4460,11 +4496,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       }));
       // 第 66 批（V40）：个人口径——真正卡住“我”的那一项（额度、律所上限、频率窗口、个人上限四者最小，availability 折算）；
       // 分母：个人上限（设了或套餐对个人生效）> 单席位律所的总额度 > 每席位额度。不改已有字段，只追加
-      const ml = memberLimitOf(ctx, dev.cert.memberId);
-      const pDenom = Math.max(1, ml.limit ?? (ctx.seats <= 1 ? totalsOf(q, ctx).total : seatQuotaUnits(plan)));
-      const av = availability(q, ctx, t.seatsByUser.get(dev.cert.memberId)?.sid ?? "", dev.cert.memberId);
+      const pDenom = personalDenom(q, ctx, dev.cert.memberId);
+      const mySid = t.seatsByUser.get(dev.cert.memberId)?.sid ?? "";
+      const av = availability(q, ctx, mySid, dev.cert.memberId);
       const personal = {
         used_ratio: ratio(usedOf(q, ctx, dev.cert.memberId), pDenom),
+        // 第 68 批（V42）：本人进行中的任务预留（只算本人席位的在途租约；原来客户端只能拿全所的 in_flight_ratio）
+        in_flight_ratio: mySid ? ratio(outstanding(q, mySid), pDenom) : 0,
         remaining_ratio: Math.min(1, Math.max(0, ratio(av.avail, pDenom))),
         limited_by: av.avail >= pDenom ? null : av.by,
         // 暂停原因（null = 没暂停）：律所层面的暂停（本期用完、律所上限、频率窗口）优先，其次本人已无可用（个人上限等）
@@ -4481,7 +4519,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       } catch {
         planModels = (plan.models ?? routing.models.filter((m) => m.enabled).map((m) => m.alias)).map((alias) => routing.models.find((m) => m.alias === alias)?.label ?? alias);
       }
-      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), plan: { id: plan.id, label: plan.label, note: plan.note, period: plan.period, burst: plan.burst, models: planModels }, account: me ? { aid: me.aid, email: me.email, name: me.name } : null, accounts_required: t.accounts_required === true, ...view, models, own_recent: ownRecent, personal, own_models: ownModels }));
+      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), plan: { id: plan.id, label: plan.label, note: plan.note, period: plan.period, burst: plan.burst, models: planModels }, account: me ? { aid: me.aid, email: me.email, name: me.name } : null, accounts_required: t.accounts_required === true, ...view, models, own_recent: ownRecent, personal, own_models: ownModels, ratio_basis: "personal" }));
     }
     // ─── 第 66 批（V40）：本人用量明细翻页（设备签名，同 /v1/quota；签名信封 kwl-usage-page）：before = 只要这一时刻之前的行，至多 100 条；
     // 只给本人的行（uid = 证书成员），字段同 own_recent（不含请求内容）；往前最多 180 天（账本保留期内）
@@ -4492,7 +4530,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (beforeRaw && !before) throw new CpError(400, "before_invalid", "before 须为时刻（ISO）");
       const lim = Math.min(100, Math.max(1, Number.parseInt(qs.get("limit") ?? "50", 10) || 50));
       const { q, ctx } = qOf(t);
-      const ownDenom = memberLimitOf(ctx, dev.cert.memberId).limit ?? seatQuotaUnits(ctx.plan);
+      // 第 68 批（V42）：与 /v1/quota 的 personal 同一分母
+      const ownDenom = personalDenom(q, ctx, dev.cert.memberId);
       const r = book.query({ tid: t.tid, uid: dev.cert.memberId, from: dayOf(now() - 180 * DAY_MS), ...(before ? { before } : {}), limit: lim + 1 });
       const rows = r.rows.slice(0, lim).map((x) => ({
         at: x.at,
@@ -4510,7 +4549,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         in_period: x.day >= q.period_from,
       }));
       const more = r.rows.length > lim;
-      return send(res, 200, await seal("kwl-usage-page", { tid: t.tid, uid: dev.cert.memberId, issued_at: iso(), rows, next_before: more && rows.length ? rows[rows.length - 1]!.at : null }));
+      return send(res, 200, await seal("kwl-usage-page", { tid: t.tid, uid: dev.cert.memberId, issued_at: iso(), rows, next_before: more && rows.length ? rows[rows.length - 1]!.at : null, ratio_basis: "personal" }));
     }
     // ─── 第 66 批（V40）：客户端模型目录——本所套餐下这台电脑的成员能选哪些模型（设备签名，同 /v1/quota；签名信封 kwl-model-catalog）。
     // 只给别名、显示名、说明、排序、思考方式、能力、入口与可用性；目标、上游、地址、密钥与上游型号一律不下发（modelCatalogBody 只组这些字段）

@@ -43,6 +43,7 @@ import type { KernelDb } from "../db.ts";
 import type { Identity } from "../identity.ts";
 import { accountErrorText, accountFailure, dropLoginRequired, onboardingStateText, writeAccountSession } from "../account-session.ts";
 import { cloudFailureText } from "./cloud-connection.ts";
+import { allocateWorkspace, findProfile, PROFILE_FILE, workspaceNameOf, writeProfile, type ProfileHandoff } from "../profiles.ts";
 
 type CpRelay = (req: { method: string; path: string; headers: Record<string, string>; body: string }) => Promise<{ ok: true; status: number; body: string } | { ok: false; reason: string }>;
 type SignedCall = (method: string, path: string, body?: unknown) => Promise<{ ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number }>;
@@ -70,6 +71,8 @@ interface OnboardingFile {
   created_at: string;
   /** 第 44 批：账号登录后的新设备入组（没有邀请码本机段，批准方人工核对核对码）。 */
   via_account?: boolean;
+  /** 第 68 批（D-294）：暂存所在的工作区目录名（没有 = 律所标识）。 */
+  workspace?: string;
 }
 
 /** 成员机暂存（keys/join-pending.json，封装）。 */
@@ -133,7 +136,7 @@ async function cpPost(
   body: unknown,
   method: "POST" | "GET" = "POST",
   headers: Record<string, string> = {},
-): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string; retry_after_s?: number; hold?: { reason: string; sms_available: boolean; phone_masked: string | null } }> {
+): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string; retry_after_s?: number; hold?: { reason: string; sms_available: boolean; phone_masked: string | null }; devices?: unknown[] }> {
   const r = await relay({ method, path, headers, body: method === "GET" ? "" : JSON.stringify(body) });
   // 证书类、安装包配置类的代码原样保留（cp_tls_*、cp_upstream_*），其余通道错误并成 cp_unreachable
   if (!r.ok) return { ok: false, code: r.reason.startsWith("cp_") && !cloudFailureText(r.reason) ? "cp_unreachable" : r.reason };
@@ -157,6 +160,8 @@ async function cpPost(
       ...(json?.error?.code === "device_enroll_hold"
         ? { hold: { reason: String(json.error.reason ?? ""), sms_available: json.error.sms_available === true, phone_masked: typeof json.error.phone_masked === "string" && json.error.phone_masked.length <= 20 ? json.error.phone_masked : null } }
         : {}),
+      // 第 68 批（V42，D-295）：登记新电脑时电脑数已满，云端给出已登记的电脑
+      ...(json?.error?.code === "device_limit" && Array.isArray(json.error.devices) ? { devices: (json.error.devices as unknown[]).slice(0, 20) } : {}),
     };
   return { ok: true, json };
 }
@@ -166,6 +171,11 @@ export interface OnboardingDeps {
   relay: CpRelay;
   /** 请主进程按新身份重启内核（广播 kernel.restart_for_identity）。 */
   requestRestart: () => void;
+  /**
+   * 第 68 批（D-294）：切换到这台电脑上另一个账号档案（或为新账号登记设备）——把一次性交接交给主进程，主进程换用那个档案的密钥后重启内核。
+   * 没有给（旧的开发桥、测试）时退化为 requestRestart（交接丢失：律师在打开的档案里再登录一次）。
+   */
+  requestSwitch?: (h: ProfileHandoff) => void;
 }
 
 /** 待激活模式下的开通服务。 */
@@ -188,13 +198,78 @@ export class OnboardingService {
     const f = readJson<OnboardingFile>(join(this.root, ONBOARDING_FILE));
     // firm_slug 也按律所标识字符集校验（复核 A 第 1 节补充：它用来拼 keys 目录）
     const firmOk = typeof f?.firm_slug === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(f.firm_slug) && f.firm_slug !== PENDING_WORKSPACE_SLUG;
-    return f && f.v === 1 && f.stage === "member_pending" && MEMBER_SLUG_PATTERN.test(f.member_slug) && firmOk ? f : null;
+    const wsOk = f?.workspace === undefined || (typeof f.workspace === "string" && (f.workspace === f.firm_slug || f.workspace.startsWith(`${f.firm_slug}.`)) && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,100}$/.test(f.workspace));
+    return f && f.v === 1 && f.stage === "member_pending" && MEMBER_SLUG_PATTERN.test(f.member_slug) && firmOk && wsOk ? f : null;
   }
 
-  private keysDirFor(firmSlug: string): string {
-    const dir = keysDirOf(join(this.root, firmSlug));
+  /** 第 68 批：暂存与激活后的工作区按目录名（同一律所的另一位成员不与已有档案共用目录）。 */
+  private keysDirFor(workspace: string): string {
+    const dir = keysDirOf(join(this.root, workspace));
     configureSecretSealing(dir, this.d.config.dbKey);
     return dir;
+  }
+
+  /** 第 68 批：给这个账号分配（或沿用）本机工作区目录名。 */
+  private workspaceFor(tid: string, firmSlug: string, memberSlug: string): string {
+    return allocateWorkspace(this.root, tid, firmSlug, memberSlug);
+  }
+
+  /**
+   * 第 68 批（D-294）：登录的账号在这台电脑上已有档案 → 不再登记新设备，切换到那个档案（会话随交接写进它自己的工作区）。
+   * 返回给界面的答复；没有档案返回 null。
+   */
+  private switchToExisting(j: Record<string, any>): Record<string, unknown> | null {
+    const acc = j.account ?? {};
+    const tid = String(acc.tid ?? j.onboarding?.tid ?? "");
+    const memberSlug = String(acc.member_slug ?? j.onboarding?.member?.slug ?? "");
+    if (!tid || !memberSlug || typeof j.session_token !== "string") return null;
+    const prof = findProfile(this.root, tid, memberSlug);
+    if (!prof) return null;
+    writeJsonAtomic(activationFilePath(this.root), prof);
+    slog.event("KERNEL_PROFILE_SWITCH", { to: "existing" });
+    const session = { token: j.session_token, aid: String(acc.aid ?? ""), email: String(acc.email ?? ""), name: String(acc.name ?? prof.member_name ?? ""), tid, role: String(acc.role ?? prof.role) };
+    this.switchSoon({ v: 1, kind: "session", tid, member_slug: memberSlug, session });
+    return { next: "switch", account: { email: session.email, name: session.name, role: session.role }, firm: { name: prof.firm_name } };
+  }
+
+  private switchSoon(h: ProfileHandoff): void {
+    this.restarting = true;
+    setTimeout(() => (this.d.requestSwitch ? this.d.requestSwitch(h) : this.d.requestRestart()), 300).unref();
+  }
+
+  /** 第 68 批：上一个档案里登录的新账号，交接过来继续登记这台电脑（结果留给激活页显示）。 */
+  private handoffResult: Record<string, unknown> | null = null;
+  async resumeHandoff(h: ProfileHandoff): Promise<void> {
+    if (h.kind !== "auth") return;
+    // 进行中：激活页据此显示“正在登记这台电脑…”并等结果（登记成功会直接按新身份重启）
+    this.handoffResult = { next: "working" };
+    let done: (() => void) | null = null;
+    try {
+      // 安全复核 P-4：与登录、注册、就地移除互斥（各自写激活记录）
+      done = this.exclusive();
+      this.handoffResult = await this.afterAuth(h.auth as Record<string, any>, null);
+    } catch (e) {
+      this.handoffResult = { next: "error", message: (e as Error).message || "没有完成，请重新登录" };
+    } finally {
+      if (done && !this.restarting) done();
+    }
+  }
+
+  /**
+   * 第 68 批（安全复核 C-1）：登录应答里没有入组认领 / 预分配编号（云端见到的是这台电脑上别的账号的设备签名，先不签发认领，
+   * 免得撤掉这个账号在别的新电脑上等批准的申请）——真要为它登记这台电脑时，用这次会话向云端取一次。
+   */
+  private async withClaim(j: Record<string, any>): Promise<Record<string, any>> {
+    const onb = j.onboarding ?? {};
+    const state = String(onb.state ?? "");
+    const missing = (state === "needs_device_join" || state === "needs_founder_setup") ? !onb.claim : state === "needs_device_auto" ? !onb.device_id : false;
+    if (!missing || typeof j.session_token !== "string") return j;
+    const o = await cpPost(this.d.relay, "/v1/auth/onboarding", {}, "POST", { "x-kwl-session": j.session_token });
+    if (!o.ok) {
+      const f = accountFailure(o.code, o.message ?? null);
+      throw new DomainError(f.fault, f.text, f.status, { reason: f.reason });
+    }
+    return { ...j, onboarding: o.json.onboarding ?? onb, account: o.json.account ?? j.account };
   }
 
   /** 待批准时定时取结果（每 15 秒；不阻止进程退出）。 */
@@ -225,10 +300,14 @@ export class OnboardingService {
     }
     const failed = readJoinFailure(this.root);
     const setAside = this.setAside();
+    const others = this.otherProfiles();
     return {
       mode: "unactivated",
       restarting: this.restarting,
       legacy_workspaces: this.legacyWorkspaces(),
+      // 第 68 批：这台电脑上别的账号的工作空间（只给个数，不列姓名：共用电脑的人看不到彼此是谁）；登录那个账号即打开
+      ...(others > 0 ? { other_profiles: others } : {}),
+      ...(this.handoffResult ? { handoff: this.handoffResult } : {}),
       ...(failed ? { last_failure: failed } : {}),
       ...(setAside.length ? { set_aside: setAside } : {}),
     };
@@ -258,7 +337,8 @@ export class OnboardingService {
   private legacyWorkspaces(): string[] {
     try {
       return readdirSync(this.root, { withFileTypes: true })
-        .filter((e) => e.isDirectory() && e.name !== PENDING_WORKSPACE_SLUG && existsSync(join(this.root, e.name, "ledger.db")))
+        // 第 68 批：带档案记录的是这台电脑上别的账号的工作空间（各有密钥，恢复与开通都不会动它们），不算“以前留下的数据”
+        .filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== PENDING_WORKSPACE_SLUG && existsSync(join(this.root, e.name, "ledger.db")) && !existsSync(join(this.root, e.name, PROFILE_FILE)))
         .map((e) => e.name)
         .slice(0, 10);
     } catch {
@@ -266,8 +346,29 @@ export class OnboardingService {
     }
   }
 
-  private writeActivation(a: Omit<ActivationFile, "v" | "activated_at">): void {
-    writeJsonAtomic(activationFilePath(this.root), { v: 1, ...a, activated_at: new Date().toISOString() } satisfies ActivationFile);
+  /** 第 68 批：这台电脑上别的账号档案的个数。 */
+  private otherProfiles(): number {
+    try {
+      return readdirSync(this.root, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== PENDING_WORKSPACE_SLUG && existsSync(join(this.root, e.name, PROFILE_FILE))).length;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * 写激活记录（= 当前档案指针）并在工作区里留一份档案记录。第 68 批：工作区目录名与律所标识不同时写 workspace；
+   * 本次待激活用的是另起的那把密钥（keySlot = pending）时写 key_slot，主进程据此把那把密钥归到这个档案名下。
+   */
+  private writeActivation(a: Omit<ActivationFile, "v" | "activated_at" | "workspace" | "key_slot">, workspace: string): void {
+    const rec: ActivationFile = {
+      v: 1,
+      ...a,
+      ...(workspace !== a.firm_slug ? { workspace } : {}),
+      ...(this.d.config.keySlot === "pending" ? { key_slot: workspace } : {}),
+      activated_at: new Date().toISOString(),
+    };
+    writeProfile(this.root, rec);
+    writeJsonAtomic(activationFilePath(this.root), rec);
   }
 
   private restartSoon(): void {
@@ -323,11 +424,12 @@ export class OnboardingService {
     if (!ok) throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
     const firmName = validDisplayName(j.firm?.name) ? String(j.firm.name) : firmSlug;
     const memberName = validDisplayName(j.member?.name) ? String(j.member.name) : null;
-    const keysDir = this.keysDirFor(firmSlug);
+    const ws = this.workspaceFor(j.tid, firmSlug, memberSlug);
+    const keysDir = this.keysDirFor(ws);
 
     if (j.kind === "founder") {
       writeStagedSecret(join(keysDir, "activation-claim.json"), { tid: j.tid, activation_id: j.activation_id, claim_secret: j.claim_secret });
-      this.writeActivation({ tid: j.tid, firm_slug: firmSlug, firm_name: firmName, member_slug: memberSlug, member_name: memberName, role, kind: "founder" });
+      this.writeActivation({ tid: j.tid, firm_slug: firmSlug, firm_name: firmName, member_slug: memberSlug, member_name: memberName, role, kind: "founder" }, ws);
       slog.event("KERNEL_ONBOARDING_ACTIVATED", {});
       this.restartSoon();
       return { kind: "founder", next: "restart", firm: { name: firmName }, member: { name: memberName, role } };
@@ -335,16 +437,16 @@ export class OnboardingService {
 
     // 成员：邀请码必须带本机秘密段（复核 A-01）
     if (!input.secret) throw new DomainError("validation", "邀请码不完整：应为 36 位（管理员页面上完整的那一串），请向管理员核对", 400);
-    return this.submitJoin({ tid: j.tid, activation_id: j.activation_id, claim_secret: j.claim_secret, firmSlug, firmName, memberSlug, memberName, role }, input.secret, expectedJoinDeviceId(firmSlug, memberSlug));
+    return this.submitJoin({ tid: j.tid, activation_id: j.activation_id, claim_secret: j.claim_secret, firmSlug, firmName, memberSlug, memberName, role, workspace: ws }, input.secret, expectedJoinDeviceId(firmSlug, memberSlug));
   }
 
   /**
    * 提交入组申请（邀请码入组与第 44 批账号新设备入组共用）：本机生成设备密钥，先暂存再提交（复核 A-09）——只含公钥、持有证明；
    * 有邀请码本机段时另带 HMAC（复核 A-01）。账号新设备没有本机段（D-186）：批准方按核对码人工核对。
    */
-  private async submitJoin(c: { tid: string; activation_id: string; claim_secret: string; firmSlug: string; firmName: string; memberSlug: string; memberName: string | null; role: Role }, secret: string | null, deviceId: string): Promise<Record<string, unknown>> {
+  private async submitJoin(c: { tid: string; activation_id: string; claim_secret: string; firmSlug: string; firmName: string; memberSlug: string; memberName: string | null; role: Role; workspace: string }, secret: string | null, deviceId: string): Promise<Record<string, unknown>> {
     const { tid, firmSlug, firmName, memberSlug, memberName, role } = c;
-    const keysDir = this.keysDirFor(firmSlug);
+    const keysDir = this.keysDirFor(c.workspace);
     const { keys, signer } = generateJoinDeviceKeys();
     const proof = signer.signSync(joinProofBytes({ tid, activationId: c.activation_id, deviceId, signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem }));
     // 律所名称与本人姓名按兑换时看到的进 HMAC（复核 A-03 余项）：控制面换掉名称，管理员机按本机邀请记录核对即不通过
@@ -385,6 +487,7 @@ export class OnboardingService {
       check_code: checkCode,
       created_at: new Date().toISOString(),
       ...(secret ? {} : { via_account: true }),
+      ...(c.workspace !== firmSlug ? { workspace: c.workspace } : {}),
     };
     writeJsonAtomic(join(this.root, ONBOARDING_FILE), file);
     slog.event("KERNEL_ONBOARDING_JOIN_REQUESTED", {});
@@ -399,6 +502,10 @@ export class OnboardingService {
    * code = 注册时输入的邀请码（成员凭邀请码入组时要用它的本机段做 HMAC）。
    */
   private async afterAuth(j: Record<string, any>, inviteSecret: string | null): Promise<Record<string, unknown>> {
+    // 第 68 批（D-294）：这台电脑上已有这个账号的档案 → 直接打开它（不重复登记设备、不新建工作区）
+    const existing = this.switchToExisting(j);
+    if (existing) return existing;
+    j = await this.withClaim(j);
     const onb = j.onboarding ?? {};
     const acc = j.account ?? {};
     const firmSlug = String(onb.firm?.slug ?? acc.org?.slug ?? "");
@@ -411,7 +518,8 @@ export class OnboardingService {
     if (!MEMBER_SLUG_PATTERN.test(memberSlug) || !ROLES.includes(role)) throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
     const account = { aid: String(acc.aid ?? ""), email: String(acc.email ?? ""), name: memberName ?? "", tid: `ten_${firmSlug}`, role };
     const state = String(onb.state ?? "");
-    const keysDir = this.keysDirFor(firmSlug);
+    const ws = this.workspaceFor(account.tid, firmSlug, memberSlug);
+    const keysDir = this.keysDirFor(ws);
     // 会话令牌：能在这台电脑上继续时才暂存（入组等待期间也算已登录；重启后按新身份读回）；不能继续的不留会话文件
     const proceed = state === "needs_founder_setup" || state === "needs_device_join" || state === "needs_device_auto";
     if (proceed) {
@@ -428,7 +536,7 @@ export class OnboardingService {
       const c = onb.claim ?? {};
       if (c.kind !== "founder" || role !== "admin" || typeof c.activation_id !== "string" || typeof c.claim_secret !== "string" || c.claim_secret.length < 32) throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
       writeStagedSecret(join(keysDir, "activation-claim.json"), { tid: account.tid, activation_id: c.activation_id, claim_secret: c.claim_secret });
-      this.writeActivation({ tid: account.tid, firm_slug: firmSlug, firm_name: firmName, member_slug: memberSlug, member_name: memberName, role, kind: "founder" });
+      this.writeActivation({ tid: account.tid, firm_slug: firmSlug, firm_name: firmName, member_slug: memberSlug, member_name: memberName, role, kind: "founder" }, ws);
       slog.event("KERNEL_ONBOARDING_ACTIVATED", {});
       this.restartSoon();
       return { ...view, kind: "founder", next: "restart" };
@@ -439,7 +547,7 @@ export class OnboardingService {
       const viaInvite = onb.via === "invite_code";
       if (c.kind !== "member" || typeof c.activation_id !== "string" || typeof c.claim_secret !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(deviceId) || !deviceId.startsWith(`dev_${firmSlug}_${memberSlug}`)) throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
       if (viaInvite && !inviteSecret) throw new DomainError("validation", "邀请码不完整：应为 36 位（管理员页面上完整的那一串），请向管理员核对", 400);
-      const r = await this.submitJoin({ tid: account.tid, activation_id: c.activation_id, claim_secret: c.claim_secret, firmSlug, firmName, memberSlug, memberName, role }, viaInvite ? inviteSecret : null, deviceId);
+      const r = await this.submitJoin({ tid: account.tid, activation_id: c.activation_id, claim_secret: c.claim_secret, firmSlug, firmName, memberSlug, memberName, role, workspace: ws }, viaInvite ? inviteSecret : null, deviceId);
       return { ...view, ...r };
     }
     // 第 66 批（V40，D-292）：个人账号的新电脑——云端用账号设备签发钥直接签发设备证书，不等另一台电脑批准（复用“暂存批准结果 → 重启”）
@@ -448,12 +556,53 @@ export class OnboardingService {
       const sid = String(j.session?.sid ?? "");
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(deviceId) || !deviceId.startsWith(`dev_${firmSlug}_${memberSlug}`) || !/^ses_[A-Za-z0-9_-]{16}$/.test(sid) || !/^acc_[A-Za-z0-9_-]{1,64}$/.test(account.aid))
         throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
-      this.autoPending = { tid: account.tid, aid: account.aid, sid, token: j.session_token, deviceId, firmSlug, firmName, memberSlug, memberName, role, gen: null };
+      this.autoPending = { tid: account.tid, aid: account.aid, sid, token: j.session_token, deviceId, firmSlug, firmName, memberSlug, memberName, role, gen: null, workspace: ws };
       return { ...view, ...(await this.autoEnroll(null)) };
     }
     // 不能在这台电脑上继续的状态：如实告诉律师（处理好后再登录即可）。文案与正常模式的 account.login 同一份（account-session.ts，第 46 批）；
     // ready（控制面认得这台电脑是该成员的设备，但本机没有对应工作区，例如重装后）也说清怎么办，不再落到“请联系客服”
-    return { ...view, next: "blocked", message: onboardingStateText(state, { admin: role === "admin" }), devices: Array.isArray(onb.devices) ? onb.devices : [] };
+    // 第 68 批（V42，D-295）：电脑数已满——记下这次登录的会话（只在内存、10 分钟内有效），律师可在这一页就地移除一台再继续，不必再收一次验证码
+    let canUnbind = false;
+    if (state === "device_limit" && typeof j.session_token === "string" && Array.isArray(onb.devices) && onb.devices.length > 0) {
+      this.limitSession = { token: j.session_token, at: Date.now() };
+      canUnbind = (await this.registrationMeta().catch(() => null))?.device_unbind_on_login === true;
+    }
+    return { ...view, next: "blocked", reason: state, message: onboardingStateText(state, { admin: role === "admin" }), devices: Array.isArray(onb.devices) ? onb.devices : [], ...(canUnbind ? { can_unbind: true } : {}) };
+  }
+
+  /** 第 68 批：电脑数已满时这次登录的会话（只在内存里；就地移除一台后用它继续登记这台电脑）。 */
+  private limitSession: { token: string; at: number } | null = null;
+
+  /**
+   * 第 68 批（V42，D-295）：电脑数已满时，就地移除这个账号的一台旧电脑（云端核对：这次登录 10 分钟内、会话还没绑任何电脑），
+   * 再按同一会话重取“这台电脑该做什么”继续登记——不用再输一次密码或再收一次验证码。
+   */
+  async unbindForLogin(p: { device_id?: unknown }): Promise<Record<string, unknown>> {
+    const done = this.exclusive();
+    try {
+      return await this.unbindForLoginInner(p);
+    } finally {
+      if (!this.restarting) done();
+    }
+  }
+
+  private async unbindForLoginInner(p: { device_id?: unknown }): Promise<Record<string, unknown>> {
+    const ls = this.limitSession;
+    if (!ls || Date.now() - ls.at > 9 * 60_000) throw new DomainError("conflict", "这次登录已超过 10 分钟：请重新登录后再移除", 409);
+    const dev = String(p.device_id ?? "");
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(dev)) throw new DomainError("validation", "设备编号不合法", 400);
+    const r = await cpPost(this.d.relay, `/v1/auth/devices/${dev}/unbind`, {}, "POST", { "x-kwl-session": ls.token });
+    if (!r.ok) {
+      const f = accountFailure(r.code, r.message ?? null);
+      throw new DomainError(f.fault, r.code === "auth_invalid" ? "云端暂不支持在这里移除电脑：请在那台电脑上（设置 → 账号）或云端控制台“我的电脑”里移除" : f.text, f.status, { reason: f.reason });
+    }
+    const o = await cpPost(this.d.relay, "/v1/auth/onboarding", {}, "POST", { "x-kwl-session": ls.token });
+    if (!o.ok) {
+      const f = accountFailure(o.code, o.message ?? null);
+      throw new DomainError(f.fault, `已移除那台电脑；${f.text}`, f.status, { reason: f.reason, removed: true });
+    }
+    this.limitSession = null;
+    return this.afterAuth({ ...o.json, session_token: ls.token }, null);
   }
 
   /** 第 66 批：正在自动登记的新电脑（登录应答里的会话与预分配编号；风控暂停后用短信验证码重试时沿用同一对设备密钥）。只在内存里。 */
@@ -469,6 +618,7 @@ export class OnboardingService {
     memberName: string | null;
     role: Role;
     gen: ReturnType<typeof generateJoinDeviceKeys> | null;
+    workspace: string;
   } | null = null;
 
   /**
@@ -491,6 +641,13 @@ export class OnboardingService {
     );
     if (!r.ok) {
       slog.event("KERNEL_ONBOARDING_AUTO_ENROLL_FAILED", { reason: /^[a-z_]{1,40}$/.test(r.code) ? r.code : "other" });
+      // 第 68 批（D-295）：登录之后、登记之前电脑数满了（另一台电脑抢先登记）——与登录时的“已满”同样处理，可就地移除一台
+      if (r.code === "device_limit") {
+        this.limitSession = { token: a.token, at: Date.now() };
+        this.autoPending = null;
+        const canUnbind = (await this.registrationMeta().catch(() => null))?.device_unbind_on_login === true;
+        return { kind: "member", next: "blocked", reason: "device_limit", message: onboardingStateText("device_limit"), devices: r.devices ?? [], ...(canUnbind && (r.devices ?? []).length > 0 ? { can_unbind: true } : {}) };
+      }
       if (r.hold)
         return {
           kind: "member",
@@ -526,10 +683,10 @@ export class OnboardingService {
       slog.event("KERNEL_ONBOARDING_CERT_REJECTED", {});
       throw new DomainError("provider_unavailable", "收到的登记结果核对不通过，没有采用。请重新登录；如反复出现请联系客服", 502);
     }
-    const keysDir = this.keysDirFor(a.firmSlug);
+    const keysDir = this.keysDirFor(a.workspace);
     writeStagedSecret(join(keysDir, "join-approved.json"), { cert: cert!, root_public_key_pem: rootPub, recovery_public_key_pem: fb!.recovery_public_key_pem, keys, account_ca_public_key_pem: caPem });
     const role = (ROLES.includes(cert!.role as Role) ? cert!.role : a.role) as Role;
-    this.writeActivation({ tid: a.tid, firm_slug: a.firmSlug, firm_name: a.firmName, member_slug: a.memberSlug, member_name: a.memberName, role, kind: "member", ...(a.deviceId !== expectedJoinDeviceId(a.firmSlug, a.memberSlug) ? { device_id: a.deviceId } : {}) });
+    this.writeActivation({ tid: a.tid, firm_slug: a.firmSlug, firm_name: a.firmName, member_slug: a.memberSlug, member_name: a.memberName, role, kind: "member", ...(a.deviceId !== expectedJoinDeviceId(a.firmSlug, a.memberSlug) ? { device_id: a.deviceId } : {}) }, a.workspace);
     this.autoPending = null;
     slog.event("KERNEL_ONBOARDING_AUTO_ENROLLED", {});
     this.restartSoon();
@@ -622,8 +779,15 @@ export class OnboardingService {
   async accountLogin(p: { email?: unknown; password?: unknown; phone?: unknown; sms_code?: unknown }): Promise<Record<string, unknown>> {
     const done = this.exclusive();
     try {
-      if (this.pending()) throw new DomainError("conflict", "这台电脑正在等待批准；如要改用别的账号，请先点“重新输入”", 409);
-      const j = await this.accountCall("/v1/auth/login", { ...loginBody(p), client: this.clientInfo() });
+      // 第 68 批（安全复核 P-1）：一个账号在等批准时，别的账号仍可登录回这台电脑上它自己的档案（等批准的申请原样保留）；
+      // 只有“再为一个新账号登记”要先点“重新输入”
+      const waiting = this.pending();
+      const j = await this.accountCall("/v1/auth/login", { ...loginBody(p), client: this.clientInfo(), account_switch: true });
+      if (waiting) {
+        const ex = this.switchToExisting(j);
+        if (ex) return ex;
+        throw new DomainError("conflict", "这台电脑正在等待批准；如要改用别的账号，请先点“重新输入”", 409);
+      }
       return await this.afterAuth(j, null);
     } finally {
       if (!this.restarting) done();
@@ -659,7 +823,7 @@ export class OnboardingService {
   private async doCheck(): Promise<Record<string, unknown>> {
     const p = this.pending();
     if (!p) return this.status();
-    const keysDir = this.keysDirFor(p.firm_slug);
+    const keysDir = this.keysDirFor(p.workspace ?? p.firm_slug);
     const pendingPath = join(keysDir, "join-pending.json");
     if (!existsSync(pendingPath)) throw new DomainError("conflict", "本机的申请记录丢失，请点“重新输入”后用邀请码重新申请", 409);
     const st = readSecretFile<JoinPending>(pendingPath);
@@ -703,7 +867,7 @@ export class OnboardingService {
     }
     writeStagedSecret(join(keysDir, "join-approved.json"), { cert, root_public_key_pem: rootPub, recovery_public_key_pem: fb!.recovery_public_key_pem, keys: st.keys });
     const role = (ROLES.includes(cert.role as Role) ? cert.role : "lawyer") as Role;
-    this.writeActivation({ tid: p.tid, firm_slug: p.firm_slug, firm_name: p.firm_name, member_slug: p.member_slug, member_name: p.member_name, role, kind: "member", ...(p.device_id !== expectedJoinDeviceId(p.firm_slug, p.member_slug) ? { device_id: p.device_id } : {}) });
+    this.writeActivation({ tid: p.tid, firm_slug: p.firm_slug, firm_name: p.firm_name, member_slug: p.member_slug, member_name: p.member_name, role, kind: "member", ...(p.device_id !== expectedJoinDeviceId(p.firm_slug, p.member_slug) ? { device_id: p.device_id } : {}) }, p.workspace ?? p.firm_slug);
     rmSync(pendingPath, { force: true });
     rmSync(join(this.root, ONBOARDING_FILE), { force: true });
     this.stop();
@@ -716,7 +880,7 @@ export class OnboardingService {
   async reset(): Promise<Record<string, unknown>> {
     const p = this.pending();
     if (p) {
-      const pendingPath = join(this.keysDirFor(p.firm_slug), "join-pending.json");
+      const pendingPath = join(this.keysDirFor(p.workspace ?? p.firm_slug), "join-pending.json");
       try {
         const st = existsSync(pendingPath) ? readSecretFile<JoinPending>(pendingPath) : null;
         if (st?.join_request_id) await cpPost(this.d.relay, `/v1/join-requests/${st.join_request_id}/withdraw`, { tid: p.tid, claim_secret: st.claim_secret });
@@ -1039,6 +1203,9 @@ export function registrationMetaOf(json: Record<string, unknown> | null): Record
     phone_reset: pol.phone_reset === true,
     phone_login: features.includes("phone_login") && pol.phone_login === true,
     phone_bind: features.includes("phone_bind") && pol.phone_bind === true,
+    // 第 68 批（V42）：云端支持同一台电脑换账号（带签名登录别的账号不再被拒）、电脑数已满时用刚完成的登录就地移除一台
+    account_switch: features.includes("account_switch"),
+    device_unbind_on_login: features.includes("device_limit_unbind"),
     sms: { code_length: int(sms.code_length, 4, 8, 6), resend_seconds: int(sms.resend_seconds, 30, 600, 60), ttl_minutes: int(sms.ttl_minutes, 1, 30, 10) },
   };
 }
@@ -1083,7 +1250,7 @@ export function loginBody(p: { email?: unknown; password?: unknown; phone?: unkn
   return { phone: smsPhoneInput(p.phone), sms_code: typeof p.sms_code === "string" ? p.sms_code.replace(/\s+/g, "") : "" };
 }
 
-export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "device.env_probe", "account.register", "account.login", "account.reset_request", "account.reset_confirm", "account.registration_meta", "account.sms_send"]);
+export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "onboarding.unbind_device", "onboarding.device_confirm", "device.env_probe", "account.register", "account.login", "account.reset_request", "account.reset_confirm", "account.registration_meta", "account.sms_send"]);
 
 /** 第 62 批：12 位注册邀请码（Crockford Base32，与开通码同一归一规则）；不是即 null。纯函数。 */
 export function registrationInviteInput(input: unknown): { code: string; secret: null } | null {
@@ -1112,9 +1279,10 @@ export function reconcilePendingRestore(dataRoot: string, canOpenLedger: (dbFile
   const pendingPath = join(dataRoot, PENDING_ACTIVATION_FILE);
   if (!existsSync(pendingPath)) return "none";
   const a = readActivation(readJson<unknown>(pendingPath));
-  const ws = a ? join(dataRoot, a.firm_slug) : null;
+  const ws = a ? join(dataRoot, workspaceNameOf(a)) : null;
   const restored = ws !== null && existsSync(join(ws, ".restored-from-backup.json"));
   if (a && ws && restored && !existsSync(activationFilePath(dataRoot)) && canOpenLedger(join(ws, "ledger.db"))) {
+    writeProfile(dataRoot, a);
     renameSync(pendingPath, activationFilePath(dataRoot));
     rmSync(join(dataRoot, JOIN_FAILED_FILE), { force: true });
     return "promoted";

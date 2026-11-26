@@ -133,7 +133,8 @@ export interface QuotaView {
    * 第 66 批（V40）：个人口径——真正卡住“我”的那一项（额度、律所上限、频率窗口、个人上限四者最小）。limited_by = 正在卡住的那项（null = 都没卡）；
    * 旧控制面没有这一段（界面回退到 own）。
    */
-  personal?: { used_ratio: number; remaining_ratio: number; limited_by: "allowance" | "cap" | "burst" | "seat" | null; paused: "allowance" | "cap" | "burst" | "seat" | null };
+  personal?: { used_ratio: number; remaining_ratio: number; limited_by: "allowance" | "cap" | "burst" | "seat" | null; paused: "allowance" | "cap" | "burst" | "seat" | null; in_flight_ratio?: number };
+  ratio_basis?: "personal";
   /** 第 66 批：本人本期按模型（份额按 token，不含金额）。 */
   own_models?: { alias: string; label: string; share: number; requests: number }[];
 }
@@ -612,6 +613,32 @@ export class ControlPlaneClient {
     const r = await this.call(method, path, method === "GET" ? undefined : (body ?? {}));
     if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null, retryAfter: r.retry_after_s ?? null, ...(r.error === "client_outdated" ? { minVersion: this.outdated?.min_version ?? null } : {}) });
     return r.json;
+  }
+
+  /**
+   * 第 68 批（D-294）：不带设备签名、不带会话头的账号接口调用——用于旧云端（/v1/meta 没有 account_switch）上的登录：
+   * 旧云端见到本机设备签名而账号是别人时整个登录被拒（device_mismatch），换账号只能不签名登录、由本机按档案判断。
+   */
+  async accountUnsigned(method: "POST", path: string, body: unknown, session: string | null = null): Promise<Record<string, unknown>> {
+    if (!ACCOUNT_PATH.test(path)) throw new Error("account_path_invalid");
+    const raw = JSON.stringify(body ?? {});
+    // 第 68 批：换账号时（电脑数已满就地移除一台）带的是那个账号刚登录的会话，不是本档案的会话，也不带本档案的设备签名
+    const r = await this.d.relay({ method, path, headers: session ? { "x-kwl-session": session } : {}, body: raw });
+    if (!r.ok) throw Object.assign(new Error(r.reason), { code: r.reason, cpMessage: null, status: null, retryAfter: null });
+    let json: Record<string, unknown> = {};
+    try {
+      json = r.body ? (JSON.parse(r.body) as Record<string, unknown>) : {};
+    } catch {
+      throw Object.assign(new Error("cp_reply_not_json"), { code: "cp_reply_not_json", cpMessage: null, status: r.status, retryAfter: null });
+    }
+    if (r.status >= 400) {
+      const e = (json.error ?? {}) as { code?: string; message?: unknown; retry_after_s?: unknown; min_version?: unknown };
+      const code = e.code ?? `http_${r.status}`;
+      if (code === "client_outdated") this.outdated = { min_version: typeof e.min_version === "string" && e.min_version.length <= 40 ? e.min_version : null, at: this.d.now?.() ?? Date.now() };
+      const ra = e.retry_after_s;
+      throw Object.assign(new Error(code), { code, cpMessage: typeof e.message === "string" ? e.message.slice(0, 200) : null, status: r.status, retryAfter: Number.isSafeInteger(ra) && (ra as number) > 0 && (ra as number) <= 86_400 ? ra : null, ...(code === "client_outdated" ? { minVersion: this.outdated?.min_version ?? null } : {}) });
+    }
+    return json;
   }
 
   /** 第 63 批：云端版本与注册 / 登录策略（GET /v1/meta，无鉴权、不带个人信息）；取不到返回 null（界面按旧流程）。 */

@@ -41,6 +41,7 @@ import { goalPreview, goalRows } from "../lib/goal-brief.ts";
 import { OutlineConfirm } from "../components/OutlineConfirm.tsx";
 import { confirmAndAnswer, outlineAnswer, outlineQuestion, type OutlineView } from "../lib/outline.ts";
 import { pendingReviewSuggestions, REVIEW_APPLY_HEAD, REVIEW_LEVEL_LABEL, reviewApplyText } from "../lib/review-suggestions.ts";
+import { scopedKey } from "../lib/profile-scope.ts";
 
 /** 页面标题：场景卡名；律师自己描述的任务用描述前 30 字，悬停看全文（Z3 #21、V-g；第 26 批 runName）。 */
 function runTitle(run: any): string {
@@ -75,7 +76,7 @@ function summaryLines(text: string): string[] {
 /** 律师在首页选的业务线（只读本机偏好；读不到返回 null）。 */
 function homeLine(): BusinessLine | null {
   try {
-    const v = window.localStorage.getItem("kwl.home.line");
+    const v = window.localStorage.getItem(scopedKey("kwl.home.line"));
     return v === "litigation" || v === "transactional" || v === "inhouse" ? v : null;
   } catch {
     return null;

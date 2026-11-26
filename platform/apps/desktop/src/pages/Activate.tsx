@@ -15,6 +15,9 @@ import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMetaStat
 import { setAsideAutoOpen, setAsideNotice } from "../lib/activate-text.ts";
 import { checkPassword, codeLengthOk, dayLabel, deviceLine, emailLooksValid, nameLooksValid, notRegisteredActions, phoneLooksValid, phoneNotRegistered, registerCodeLengthOk, registrationFields, resetNextText, roleLabel, saveLoginMethod, smsCodeLooksValid, waitApprovalLead, type AccountDevice, type LoginMethod, type RegistrationMeta } from "../lib/account.ts";
 import { fmtTime } from "../lib/labels.ts";
+import { DeviceLimitList } from "../components/DeviceLimitList.tsx";
+import { waitForProfileSwitch } from "../lib/account-switch.ts";
+import { switchingText } from "../lib/account.ts";
 
 /** 律师在恢复页点过“返回”的那个目录（每个查看者本机记一下；读写失败按没点过）。 */
 const DISMISS_KEY = "kwl.setAside.dismissed";
@@ -39,6 +42,10 @@ type Status = {
   set_aside?: string[];
   /** 第 44 批：同一账号的新电脑（没有邀请可对，由已登录的另一台电脑或律所管理员人工核对）。 */
   via_account?: boolean;
+  /** 第 68 批（V42，D-294）：这台电脑上别的账号的工作空间个数（不列姓名）；登录那个账号即打开。 */
+  other_profiles?: number;
+  /** 第 68 批：从上一个账号的登录页换过来、内核按那次登录继续登记这台电脑的结果（同登录答复）。 */
+  handoff?: any;
 };
 
 const JOIN_FAILED_TEXT = "入组没有完成：管理员批准的结果在这台电脑上核对不通过。请向管理员重新要一个邀请码，再输入一次；若反复出现，请联系所内 IT。";
@@ -98,6 +105,8 @@ export function ActivatePage({ initial, onRefresh, notice = "" }: { initial: Sta
   if (status.mode === "member_pending") return <WaitApproval status={status} onReset={async () => setStatus((await onboarding.reset()) as Status)} onRefresh={onRefresh} />;
   return (
     <Entry
+      handoff={status.handoff ?? null}
+      otherProfiles={typeof status.other_profiles === "number" ? status.other_profiles : 0}
       onPending={(s) => setStatus(s)}
       legacy={status.legacy_workspaces ?? []}
       failed={status.last_failure ? failureText(status.last_failure.code) : ""}
@@ -122,7 +131,7 @@ const FOOT_TEXT = "登录与开通只把邮箱或手机号、密码或短信验�
 const FOOT_TEXT_NO_SMS = "登录与开通只把邮箱、密码、开通码或邀请码发给 Kimi Work 服务核对；你的案卷不会上传。";
 
 type View = "login" | "register" | "forgot" | "code" | "restore";
-type Blocked = { message: string; devices: AccountDevice[] };
+type Blocked = { message: string; devices: AccountDevice[]; canUnbind?: boolean };
 /** 第 66 批：个人账号新电脑自动登记被风控暂停（要短信验证码确认是本人；没绑手机号或短信不可用时只说明原因）。 */
 type SmsHold = { message: string; sms_available: boolean; phone_masked: string | null };
 
@@ -139,14 +148,21 @@ function authOutcome(onPending: (s: Status) => void, setDone: (t: string) => voi
     } else if (r?.next === "sms_confirm" && setHold) {
       setHold({ message: String(r.message ?? "为安全起见已暂停自动登记这台电脑：请用账号绑定的手机号接收验证码确认是本人"), sms_available: r.sms_available === true, phone_masked: typeof r.phone_masked === "string" ? r.phone_masked : null });
     } else if (r?.next === "blocked") {
-      setBlocked({ message: String(r.message ?? "这台电脑暂时不能用这个账号继续，请联系客服"), devices: Array.isArray(r.devices) ? r.devices : [] });
+      setBlocked({ message: String(r.message ?? "这台电脑暂时不能用这个账号继续，请联系客服"), devices: Array.isArray(r.devices) ? r.devices : [], canUnbind: r.can_unbind === true });
+    } else if (r?.next === "switch") {
+      // 第 68 批（V42，D-294）：这台电脑上已有这个账号的工作空间——直接打开它（不重复登记）
+      setDone(switchingText(r));
+      // 待激活时的档案标记固定是“-|onboarding”（内核 300 毫秒后才切换，这里不取当前值，免得取到已切换后的状态而一直等）
+      void waitForProfileSwitch("-|onboarding", stuck);
+    } else if (r?.next === "error") {
+      stuck(String(r.message ?? "没有完成，请重新登录"));
     } else {
       stuck("没有完成，请稍后重试；仍不行请联系客服");
     }
   };
 }
 
-function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status) => void; legacy: string[]; failed: string; setAside: string | null }) {
+function Entry({ onPending, legacy, failed, setAside, handoff = null, otherProfiles = 0 }: { onPending: (s: Status) => void; legacy: string[]; failed: string; setAside: string | null; handoff?: any; otherProfiles?: number }) {
   // 刚把打不开的数据移到一边（主进程对话框里选了“用恢复包恢复”）：直接打开从备份恢复
   const [view, setView] = useState<View>(setAside !== null && !failed && setAsideAutoOpen(setAside, Date.now(), readDismissed()) ? "restore" : "login");
   const [email, setEmail] = useState("");
@@ -166,6 +182,44 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
     setErr(t);
   };
   const outcome = authOutcome(onPending, setDone, setBlocked, stuck, setHold);
+  // 第 68 批（V42，D-294）：从上一个账号的登录页换过来——内核已按那次登录继续登记这台电脑，这里接着显示结果（等批准、要短信确认、电脑数已满等）
+  const handled = useRef(false);
+  useEffect(() => {
+    if (!handoff || handled.current) return;
+    handled.current = true;
+    if (handoff.next !== "working") return outcome(handoff);
+    // 还在登记：等内核给出结果（登记成功时内核会按新身份重启，界面随之重新载入）
+    setDone("正在为这个账号登记这台电脑…");
+    let alive = true;
+    const until = Date.now() + 120_000;
+    const poll = async () => {
+      while (alive && Date.now() < until) {
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          const st = await api.kernelStatus();
+          if (st && !st.onboarding) {
+            window.location.hash = "#/welcome";
+            window.location.reload();
+            return;
+          }
+          const h = st?.onboarding?.handoff;
+          if (h && h.next !== "working") {
+            setDone(null);
+            outcome(h);
+            return;
+          }
+        } catch {
+          // 重启期间内核暂不可用：继续等
+        }
+      }
+      if (alive) stuck("还没有登记完成。请关闭并重新打开应用后重新登录；若仍如此，请联系客服。");
+    };
+    void poll();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handoff]);
   const go = (v: View) => {
     setErr("");
     setNote("");
@@ -179,7 +233,18 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
       </Frame>
     );
   }
-  if (blocked) return <BlockedView b={blocked} onBack={() => setBlocked(null)} />;
+  if (blocked)
+    return (
+      <BlockedView
+        b={blocked}
+        onBack={() => setBlocked(null)}
+        onUnbind={async (id) => {
+          const r = await onboarding.unbindDevice(id);
+          setBlocked(null);
+          outcome(r);
+        }}
+      />
+    );
   if (hold) return <AutoEnrollConfirm hold={hold} onBack={() => setHold(null)} onResult={outcome} />;
   if (view === "restore")
     return (
@@ -218,6 +283,11 @@ function Entry({ onPending, legacy, failed, setAside }: { onPending: (s: Status)
   const foot = (
     <>
       {smsOn ? FOOT_TEXT : FOOT_TEXT_NO_SMS}
+      {otherProfiles > 0 && (
+        <span className="auth-foot-note" role="note">
+          这台电脑上还有 {otherProfiles} 个账号的工作空间：用那个账号登录即可打开，各账号的资料互不可见。
+        </span>
+      )}
       {legacy.length > 0 && (
         <span className="auth-foot-note" role="note">
           这台电脑上还有以前留下的数据（{legacy.join("、")}，例如旧版本试用或没有完成的入组）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
@@ -681,30 +751,15 @@ function AutoEnrollConfirm({ hold, onBack, onResult }: { hold: SmsHold; onBack: 
   );
 }
 
-function BlockedView({ b, onBack }: { b: Blocked; onBack: () => void }) {
+function BlockedView({ b, onBack, onUnbind }: { b: Blocked; onBack: () => void; onUnbind: (deviceId: string) => Promise<void> }) {
   return (
     <Frame>
       <h1 className="activate-title">这台电脑暂时不能继续</h1>
       <p className="activate-error" role="alert">
         {b.message}
       </p>
-      {b.devices.length > 0 && (
-        <>
-          <div className="section-title">这个账号已登记的电脑</div>
-          <ul className="auth-devices">
-            {b.devices.map((d) => {
-              const l = deviceLine(d);
-              return (
-                <li key={d.device_id}>
-                  <b>{l.title}</b>
-                  <span className="muted">{l.meta || `${dayLabel(d.registered_at)}登记`}</span>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="muted">移除旧电脑：在那台电脑上打开“设置 → 账号与团队 → 登录过的电脑”；那台电脑已经不在手边的，请律所管理员或客服处理。</p>
-        </>
-      )}
+      {/* 第 68 批（V42，D-295）：电脑数已满——列出这个账号已登记的电脑，云端支持时可就地移除一台后自动继续 */}
+      <DeviceLimitList devices={b.devices} canUnbind={b.canUnbind === true} onUnbind={onUnbind} />
       <div className="activate-actions">
         <button className="btn-primary" onClick={onBack}>
           返回登录

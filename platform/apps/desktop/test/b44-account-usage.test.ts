@@ -173,8 +173,9 @@ test("源码门禁：激活页缺省登录、可切注册与忘记密码，保�
   assert.match(conn, /每次 AI 调用的用量（请求编号、模型、token 数、金额）；看不到内容/);
   // 第 47 批：用量移到设置的“套餐与用量”页，律师与管理员同一个入口（管理员另有用量数、按成员与上限）
   // 第 66 批：“套餐与用量”只给个人视图；本所额度与上限在“管理 · 用量与上限”
-  assert.match(conn, /\{tab === "usage" && <PersonalUsage \/>\}/);
-  assert.match(conn, /\{sub === "usage" && <UsagePanel admin \/>\}/);
+  // 第 68 批：客户端不再展示团队用量——“管理 · 用量与上限”移除，团队用量与上限统一在云端控制台
+  assert.match(conn, /\{tab === "usage" && <PersonalUsage admin=\{isAdmin\} \/>\}/);
+  assert.doesNotMatch(conn, /UsagePanel|\["usage", "用量与上限"\]/);
 });
 
 test("第 44 批真实验收的发现：时间线里本产品的额度规则写“暂停”，不写“AI 服务连不上”", async () => {

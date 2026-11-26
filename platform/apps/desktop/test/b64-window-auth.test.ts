@@ -120,7 +120,9 @@ test("登录页三态：取到才渲染表单；取不到说原因 + 重试 + �
 test("整窗重新登录：标题按原因、可见“你已退出登录”；工作区不渲染；首帧不露工作区；登录后回原页", () => {
   assert.equal(reloginView("session_required").title, "你已退出登录");
   assert.equal(reloginView("account_disabled").title, "账号已停用");
-  assert.equal(reloginView("session_member_mismatch").title, "请用这台电脑登记的成员登录");
+  // 第 68 批（V42，D-294）：不再有“只能用这台电脑登记的成员登录”
+  assert.equal(reloginView("session_member_mismatch").title, "请重新登录");
+  for (const r of [null, "session_expired", "session_required", "account_disabled", "session_member_mismatch"]) assert.doesNotMatch(reloginView(r).lead, /另一位成员|那位成员/);
   assert.equal(reloginView("session_expired").title, "登录已失效");
   for (const r of [null, "session_expired", "session_required", "account_disabled", "session_member_mismatch"]) assert.match(reloginView(r).lead, /事项、材料和成果都还在/);
   const app = src("src/App.tsx");

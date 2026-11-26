@@ -45,10 +45,12 @@ const watchIdentity = (k: typeof kernel) =>
     }
     // 从备份恢复（第 14 批）：开发形态没有 DPAPI，直接以恢复的主密钥重建内核（只在待激活模式）
     if (m.type === "kernel.adopt_master_key" && k.config.onboarding && typeof m.key === "string") process.env.ZR_DB_KEY = m.key;
-    else if (m.type !== "kernel.restart_for_identity") return;
+    // 第 68 批（D-294）：切换账号档案——交接只在内存里交给新内核（开发形态各档案共用 ZR_DB_KEY，不分密钥格）
+    else if (m.type !== "kernel.restart_for_identity" && m.type !== "kernel.switch_profile") return;
+    const handoff = m.type === "kernel.switch_profile" ? m.handoff : undefined;
     ready = (async () => {
       await k.close().catch(() => {});
-      kernel = await createKernel();
+      kernel = await createKernel(handoff ? { handoff } : {});
       watchIdentity(kernel);
       console.log(`[bridge] kernel restarted for identity, workspace=${kernel.config.workspaceDir}`);
     })();

@@ -1,9 +1,10 @@
 /**
  * 设置（UIUX 增量评审 ST-1～ST-5、§3.5；v9 第 03 篇 §4.1、§8.5；第 02 篇 §12；第 04 篇 §5.1；V16 IA-1 重排）。
  * 律师版五页：通用（字号、外观、通知、示例事项、版本）/ 文书与写作（文书版式、写作偏好、本所范本入口）/
- * 账号与团队（本所、账号与电脑、本期用量、团队共享、离所相关；第 44 批起账号为自有邮箱账号）/ 备份与安全（恢复包、自动备份、遇到问题、电脑环境）/
+ * 账号与团队（本所、账号与电脑、团队共享、离所相关；第 44 批起账号为自有邮箱账号）/ 备份与安全（恢复包、自动备份、遇到问题、电脑环境）/
  * 数据去向（三栏 + 现场生成的示例请求，可打印给客户；页底“这台电脑能用的资料”，原“资料来源”页并入）。
- * 管理员另有“管理”：律所策略、用量与上限、中软侧操作记录、技术支持（诊断、加密保存的局限、技术版数据去向）、替换准确度测试。
+ * 管理员另有“管理”：成员、律所策略、中软侧操作记录、技术支持（诊断、加密保存的局限、技术版数据去向）、替换准确度测试。
+ * 第 68 批：团队用量与上限（本所额度、按成员、律所上限、个人额度）只在云端控制台管理，客户端“管理”不再有“用量与上限”。
  * 旧地址（#/connections/device、/sources、/data、/policy）由 App.tsx 的 settingsTabOf 落到新分区。
  * “管理”是否显示只是界面安排，授权一律由内核按角色逐个方法核验。
  */
@@ -19,7 +20,7 @@ import { displayVersion, fmtDate, fmtTime, groupDigits } from "../lib/labels.ts"
 import { deviceSafetyTile } from "../lib/device-status.ts";
 import { applyUiTheme, applyUiZoom, readUiTheme, readUiZoom, UI_THEME_OPTIONS, UI_ZOOM_OPTIONS } from "../lib/ui-prefs.ts";
 import { RecallEvalPanel } from "./RecallEval.tsx";
-import { CpAuditPanel, UsagePanel } from "./FirmUsage.tsx";
+import { CpAuditPanel } from "./FirmUsage.tsx";
 import { PersonalUsage } from "./PersonalUsage.tsx";
 import { AccountSection } from "../components/AccountPanel.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
@@ -99,8 +100,8 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
         {tab === "general" && <GeneralTab version={displayVersion(status?.app_version, status?.version)} />}
         {tab === "writing" && <WritingTab />}
         {tab === "account" && <AccountTab mySafety={mySafety} admin={isAdmin} />}
-        {/* 套餐与用量（第 66 批 V40 P0-5）：个人套餐与个人用量（Kimi“我的订阅”同思路）；本所额度、按成员与上限移到“管理”与云端控制台 */}
-        {tab === "usage" && <PersonalUsage />}
+        {/* 套餐与用量（第 66 批 V40 P0-5；第 68 批）：只给当前登录者本人的用量；团队用量与上限在云端控制台，管理员在页底看到一句提示 */}
+        {tab === "usage" && <PersonalUsage admin={isAdmin} />}
         {tab === "backup" && <BackupTab caps={caps} gate={gate} />}
         {tab === "visibility" && (
           <>
@@ -688,7 +689,7 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
 }
 
 /**
- * 账号与团队（V16 IA-1、IA-8；原“本机与安全”里的一块）：本所、Kimi 账号、本月用量、团队共享、离所同事、离所交接。
+ * 账号与团队（V16 IA-1、IA-8；原“本机与安全”里的一块）：本所、Kimi 账号、团队共享、离所同事、离所交接（用量在“套餐与用量”）。
  * “使用许可”正常时不显示，到期或尚未取得时才出一行；本机核对码收进底部“更多”。
  */
 function AccountTab({ mySafety, admin }: { mySafety: string | null; admin: boolean }) {
@@ -927,19 +928,18 @@ function StatusTile({ tone, title, line, action }: { tone: "ok" | "warn" | "info
   );
 }
 
-/** 管理（ST-1、ST-4）：律所策略、用量与上限、中软侧操作记录、诊断（工程细节）、召回评测（律所内）。 */
+/** 管理（ST-1、ST-4）：成员、律所策略、中软侧操作记录、诊断（工程细节）、召回评测（律所内）。 */
 function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any }) {
   // 子标签收敛（Z3 评审 #7.3、I2 遗留）：诊断与替换准确度测试是给律所 IT 与中软运维用的，收进“技术支持”
   // V16 IA-4：“技术支持”直接展开诊断首层；替换准确度测试升为独立二级标签“代号准确度”（进所评测是售前动作）
-  // 第 66 批：“套餐与用量”只给个人视图；本所额度、按成员与上限（管理员动作）回到“管理 · 用量与上限”
-  const [sub, setSub] = useState<"members" | "usage" | "policy" | "cp_audit" | "support" | "recall">("members");
+  // 第 68 批：客户端不再展示团队用量——本所额度、按成员、律所上限与个人额度统一在云端控制台（本所 · 概览 / 用量 / 成员）管理
+  const [sub, setSub] = useState<"members" | "policy" | "cp_audit" | "support" | "recall">("members");
   return (
     <div>
       <div className="tabs" role="tablist" aria-label="管理">
         {(
           [
             ["members", "成员"],
-            ["usage", "用量与上限"],
             ["policy", "律所策略"],
             ["cp_audit", "操作记录"],
             ["support", "技术支持"],
@@ -952,7 +952,6 @@ function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[];
         ))}
       </div>
       {sub === "members" && <MembersAdmin />}
-      {sub === "usage" && <UsagePanel admin />}
       {sub === "policy" && <PolicyTab />}
       {sub === "cp_audit" && <CpAuditPanel />}
       {sub === "support" && (

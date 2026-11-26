@@ -15,6 +15,7 @@ const { APP_INDEX_URL, handleAppProtocol, registerAppScheme } = require("./app-p
 const { resolveBundledRuntime, verifyRuntimeDigests, gateClosure } = require("./runtime-paths.cjs");
 const { adoptDbKey, loadOrCreateDbKey, purgeOldDumps } = require("./secret-store.cjs");
 const { quarantineUnreadable, unsealFailedCauses } = require("./unreadable-data.cjs");
+const { planKeySlot, quarantineScope, validHandoffShape, PENDING_WORKSPACE } = require("./key-slots.cjs");
 const { kernelChildEnv, loadReleaseConfig, applyEndpointProfile, OS_ENV_ALLOW } = require("./release-config.cjs");
 const trialMode = require("./trial-mode.cjs");
 const { initUpdater } = require("./updater.cjs");
@@ -84,8 +85,33 @@ function errFields(e) {
  * 数据库主密钥（§5.1；隐私安全审查 P0-2）：经 safeStorage（Windows DPAPI）包裹落盘，解封后一次性交付内核、本进程随即置 null。
  * 安装包形态 safeStorage 不可用即拒绝启动；解封失败绝不覆盖密钥文件（secret-store.cjs）。
  */
+/**
+ * 第 68 批（D-294）：当前账号档案的密钥格（key-slots.cjs）。每次拉起内核前重新判定；“采用恢复的主密钥”与“移到一边”都只作用于这一格。
+ * 切换账号的一次性交接（含会话令牌）只在内存里放到下一次 kernel.init，交出即清空。
+ */
+let keyPlan = null;
+let pendingHandoff = null;
+function currentKeyFile() {
+  return keyPlan ? keyPlan.file : path.join(app.getPath("userData"), "ledger-key");
+}
+
 async function loadDbKey() {
-  const r = await loadOrCreateDbKey({ safeStorage, file: path.join(app.getPath("userData"), "ledger-key"), packaged: app.isPackaged });
+  try {
+    keyPlan = planKeySlot({ dataDir: DATA_DIR, userDataDir: app.getPath("userData") });
+  } catch {
+    slog.event("MAIN_KEY_SLOT_FAILED", { reason: "rename_failed" });
+    return { ok: false, code: "slot_failed", message: "无法整理本机账号的数据库密钥文件" };
+  }
+  if (keyPlan.adopted) slog.event("MAIN_KEY_SLOT_ADOPTED", {});
+  // 新起的待激活密钥打不开旧的待激活占位工作区（那是用别的密钥建的）：先清掉占位工作区（只有空账本与暂存，不含案件数据）
+  if (keyPlan.freshPending) {
+    try {
+      require("node:fs").rmSync(path.join(DATA_DIR, PENDING_WORKSPACE), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch {
+      // 删不掉：内核打开占位账本失败会如实报错，下次启动再删
+    }
+  }
+  const r = await loadOrCreateDbKey({ safeStorage, file: keyPlan.file, packaged: app.isPackaged });
   if (!r.ok) return r;
   if (r.warning) slog.event("MAIN_DBKEY_DEV_PLAINTEXT", {});
   return r;
@@ -124,7 +150,7 @@ async function offerSetAsideAndRestore(keyResult) {
     noLink: true,
   });
   if (second.response !== 1) return false;
-  const r = quarantineUnreadable({ dataDir: DATA_DIR, keyFile: path.join(app.getPath("userData"), "ledger-key") });
+  const r = quarantineUnreadable({ dataDir: DATA_DIR, keyFile: currentKeyFile(), only: keyPlan ? quarantineScope(keyPlan, DATA_DIR) : null });
   if (r.ok) {
     slog.event("MAIN_DATA_SET_ASIDE", { code: "ok", moved: r.moved.length });
     return true;
@@ -548,7 +574,10 @@ async function startKernel() {
     kernelOutRing.length = 0;
   };
   // 一次性交付数据库主密钥（内核等待 kernel.init 后启动），主进程随即清除
-  kernel.postMessage(dbKey ? { type: "kernel.init", dbKey } : { type: "kernel.init" });
+  // 第 68 批：同时交密钥格与切换账号的一次性交接（交出即清空）
+  const handoff = pendingHandoff;
+  pendingHandoff = null;
+  kernel.postMessage({ type: "kernel.init", ...(dbKey ? { dbKey } : {}), keySlot: keyPlan ? keyPlan.kind : "legacy", ...(handoff ? { handoff } : {}) });
   dbKey = null;
   kernel.on("message", (msg) => {
     if (msg && typeof msg.id === "number") {
@@ -577,11 +606,26 @@ async function startKernel() {
         slog.event("MAIN_ADOPT_KEY_REJECTED", { reason: "not_onboarding" });
         return;
       }
-      void adoptDbKey({ safeStorage, file: path.join(app.getPath("userData"), "ledger-key"), key }).then((r) => {
+      void adoptDbKey({ safeStorage, file: currentKeyFile(), key }).then((r) => {
         if (!r.ok) slog.event("MAIN_ADOPT_KEY_REJECTED", { reason: r.code });
         else slog.event("MAIN_ADOPT_KEY_DONE", {});
         // 成功与否都按新身份重启（复核 R2A-15）：内核启动时用当前主密钥试开恢复出的账本——没采用成功就回滚恢复、回到待激活并告诉律师
         void restartKernelForIdentity();
+      });
+      return;
+    }
+    // 第 68 批（D-294）：同一台电脑上切换账号档案——内核已把激活记录指向目标档案（或移走以登记新账号）；
+    // 交接只在内存里交给下一个内核；作废上一个账号的文件句柄；换用目标档案的密钥后重启。这条消息绝不转发给界面
+    if (msg && msg.type === "kernel.switch_profile") {
+      const h = msg.handoff;
+      msg.handoff = null;
+      if (!validHandoffShape(h)) return;
+      pendingHandoff = h;
+      fileHandles.clear();
+      slog.event("MAIN_PROFILE_SWITCH", { kind: h.kind });
+      // 安全复核 P-3：交接只给这一次重启；重启被跳过（应用正在退出）或拉起失败时清掉，不留给之后任意一次启动
+      void restartKernelForIdentity("正在切换账号…").finally(() => {
+        pendingHandoff = null;
       });
       return;
     }
@@ -1282,11 +1326,11 @@ const identityRestart = createIdentityRestart({
     slog.event("MAIN_KERNEL_IDENTITY_RESTART_FAILED", {});
   },
 });
-async function restartKernelForIdentity() {
+async function restartKernelForIdentity(message) {
   if (identityRestarting) return;
   identityRestarting = true;
   try {
-    await identityRestart.restart();
+    await identityRestart.restart(message);
   } finally {
     identityRestarting = false;
   }

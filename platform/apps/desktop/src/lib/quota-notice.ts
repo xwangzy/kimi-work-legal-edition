@@ -9,6 +9,9 @@
  */
 import type { QuotaStatus } from "../api.ts";
 import { fmtPct } from "./firm-usage.ts";
+import { personalUsedRatio, personalView } from "./personal-usage.ts";
+/** 第 68 批：个人口径移到 lib/personal-usage.ts，这里转出（旧用例与调用方照旧从这里取）。 */
+export { personalUsedRatio };
 
 export interface QuotaNotice {
   /** stop = 新任务发不出去；warn = 快用完 / 放缓。 */
@@ -49,16 +52,20 @@ export function quotaNotice(q: QuotaStatus | null | undefined): QuotaNotice | nu
   const day = shortDay(q.period?.resets_at);
   const reset = day ? `，将于 ${day} 重置` : "";
   const pk = q.period?.key ?? "";
-  if (f.paused === "allowance") return { tone: "stop", text: `你${per}的 AI 额度已用完，新任务暂不能发起${reset}`, key: `${pk}:allowance` };
-  if (f.paused === "cap") return { tone: "stop", text: `${per}用量已到设定的上限（${f.cap_pct ?? "—"}%），新任务暂不能发起${reset}`, key: `${pk}:cap:${f.cap_pct ?? ""}` };
-  if (f.paused === "burst") {
+  // 第 68 批：与“套餐与用量”页同一个口径（lib/personal-usage.ts 的 personalView）——新云端看 personal（含个人额度用完 seat），
+  // 不再拿全所的 remaining_ratio 说“你的额度”；旧云端没有 personal 时按原口径回退
+  const v = personalView(q);
+  if (v.paused === "allowance") return { tone: "stop", text: `你${per}的 AI 额度已用完，新任务暂不能发起${reset}`, key: `${pk}:allowance` };
+  if (v.paused === "cap") return { tone: "stop", text: `${per}用量已到设定的上限（${f.cap_pct ?? "—"}%），新任务暂不能发起${reset}`, key: `${pk}:cap:${f.cap_pct ?? ""}` };
+  if (v.paused === "burst") {
     const back = shortTime(q.burst?.resets_at);
     return { tone: "warn", text: `最近 ${q.burst?.hours ?? 5} 小时用得太快，AI 处理暂时放缓${back ? `，${back} 起逐步恢复` : ""}`, key: `${pk}:burst:${q.burst?.resets_at ?? ""}` };
   }
+  if (v.paused === "seat") return { tone: "stop", text: `你的个人额度已用完，新任务暂不能发起${reset}`, key: `${pk}:own-full` };
   const own = q.own;
-  if (own && own.enforced && own.used_ratio >= 1) return { tone: "stop", text: `你的个人上限已用完，新任务暂不能发起${reset}`, key: `${pk}:own-full` };
-  if (f.remaining_ratio < LOW_REMAINING) return { tone: "warn", text: `你${per}的额度已不足 ${fmtPct(LOW_REMAINING)}${reset}`, key: `${pk}:firm-low` };
-  if (own && own.enforced && 1 - own.used_ratio < LOW_REMAINING) return { tone: "warn", text: `你的个人上限已不足 ${fmtPct(LOW_REMAINING)}${reset}`, key: `${pk}:own-low` };
+  if (!q.personal && own && own.enforced && own.used_ratio >= 1) return { tone: "stop", text: `你的个人上限已用完，新任务暂不能发起${reset}`, key: `${pk}:own-full` };
+  if (v.capped && v.left < LOW_REMAINING) return { tone: "warn", text: `你${per}的额度已不足 ${fmtPct(LOW_REMAINING)}${reset}`, key: `${pk}:firm-low` };
+  if (!q.personal && own && own.enforced && 1 - own.used_ratio < LOW_REMAINING) return { tone: "warn", text: `你的个人上限已不足 ${fmtPct(LOW_REMAINING)}${reset}`, key: `${pk}:own-low` };
   return null;
 }
 
@@ -67,13 +74,7 @@ export function quotaMenuLine(q: QuotaStatus | null | undefined): string | null 
   // 第 66 批（V40 P0-5）：个人产品只说“我”的用量（菜单“套餐与用量”右侧的小字）；不再写“本所”
   if (!q || q.mode !== "control_plane" || !q.firm) return null;
   // 与“套餐与用量”页同一个数（云端 personal 优先）
-  return `已用 ${fmtPct(q.personal?.used_ratio ?? personalUsedRatio(q))}`;
-}
-
-/** 个人用量比例（第 66 批）：本人账号有单独分母时用它；没有（单人工作室，本所额度就是本人套餐）用本期额度。 */
-export function personalUsedRatio(q: Pick<QuotaStatus, "firm" | "own">): number {
-  if (q.own && q.own.denominator === "account_limit") return q.own.used_ratio;
-  return q.firm?.used_ratio ?? q.own?.used_ratio ?? 0;
+  return `已用 ${fmtPct(personalView(q).used)}`;
 }
 
 /** 用户卡上的套餐标识（Kimi 名字旁的“Max”）：取控制面套餐名；试用版写“试用”；本地开发不显示。 */

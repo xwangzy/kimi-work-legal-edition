@@ -144,6 +144,12 @@
   --shadow-composer: 0 5px 16px -4px rgba(14, 18, 25, 0.07);
   --shadow-md: 0 8px 24px rgba(16, 24, 40, 0.12);
   --shadow-lg: 0 24px 60px rgba(14, 18, 25, 0.25);
+  /* 预览画布（V42）：文书纸放在画布上——画布略深于面板、带极淡 20px 点阵（只在纸外），纸面保持纯白、靠三层投影浮起；
+     画布随明暗切换（深色为更深的桌面），纸本身仍用纸面令牌。隔离框架内取不到令牌：lib/safe-preview.ts 手抄，style-tokens.test.ts 核对 */
+  --preview-canvas: #efedea;
+  --preview-canvas-dot: rgba(14, 18, 25, 0.12);
+  --preview-sheet-shadow: 0 0 0 1px rgba(14, 18, 25, 0.05), 0 1px 2px rgba(14, 18, 25, 0.06), 0 6px 20px -6px rgba(14, 18, 25, 0.14);
+  --preview-note-shadow: 0 0 0 1px rgba(14, 18, 25, 0.05), 0 1px 2px rgba(14, 18, 25, 0.06), 0 6px 20px -6px rgba(14, 18, 25, 0.14);
   /* 纸面（文书预览、审查工作台原文、评测文书）：深浅两套相同，保持纸面白 */
   --bg-paper: var(--p-paper);
   --bg-preview: var(--p-white); /* 隔离预览框架（框架内文书自带浅色样式，取不到本页令牌） */
@@ -350,6 +356,10 @@
   --shadow-composer: 0 5px 16px -4px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --preview-canvas: #161514;
+  --preview-canvas-dot: rgba(255, 255, 255, 0.07);
+  --preview-sheet-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 2px 4px rgba(0, 0, 0, 0.35), 0 14px 36px -8px rgba(0, 0, 0, 0.6);
+  --preview-note-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 10px 30px -8px rgba(0, 0, 0, 0.6);
 
   --btn-primary: #ecebe9;
   --btn-primary-hover: #ffffff;

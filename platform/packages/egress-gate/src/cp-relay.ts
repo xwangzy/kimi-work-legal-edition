@@ -58,6 +58,8 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/models$/,
   // 第 66 批（V40，D-292）：个人账号新电脑自动登记（账号会话 + 新设备公钥与持有证明；应答是控制面签名信封 kwl-device-enroll）
   /^\/v1\/auth\/devices\/enroll$/,
+  // 第 68 批（V42，D-295）：新电脑登录后按这次会话重取 onboarding（电脑数已满、就地移除一台之后继续）
+  /^\/v1\/auth\/onboarding$/,
   // 第 66 批（V40）：本人用量明细翻页（设备签名 + 账号会话，同 /v1/quota；只许这一种查询串：before 为 ISO 时刻、limit 1～3 位）
   /^\/v1\/quota\/usage\?(?:before=\d{4}-\d{2}-\d{2}T\d{2}(?:%3A|:)\d{2}(?:%3A|:)\d{2}(?:\.\d{1,3})?Z&)?limit=\d{1,3}$/,
 ];

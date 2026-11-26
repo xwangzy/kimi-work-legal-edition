@@ -124,7 +124,10 @@ test("同一账号第二台电脑：设备上限（试用 1 台）→ 调到 2 �
   let b = await boot(dirB);
   const blocked = (await b.invoke("account.login", { email: "zhao@example.cn", password: PW })) as any;
   assert.equal(blocked.next, "blocked");
-  assert.match(blocked.message, /电脑数已满/);
+  // 第 68 批（V42，D-295）：上限由云端设定；带上已登记的电脑（可就地移除一台）
+  assert.match(blocked.message, /云端设定的上限/);
+  assert.equal(blocked.reason, "device_limit");
+  assert.equal(blocked.devices.length, 1);
   cloud!.cp.ops.account("zhao@example.cn")!.device_limit = 2;
   const jb = (await b.invoke("account.login", { email: "zhao@example.cn", password: PW })) as any;
   assert.deepEqual([jb.kind, jb.next, jb.via_account], ["member", "wait", true]);

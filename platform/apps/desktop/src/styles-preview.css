@@ -9,3 +9,15 @@
 .sp-frame { flex: 1 0 auto; }
 .dlp-body > .safe-preview { height: 100%; }
 .dlp-body > .safe-preview > .sp-frame { flex: 1 1 0; height: auto; min-height: 320px; }
+/* V42 预览画布（“草稿纸”）：文书纸放在略深于面板的画布上，画布带极淡 20px 点阵（只在纸外），纸面纯白、三层投影浮起；
+   画布随明暗切换（--preview-canvas*，tokens.css），纸面不随。Word / Excel 框架里的画布与纸见 lib/safe-preview.ts（同值手抄）；
+   这里管框架外：框架载入前与四周露出的也是画布色（深色界面不再先闪一块白），以及 Markdown 草稿的画布与便笺纸。 */
+.sp-is-doc .sp-frame, .sp-is-sheet .sp-frame { background: var(--preview-canvas); }
+/* Markdown / 文本草稿（答复摘要、复核意见等工作稿）：同一张画布上的“便笺纸”——不定高、无 A4 比例、无衬线、随主题明暗，与 Word 的 A4 衬线白纸一眼可分 */
+.safe-preview.sp-md { padding: 28px clamp(12px, 4%, 24px) 40px; background-color: var(--preview-canvas); background-image: radial-gradient(circle, var(--preview-canvas-dot) 1px, transparent 1.3px); background-size: 20px 20px; background-position: 10px 10px; }
+.sp-md > .md { box-sizing: border-box; max-width: 760px; margin: 0 auto; padding: clamp(20px, 6%, 40px) clamp(18px, 7%, 48px); background: var(--bg-surface); border-radius: var(--r-xs); box-shadow: var(--preview-note-shadow); }
+/* 底纹只是界面：打印时画布、点阵、投影一律去掉 */
+@media print {
+  .safe-preview.sp-md { padding: 0; background: none; }
+  .sp-md > .md { max-width: none; padding: 0; box-shadow: none; }
+}

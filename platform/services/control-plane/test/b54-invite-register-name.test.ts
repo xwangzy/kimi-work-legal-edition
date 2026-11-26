@@ -118,12 +118,21 @@ test("第 56 批：被拒后重新受邀——账号原来绑的成员从未入�
   await f.dev.call("POST", "/v1/invitations", { member_slug: "free-c", name: "空位", role: "lawyer" }, f.session);
   const d3 = device(f.tid, f.root.privateKeyPem, slugOf(f.tid, "free-c"), `dev_${f.tid.slice(4)}_free-c`, "lawyer");
   assert.equal((await d3.register()).status, 200);
+  // 第 68 批（V42，D-294）：别人的电脑签名的登录不再整个拒绝（同一台电脑可以换账号）——但已入组的账号不改绑、会话不绑那台电脑、
+  // 那台电脑也用不了这个会话（席位、额度等仍按“账号就是证书上的成员”核对）
   const hop = await d3.call("POST", "/v1/auth/login", { email: "zhao-b56@example.cn", password: PW, client: { version: "0.3.0", platform: "win32" } });
-  assert.deepEqual([hop.status, hop.json.error.code], [409, "device_mismatch"], "已入组的账号不改绑");
-  assert.equal(cp.ops.account("zhao-b56@example.cn")!.member_slug, "zhao-b");
+  assert.equal(hop.status, 200, JSON.stringify(hop.json));
+  assert.notEqual(hop.json.onboarding.state, "ready", "不是这台电脑的账号");
+  assert.equal(hop.json.session.device_id ?? null, null);
+  assert.equal(cp.ops.account("zhao-b56@example.cn")!.member_slug, "zhao-b", "已入组的账号不改绑");
+  // 会话没有绑到那台电脑（本人资料里这次会话的设备为空）
+  const me = await fetch(`${base}/v1/auth/me`, { headers: { "x-kwl-session": hop.json.session_token } }).then((r) => r.json() as Promise<any>);
+  assert.equal(me.session.device_id, null, "会话不绑别人的电脑");
   // 角色不一致不改绑：新建一个从未入组的助理账号，去登律师的电脑
   const inv4 = await f.dev.call("POST", "/v1/invitations", { member_slug: "asst-d", name: "助理丁", role: "assistant" }, f.session);
   assert.equal((await post("/v1/auth/register", { email: "asst-b56@example.cn", password: PW, name: "助理丁", code: inv4.json.code })).status, 200);
   const wrongRole = await d3.call("POST", "/v1/auth/login", { email: "asst-b56@example.cn", password: PW, client: { version: "0.3.0", platform: "win32" } });
-  assert.deepEqual([wrongRole.status, wrongRole.json.error.code], [409, "device_mismatch"], "角色不同不改绑");
+  assert.equal(wrongRole.status, 200, JSON.stringify(wrongRole.json));
+  assert.equal(cp.ops.account("asst-b56@example.cn")!.member_slug, "asst-d", "角色不同不改绑");
+  assert.notEqual(wrongRole.json.onboarding.state, "ready");
 });

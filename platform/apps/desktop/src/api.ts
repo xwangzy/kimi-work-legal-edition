@@ -855,7 +855,9 @@ export interface QuotaStatus {
    * 第 66 批（V40）：个人口径——真正卡住“我”的那一项（额度、律所上限、5 小时窗口、个人上限四者最小）。界面的“已用 / 剩余”优先用它；
    * limited_by = 正在卡住的那项（null = 都没卡）。旧控制面没有，回退到 own。
    */
-  personal?: { used_ratio: number; remaining_ratio: number; limited_by: "allowance" | "cap" | "burst" | "seat" | null; /** 暂停原因（null = 没暂停）。 */ paused: "allowance" | "cap" | "burst" | "seat" | null };
+  personal?: { used_ratio: number; remaining_ratio: number; limited_by: "allowance" | "cap" | "burst" | "seat" | null; /** 暂停原因（null = 没暂停）。 */ paused: "allowance" | "cap" | "burst" | "seat" | null; /** 第 68 批：本人进行中的任务预留（同一分母；旧云端没有）。 */ in_flight_ratio?: number };
+  /** 第 68 批：明细与大数字同一分母（"personal"）；旧云端没有，客户端按比值折算。 */
+  ratio_basis?: "personal";
   /** 第 66 批：本人本期按模型（份额按 token，不含金额）。 */
   own_models?: { alias: string; label: string; share: number; requests: number }[];
 }
@@ -905,7 +907,7 @@ export interface AccountMe {
   session: AccountSession;
   devices: AccountDevice[];
   sessions: AccountSession[];
-  /** 第 66 批（V40）：个人账号（换电脑直接登录、不设台数上限，只留防滥用硬上限）。旧云端没有。 */
+  /** 第 66 批（V40）：个人账号（换电脑直接登录、不需别的电脑批准；第 68 批起台数按云端配置的上限）。旧云端没有。 */
   personal?: boolean;
   /** 第 66 批：最近 5 次登录（新的在前）：时刻、类型（login 登录 / enroll 新电脑登记）、设备编号、平台、粗粒度网段。旧云端没有。 */
   recent_logins?: { at: string; kind: "login" | "enroll"; device_id: string | null; platform: string | null; version: string | null; net: string }[];
@@ -1640,6 +1642,8 @@ export const onboarding = {
   reset: () => invoke<any>("onboarding.reset"),
   /** 第 66 批（V40）：个人账号新电脑自动登记被风控暂停后，用账号绑定手机号的短信验证码（account.smsSend(phone, "login")）确认再登记。 */
   deviceConfirm: (phone: string, smsCode: string) => invoke<any>("onboarding.device_confirm", { phone, sms_code: smsCode }),
+  /** 第 68 批（V42）：电脑数已满时，用刚完成的登录就地移除这个账号的一台旧电脑，再继续登记这台电脑（结果同登录）。 */
+  unbindDevice: (deviceId: string) => invoke<any>("onboarding.unbind_device", { device_id: deviceId }),
   /** 从备份恢复（第 14 批）：安装包形态传句柄；开发形态（无对话框）传路径。 */
   restore: (o: { file_handle?: string; folder_handle?: string; file?: string; dir?: string; code: string; legacy_ack?: boolean; older_ack?: boolean }) => invoke<any>("onboarding.restore", o),
 };
@@ -1667,6 +1671,8 @@ export const account = {
   changePassword: (current: string, next: string) => invoke<{ ok: true; other_sessions_revoked: number }>("account.change_password", { current, next }),
   revokeSession: (sid: string) => invoke<{ ok: true }>("account.revoke_session", { sid }),
   unbindDevice: (deviceId: string, password: string) => invoke<{ ok: true }>("account.unbind_device", { device_id: deviceId, password }),
+  /** 第 68 批（V42）：换账号登录时那个账号电脑数已满——就地移除它的一台旧电脑后继续切换（结果同 login）。 */
+  unbindForLogin: (deviceId: string) => invoke<any>("account.unbind_for_login", { device_id: deviceId }),
 };
 
 /** 恢复包与备份（第 14 批）：安装包形态经系统对话框拿句柄；开发形态（浏览器）没有对话框，界面让开发者填路径。 */

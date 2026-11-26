@@ -47,7 +47,12 @@ const port = resolvePort();
 interface InitMessage {
   type: "kernel.init";
   dbKey?: unknown;
+  /** 第 68 批（D-294）：这把密钥属于哪一格（legacy / pending / profile）。 */
+  keySlot?: unknown;
+  /** 第 68 批：切换账号的一次性交接（只经内存；内核按 profiles.ts validHandoff 核对后采用）。 */
+  handoff?: unknown;
 }
+type InitData = { dbKey: string | undefined; keySlot: "legacy" | "pending" | "profile"; handoff: unknown };
 
 /**
  * 统一的消息处理（复核 B13-K01）：一启动就挂上，内核就绪之前到达的调用排队（至多 200 条），就绪后依次处理——
@@ -56,7 +61,7 @@ interface InitMessage {
 let kernelRef: Awaited<ReturnType<typeof createKernel>> | null = null;
 const queued: RpcRequest[] = [];
 let closing = false;
-let initResolve: ((v: { dbKey: string | undefined }) => void) | null = null;
+let initResolve: ((v: InitData) => void) | null = null;
 
 async function handleRpc(req: RpcRequest): Promise<void> {
   try {
@@ -79,7 +84,7 @@ port.on("message", async (raw) => {
     const msg = raw as InitMessage;
     const r = initResolve;
     initResolve = null;
-    r?.({ dbKey: typeof msg.dbKey === "string" && msg.dbKey.length > 0 ? msg.dbKey : undefined });
+    r?.({ dbKey: typeof msg.dbKey === "string" && msg.dbKey.length > 0 ? msg.dbKey : undefined, keySlot: msg.keySlot === "pending" || msg.keySlot === "profile" ? msg.keySlot : "legacy", handoff: msg.handoff ?? null });
     return;
   }
   // 主进程交来的日志事件（v9.2 §3.6）：按登记表重新核验，进程名由这里标注
@@ -128,7 +133,7 @@ port.on("message", async (raw) => {
 });
 
 /** 启动时先等 {type:'kernel.init', dbKey?}；超时无消息则不带 key 启动并广播提示（明文开发库形态）。 */
-function waitForInit(timeoutMs: number): Promise<{ dbKey: string | undefined } | null> {
+function waitForInit(timeoutMs: number): Promise<InitData | null> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       if (initResolve) {
@@ -161,7 +166,7 @@ async function main(): Promise<void> {
   }
   let kernel;
   try {
-    kernel = await createKernel(init?.dbKey ? { dbKey: init.dbKey } : {});
+    kernel = await createKernel({ ...(init?.dbKey ? { dbKey: init.dbKey } : {}), ...(init ? { keySlot: init.keySlot, handoff: init.handoff } : {}) });
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e);
     if (/not a database|encrypted|cipher|file is not/i.test(msg)) {
@@ -171,7 +176,12 @@ async function main(): Promise<void> {
   }
 
   // 采用主密钥的消息单独写出（复核 R2A-07）：不经通用信封，免得将来改信封写法时它以 kernel.event 身份进入转发界面的白名单
-  kernel.onBroadcast((msg) => port.postMessage(msg.type === "kernel.adopt_master_key" ? { type: "kernel.adopt_master_key", key: msg.key } : { type: "kernel.event", ...msg }));
+  // 第 68 批：切换账号档案的交接（含会话令牌）同样单独写出，只给主进程，绝不进入转发界面的通用信封
+  kernel.onBroadcast((msg) =>
+    port.postMessage(
+      msg.type === "kernel.adopt_master_key" ? { type: "kernel.adopt_master_key", key: msg.key } : msg.type === "kernel.switch_profile" ? { type: "kernel.switch_profile", handoff: msg.handoff } : { type: "kernel.event", ...msg },
+    ),
+  );
   kernelRef = kernel;
   if (closing) {
     await kernel.close().catch(() => {});

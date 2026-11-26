@@ -30,7 +30,10 @@ import { parseWithPipeline } from "./services/parse-pipeline.ts";
 import { runChildSelftest, type ChildSelftestResult } from "./services/child-selftest.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
 import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
+import { onboardingStateText } from "./account-session.ts";
 import { accountErrorText, dropAccountSession, dropLoginRequired, modelRejectionProblem, readAccountSession, readLoginRequired, writeAccountSession, writeLoginRequired, type AccountSessionFile } from "./account-session.ts";
+import { allocateWorkspace, findProfile, profileScopeId, validHandoff, writeProfile, type ProfileHandoff } from "./profiles.ts";
+import { writeActivationFile } from "./services/onboarding.ts";
 import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, reconcilePendingRestore, removePendingWorkspace, writeJoinFailure, writePendingActivation } from "./services/onboarding.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
 import { ControlPlaneClient } from "./control-plane/client.ts";
@@ -171,6 +174,27 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   if (!skillsBundle.ok) slog.event("KERNEL_SKILLS_UNAVAILABLE", {});
   // 密钥文件按数据库主密钥派生的密钥封装（隐私安全审查 P0-1）；开发与测试形态无主密钥时为明文
   configureSecretSealing(keysDir, config.dbKey);
+  // 第 68 批（D-294）：已激活档案补一份 profile.json（升级前的工作区没有；同一台电脑多个账号时据此找回这个档案）
+  if (config.activation && !config.onboarding) {
+    try {
+      writeProfile(config.dataRoot, config.activation);
+    } catch (e) {
+      slog.event("KERNEL_PROFILE_WRITE_FAILED", errFields(e));
+    }
+  }
+  // 第 68 批：从别的档案切换过来、这次登录的会话随交接到达——只认属于本档案（同一律所编号、同一成员）的会话，写进本档案（本档案密钥封装）
+  const handoff: ProfileHandoff | null = validHandoff(opts.handoff);
+  if (handoff?.kind === "session" && config.activation && !config.onboarding) {
+    if (handoff.tid === config.activation.tid && handoff.member_slug === config.activation.member_slug && handoff.session.tid === config.activation.tid) {
+      try {
+        writeAccountSession(keysDir, handoff.session);
+        dropLoginRequired(keysDir);
+        slog.event("KERNEL_PROFILE_SESSION_HANDOFF", {});
+      } catch (e) {
+        slog.event("KERNEL_PROFILE_SESSION_HANDOFF_FAILED", errFields(e));
+      }
+    } else slog.event("KERNEL_PROFILE_SESSION_HANDOFF_FAILED", { reason: "mismatch" });
+  }
   // 成员设备（第 13 批）：律所身份来自管理员批准时送达的证书与律所公钥包，本机不生成律所根
   if (config.activation?.kind === "member") {
     let sj: { applied: boolean; rejected?: string };
@@ -397,7 +421,91 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       // 退出登录也通知界面（此前只有同步与模型调用发现问题时才广播，界面要等 30 秒轮询）
       broadcastRef.current?.({ type: "account.login_required", reason: code, source: "logout", message: accountErrorText(code) });
     },
+    // ─── 第 68 批（D-294）：同一台电脑上换账号 ───
+    current: () => ({ tid: config.activation?.tid ?? identity.tenantId, member_slug: config.activation?.member_slug ?? config.userSlug }),
+    signedLogin: async () => {
+      const now = Date.now();
+      if (cloudSwitch && now - cloudSwitch.at < 60_000) return cloudSwitch.ok;
+      let m: Awaited<ReturnType<NonNullable<typeof controlPlane>["meta"]>> | null = null;
+      try {
+        m = (await controlPlane?.meta()) ?? null;
+      } catch {
+        m = null;
+      }
+      // 安全复核 U-2：取不到 /v1/meta（网络抖动、云端 5xx）不当作旧云端——照常带签名登录、不记缓存；只有云端答了而没有 account_switch 才是旧云端
+      if (!m || !m.ok) return true;
+      const features = Array.isArray((m.json as { features?: unknown }).features) ? ((m.json as { features: unknown[] }).features.filter((x) => typeof x === "string") as string[]) : [];
+      cloudSwitch = { at: now, ok: (m.json as { account_switch?: unknown }).account_switch === true, unbind: features.includes("device_limit_unbind") };
+      return cloudSwitch.ok;
+    },
+    switchTo: (j: Record<string, unknown>): Record<string, unknown> => {
+      const acc = (j.account ?? {}) as Record<string, any>;
+      const onb = (j.onboarding ?? {}) as Record<string, any>;
+      const tid = String(acc.tid ?? "");
+      const memberSlug = String(acc.member_slug ?? "");
+      if (!/^ten_[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(tid) || !/^[a-z0-9][a-z0-9_-]{0,47}$/.test(memberSlug) || typeof j.session_token !== "string") throw new DomainError("provider_unavailable", "中软服务的答复格式不对，请稍后重试", 502);
+      const view = { email: String(acc.email ?? ""), name: String(acc.name ?? ""), role: String(acc.role ?? "") };
+      const here = config.activation;
+      const keepHere = () => {
+        // 当前档案留一份记录（升级前的工作区可能还没有），切回来时据此找到它
+        if (here) writeProfile(config.dataRoot, here);
+        // 安全复核 P-2：切走前把本档案的会话删掉、记“要重新登录”——切回本档案必须再登录这个账号（只改 activation.json 指针打不开已登录的工作区）
+        if (accountSession) {
+          try {
+            dropAccountSession(keysDir);
+          } catch {
+            // 删不掉：会话仍按云端有效期失效
+          }
+          accountSession = null;
+        }
+        persistProblem("session_required");
+      };
+      const prof = findProfile(config.dataRoot, tid, memberSlug);
+      if (prof) {
+        keepHere();
+        writeActivationFile(config.dataRoot, prof);
+        slog.event("KERNEL_PROFILE_SWITCH", { to: "existing" });
+        const h: ProfileHandoff = { v: 1, kind: "session", tid, member_slug: memberSlug, session: { token: j.session_token, aid: String(acc.aid ?? ""), email: view.email, name: view.name || (prof.member_name ?? ""), tid, role: view.role || prof.role } };
+        setTimeout(() => broadcastRef.current?.({ type: "kernel.switch_profile", handoff: h }), 300).unref?.();
+        return { ok: true, switched: true, account: view, firm: { name: prof.firm_name } };
+      }
+      const state = String(onb.state ?? "");
+      if (state === "needs_device_auto" || state === "needs_device_join" || state === "needs_founder_setup") {
+        keepHere();
+        // 当前档案原样留在它的工作区里（含退出登录的状态）；这台电脑换到待激活，按这次登录的答复为新账号登记
+        rmSync(activationFilePath(config.dataRoot), { force: true });
+        slog.event("KERNEL_PROFILE_SWITCH", { to: "enroll" });
+        const h: ProfileHandoff = { v: 1, kind: "auth", tid, member_slug: memberSlug, auth: j };
+        setTimeout(() => broadcastRef.current?.({ type: "kernel.switch_profile", handoff: h }), 300).unref?.();
+        return { ok: true, switched: true, enrolling: true, account: view, firm: { name: String(onb.firm?.name ?? acc.org?.name ?? "") } };
+      }
+      // 不能在这台电脑上继续（设备数已满、律所未开通等）：不切换，就地说明原因（设备数已满时带上已登记的电脑，可就地移除一台再继续）
+      const reason = /^[a-z_]{1,40}$/.test(state) ? state : "unknown";
+      const devices = Array.isArray(onb.devices) ? onb.devices.slice(0, 20) : [];
+      if (state === "device_limit" && devices.length > 0) limitSession = { token: j.session_token, at: Date.now() };
+      throw new DomainError("conflict", onboardingStateText(state, { admin: acc.role === "admin" }), 409, { reason, devices, ...(state === "device_limit" && devices.length > 0 && cloudSwitch?.unbind ? { can_unbind: true } : {}) });
+    },
+    unbindForLogin: async (deviceId: string): Promise<Record<string, unknown>> => {
+      const ls = limitSession;
+      if (!ls || Date.now() - ls.at > 9 * 60_000) throw new DomainError("conflict", "这次登录已超过 10 分钟：请重新登录后再移除", 409);
+      if (!controlPlane) throw new DomainError("validation", "这台电脑没有连接中软账号服务", 400);
+      await controlPlane.accountUnsigned("POST", `/v1/auth/devices/${deviceId}/unbind`, {}, ls.token);
+      let o: Record<string, unknown>;
+      try {
+        o = await controlPlane.accountUnsigned("POST", "/v1/auth/onboarding", {}, ls.token);
+      } catch (e) {
+        // 安全复核 O-2：与待激活模式同口径——那台电脑已经移除了，不要让律师再移除一台
+        const code = String((e as { code?: unknown })?.code ?? "error");
+        throw new DomainError("provider_unavailable", `已移除那台电脑；${accountErrorText(code)}`, 502, { reason: code, removed: true });
+      }
+      limitSession = null;
+      return accountDeps.switchTo({ ...o, session_token: ls.token });
+    },
   };
+  /** 第 68 批：云端是否支持带签名登录别的账号（/v1/meta 取一次记 60 秒）。 */
+  let cloudSwitch: { at: number; ok: boolean; unbind: boolean } | null = null;
+  /** 第 68 批：换到的账号电脑数已满时那次登录的会话（只在内存、10 分钟内），就地移除一台后继续。 */
+  let limitSession: { token: string; at: number } | null = null;
   /**
    * 记下“要重新登录”（第 44 批同步口径；第 47 批起模型调用被网关确定地按身份拒绝时也走这里，不等下一次同步）：
    * 原因写进同一个 accountProblem（kernel.status 的 account.login_required / reason、发起前检查的拦截都读它）；
@@ -1011,7 +1119,11 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   // ZR_CONTROL_PLANE_SYNC_MS=off 时只在显式调用 control_plane.sync 时同步（测试）
   // ─── 开通与成员入组（第 13 批；docs/design/开通与成员入组设计-v1.md） ───
   // 待激活模式：只开放 onboarding.*（见 invoke 的门禁）；激活完成后请主进程按 activation.json 重启内核
-  const onboarding = config.onboarding ? new OnboardingService({ config, relay: (req) => gate.cp(req), requestRestart: () => broadcast({ type: "kernel.restart_for_identity" }) }) : null;
+  const onboarding = config.onboarding
+    ? new OnboardingService({ config, relay: (req) => gate.cp(req), requestRestart: () => broadcast({ type: "kernel.restart_for_identity" }), requestSwitch: (h) => broadcast({ type: "kernel.switch_profile", handoff: h }) })
+    : null;
+  // 第 68 批：上一个档案里登录了一个这台电脑上还没有档案的账号——按那次登录的答复继续登记（结果经 onboarding.status 给激活页）
+  if (onboarding && handoff?.kind === "auth") void onboarding.resumeHandoff(handoff);
   // 第 64 批：开通页首屏要用注册 / 登录策略——内核一启动就预取（顺带拉起出站闸门），界面第一次调用接上这个请求
   if (onboarding && env.ZR_PREFETCH_META !== "0") onboarding.prefetchRegistrationMeta();
   if (onboarding) {
@@ -1022,6 +1134,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     api["onboarding.reset"] = () => onboarding.reset();
     // 第 66 批（V40，D-292）：个人账号新电脑自动登记被风控暂停后，用短信验证码确认再登记
     api["onboarding.device_confirm"] = (p) => onboarding.deviceConfirm((p ?? {}) as { phone?: unknown; sms_code?: unknown });
+    // 第 68 批（V42，D-295）：电脑数已满时就地移除一台再继续
+    api["onboarding.unbind_device"] = (p) => onboarding.unbindForLogin((p ?? {}) as { device_id?: unknown });
     // 第 44 批：账号注册与登录（这台电脑还没有身份）；找回密码两种模式都可用
     api["account.register"] = (p) => onboarding.accountRegister((p ?? {}) as Record<string, unknown>);
     api["account.login"] = (p) => onboarding.accountLogin((p ?? {}) as Record<string, unknown>);
@@ -1048,7 +1162,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
         if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$/.test(c.firm_slug) || c.firm_slug === "pending-activation") throw new DomainError("validation", "恢复包里的律所标识不合法", 400);
         if (!c.db_master_key) throw new DomainError("validation", "这份恢复包不含数据库主密钥（旧格式），不能用来从备份恢复：请在原电脑上重新生成恢复包", 400);
         // 本机已有以前留下的数据（复核 R2A-05）：恢复会换掉本机主密钥，那些数据此后在本应用里打不开——须律师确认
-        const legacy = ((onboarding.status() as { legacy_workspaces?: string[] }).legacy_workspaces ?? []).filter((w) => w !== c.firm_slug);
+        // 第 68 批（D-294）：这台电脑上已有别的账号档案时，待激活用的是另起的一把密钥（keySlot = pending）——恢复只换这一把，别的数据不受影响
+        const legacy = config.keySlot === "pending" ? [] : ((onboarding.status() as { legacy_workspaces?: string[] }).legacy_workspaces ?? []).filter((w) => w !== c.firm_slug);
         if (legacy.length > 0 && p?.legacy_ack !== true) {
           throw new DomainError("conflict", `这台电脑上还有以前留下的数据（${legacy.join("、")}）。从备份恢复后它们在本应用里将打不开（不会删除）。若确认，请勾选后再恢复；要保留它们，请先联系所内 IT`, 409, { code: "legacy_present", legacy_workspaces: legacy });
         }
@@ -1058,8 +1173,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
         if (c.activation && (c.activation.tid !== c.tid || c.activation.firm_slug !== c.firm_slug || c.activation.member_slug !== c.member_slug)) {
           throw new DomainError("validation", "恢复包里的激活记录与设备身份不一致", 400);
         }
+        // 第 68 批：恢复到这个账号自己的工作区目录（同一律所已有别的成员档案时为 <律所>.<成员>），并记下密钥格
+        const restoreWs = allocateWorkspace(config.dataRoot, c.tid, c.firm_slug, c.member_slug);
         const act = {
           v: 1 as const,
+          ...(restoreWs !== c.firm_slug ? { workspace: restoreWs } : {}),
+          ...(config.keySlot === "pending" ? { key_slot: restoreWs } : {}),
           tid: c.tid,
           firm_slug: c.firm_slug,
           firm_name: c.activation?.firm_name ?? c.firm_slug,
@@ -1078,7 +1197,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
           tenantId: c.tid,
           deviceId: c.device.device_id,
           dataRoot: config.dataRoot,
-          firmSlug: c.firm_slug,
+          firmSlug: restoreWs,
           verifySig: (bytes, sig) => verifyBytes(cert.signPublicKeyPem, bytes, sig),
           minSeq: c.backup?.seq ?? null,
           olderAck: p?.older_ack === true,
@@ -1295,6 +1414,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       // 正式安装包从 content_keys 剔除的开发公钥把数（复核 A-14 余项）
       ...(config.contentKeysRefused > 0 ? { content_keys_refused: config.contentKeysRefused } : {}),
       activation: config.onboarding ? null : activationInfo(config, firm, identity),
+      // 第 68 批：当前账号档案的标识（摘要，不含身份）：界面按它分开本机偏好、切换账号后据此确认已换到新档案
+      profile: config.onboarding || !config.activation ? null : { id: profileScopeId(config.activation) },
       // 这台电脑何时从备份恢复（复核 R2A-14 / R2B-22：界面据此提醒“原电脑丢了请找管理员”）
       restored_from_backup_at: config.onboarding ? null : (db.get<{ at: string }>(`SELECT created_at AS at FROM audit_events WHERE action = 'device.restored_from_backup' AND tenant_id = ? ORDER BY audit_event_id DESC LIMIT 1`, [identity.tenantId])?.at ?? null),
     });

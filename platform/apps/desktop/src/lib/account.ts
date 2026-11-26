@@ -258,7 +258,7 @@ export function loginRequiredText(reason: string | null | undefined): string {
     reason === "account_disabled"
       ? "账号已停用，请联系律所管理员或客服"
       : reason === "session_member_mismatch"
-        ? "这台电脑登记的是本所另一位成员，请用那位成员的账号登录"
+        ? "登录状态与这台电脑上打开的账号不一致"
         : reason === "session_required"
           ? "你已退出登录"
           : "登录已失效";
@@ -267,14 +267,22 @@ export function loginRequiredText(reason: string | null | undefined): string {
 
 /**
  * 整窗重新登录页的标题与说明（第 64 批：退出登录、登录失效后不再在工作区顶部嵌横幅）。
- * 标题按原因：主动退出 → “你已退出登录”；账号停用 → 写明联系谁；这台电脑登记的是别人 → 写明用谁的账号；其余 → “登录已失效”。纯函数。
+ * 标题按原因：主动退出 → “你已退出登录”；账号停用 → 写明联系谁；其余 → “登录已失效”。纯函数。
+ * 第 68 批（V42，D-294）：这台电脑不再只许某位成员登录——任何合法账号都可以在这里登录：登录的是刚才那个账号就回到原来的工作空间，
+ * 是别的账号就打开那个账号自己的工作空间（这台电脑上第一次登录的，按云端的设备策略登记）。说明里讲清“各账号的资料互不可见”。
  */
 export function reloginView(reason: string | null | undefined): { title: string; lead: string } {
   const keep = "这台电脑上的事项、材料和成果都还在；登录后 AI 恢复可用。";
   if (reason === "account_disabled") return { title: "账号已停用", lead: `请联系律所管理员或客服启用账号，启用后在这里重新登录。${keep}` };
-  if (reason === "session_member_mismatch") return { title: "请用这台电脑登记的成员登录", lead: `这台电脑登记的是本所另一位成员，只能用那位成员的账号登录。${keep}` };
-  if (reason === "session_required") return { title: "你已退出登录", lead: `请重新登录。${keep}` };
+  if (reason === "session_member_mismatch") return { title: "请重新登录", lead: `登录状态与这台电脑上打开的账号不一致。${keep}` };
+  if (reason === "session_required") return { title: "你已退出登录", lead: `请重新登录，或换一个账号登录。${keep}` };
   return { title: "登录已失效", lead: `为了账号安全，请重新登录。${keep}` };
+}
+
+/** 第 68 批：换账号登录后的过渡说明（切换到那个账号自己的工作空间；新账号按云端设备策略登记）。纯函数。 */
+export function switchingText(r: { enrolling?: boolean; account?: { name?: string | null; email?: string | null } | null } | null | undefined): string {
+  const who = (r?.account?.name || r?.account?.email || "").trim();
+  return r?.enrolling ? `正在为${who ? `「${who}」` : "这个账号"}登记这台电脑…` : `正在打开${who ? `「${who}」` : "这个账号"}的工作空间…`;
 }
 
 /** kernel.status / account.status 里是否要求重新登录。 */

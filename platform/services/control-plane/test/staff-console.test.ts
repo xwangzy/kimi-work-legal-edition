@@ -331,7 +331,9 @@ test("账本 partial / retry_of：服务出错的行不扣额度、售价 0；�
 test("客户端最低版本：低于 min_version 的桌面客户端登录、注册、续期席位令牌 426；网页不拦；/v1/meta 无鉴权（不再有 staff_mfa）；旧控制台带的 staff_mfa 忽略；设置校验", async () => {
   const meta0 = await call(base2, "GET", "/v1/meta");
   // 第 62 批起另有能力字段（registration_policy、sms_available、features；契约 docs/contract-b62-registration.md）
-  const { registration_policy: pol0, sms_available: _s0, features: _f0, ...meta0Base } = meta0.json;
+  // 第 68 批（V42）另有 account_switch（同一台电脑换账号）
+  const { registration_policy: pol0, sms_available: _s0, features: _f0, account_switch: sw0, ...meta0Base } = meta0.json;
+  assert.equal(sw0, true);
   assert.deepEqual(meta0Base, { api: "kwl-cp/2", min_client_version: null, registration: "open" });
   assert.deepEqual([pol0.mode, pol0.require_phone, pol0.sms_available], ["open", false, false]);
   assert.equal((await ops("PUT", "/v1/ops/settings", { clients: { min_version: "1.2" } })).json.error.code, "min_version_invalid");
@@ -366,7 +368,7 @@ test("状态快照带人员与客户端版本（封装落盘、重启读回）�
   assert.deepEqual(b.ops.staff(staffEmail("op_8001"))?.roles, ["finance"], "重启读回人员");
   await new Promise<void>((r) => b.server.listen(0, "127.0.0.1", () => r()));
   const at = `http://127.0.0.1:${(b.server.address() as AddressInfo).port}`;
-  const { registration_policy: polB, sms_available: _sB, features: _fB, ...metaB } = (await call(at, "GET", "/v1/meta")).json;
+  const { registration_policy: polB, sms_available: _sB, features: _fB, account_switch: _swB, ...metaB } = (await call(at, "GET", "/v1/meta")).json;
   assert.deepEqual(metaB, { api: "kwl-cp/2", min_client_version: "0.9.0", registration: "code" }, "最低版本与“给了 billing 段缺省 code”都随状态读回");
   assert.equal(polB.invite_required, true);
   assert.equal(typeof (await staffToken(at, staffEmail("op_8001"))), "string");

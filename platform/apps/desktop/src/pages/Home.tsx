@@ -25,6 +25,7 @@ import { backendDownText, importFailText } from "../lib/errors.ts";
 import { dueText, dueTone, reminderKindLabel, upcomingDeadlines } from "../lib/reminders.ts";
 import { WaitBlock } from "../components/Loading.tsx";
 import { countProgress } from "../lib/waiting.ts";
+import { scopedKey } from "../lib/profile-scope.ts";
 
 const LINE_KEY = "kwl.home.line";
 /** 额度提示条关掉后记住的键（同一周期同一情形不再提示；lib/quota-notice.ts）。 */
@@ -40,7 +41,7 @@ const TAB_LABELS: Record<HomeTab, string> = { recommended: "推荐", litigation:
 const CHIP_LIMIT = 6;
 function savedLine(): HomeTab {
   try {
-    const v = localStorage.getItem(LINE_KEY);
+    const v = localStorage.getItem(scopedKey(LINE_KEY));
     if (v === "recommended" || v === "litigation" || v === "transactional" || v === "inhouse" || v === "general") return v;
   } catch {
     // 无本地存储时用缺省
@@ -75,7 +76,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   const [quota, setQuota] = useState<QuotaStatus | null>(null);
   const [quotaDismissed, setQuotaDismissed] = useState<string | null>(() => {
     try {
-      return localStorage.getItem(QUOTA_DISMISS_KEY);
+      return localStorage.getItem(scopedKey(QUOTA_DISMISS_KEY));
     } catch {
       return null;
     }
@@ -104,7 +105,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     setLine(l);
     setMoreOpen(false);
     try {
-      localStorage.setItem(LINE_KEY, l);
+      localStorage.setItem(scopedKey(LINE_KEY), l);
     } catch {
       // 忽略
     }
@@ -282,7 +283,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     if (!qn) return;
     setQuotaDismissed(qn.key);
     try {
-      localStorage.setItem(QUOTA_DISMISS_KEY, qn.key);
+      localStorage.setItem(scopedKey(QUOTA_DISMISS_KEY), qn.key);
     } catch {
       // 记不住时只在本次打开期间生效
     }
@@ -496,7 +497,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
 const LAST_MATTER_KEY = "kwl.home.lastMatter";
 function lastMatterOf(open: readonly { matter_id: string }[]): string | null {
   try {
-    const id = localStorage.getItem(LAST_MATTER_KEY);
+    const id = localStorage.getItem(scopedKey(LAST_MATTER_KEY));
     return id && open.some((m) => m.matter_id === id) ? id : null;
   } catch {
     return null;
@@ -504,7 +505,7 @@ function lastMatterOf(open: readonly { matter_id: string }[]): string | null {
 }
 function rememberMatter(id: string | null): void {
   try {
-    if (id) localStorage.setItem(LAST_MATTER_KEY, id);
+    if (id) localStorage.setItem(scopedKey(LAST_MATTER_KEY), id);
   } catch {
     // 记不住时下次按缺省
   }

@@ -158,8 +158,10 @@ test("输入框：运行模式在“+”右边；任务模型只读显示（不�
 test("设置：用量在“套餐与用量”一页（律师与管理员同一入口）；顶部提醒是居中胶囊", () => {
   const conn = src("pages/Connections.tsx");
   assert.match(conn, /usage: "套餐与用量",/);
-  assert.match(conn, /\{tab === "usage" && <PersonalUsage \/>\}/);
+  // 第 68 批：页面只给本人用量，管理员多一句“团队用量与上限请在云端控制台管理”（admin 由设置页传入）
+  assert.match(conn, /\{tab === "usage" && <PersonalUsage admin=\{isAdmin\} \/>\}/);
   assert.doesNotMatch(conn, /\["usage", "用量"\]/, "管理页不再重复一个用量子页");
   assert.match(src("App.tsx"), /className=\{`top-notice \$\{reminder\.tone === "red" \? "tone-red" : "tone-orange"\}`\}/);
-  assert.match(src("pages/FirmUsage.tsx"), /我的使用明细（最近 20 条）/);
+  // 第 68 批：本所用量面板（含“我的使用明细（最近 20 条）”）随“管理 · 用量与上限”一起移除，明细只在“套餐与用量”
+  assert.doesNotMatch(src("pages/FirmUsage.tsx"), /我的使用明细（最近 20 条）|export function UsagePanel/);
 });

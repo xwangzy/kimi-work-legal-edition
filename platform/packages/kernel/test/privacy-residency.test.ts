@@ -108,7 +108,8 @@ test("渲染存储：只用 localStorage 的登记键，且只在登记的文件
     users.push(f.rel);
     // 键只能是登记的字面量（经常量或直接写），不能拼接
     for (const m of f.text.matchAll(/localStorage\s*\.\s*(?:getItem|setItem|removeItem)\s*\(\s*([^,)]+)/g)) {
-      const arg = m[1]!.trim();
+      // 第 68 批（D-294）：与账号有关的键经 scopedKey(登记的键) 按档案分键（lib/profile-scope.ts），核对里面那个登记的键
+      const arg = m[1]!.trim().replace(/^scopedKey\(\s*/, "");
       const literal = /^["']([^"']+)["']$/.exec(arg)?.[1];
       const viaConst = /^[A-Za-z_$][\w$]*$/.test(arg) ? new RegExp(`\\b${arg}\\s*=\\s*["']([^"']+)["']`).exec(f.text)?.[1] : undefined;
       const keyParam = /^key$/.test(arg); // 通用读写函数：调用处另行核对

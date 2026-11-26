@@ -40,8 +40,8 @@ function drawPlans(box, d, reload) {
       facts([
         ["每席位额度", h("span", { title: p.seat_quota_display ?? undefined }, `${quotaText(p)} / ${PERIOD[p.period] ?? p.period ?? "期"}`)],
         ["5 小时窗口", p.burst ? `任意 ${p.burst.hours} 小时 ≤ ${p.burst.pct}%` : "不限"],
-        // 第 66 批（V40，D-292）：个人账号（自助注册的单人工作室）不按套餐台数挡，换电脑直接登录；这一项只对多人律所生效
-        ["设备 / 账号（仅多人律所）", `${fmt.int(p.device_limit ?? 2)} 台`],
+        // 第 68 批（V42，D-295）：每账号电脑数对个人账号与多人律所同一口径（第 66 批“个人账号不按台数挡”取消）
+        ["每账号电脑数", `${fmt.int(p.device_limit ?? 2)} 台`],
         ["告警阈值", (p.alert_thresholds ?? [80, 100]).map((x) => `${x}%`).join(" / ")],
         ["加量系数", fmt.num(p.boost_price_factor)],
         ["个人限额", p.enforce_seat_quota ? "按席位额度限制" : "只作参考"],
@@ -141,7 +141,7 @@ function editPlan(p, d, reload, pricing) {
     { name: "burst_pct", label: "5 小时窗口上限（% ，空 = 不限）", type: "number", min: 1, max: 100, value: p?.burst?.pct ?? "", hint: "任意 5 小时内至多用本期总额度的这个比例（按小时桶算）" },
     { name: "seat_price_cny", label: "席位单价（元 / 席 / 期，空 = 未定价）", type: "number", min: 0, step: "any", value: p?.seat_price_cny ?? "" },
     { name: "boost_price_factor", label: "加量价格系数", type: "number", min: 0, step: "any", value: p?.boost_price_factor ?? 1 },
-    { name: "device_limit", label: "每账号设备数（仅多人律所）", type: "number", min: 1, max: 9, value: p?.device_limit ?? 2, hint: "个人账号不受此限：换电脑直接登录，只有防滥用硬上限（同时 20 台，超出自动移除最久未用的一台）" },
+    { name: "device_limit", label: "每账号电脑数", type: "number", min: 1, max: 9, value: p?.device_limit ?? 2, hint: "个人账号与多人律所同一口径（账号单独设的优先）；满了新电脑登录时提示移除一台不再使用的电脑。同一台电脑上换账号登录不受影响，各账号分别计数" },
     { name: "alert_thresholds", label: "告警阈值（%，逗号分隔）", value: (p?.alert_thresholds ?? [80, 100]).join(", ") },
     { name: "enforce_seat_quota", label: "按每席位额度限制个人", type: "checkbox", value: !!p?.enforce_seat_quota, hint: "关：个人只显示“占每席位额度的比例（参考，不限）”" },
     { name: "models", label: "可用模型别名（逗号分隔，空 = 全部）", value: (p?.models ?? []).join(", ") },
