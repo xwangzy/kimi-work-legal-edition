@@ -249,7 +249,8 @@ async function register() {
   await openRegister();
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').first().fill(pw);
-  await page.locator('input[placeholder="同事和客户看到的名字"]').fill(name);
+  // 第 67 批：注册表单只留占位文字（“姓名（同事和客户看到的名字）”），改按 autocomplete 找姓名框；旧版本的占位同样认
+  await page.locator('input[autocomplete="name"], input[placeholder="同事和客户看到的名字"]').first().fill(name);
   // “我有开通码或邀请码”：凭码注册才勾；开放注册不带码时保持不勾（第 59 批）。第 62 批：云端要求邀请码时没有这个勾选框、码框直接显示
   const cb = page.locator("label.auth-check input[type=checkbox]");
   if (await cb.count()) {
@@ -346,7 +347,8 @@ async function openLogin() {
   await authFormReady();
   const tab = page.getByRole("tab", { name: "登录", exact: true });
   if (await tab.count()) return tab.click();
-  const back = page.locator('[data-auth-page="activate"] .auth-title-row button.btn-link').filter({ hasText: /^\s*登录\s*$/ });
+  // 第 67 批：“已有账号？登录”从标题行移到表单下方（与登录页“还没有账号？注册”同一位置）；两种都认
+  const back = page.locator('[data-auth-page="activate"] button.btn-link').filter({ hasText: /^\s*登录\s*$/ });
   if (await back.count()) await back.first().click();
 }
 
@@ -681,7 +683,11 @@ async function task(cardFile) {
   const sp = page.locator("[role=dialog]").last();
   await sp.waitFor();
   await sleep(1500);
-  for (const c of await sp.locator("input[type=checkbox][aria-label]").all()) if (!(await c.isChecked())) await c.check();
+  // 第 66 批起材料多于 4 份时清单先收起（“展开其余 n 份”）：先展开，否则只勾得到前 3 份，助手只读这 3 份（勾选即边界）
+  const more = sp.locator("button.ss-doc-more");
+  if (await more.count()) await more.first().click();
+  // 只勾材料（第 67 批：“先看计划”复选框也有 aria-label，不能顺手勾上）
+  for (const c of await sp.locator('input[type=checkbox][aria-label]:not([aria-label="开始前先给我看计划"])').all()) if (!(await c.isChecked())) await c.check();
   for (const [label, v] of Object.entries(card.fields ?? {})) {
     // 第 55 批：字段外层由 <label> 改为 <div>（逐项请求一栏里有多个输入框与按钮）；两种都认
     const field = sp.locator(".ss-field").filter({ has: page.locator(".ss-label", { hasText: label }) }).first();
