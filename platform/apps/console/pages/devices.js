@@ -1,59 +1,70 @@
 /**
- * 设备：跨律所设备表（版本、最近报到、状态、标记的异常），吊销。
- * 接口：GET /v1/ops/devices?tid&status；吊销 POST /v1/ops/tenants/{tid}/devices/{dev}/revoke（device.revoke）。
- * 异常标记由控制面给（stale = 最近报到超过 30 天、outdated = 客户端版本过旧、suspended = 暂停后仍有请求），本页不另算。
- * 第 62 批：异常标记只留一组带数量的筛选胶囊（原先胶囊与分段选择重复两套）；标记在本页按已读到的设备筛，数量不随筛选变 0；
- *   版本分布挪到表格下方（表格是本页重心）。
+ * 电脑（第 71 批 V45：原“设备”）：所有客户登记的电脑——机队巡检（30 天没在线、低于最低版本、未登录）与按名称、编号查找。
+ * 第二轮（07）：状态四态（登录中 / 已退出登录 / 待批准 / 已移除），待批准的新电脑也列出；“未移除”只作筛选；
+ *   两组筛选各带标签与计数；客户筛选可输入；成员列显示姓名；没起名的电脑显示“某某的 Mac”这类派生名；“标记”列没有标记时不出现。
+ * 接口：GET /v1/ops/devices?tid（account.read；应答 devices + pending）；行尾“让它退出登录”“移除这台电脑”。
  */
 import * as api from "../api.js";
-import { DEVICE_FLAG, deviceTable, pageHead, tenantOptions } from "../domain.js";
-import { badge, clear, errorBlock, h, hbars, loadingBlock, matches, panel, searchInput, segmented, selectEl } from "../ui.js";
+import { DEVICE_FLAG, deviceState, deviceTable, pageHead, pendingRow, tenantOptions, versionText } from "../domain.js";
+import { clear, errorBlock, fold, h, hbars, loadingBlock, matches, searchInput, segmented } from "../ui.js";
 
-const st = { tid: "", status: "active", flag: "", q: "", table: { sort: "last_seen_on", asc: false } };
+const st = { tid: "", status: "live", flag: "", q: "", table: { sort: "state", asc: true } };
+const STATUS = [
+  ["live", "未移除", (d) => deviceState(d) !== "revoked"],
+  ["signed_in", "登录中", (d) => deviceState(d) === "signed_in"],
+  ["signed_out", "已退出登录", (d) => deviceState(d) === "signed_out"],
+  ["pending", "待批准", (d) => deviceState(d) === "pending"],
+  ["revoked", "已移除", (d) => deviceState(d) === "revoked"],
+  ["", "全部", () => true],
+];
 
 export function render(page, r) {
   if (r.params.tid !== undefined) st.tid = r.params.tid;
-  if (r.params.flag !== undefined) st.flag = r.params.flag;
+  if (r.params.flag !== undefined) st.flag = DEVICE_FLAG[r.params.flag] ? r.params.flag : "";
+  if (r.params.q !== undefined) st.q = r.params.q;
+  if (r.params.status !== undefined) st.status = STATUS.some(([id]) => id === r.params.status) ? r.params.status : r.params.status === "active" ? "live" : "live";
   const tools = h("div", { class: "toolbar" });
-  const chips = h("div", { class: "flag-sum", role: "group", "aria-label": "异常标记" });
+  const tools2 = h("div", { class: "toolbar" });
   const box = h("div");
   const versionsBox = h("div");
-  page.append(pageHead("设备", "律所根签发的设备证书；同一账号第 2～9 台为 dev_<律所>_<成员>_D<n>"), tools, chips, box, versionsBox);
+  page.append(pageHead("电脑", "所有客户登记的电脑：巡检久未在线和旧版本，或按名称、编号查是谁的电脑"), tools, tools2, box, versionsBox);
   let rows = [];
   let seq = 0;
   const fetchRows = async () => {
     const my = ++seq;
-    clear(box, loadingBlock("正在读取设备…"));
+    clear(box, loadingBlock("正在读取电脑…"));
     try {
-      const res = await api.get("/v1/ops/devices", { tid: st.tid, status: st.status });
+      const res = await api.get("/v1/ops/devices", { tid: st.tid });
       if (my !== seq) return;
-      rows = res.devices ?? [];
+      rows = [...(res.devices ?? []), ...(res.pending ?? []).map((j) => pendingRow(j))];
       draw();
     } catch (e) {
       if (my === seq) clear(box, errorBlock(e, fetchRows));
     }
   };
   const draw = () => {
-    const list = rows.filter((d) => (!st.flag || (d.flags ?? []).includes(st.flag)) && matches(st.q, d.device_id, d.email, d.uid, d.tenant_name, d.client_version));
-    const flagCount = Object.fromEntries(Object.keys(DEVICE_FLAG).map((f) => [f, rows.filter((d) => (d.flags ?? []).includes(f)).length]));
-    clear(
-      chips,
-      h("button", { type: "button", class: ["flag-chip", !st.flag && "active"], "aria-pressed": !st.flag ? "true" : "false", onclick: () => ((st.flag = ""), draw()) }, badge(String(rows.length), "neutral"), "全部"),
-      Object.entries(DEVICE_FLAG).map(([f, [label, tone]]) => h("button", { type: "button", class: ["flag-chip", st.flag === f && "active"], "aria-pressed": st.flag === f ? "true" : "false", onclick: () => ((st.flag = st.flag === f ? "" : f), draw()) }, badge(String(flagCount[f]), flagCount[f] ? tone : "neutral"), label)),
-    );
-    clear(box, deviceTable(list, { state: st.table, after: fetchRows, empty: rows.length ? "没有符合条件的设备" : "还没有设备" }));
+    const sf = STATUS.find(([id]) => id === st.status)?.[2] ?? (() => true);
+    const ofStatus = rows.filter(sf);
+    const list = ofStatus.filter((d) => (!st.flag || (d.flags ?? []).includes(st.flag)) && matches(st.q, d.device_id, d.name, d.member_name, d.email, d.tenant_name, d.client_version));
+    clear(tools, h("span", { class: "seg-label" }, "状态"), segmented(STATUS.map(([id, label, f]) => ({ id, label, count: rows.filter(f).length })), st.status, (v) => ((st.status = v), draw()), "状态"));
+    clear(tools2.querySelector(".flag-group") ?? tools2.appendChild(h("span", { class: "flag-group" })), h("span", { class: "seg-label" }, "标记"), segmented([{ id: "", label: "不限", count: ofStatus.length }, ...Object.entries(DEVICE_FLAG).map(([f, [label]]) => ({ id: f, label, count: ofStatus.filter((d) => (d.flags ?? []).includes(f)).length }))], st.flag, (v) => ((st.flag = v), draw()), "异常标记"));
+    clear(box, deviceTable(list, { state: st.table, after: fetchRows, empty: rows.length ? "没有符合条件的电脑" : "还没有登记的电脑。律师在客户端登录后，电脑会出现在这里。" }));
     const versions = {};
-    for (const d of rows) if (!d.revoked_at) versions[d.client_version ?? "未知"] = (versions[d.client_version ?? "未知"] ?? 0) + 1;
-    clear(versionsBox, rows.length ? panel("客户端版本（在用设备）", hbars(Object.entries(versions).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([v, n]) => ({ label: v, value: n })), { format: (v) => `${v} 台`, empty: "没有在用设备" }), { sub: "前 6 个版本" }) : null);
+    for (const d of rows) if (!["revoked", "pending"].includes(deviceState(d))) versions[versionText(d.client_version)] = (versions[versionText(d.client_version)] ?? 0) + 1;
+    const vs = Object.entries(versions).sort((a, b) => b[1] - a[1]);
+    // 只有一个版本时不单列一张卡，写一行即可
+    clear(versionsBox, vs.length > 1 ? h("div", { class: "panel flush" }, fold("客户端版本分布", "在用电脑，前 6 个版本", hbars(vs.slice(0, 6).map(([v, n]) => ({ label: v, value: n })), { format: (v) => `${v} 台` }))) : vs.length === 1 ? h("p", { class: "muted small" }, `在用电脑都是客户端 ${vs[0][0]}（${vs[0][1]} 台）`) : null);
   };
-  const tSel = selectEl([["", "全部律所"]], st.tid, (v) => ((st.tid = v), fetchRows()), { "aria-label": "律所" });
-  tenantOptions().then((opts) => {
-    clear(tSel, opts.map(([v, l]) => h("option", { value: v }, l)));
-    tSel.value = st.tid;
+  // 客户筛选：可输入（与账号页一致）
+  const dl = h("datalist", { id: "dev-tenant-opts" });
+  const tIn = h("input", { type: "search", class: "search", list: "dev-tenant-opts", placeholder: "客户：输入名称或编号", "aria-label": "按客户筛选", value: st.tid, autocomplete: "off" });
+  tIn.addEventListener("change", () => {
+    const v = tIn.value.trim();
+    const m = /（(ten_[A-Za-z0-9_-]+)）$/.exec(v) ?? /^(ten_[A-Za-z0-9_-]+)$/.exec(v);
+    st.tid = v ? (m?.[1] ?? st.tid) : "";
+    fetchRows();
   });
-  const segs = h("span", { class: "toolbar-group" });
-  const drawTools = () => clear(segs, segmented([{ id: "active", label: "在用" }, { id: "revoked", label: "已吊销" }, { id: "", label: "全部" }], st.status, (v) => ((st.status = v), drawTools(), fetchRows()), "状态"));
-  drawTools();
-  tools.append(segs, tSel, searchInput({ placeholder: "设备编号、邮箱、版本", value: st.q, onInput: (v) => ((st.q = v), draw()) }));
+  tenantOptions().then((opts) => clear(dl, opts.filter(([v]) => v).map(([, l]) => h("option", { value: l })))).catch(() => {});
+  tools2.append(searchInput({ placeholder: "电脑名称、编号、成员、版本", value: st.q, onInput: (v) => ((st.q = v), draw()) }), tIn, dl);
   fetchRows();
 }

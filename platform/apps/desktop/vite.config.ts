@@ -49,7 +49,8 @@ export default defineConfig(async ({ command }) => {
     plugins: [react(), cspPlugin()],
     base: "./",
     define,
-    server: { host: "127.0.0.1", port: WEB_PORT, strictPort: true },
+    // 第 71 批：KWL_DEV_NO_HMR=1 关掉热更新与文件监听——多个会话在同一工作树并行改代码时，联调中的页面不会被别人的改动整页刷新（打断正在走的流程）
+    server: { host: "127.0.0.1", port: WEB_PORT, strictPort: true, ...(process.env.KWL_DEV_NO_HMR === "1" ? { hmr: false, watch: null } : {}) },
     // 第 62 批：生成渲染进程打包依赖的许可清单（package-desktop.mjs 放进安装包 Resources/notices）
     build: { outDir: "dist", target: "es2022", license: { fileName: "third-party-licenses.md" } },
   };

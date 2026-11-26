@@ -4,7 +4,7 @@
  * 账号卡显示手机号（打码）或“未绑定”，可绑定 / 更换手机号（更换另要当前密码）。
  * 律师层用语：说“账号、这台电脑、登录”，不说“令牌、证书、席位、吊销”。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { account, type AccountMe, type AccountStatus } from "../api.ts";
 import { checkPassword, dayLabel, deviceLine, emailLooksValid, loginRequiredText, notRegisteredActions, phoneBindForm, phoneLabel, phoneLooksValid, phoneNotRegistered, registrationFields, resetNextText, roleLabel, saveLoginMethod, sessionLine, smsCodeLooksValid, type LoginMethod, type RegistrationMeta } from "../lib/account.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
@@ -15,7 +15,7 @@ import { MetaGate } from "./AuthShell.tsx";
 import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta, useRegistrationMetaState } from "./SmsCodeFields.tsx";
 import { DeviceLimitList } from "./DeviceLimitList.tsx";
 import { currentProfileMark, isSwitchResult, waitForProfileSwitch } from "../lib/account-switch.ts";
-import { canRenameDevices, checkDeviceName, DEVICE_NAME_MAX, deviceName, maskPhone, passwordIdOk, switchingText, type AccountDevice } from "../lib/account.ts";
+import { accountWho, canRenameDevices, checkDeviceName, DEVICE_NAME_MAX, deviceName, deviceState, maskPhoneTight, passwordIdOk, reloginSmsFailure, resetIdKind, switchingText, type AccountDevice } from "../lib/account.ts";
 
 /** 账号状态变了（登录、退出）：App 顶部横幅据此立即刷新。 */
 export const ACCOUNT_CHANGED = "kwl:account-changed";
@@ -25,18 +25,25 @@ export const notifyAccountChanged = () => window.dispatchEvent(new Event(ACCOUNT
  * 就地登录（会话失效、退出登录之后）：只登这台电脑已登记的那位成员的账号。第 63 批：云端开了验证码登录时可选两种方式，
  * 先显示上次用过的（没有记录先显示验证码登录）；手机号没有对应账号时只给“改用密码登录”（这里不能注册新账号）。
  */
-export function LoginBox({ email: initialEmail = "", onDone, compact = false, page = false, subtle = false }: { email?: string; onDone: () => void; compact?: boolean; page?: boolean; subtle?: boolean }) {
+export function LoginBox({ email: initialEmail = "", onDone, compact = false, page = false, subtle = false, knownPhone }: { email?: string; onDone: () => void; compact?: boolean; page?: boolean; subtle?: boolean; knownPhone?: string | null }) {
   const [email, setEmail] = useState(initialEmail);
   const [pw, setPw] = useState("");
   const [phone, setPhone] = useState("");
   const [smsCode, setSmsCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
   const [unreg, setUnreg] = useState(false);
   const [forgot, setForgot] = useState(false);
-  // 第 68 批（V42，D-294/295）：登录的是另一个账号 → 切到那个账号的工作空间（过渡说明）；那个账号电脑数已满 → 列出它的电脑，可就地移除一台
+  // 第 71 批（V45）：整窗重新登录、回到这台电脑原来的账号——验证码发到账号绑定的手机号（只读显示打码号），律师只填验证码；
+  // 发码失败（没绑手机号、旧云端不支持等，限频除外）退回可输入手机号的原流程
+  const reloginAccount = page && subtle && !!initialEmail;
+  const [codeOnlyOff, setCodeOnlyOff] = useState(false);
+  // 第 71 批第二轮：内核 account.status 给了这个账号的打码手机号（last_account.phone）才用“只填验证码”；明确没有（null）时直接用可输入手机号的原流程；还在取（undefined）时先按只填验证码显示
+  const codeOnly = reloginAccount && !codeOnlyOff && knownPhone !== null;
+  // 第 68 批（V42，D-294/295）：登录的是另一个账号 → 切到那个账号的工作空间（过渡说明）；那个账号电脑数已满 → 列出它的电脑，可就地处理一台
   const [switching, setSwitching] = useState<string | null>(null);
-  const [limit, setLimit] = useState<{ devices: AccountDevice[]; canUnbind: boolean; limit: number | null } | null>(null);
+  const [limit, setLimit] = useState<{ devices: AccountDevice[]; canUnbind: boolean; canSignout: boolean; limit: number | null; limitKind: "signed_in" | "registered" | null; thisDevice: string | null; who: string | null } | null>(null);
   const afterLogin = async (r: unknown, before: string): Promise<boolean> => {
     if (!isSwitchResult(r)) return false;
     setLimit(null);
@@ -48,16 +55,22 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
     return true;
   };
   const limitOf = (e: unknown) => {
-    const d = (e as { detail?: { reason?: unknown; devices?: unknown; can_unbind?: unknown; device_limit?: unknown } })?.detail;
-    return d && d.reason === "device_limit" && Array.isArray(d.devices) && d.devices.length > 0 ? { devices: d.devices as AccountDevice[], canUnbind: d.can_unbind === true, limit: typeof d.device_limit === "number" ? d.device_limit : null } : null;
+    const d = (e as { detail?: { reason?: unknown; devices?: unknown; can_unbind?: unknown; can_signout?: unknown; device_limit?: unknown; limit_kind?: unknown; this_device?: unknown; account?: { name?: unknown; phone?: unknown } } })?.detail;
+    // 第 71 批（V45，D-298）：同时登录已满（这台已登记的电脑重新登录，或换到的账号）——默认“让它退出登录”，移除为次要；称呼本人用“姓名（打码手机号）”
+    const acc = d?.account && typeof d.account === "object" ? d.account : null;
+    const who = accountWho({ name: typeof acc?.name === "string" ? acc.name : null, phone: typeof acc?.phone === "string" ? acc.phone : byPhone && !codeOnly ? phone : null, email: email.includes("@") ? email : null });
+    return d && d.reason === "device_limit" && Array.isArray(d.devices) && d.devices.length > 0
+      ? { devices: d.devices as AccountDevice[], canUnbind: d.can_unbind === true, canSignout: d.can_signout === true, limit: typeof d.device_limit === "number" ? d.device_limit : null, limitKind: d.limit_kind === "registered" ? ("registered" as const) : d.limit_kind === "signed_in" ? ("signed_in" as const) : null, thisDevice: typeof d.this_device === "string" ? d.this_device : null, who }
+      : null;
   };
-  // 第 64 批：登录方式三态（取策略中 / 取不到 / 取到）——整页重新登录时取到才显示表单；设置页里的小登录框取不到时按密码登录显示
+  // 第 64 批：登录方式三态（取策略中 / 取不到 / 取到）——整窗重新登录时取到才显示表单；设置页里的小登录框取不到时按密码登录显示
   const metaState = useRegistrationMetaState();
   const meta = metaState.status === "ready" ? metaState.meta : null;
-  const lm = useLoginMethod(meta, subtle && initialEmail ? "password" : undefined);
+  // 第 71 批：重新登录时验证码也只要填一项（不再为了“少填一项”强制先显示密码登录），按上次用过的方式
+  const lm = useLoginMethod(meta);
   const f = registrationFields(meta);
   const byPhone = lm.method === "phone";
-  const ready = byPhone ? phoneLooksValid(phone) && smsCodeLooksValid(smsCode, f.codeLength) : passwordIdOk(email, meta) && pw.length > 0;
+  const ready = byPhone ? (codeOnly ? smsCodeLooksValid(smsCode, f.codeLength) : phoneLooksValid(phone) && smsCodeLooksValid(smsCode, f.codeLength)) : passwordIdOk(email, meta) && pw.length > 0;
   const switchTo = (m: LoginMethod) => {
     setErr("");
     setUnreg(false);
@@ -67,11 +80,12 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
     if (!ready || busy) return;
     setBusy(true);
     setErr("");
+    setNotice("");
     setUnreg(false);
     setLimit(null);
     try {
       const before = await currentProfileMark();
-      const r = byPhone ? await account.loginByPhone(phone.trim(), smsCode.trim()) : await account.login(email.trim(), pw);
+      const r = byPhone ? (codeOnly ? await account.loginRelogin(smsCode.trim()) : await account.loginByPhone(phone.trim(), smsCode.trim())) : await account.login(email.trim(), pw);
       if (lm.methods.phone) saveLoginMethod(lm.method);
       setPw("");
       setSmsCode("");
@@ -79,7 +93,7 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
       notifyAccountChanged();
       onDone();
     } catch (e) {
-      setUnreg(byPhone && phoneNotRegistered(e));
+      setUnreg(byPhone && !codeOnly && phoneNotRegistered(e));
       setLimit(limitOf(e));
       setErr((e as Error).message || "登录没有完成，请稍后重试");
     } finally {
@@ -93,26 +107,63 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
         <p className="muted">各账号的事项、材料和成果分开保存，互不可见。</p>
       </div>
     );
-  if (forgot) return <ResetBox email={email} onBack={() => setForgot(false)} page={page} />;
-  // 第 69 批（V43，D-297）：电脑数已满——整卡“选一台移除”（默认预选最久没用的一台），代替登录表单；“返回登录”回到表单
+  // 第 71 批（V45）：找回密码与开通页同一条流程（ResetPasswordForm），这里只是预填了这个账号的邮箱
+  if (forgot)
+    return (
+      <ResetPasswordForm
+        meta={meta}
+        prefill={email}
+        page={page}
+        onBack={() => setForgot(false)}
+        onDone={() => {
+          setForgot(false);
+          setPw("");
+          setNotice("密码已重设，别的电脑上的登录都已退出。请用新密码登录。");
+        }}
+      />
+    );
+  // 第 69 批（V43，D-297）：电脑数已满——整卡选择，代替登录表单；“返回”回到表单
   if (limit)
     return (
       <DeviceLimitList
         devices={limit.devices}
         canUnbind={limit.canUnbind}
+        canSignout={limit.canSignout}
         limit={limit.limit}
-        who={byPhone ? maskPhone(phone) : email.includes("@") ? email : maskPhone(email)}
+        limitKind={limit.limitKind}
+        thisDevice={limit.thisDevice}
+        who={limit.who}
         onBack={() => {
           setLimit(null);
           setErr("");
         }}
         onUnbind={async (id) => {
           const before = await currentProfileMark();
-          const r = await account.unbindForLogin(id);
-          if (!(await afterLogin(r, before))) {
-            setLimit(null);
-            setErr("");
-          }
+          const r = await account.unbindForLogin(id).catch((e) => {
+            // 让出 / 移除之后又满了（别的电脑抢先登录）：云端已给新票据，列表换成最新的
+            const again = limitOf(e);
+            if (again) setLimit(again);
+            throw e;
+          });
+          if (await afterLogin(r, before)) return;
+          // 同一账号：已在本档案里登录（第 71 批）
+          setLimit(null);
+          setErr("");
+          notifyAccountChanged();
+          onDone();
+        }}
+        onSignout={async (id) => {
+          const before = await currentProfileMark();
+          const r = await account.signoutForLogin(id).catch((e) => {
+            const again = limitOf(e);
+            if (again) setLimit(again);
+            throw e;
+          });
+          if (await afterLogin(r, before)) return;
+          setLimit(null);
+          setErr("");
+          notifyAccountChanged();
+          onDone();
         }}
       />
     );
@@ -126,7 +177,14 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
       }}
     >
       {lm.methods.phone ? <LoginMethodTabs value={lm.method} onChange={switchTo} /> : page && !subtle ? <div className="auth-method-single">账号密码登录</div> : null}
-      {byPhone ? (
+      {notice && (
+        <p className="activate-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {byPhone && codeOnly ? (
+        <ReloginCodeFields knownPhone={knownPhone ?? null} code={smsCode} setCode={setSmsCode} codeLength={f.codeLength} resendSeconds={f.resendSeconds} setErr={setErr} onUnavailable={() => setCodeOnlyOff(true)} />
+      ) : byPhone ? (
         <SmsCodeFields
           phone={phone}
           setPhone={(v) => {
@@ -151,7 +209,7 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
             <input type="text" className="sr-only" value={email} readOnly autoComplete="username" aria-hidden="true" tabIndex={-1} />
           ) : (
             <label className="field">
-              <span>邮箱</span>
+              <span>{meta?.password_by_phone ? "手机号或邮箱" : "邮箱"}</span>
               <input className="auth-input" type={meta?.password_by_phone ? "text" : "email"} value={email} onChange={(e) => (lm.lock(), setEmail(e.target.value))} autoComplete="username" spellCheck={false} placeholder={page ? (meta?.password_by_phone ? "手机号或邮箱" : "请输入邮箱") : undefined} />
             </label>
           )}
@@ -206,74 +264,211 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
   );
 }
 
-/** 找回密码（已激活的电脑上）：发验证码或用管理员给的重置码 → 新密码。 */
-function ResetBox({ email: initialEmail, onBack, page = false }: { email: string; onBack: () => void; page?: boolean }) {
-  const [email, setEmail] = useState(initialEmail);
+/**
+ * 第 71 批（V45）：这台已登记的电脑上重新登录——验证码发到账号绑定的手机号。手机号一栏只读（发出后显示云端回的打码号），律师只填验证码。
+ * 发码失败：限频照常倒计时并说明；其余（没绑手机号、旧云端不支持）调 onUnavailable 退回可输入手机号的原流程，不把原因甩给律师。
+ */
+function ReloginCodeFields(p: { knownPhone: string | null; code: string; setCode: (v: string) => void; codeLength: number; resendSeconds: number; setErr: (v: string) => void; onUnavailable: () => void }) {
+  const [wait, setWait] = useState(0);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
+  // 发码前就显示内核给的打码号；发出后以云端这次回的为准
+  const masked = sent ?? (p.knownPhone ? maskPhoneTight(p.knownPhone) : null);
   const [hint, setHint] = useState("");
+  const codeRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (wait <= 0) return;
+    const t = setTimeout(() => setWait((w) => w - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
+  const canSend = !sending && wait <= 0;
+  const send = async () => {
+    if (!canSend) return;
+    setSending(true);
+    p.setErr("");
+    setHint("");
+    try {
+      const r = await account.smsSendRelogin();
+      if (r.phone) setSent(maskPhoneTight(r.phone));
+      setWait(r.resend_after_s || p.resendSeconds);
+      setHint(r.dry_run && r.debug_code ? `测试环境：验证码是 ${r.debug_code}（正式环境会发到手机）` : `验证码已发送，${Math.round((r.expires_in_s || 600) / 60)} 分钟内有效`);
+      codeRef.current?.focus();
+    } catch (e) {
+      if (reloginSmsFailure(e) === "fallback") return p.onUnavailable();
+      const d = (e as { detail?: { retry_after_s?: number } }).detail;
+      if (d && Number.isSafeInteger(d.retry_after_s) && (d.retry_after_s as number) > 0) setWait(Math.min(600, d.retry_after_s as number));
+      p.setErr((e as Error).message || "验证码发得太频繁，请稍后再试");
+    } finally {
+      setSending(false);
+    }
+  };
+  return (
+    <>
+      <div className="field auth-readonly-field">
+        <span>手机号</span>
+        <span className="auth-input-group is-readonly" aria-label={masked ? `验证码发到 ${masked}` : "验证码发到这个账号绑定的手机号"}>
+          <span className="auth-prefix" aria-hidden="true">
+            +86
+          </span>
+          <span className={`auth-readonly${masked ? "" : " is-pending"}`}>{masked ?? "这个账号绑定的手机号"}</span>
+        </span>
+      </div>
+      <label className="field">
+        <span>短信验证码</span>
+        <span className="sms-row">
+          <input
+            ref={codeRef}
+            className="auth-input"
+            value={p.code}
+            onChange={(e) => p.setCode(e.target.value.replace(/\D/g, "").slice(0, p.codeLength))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && p.code.length < p.codeLength) e.preventDefault();
+            }}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={p.codeLength}
+            placeholder={`请输入 ${p.codeLength} 位验证码`}
+            aria-label="短信验证码"
+            spellCheck={false}
+          />
+          <button type="button" className="btn-ghost sms-send" disabled={!canSend} onClick={() => void send()}>
+            {sending ? "正在发送…" : wait > 0 ? `${wait} 秒后重新获取` : sent ? "重新获取" : "获取验证码"}
+          </button>
+        </span>
+        {hint && <span className="muted sms-hint">{hint}</span>}
+      </label>
+    </>
+  );
+}
+
+/**
+ * 找回密码（第 71 批 V45 合并为一条流程：开通页“忘记密码？”与重新登录页“忘记密码？”同一张表，两个入口只在预填不同）。
+ * 一个“手机号或邮箱”框（云端没开手机号找回时只收邮箱）→ 验证码框内嵌“获取验证码”→ 新密码 →“重设密码”。
+ * - 填手机号：短信验证码（account.smsSend(…, "reset")），用 resetConfirmByPhone 重设；
+ * - 填邮箱：开通了邮件的发到邮箱，没开通的提示向律所管理员或客服要重置码（管理员给的重置码、设置码不用先点“获取验证码”，直接填）。
+ */
+export function ResetPasswordForm({ meta, prefill = "", page = true, onBack, onDone }: { meta: RegistrationMeta | null; prefill?: string; page?: boolean; onBack: () => void; onDone: () => void }) {
+  const f = registrationFields(meta);
+  const [id, setId] = useState(prefill);
   const [code, setCode] = useState("");
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [wait, setWait] = useState(0);
+  const [hint, setHint] = useState("");
   const [err, setErr] = useState("");
-  const [done, setDone] = useState(false);
-  const run = async (f: () => Promise<void>) => {
+  const codeRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (wait <= 0) return;
+    const t = setTimeout(() => setWait((w) => w - 1), 1000);
+    return () => clearTimeout(t);
+  }, [wait]);
+  const kind = resetIdKind(id, f.phoneReset);
+  const pwOk = checkPassword(pw, kind === "email" ? id.trim() : "").ok;
+  const codeOk = kind === "phone" ? smsCodeLooksValid(code, f.codeLength) : code.trim().length >= 4;
+  const ready = kind !== null && codeOk && pwOk;
+  const send = async () => {
+    if (!kind || sending || wait > 0) return;
+    setSending(true);
+    setErr("");
+    setHint("");
+    try {
+      if (kind === "phone") {
+        const r = await account.smsSend(id.trim(), "reset");
+        setWait(r.resend_after_s || f.resendSeconds);
+        setHint(r.dry_run && r.debug_code ? `测试环境：验证码是 ${r.debug_code}（正式环境会发到手机）` : `验证码已发送到 ${r.phone ? maskPhoneTight(r.phone) : "你的手机"}，${Math.round((r.expires_in_s || 600) / 60)} 分钟内有效`);
+      } else {
+        const r = await account.resetRequest(id.trim());
+        setWait(60);
+        setHint(r.channel === "admin" && f.phoneReset && !r.message ? "这个邮箱没有开通邮件验证码：可改填注册时验证过的手机号，或向律所管理员、客服要一个重置码填在下面。" : resetNextText(r));
+      }
+      codeRef.current?.focus();
+    } catch (e) {
+      const d = (e as { detail?: { retry_after_s?: number } }).detail;
+      if (d && Number.isSafeInteger(d.retry_after_s) && (d.retry_after_s as number) > 0) setWait(Math.min(600, d.retry_after_s as number));
+      setErr((e as Error).message || "没有发出，请稍后重试");
+    } finally {
+      setSending(false);
+    }
+  };
+  const submit = async () => {
+    if (!ready || busy || !kind) return;
     setBusy(true);
     setErr("");
     try {
-      await f();
+      if (kind === "phone") await account.resetConfirmByPhone(id.trim(), code.trim(), pw);
+      else await account.resetConfirm(id.trim(), code.trim(), pw);
+      onDone();
     } catch (e) {
-      setErr((e as Error).message || "没有完成，请稍后重试");
+      setErr((e as Error).message || "没有重设成功，请稍后重试");
     } finally {
       setBusy(false);
     }
   };
-  if (done)
-    return (
-      <div className={`login-box${page ? " page" : ""}`}>
-        <p className="muted">密码已重设，别的电脑上的登录都已退出。请用新密码登录。</p>
-        <button className="btn-primary btn-sm" onClick={onBack}>
-          去登录
-        </button>
-      </div>
-    );
+  const idLabel = f.phoneReset ? "手机号或邮箱" : "邮箱";
   return (
-    <div className={`login-box${page ? " page" : ""}`}>
-      {page && <div className="auth-method-single">找回密码</div>}
-      <label className="field">
-        <span>邮箱</span>
-        <input className="auth-input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" spellCheck={false} placeholder={page ? "注册时的邮箱" : undefined} />
-      </label>
-      {hint ? (
-        <>
-          <p className="muted">{hint}</p>
-          <label className="field">
-            <span>验证码、重置码或设置码</span>
-            <input className="auth-input" value={code} onChange={(e) => setCode(e.target.value.replace(/\s+/g, ""))} autoComplete="one-time-code" spellCheck={false} />
-          </label>
-          <PasswordField label="新密码" value={pw} onChange={setPw} rules email={email} />
-        </>
-      ) : (
-        <p className="muted">开通了邮件的会把验证码发到邮箱；没有邮件的，请向律所管理员或客服要一个重置码。</p>
-      )}
-      <div className="login-box-actions">
-        {hint ? (
-          <button className="btn-primary btn-sm" disabled={busy || !code || !checkPassword(pw, email).ok} onClick={() => void run(async () => (await account.resetConfirm(email.trim(), code, pw), setDone(true)))}>
-            {busy ? "正在重设…" : "重设密码"}
-          </button>
-        ) : (
-          <button className="btn-primary btn-sm" disabled={busy || !emailLooksValid(email)} onClick={() => void run(async () => setHint(resetNextText(await account.resetRequest(email.trim()))))}>
-            {busy ? "正在发送…" : "下一步"}
-          </button>
-        )}
-        <button className="btn-ghost btn-sm" onClick={onBack}>
-          返回登录
+    <form
+      className={`auth-form quiet${page ? "" : " login-box"}`}
+      data-auth-step="forgot"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <div className="auth-title-row">
+        <h1 className="auth-title">找回密码</h1>
+        <button type="button" className="btn-link" onClick={onBack}>
+          返回
         </button>
       </div>
+      <label className="field">
+        <span>{idLabel}</span>
+        <input
+          className="auth-input"
+          type="text"
+          value={id}
+          onChange={(e) => {
+            setId(e.target.value);
+            setHint("");
+          }}
+          autoComplete="username"
+          autoFocus={!prefill}
+          spellCheck={false}
+          inputMode={f.phoneReset ? "text" : "email"}
+          placeholder={f.phoneReset ? "注册时的手机号或邮箱" : "注册时的邮箱"}
+        />
+        {id.trim() && kind === null && <span className="field-warn">{f.phoneReset ? "请填 11 位手机号或邮箱" : "邮箱格式不对"}</span>}
+      </label>
+      <label className="field">
+        <span>{kind === "phone" ? "短信验证码" : "验证码或重置码"}</span>
+        <span className="sms-row">
+          <input
+            ref={codeRef}
+            className="auth-input"
+            value={code}
+            onChange={(e) => setCode(kind === "phone" ? e.target.value.replace(/\D/g, "").slice(0, f.codeLength) : e.target.value.replace(/\s+/g, ""))}
+            autoComplete="one-time-code"
+            autoFocus={!!prefill}
+            spellCheck={false}
+            placeholder={kind === "phone" ? `请输入 ${f.codeLength} 位验证码` : "验证码或重置码"}
+          />
+          <button type="button" className="btn-ghost sms-send" disabled={!kind || sending || wait > 0} onClick={() => void send()}>
+            {sending ? "正在发送…" : wait > 0 ? `${wait} 秒后重新获取` : "获取验证码"}
+          </button>
+        </span>
+        {hint && <span className="muted sms-hint">{hint}</span>}
+      </label>
+      <PasswordField label="新密码" value={pw} onChange={setPw} rules email={kind === "email" ? id.trim() : ""} placeholder="设置新密码" />
       {err && (
         <p className="activate-error" role="alert">
           {err}
         </p>
       )}
-    </div>
+      <button type="submit" className="btn-primary activate-submit" disabled={!ready || busy}>
+        {busy ? "正在重设…" : "重设密码"}
+      </button>
+      <p className="auth-fine">重设后，所有电脑上的登录都会退出。</p>
+    </form>
   );
 }
 
@@ -281,7 +476,7 @@ function ResetBox({ email: initialEmail, onBack, page = false }: { email: string
  * 第 70 批（V44）：电脑改名的一行编辑框（设置 · 账号 › 登录过的电脑）。回车保存、Esc 取消；空 = 去掉名字；
  * 口径与云端同一（最多 20 个字，不含换行等控制字符）。只上传这一串，不读主机名。
  */
-function DeviceNameEditor({ initial, current, onSave, onCancel }: { initial: string; current: boolean; onSave: (name: string) => Promise<void>; onCancel: () => void }) {
+function DeviceNameEditor({ initial, onSave, onCancel }: { initial: string; onSave: (name: string) => Promise<void>; onCancel: () => void }) {
   const [v, setV] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -298,32 +493,44 @@ function DeviceNameEditor({ initial, current, onSave, onCancel }: { initial: str
       setBusy(false);
     }
   };
+  const count = [...v.replace(/\s+/g, " ").trim()].length;
+  const bad = !chk.ok || !!err;
   return (
-    <div className="account-rename">
-      <label className="account-rename-row">
-        <span className="account-rename-label">{current ? "这台电脑的名字" : "电脑名字"}</span>
-        <input
-          type="text"
-          aria-label="电脑名字"
-          value={v}
-          maxLength={DEVICE_NAME_MAX + 8}
-          placeholder="例如：办公室 iMac、家里的 ThinkPad"
-          autoFocus
-          onChange={(e) => setV(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return;
-            if (e.key === "Enter") void save();
-            if (e.key === "Escape") onCancel();
-          }}
-        />
+    <div className={`account-rename${bad ? " bad" : ""}`}>
+      <div className="account-rename-row">
+        <span className="account-rename-input">
+          <input
+            type="text"
+            aria-label="电脑名字"
+            aria-invalid={bad || undefined}
+            value={v}
+            maxLength={DEVICE_NAME_MAX + 8}
+            placeholder="例如：办公室 iMac、家里的 ThinkPad"
+            autoFocus
+            onChange={(e) => {
+              setV(e.target.value);
+              setErr("");
+            }}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === "Enter") void save();
+              if (e.key === "Escape") onCancel();
+            }}
+          />
+          <span className={`account-rename-count${count > DEVICE_NAME_MAX ? " over" : ""}`} aria-hidden="true">
+            {count}/{DEVICE_NAME_MAX}
+          </span>
+        </span>
         <button type="button" className="btn-primary btn-sm" disabled={busy || !chk.ok} onClick={() => void save()}>
           {busy ? "正在保存…" : "保存"}
         </button>
         <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={onCancel}>
           取消
         </button>
-      </label>
-      <div className={!chk.ok || err ? "account-rename-note activate-error" : "account-rename-note muted"}>{!chk.ok ? chk.why : err || `最多 ${DEVICE_NAME_MAX} 个字；留空即去掉名字。名字会保存到云端，在你登录的各台电脑上显示。`}</div>
+      </div>
+      <div className={bad ? "account-rename-note is-bad" : "account-rename-note"} role={bad ? "alert" : undefined}>
+        {!chk.ok ? chk.why : err || "留空即去掉名字。名字保存到云端，在你登录的各台电脑上显示；回车保存，Esc 取消。"}
+      </div>
     </div>
   );
 }
@@ -527,6 +734,15 @@ export function AccountSection({ firm }: { firm: string | null }) {
   const [meErr, setMeErr] = useState("");
   const [msg, setMsg] = useState("");
   const [unbind, setUnbind] = useState<{ id: string; title: string } | null>(null);
+  // 第 71 批：设备操作的就地反馈与进行中
+  const [note, setNote] = useState<{ id: string; text: string; undo?: string; tone?: "bad" } | null>(null);
+  // 就地反馈几秒后淡出（可撤销的留久一点）
+  useEffect(() => {
+    if (!note) return;
+    const t = setTimeout(() => setNote((n) => (n === note ? null : n)), note.undo !== undefined || note.tone === "bad" ? 9000 : 4000);
+    return () => clearTimeout(t);
+  }, [note]);
+  const [signingOut, setSigningOut] = useState<string | null>(null);
   // 第 70 批（V44）：正在改名的那台电脑
   const [renaming, setRenaming] = useState<string | null>(null);
   const load = () => {
@@ -573,7 +789,11 @@ export function AccountSection({ firm }: { firm: string | null }) {
   const devices = me?.devices ?? [];
   const sessions = me?.sessions ?? [];
   const activeDevices = devices.filter((d) => !d.revoked_at);
+  // 第 71 批（V45，D-298）：名额按“登录中”的电脑算；已退出登录的电脑资料还在、回去重新登录即可
+  const signedIn = devices.filter((d) => deviceState(d) === "signed_in").length;
+  const deviceLimit = typeof (me?.account as { device_limit?: unknown } | undefined)?.device_limit === "number" ? (me!.account as { device_limit: number }).device_limit : null;
   const renamable = canRenameDevices(devices);
+  const canSignout = devices.some((d) => typeof d.state === "string");
   return (
     <>
       {msg && <div className="banner">{msg}</div>}
@@ -586,7 +806,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
             <div>
               <b>{a?.name ?? st.account?.name}</b>
               <span className="pill pill-gray">{roleLabel(a?.role ?? st.account?.role)}</span>
-              <span className="pill pill-green">已登录</span>
+              <span className="pill pill-green">登录中</span>
             </div>
             <div className="muted">{a?.email ?? st.account?.email}</div>
             {/* 第 63 批：手机号（打码）或“未绑定”；账号详情取到了才显示 */}
@@ -612,50 +832,99 @@ export function AccountSection({ firm }: { firm: string | null }) {
           label="登录过的电脑"
           hint={
             me.personal
-              ? `用这个账号登录过的电脑（在用 ${activeDevices.length}${typeof (me.account as { device_limit?: unknown })?.device_limit === "number" ? ` / ${(me.account as { device_limit: number }).device_limit}` : ""} 台，上限由云端设定）。换电脑直接登录即可，不需要别的电脑批准；各台电脑上的事项与文件各自独立、不互相同步。不认识的电脑请马上移除并修改密码。`
-              : `用这个账号登录过的电脑（在用 ${activeDevices.length} 台）。不再用的电脑请移除；新电脑登录需律所管理员批准。`
+              ? `同时登录 ${canSignout ? signedIn : activeDevices.length}${deviceLimit ? ` / ${deviceLimit}` : ""} 台（上限由云端设定）。新电脑直接登录即可；满额时在登录页选一台让它退出。各台电脑上的事项与文件各自独立。`
+              : `同时登录 ${canSignout ? signedIn : activeDevices.length}${deviceLimit ? ` / ${deviceLimit}` : ""} 台。新电脑登录需律所管理员批准；不再用的电脑请移除。`
           }
         >
-          <ul className="account-list">
+          <ul className="account-list account-devices">
             {devices.map((d) => {
               const l = deviceLine(d);
-              if (renaming === d.device_id)
-                return (
-                  <li key={d.device_id}>
-                    <DeviceNameEditor
-                      initial={deviceName(d) ?? ""}
-                      current={!!d.current}
-                      onCancel={() => setRenaming(null)}
-                      onSave={async (name) => {
-                        await account.renameDevice(d.device_id, name);
-                        setRenaming(null);
-                        setMsg(name ? `已改名为“${name}”。` : "已去掉这台电脑的名字。");
-                        load();
-                      }}
-                    />
-                  </li>
-                );
+              const editing = renaming === d.device_id;
+              const mine = note?.id === d.device_id ? note : null;
               return (
-                <li key={d.device_id} className={d.revoked_at ? "off" : ""}>
+                <li key={d.device_id} className={`${d.revoked_at ? "off" : ""}${editing ? " is-editing" : ""}`}>
                   <div className="account-list-main">
-                    <b>{l.title}</b> <span className={`tag tag-${l.state.tone === "ok" ? "ok" : l.state.tone === "bad" ? "bad" : "gray"}`}>{l.state.text}</span>
-                    <div className="muted">{l.meta}</div>
-                    {/* 第 70 批（V44）：这台电脑还没有名字时提示起一个——换电脑、电脑数已满要移除一台时，靠名字认出是哪一台 */}
-                    {renamable && d.current && !d.revoked_at && !deviceName(d) && <div className="account-name-hint muted">给这台电脑起个名字（例如“办公室 iMac”），换电脑或移除时好认。只上传你填的名字。</div>}
-                  </div>
-                  {renamable && !d.revoked_at && (
-                    <button type="button" className="btn-ghost btn-sm" onClick={() => setRenaming(d.device_id)}>
-                      {deviceName(d) ? "改名" : "起名"}
-                    </button>
-                  )}
-                  {!d.revoked_at &&
-                    (d.current ? (
-                      <span className="muted">{me.personal ? "要停用这台，退出登录即可" : "要停用这台，请退出登录或请管理员处理"}</span>
+                    <div className="account-device-title">
+                      <b>{l.title}</b>
+                      <span className={`tag tag-${l.state.tone === "ok" ? "ok" : l.state.tone === "bad" ? "bad" : "gray"}`}>{l.state.text}</span>
+                      {/* 第 71 批（V45）：操作结果就地显示在电脑名旁边，几秒后淡出，不推动布局；去掉名字可撤销 */}
+                      {mine && (
+                        <span className={`account-inline-note${mine.tone === "bad" ? " is-bad" : ""}`} role="status">
+                          {mine.text}
+                          {mine.undo !== undefined && (
+                            <button
+                              type="button"
+                              className="btn-link"
+                              onClick={() => {
+                                const back = mine.undo!;
+                                setNote(null);
+                                void account
+                                  .renameDevice(d.device_id, back)
+                                  .then(() => (setNote({ id: d.device_id, text: `已恢复为“${back}”` }), load()))
+                                  .catch((e) => setNote({ id: d.device_id, text: (e as Error).message || "没有恢复成功", tone: "bad" }));
+                              }}
+                            >
+                              撤销
+                            </button>
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    {editing ? (
+                      <DeviceNameEditor
+                        initial={deviceName(d) ?? ""}
+                        onCancel={() => setRenaming(null)}
+                        onSave={async (name) => {
+                          const prev = deviceName(d) ?? "";
+                          await account.renameDevice(d.device_id, name);
+                          setRenaming(null);
+                          setNote(name ? { id: d.device_id, text: "✓ 已保存" } : { id: d.device_id, text: "已去掉名字", ...(prev ? { undo: prev } : {}) });
+                          load();
+                        }}
+                      />
                     ) : (
-                      <button className="btn-ghost btn-danger btn-sm" onClick={() => setUnbind({ id: d.device_id, title: l.title })}>
-                        移除这台电脑
-                      </button>
-                    ))}
+                      <>
+                        <div className="muted">{l.meta}</div>
+                        {/* 第 70 批（V44）：这台电脑还没有名字时提示起一个——满额要选一台让它退出、或移除时，靠名字认出是哪一台 */}
+                        {renamable && d.current && !d.revoked_at && !deviceName(d) && <div className="account-name-hint muted">起个名字（例如“办公室 iMac”），满额选择或移除时好认。只上传你填的名字。</div>}
+                      </>
+                    )}
+                  </div>
+                  {!editing && (
+                    <div className="account-list-actions">
+                      {renamable && !d.revoked_at && (
+                        <button type="button" className="btn-ghost btn-sm" onClick={() => (setNote(null), setRenaming(d.device_id))}>
+                          {deviceName(d) ? "改名" : "起名"}
+                        </button>
+                      )}
+                      {/* 第 71 批（D-298）：别的电脑登录中时可让它退出登录（可逆，那台电脑上的资料保留） */}
+                      {canSignout && !d.current && deviceState(d) === "signed_in" && (
+                        <button
+                          type="button"
+                          className="btn-ghost btn-sm"
+                          disabled={signingOut === d.device_id}
+                          onClick={() => {
+                            setSigningOut(d.device_id);
+                            void account
+                              .signoutDevice(d.device_id)
+                              .then(() => {
+                                setNote({ id: d.device_id, text: "✓ 已让它退出登录，资料仍在那台电脑上" });
+                                load();
+                              })
+                              .catch((e) => setNote({ id: d.device_id, text: (e as Error).message || "没有让它退出登录，请稍后重试", tone: "bad" }))
+                              .finally(() => setSigningOut(null));
+                          }}
+                        >
+                          {signingOut === d.device_id ? "正在退出…" : "让它退出登录"}
+                        </button>
+                      )}
+                      {!d.revoked_at && !d.current && (
+                        <button type="button" className="btn-ghost btn-danger btn-sm" onClick={() => setUnbind({ id: d.device_id, title: l.title })}>
+                          移除
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             })}
@@ -721,7 +990,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
           onClose={() => setUnbind(null)}
           onDone={async (pw) => {
             await account.unbindDevice(unbind.id, pw);
-            setMsg(`已移除${unbind.title}：那台电脑上的登录已失效。`);
+            setNote({ id: unbind.id, text: "✓ 已移除，那台电脑上的登录已失效" });
             load();
           }}
         />

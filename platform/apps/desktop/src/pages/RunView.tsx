@@ -18,6 +18,7 @@ import { PreviewError, SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
 import { ARTIFACT_STATUS_LABELS, CITE_STATE_LABELS, fileListName, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, jurisdictionLabel, MODE_LABELS, RUN_STATUS_LABELS, runName, stanceLabel, stepTime, stripMarkdownInline, TERMINAL_STATUSES } from "../lib/labels.ts";
 import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
+import { summaryClip } from "../lib/summary-clip.ts";
 import { followUpMaterialsText, nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
 import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, retryStoppable, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
@@ -70,7 +71,8 @@ function summaryLines(text: string): string[] {
     .map((l) => stripMarkdownInline(l.replace(/^\s*(#+\s*|[-*+]\s+|>\s*)/, "")).trim())
     .filter((l) => l.length > 0)
     .slice(0, 3)
-    .map((l) => cutKeepingTokens(l, 80));
+    // 第 71 批（区域 8）：截到句末，不在“净...”这种关键数字前硬截
+    .map((l) => summaryClip(l));
 }
 
 /** 律师在首页选的业务线（只读本机偏好；读不到返回 null）。 */
@@ -1056,11 +1058,12 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
               <span className="mats-chip-wrap">
                 <button className="pill pill-gray" aria-expanded={matsOpen} onClick={() => setMatsOpen((v) => !v)}>
                   {/* 没指定材料时助手按需读取本事项的材料（第 31 批：原先显示“材料 0 份”，像是没给材料） */}
-                  {inputDocs.length > 0 ? `材料 ${inputDocs.length} 份 ▾` : "材料：按需读取 ▾"}
+                  {/* 第 71 批：与开始面板、确认框、复核页同一口径——一份不勾也是“全部”（D-183） */}
+                  {inputDocs.length > 0 ? `材料 ${inputDocs.length} 份 ▾` : "材料：全部 ▾"}
                 </button>
                 {matsOpen && (
                   <div className="mats-pop" role="dialog" aria-label="本次用到的材料">
-                    {inputDocs.length === 0 && <div className="muted">没有指定材料：会按需读取本事项的材料。</div>}
+                    {inputDocs.length === 0 && <div className="muted">没有勾选材料：本事项的材料都可读，助手按需读取；实际读了几份，复核页“系统已核对”里写明。</div>}
                     {inputDocs.map((d) => (
                       <div key={d.document_version_id} className="mat-row">
                         <Icon.file />
@@ -1068,7 +1071,8 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                         {addedThisRound.includes(d.document_version_id) && <span className="tag tag-gray">本轮补充</span>}
                       </div>
                     ))}
-                    {loaded && <div className="muted">已读 {loaded.loaded}/{loaded.requested} 份{loaded.failed ? `，${loaded.failed} 份读不了（已列出，可换成 Word 或 PDF）` : ""}。</div>}
+                    {/* 没勾材料时 requested 为 0：不写“已读 0/0 份”（第 71 批 D1；实际读了几份见复核页“系统已核对”） */}
+                    {loaded && Number(loaded.requested) > 0 && <div className="muted">已读 {loaded.loaded}/{loaded.requested} 份{loaded.failed ? `，${loaded.failed} 份读不了（已列出，可换成 Word 或 PDF）` : ""}。</div>}
                     <div className="muted">在这台电脑上处理 · 原件不会被修改 · 结果都是草稿</div>
                   </div>
                 )}

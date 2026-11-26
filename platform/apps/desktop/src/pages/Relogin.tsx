@@ -10,10 +10,11 @@
  * - 本机的事项、材料、成果都不删；“要重新登录”记在本机（内核 keys/account-login-required.json），重启应用、断网时也停在这一页。
  * 可见文字保留“你已退出登录”（验收脚本据此判断退出成功）。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { account } from "../api.ts";
 import { AuthCard, AuthPage, AuthPrivacy } from "../components/AuthShell.tsx";
 import { LoginBox } from "../components/AccountPanel.tsx";
-import { reloginView } from "../lib/account.ts";
+import { maskPhoneTight, reloginView } from "../lib/account.ts";
 
 export function ReloginPage(p: { reason: string | null; email: string; firm?: string | null; member?: string | null; notice?: string; onDone: () => void }) {
   const v = reloginView(p.reason);
@@ -23,9 +24,27 @@ export function ReloginPage(p: { reason: string | null; email: string; firm?: st
   const revoked = p.reason === "device_revoked";
   // 这台电脑已从账号移除：原账号不能再在这里登录——直接给“登录其他账号”，标题与说明仍讲清原因
   const [other, setOther] = useState(false);
+  // 第 71 批第二轮（V45）：内核 account.status 给的打码手机号（last_account.phone，只有云端给过时才有）与这台电脑上别的账号个数（other_profiles，不含姓名）——
+  // 身份卡副标题写打码手机号（没有时写邮箱），“只填验证码”一行发码前就显示号码；有别的账号时页脚说一句“这台电脑上还有 N 个账号”
+  const [acct, setAcct] = useState<{ phone: string | null; others: number } | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    account
+      .status()
+      .then((s) => {
+        const x = s as unknown as { last_account?: { email?: string; phone?: unknown } | null; account?: { email?: string; phone?: unknown } | null; other_profiles?: unknown };
+        const la = x.last_account && (!p.email || x.last_account.email === p.email) ? x.last_account : x.account && (!p.email || x.account.email === p.email) ? x.account : null;
+        if (alive) setAcct({ phone: typeof la?.phone === "string" && la.phone.trim() ? maskPhoneTight(la.phone) : null, others: typeof x.other_profiles === "number" && x.other_profiles > 0 ? x.other_profiles : 0 });
+      })
+      .catch(() => alive && setAcct({ phone: null, others: 0 }));
+    return () => {
+      alive = false;
+    };
+  }, [p.email]);
+  const others = acct?.others ?? 0;
   return (
     <AuthPage kind="relogin">
-      <AuthCard foot={<AuthPrivacy>{(other || revoked) && "各账号的事项、材料和成果分开保存，互不可见。"}</AuthPrivacy>}>
+      <AuthCard foot={<AuthPrivacy>{others > 0 ? `这台电脑上还有 ${others} 个账号，登录对应账号即可打开，各账号的资料互不可见。` : (other || revoked) && "各账号的事项、材料和成果分开保存，互不可见。"}</AuthPrivacy>}>
         {p.notice && (
           <p className="activate-error" role="alert">
             {p.notice}
@@ -47,11 +66,11 @@ export function ReloginPage(p: { reason: string | null; email: string; firm?: st
             </span>
             <span className="auth-reloginwho-text">
               <b>{who || p.email}</b>
-              <small>{[p.firm ? p.firm : "", who && p.email ? p.email : ""].filter(Boolean).join(" · ") || "这台电脑登记的成员"}</small>
+              <small>{[p.firm ? p.firm : "", acct?.phone ?? (who && p.email ? p.email : "")].filter(Boolean).join(" · ") || "这台电脑登记的成员"}</small>
             </span>
           </div>
         )}
-        <LoginBox key={other || revoked ? "other" : "me"} page subtle email={other || revoked ? "" : p.email} onDone={p.onDone} />
+        <LoginBox key={other || revoked ? "other" : "me"} page subtle email={other || revoked ? "" : p.email} knownPhone={acct === undefined ? undefined : acct.phone} onDone={p.onDone} />
         {/* 第三轮（独立评审 R2-3）：“不是本人移除的？”在标题下的说明里（reloginView），不放在登录按钮下面——那里像登录报错 */}
       </AuthCard>
     </AuthPage>

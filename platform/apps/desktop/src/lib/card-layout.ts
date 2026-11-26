@@ -221,7 +221,11 @@ export function helpOnlyRestatesDefault(help: string | undefined): boolean {
 const DEFENDANT_SIDE_CARDS = new Set(["defense", "labor-arb-defense", "labor-arb-defense-lit"]);
 const PLAINTIFF_SIDE_CARDS = new Set(["pleading", "arbitration-app", "labor-arb-application", "preservation", "enforcement"]);
 export function stanceMismatchText(cardId: string, stance: string | null | undefined): string | null {
-  if (DEFENDANT_SIDE_CARDS.has(cardId) && stance === "plaintiff") return "这个事项我方是原告；答辩状通常由被告一方提交（有反诉时除外）。";
-  if (PLAINTIFF_SIDE_CARDS.has(cardId) && stance === "defendant") return "这个事项我方是被告；这份文书通常由原告 / 申请人一方提交（有反诉时除外）。";
+  // 第 71 批 D7：事项立场多存中文（“原告”“申请人（劳动者）”），原先只认英文代码，原告事项上开答辩卡没有提醒
+  const st = String(stance ?? "").trim().replace(/[（(].*$/, "").trim();
+  const side = st === "plaintiff" || st === "原告" || st === "申请人" || st === "上诉人" ? "plaintiff" : st === "defendant" || st === "被告" || st === "被申请人" || st === "被上诉人" ? "defendant" : null;
+  const word = st === "plaintiff" ? "原告" : st === "defendant" ? "被告" : st;
+  if (DEFENDANT_SIDE_CARDS.has(cardId) && side === "plaintiff") return `这个事项我方是${word}；答辩${cardId.startsWith("labor-") ? "书" : "状"}通常由被告 / 被申请人一方提交（有反诉、反申请时除外）。`;
+  if (PLAINTIFF_SIDE_CARDS.has(cardId) && side === "defendant") return `这个事项我方是${word}；这份文书通常由原告 / 申请人一方提交（有反诉时除外）。`;
   return null;
 }

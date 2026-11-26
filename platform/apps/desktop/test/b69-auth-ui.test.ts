@@ -50,10 +50,14 @@ test("默认预选：最久没用、不在登录中的那台（律师多半要�
 test("选一台移除：整卡（一个标题）、单选、默认预选、主按钮“移除并继续”；不自动替换；客户端不另设上限", () => {
   const s = src("components/DeviceLimitList.tsx");
   assert.match(s, /data-auth-step="device-limit"/);
-  assert.match(s, /role=\{p\.canUnbind \? "radiogroup" : "list"\}/);
-  assert.match(s, /defaultRemovalPick\(p\.devices\)/);
+  // 第 71 批（V45，D-298 与独立评分区域 9）：可选的多于一台才用单选；只有一台时整行就是目标、按钮写出它的名字；旧云端（不能让出）按移除口径写
+  assert.match(s, /role=\{actionable && !single \? "radiogroup" : "list"\}/);
+  assert.match(s, /defaultRemovalPick\(removable\)/);
   assert.match(s, /移除并继续/);
-  assert.match(s, /最多登记 \{n\} 台电脑/);
+  assert.match(s, /移除「\$\{singleName\}」并继续/);
+  assert.match(s, /让「\$\{singleName\}」退出登录，在这台继续/);
+  assert.match(s, /最多同时在 \{n\} 台电脑上登录/);
+  assert.match(s, /最多可用 \{n\} 台电脑/);
   // 上限只来自云端（limit = 云端 device_limit；没给时按列表台数说），界面没有写死的台数
   assert.doesNotMatch(s.replace(/\/\*[\s\S]*?\*\//g, ""), /\b(?:20|9)\s*台/);
   // 重新登录页里换成选电脑时外层标题让位

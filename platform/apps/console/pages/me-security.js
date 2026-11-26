@@ -87,21 +87,21 @@ function sessionsPanel(me, reload) {
   const rows = me.sessions ?? [];
   const others = rows.filter((s) => !s.current);
   const revoke = async (s) => {
-    const r = await confirmAction({ title: "下线这处登录", consequences: [`${KIND[s.kind] ?? s.kind} · ${fmt.full(s.created_at)} 登录的会话立即失效；`, "对方要再用须重新输入密码。"], confirmLabel: "下线", run: () => api.auth.revokeSession(s.sid) });
-    if (r) (toast("已下线"), reload());
+    const r = await confirmAction({ title: "让这处登录退出", consequences: [`${KIND[s.kind] ?? s.kind} · ${fmt.full(s.created_at)} 登录的会话立即失效；`, "对方要再用须重新输入密码。"], confirmLabel: "下线", run: () => api.auth.revokeSession(s.sid) });
+    if (r) (toast("已退出"), reload());
   };
   const revokeOthers = async () => {
     const r = await confirmAction({
-      title: "让其他登录全部下线",
+      title: "其他登录全部退出",
       danger: true,
       consequences: [`除本页外的 ${others.length} 处登录立即失效（含 Windows 客户端）；`, "客户端要再用须重新登录；正在进行的任务会在下一次调用 AI 时失败。"],
-      confirmLabel: "全部下线",
+      confirmLabel: "全部退出登录",
       run: async () => {
         for (const s of others) await api.auth.revokeSession(s.sid);
         return true;
       },
     });
-    if (r) (toast("其他登录已全部下线"), reload());
+    if (r) (toast("其他登录已全部退出"), reload());
   };
   return panel(
     "登录记录",
@@ -115,9 +115,9 @@ function sessionsPanel(me, reload) {
         { key: "created_at", label: "登录于", render: (s) => fmt.full(s.created_at) },
         { key: "last_seen_at", label: "最近活动", render: (s) => h("span", { title: fmt.full(s.last_seen_at) }, fmt.ago(s.last_seen_at)) },
         { key: "idle_expires_at", label: "闲置到期", render: (s) => fmt.time(s.idle_expires_at) },
-        { key: "_act", label: "", sortable: false, class: "act", render: (s) => (s.current ? badge("本页", "accent") : btn("下线", () => revoke(s), { size: "sm" })) },
+        { key: "_act", label: "", sortable: false, class: "act", render: (s) => (s.current ? badge("本页", "accent") : btn("退出登录", () => revoke(s), { size: "sm" })) },
       ],
     }),
-    { sub: "不认识的登录请立即下线并修改密码", actions: others.length ? btn("其他全部下线", revokeOthers, { size: "sm", kind: "danger" }) : null },
+    { sub: "不认识的登录请立即让它退出并修改密码", actions: others.length ? btn("其他全部退出登录", revokeOthers, { size: "sm", kind: "danger" }) : null },
   );
 }

@@ -25,6 +25,8 @@
   --console-auth-w: 420px;
   --console-drawer-nav-w: 280px;
   --console-tip-w: 200px;
+  --console-x: 0px;
+  --console-y: 0px;
 }
 
 * { box-sizing: border-box; }
@@ -813,3 +815,106 @@ dialog { color: var(--text-primary); }
 .selection-bar { display: flex; align-items: center; gap: var(--sp-3); padding: 8px var(--sp-5); background: var(--bg-subtle); border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-caption); }
 .code-list { margin: 0; padding: var(--sp-3); max-height: 260px; overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-subtle); font-family: var(--font-mono); font-size: var(--fs-caption); line-height: 1.8; columns: 2; user-select: all; }
 @media (max-width: 768px) { .reg-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .code-list { columns: 1; } }
+
+/* ── 第 71 批（V45）：客户为主轴的信息架构——行尾菜单、登录诊断、个人客户卡、批量条、面包屑链接 ── */
+.kind-tag { display: inline-flex; align-items: center; margin-left: var(--sp-2); padding: 0 6px; border-radius: var(--r-xs); font-size: var(--fs-meta); font-weight: 500; line-height: 18px; color: var(--accent-text); background: var(--accent-bg); vertical-align: 1px; white-space: nowrap; }
+.title-row .kind-tag { margin-left: 0; }
+.crumb-link { color: var(--text-secondary); }
+.crumb-link:hover { color: var(--text-primary); text-decoration: none; }
+.crumb-cur { color: var(--text-primary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.tone-text-ok { color: var(--status-success-text); }
+
+/* 行尾“⋯”菜单：次要与危险操作收进来（V-3），一行不再摆红按钮 */
+.row-menu { position: relative; display: inline-block; }
+.row-menu > summary { list-style: none; }
+.row-menu > summary::-webkit-details-marker { display: none; }
+.row-menu-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 6px; border-radius: var(--r-sm); color: var(--text-label); cursor: pointer; font-size: var(--fs-body); line-height: 1; user-select: none; }
+.row-menu-btn { border: 0; background: transparent; }
+.row-menu-btn:hover, .row-menu-btn.open { background: var(--bg-hover); color: var(--text-primary); }
+.row-menu-btn.labeled { width: auto; min-height: 36px; height: auto; padding: 0 14px; border: 1px solid var(--border-default); background: var(--bg-surface); font-size: var(--fs-caption); color: var(--text-strong); }
+.row-menu-btn.labeled::after { content: "▾"; margin-left: 6px; font-size: var(--fs-meta); color: var(--text-secondary); }
+.menu-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 176px; padding: var(--sp-1); border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-elevated); box-shadow: var(--shadow-md); display: flex; flex-direction: column; gap: 1px; }
+.row-menu.start .menu-pop { right: auto; left: 0; }
+.menu-item { text-align: left; border: 0; background: transparent; padding: 7px 10px; border-radius: var(--r-xs); font-size: var(--fs-caption); color: var(--text-primary); white-space: nowrap; }
+.menu-item:hover:not(:disabled) { background: var(--bg-hover); }
+.menu-item.danger { color: var(--status-danger-text); }
+.menu-item.danger:hover:not(:disabled) { background: var(--status-danger-bg); }
+.tbl td.act .row-menu { vertical-align: middle; }
+.tbl td.sel, .tbl th.sel { width: 1%; padding-right: 0; }
+.tbl td.sel input, .tbl th.sel input { width: 15px; height: 15px; margin: 0; vertical-align: middle; accent-color: var(--text-primary); }
+
+/* 登录诊断（账号详情）：问题在前，✕ / ! / ✓ 三种图标 + 一句话 + 就地操作 */
+.diag { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.diag-row { display: flex; align-items: center; gap: var(--sp-3); padding: 10px 0; border-top: 1px solid var(--border-subtle); font-size: var(--fs-caption); min-height: 44px; flex-wrap: wrap; }
+.diag-row:first-child { border-top: 0; padding-top: 2px; }
+.diag-icon { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: var(--r-full); font-size: var(--fs-meta); font-weight: 700; flex: none; color: var(--status-neutral-text); background: var(--status-neutral-bg); }
+.diag-row.tone-danger .diag-icon { color: var(--status-danger-text); background: var(--status-danger-bg); }
+.diag-row.tone-warn .diag-icon { color: var(--status-warning-text); background: var(--status-warning-bg); }
+.diag-row.tone-ok .diag-icon { color: var(--status-success-text); background: var(--status-success-bg); }
+.diag-row.tone-info .diag-icon { color: var(--accent-text); background: var(--accent-bg); }
+.diag-row.tone-ok .diag-text, .diag-row.tone-info .diag-text { color: var(--text-label); }
+.diag-text { flex: 1; min-width: 240px; }
+.diag-row .btn-row { margin-left: auto; }
+.diag-fold > details.fold { border: 0; border-radius: inherit; }
+.diag-fold .fold-body { padding: 0 var(--sp-5) var(--sp-3); }
+
+/* 个人客户：这个人 */
+.person-head { display: flex; align-items: center; gap: var(--sp-3); }
+.person-head .cell-2 { flex: 1; }
+.person-head .cell-2 > b { font-size: var(--fs-md); font-weight: 600; }
+.avatar.lg { width: 36px; height: 36px; font-size: var(--fs-md); }
+
+/* 成员批量操作条 */
+.batch-bar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-default); border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-caption); }
+.batch-bar > b { margin-right: var(--sp-2); font-weight: 600; }
+
+.empty-cta { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.page-head .page-actions .btn-row { flex-wrap: nowrap; }
+@media (max-width: 768px) { .page-head .page-actions .btn-row { flex-wrap: wrap; } .menu-pop { right: auto; left: 0; } }
+.tbl td.act .btn-row { flex-wrap: nowrap; justify-content: flex-end; }
+
+/* ── 第 71 批第二轮：独立评分必改项（G1～G7） ── */
+.seg-label { font-size: var(--fs-meta); color: var(--text-secondary); margin-right: calc(-1 * var(--sp-1)); white-space: nowrap; }
+.toolbar > span:has(> .seg-label), .flag-group { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.act-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.row-chevron { width: 14px; height: 14px; color: var(--text-secondary); opacity: 0; transition: opacity var(--motion-fast); }
+.tbl tbody tr.clickable:hover .row-chevron, .tbl tbody tr.clickable:focus-within .row-chevron { opacity: 1; }
+.tbl tbody tr.pending-row td:first-child { box-shadow: inset 3px 0 0 var(--status-warning-solid); }
+.cell-2 > b.derived { color: var(--text-label); font-weight: 500; }
+.cell-row { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.no-todo { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); font-size: var(--fs-caption); }
+.banner.clickable { width: 100%; text-align: left; cursor: pointer; font: inherit; font-size: var(--fs-caption); color: inherit; align-items: center; }
+.banner.clickable:hover { border-color: var(--status-warning-solid); }
+.banner.clickable .link { white-space: nowrap; }
+.link.strong { font-weight: 600; font-size: var(--fs-md); color: var(--text-primary); text-align: left; padding: 0; }
+.btn.text-danger { color: var(--status-danger-text); }
+.btn.text-danger:hover:not(:disabled) { background: var(--status-danger-bg); }
+.tbl td.muted-col, .tbl th.muted-col { color: var(--text-secondary); font-size: var(--fs-meta); }
+/* 我的电脑：顶部“同时登录”计量卡与固定列宽（两种账号切换时表头不跳） */
+.seat-card { padding: var(--sp-4) var(--sp-5); }
+.seat-card-main { display: flex; align-items: center; gap: var(--sp-5); flex-wrap: wrap; }
+.seat-card-num { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+.seat-card-num .stat-value { font-size: var(--fs-2xl); font-weight: 600; display: inline-flex; align-items: center; gap: var(--sp-2); }
+.seat-card-num .full-tag { font-size: var(--fs-meta); }
+.seat-card-text { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 4px; }
+.seat-card.tone-warn { border-color: var(--status-warning-solid); }
+.tbl .col-device { width: 34%; }
+.tbl .col-sys { width: 10%; }
+.tbl .col-ver { width: 12%; }
+.tbl .col-time { width: 12%; }
+.tbl .col-state { width: 12%; }
+
+/* 深色（G7）：主按钮与次按钮拉开、分段选中态看得见、用量条轨道看得见、提醒色描边不发灰 */
+/* 主 Agent 拍板：主按钮与律师客户端同一令牌（深色 = 浅底深字），不改成 Kimi 蓝；拉开主次靠次按钮改为透明底 + 明显描边 */
+:root[data-theme="dark"] .btn:not(.primary):not(.danger) { background: transparent; border-color: var(--border-hover); }
+:root[data-theme="dark"] .btn:not(.primary):not(.danger):hover:not(:disabled) { background: var(--bg-hover); }
+:root[data-theme="dark"] .seg.active { background: var(--bg-active); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--border-hover); }
+:root[data-theme="dark"] .meter-bar { background: var(--border-default); }
+:root[data-theme="dark"] .panel.tone-warn, :root[data-theme="dark"] .seat-card.tone-warn { border-color: var(--status-warning-solid); }
+:root[data-theme="dark"] .row-menu-btn.labeled { background: var(--bg-surface); border-color: var(--border-hover); }
+.cell-2 small.tone-text-warn, .stat-sub.tone-text-warn, .cell-2 .tone-text-warn { color: var(--status-warning-text); }
+
+/* 第三轮：行菜单浮层渲染到 body，按触发按钮定位（--x / --y 由 cssVars 写入），不再被表格卡片裁掉 */
+.menu-pop.floating { position: fixed; left: var(--console-x); top: var(--console-y); right: auto; z-index: 80; }
+.tbl td.act .row-menu-btn { vertical-align: middle; }
+.tone-text-danger { color: var(--status-danger-text); }

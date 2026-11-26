@@ -142,7 +142,7 @@ test("登录与注册同一骨架（第 69 批：注册分两步，每步至多�
   assert.match(css, /\.auth-page \{[^}]*place-items: start center; padding: max\(40px, calc\(50vh - 330px\)\)/);
   // 第二轮（独立评审 R1-3）：卡片整体同一最小高度、页脚固定在卡底
   // 第三轮：最小高度 520——短状态（登录、注册两步、找回、换账号）同高且不留大块空白；电脑数已满（列表）按内容长高
-  assert.match(css, /\.auth-card \{ display: flex; flex-direction: column; min-height: 520px; box-sizing: border-box; width: min\(420px, 100%\);/);
+  assert.match(css, /\.auth-card \{ display: flex; flex-direction: column; min-height: 532px; box-sizing: border-box; width: min\(420px, 100%\);/);
   assert.match(css, /\.auth-card-body \{ display: flex; flex: 1 1 auto;/);
 });
 

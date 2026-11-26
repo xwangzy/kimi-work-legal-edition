@@ -312,7 +312,9 @@ button.chip:active, :is(button, summary, label).pill:active, .alias-chip:active 
 .sync-alert { display: block; margin: 0 0 6px; padding: 6px 10px; border-radius: var(--r-sm); color: var(--status-danger-text); background: var(--risk-high-bg); font-size: var(--fs-caption); }
 .pill-blue { color: var(--status-info-text); background: var(--status-amended-bg); }
 .pill-toggle input { margin: 0; }
-.pill-link { color: var(--accent-text); border-color: var(--accent-border); }
+/* 可点的导航胶囊（任务页“接着做”、事项页“当事人”）：第 71 批 D10 按第 70 批“文字链与次要操作去蓝”改中性色——正文色字、浅灰框，悬停底色与其他胶囊一致 */
+.pill-link { color: var(--text-primary); border-color: var(--border-subtle); }
+.pill-link:hover { border-color: var(--border-hover); }
 /* 可交互的胶囊（按钮、可展开的保护状态、勾选）按 Chip 外观（复核 S8B-07） */
 :is(button, summary, label).pill { border-radius: var(--r-full); font-size: var(--fs-caption); padding: 1px 10px; cursor: pointer; }
 :is(button, summary, label).pill:hover { background: var(--bg-hover); }
@@ -617,10 +619,29 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .msg-assistant { align-self: flex-start; }
 .msg-notice { align-self: center; color: var(--text-secondary); font-size: var(--fs-body); }
 .msg-meta { font-size: var(--fs-xs); color: var(--text-secondary); margin-top: 2px; }
-.chat-tools { display: flex; justify-content: flex-end; color: var(--text-secondary); }
+.chat-tools { display: flex; justify-content: flex-end; color: var(--text-secondary); position: relative; min-height: 28px; }
+/* 第 71 批（区域 2）：删除收进“…”菜单（红字、二次确认）；回答下方常驻“复制 / 重新回答”；回答列与气泡、输入框同一右边界 */
+.chat-menu-wrap { position: relative; }
+.chat-menu-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-md); color: var(--text-secondary); }
+.chat-menu-btn:hover, .chat-menu-btn[aria-expanded="true"] { background: var(--bg-hover); color: var(--text-primary); }
+.chat-menu-btn svg { width: 18px; height: 18px; }
+.chat-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 160px; padding: 4px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--r-md); box-shadow: var(--shadow-md); display: flex; flex-direction: column; }
+.chat-menu button { text-align: left; padding: 6px 10px; border: 0; background: none; border-radius: var(--r-sm); font-size: var(--fs-body); cursor: pointer; }
+.chat-menu button:hover { background: var(--bg-hover); }
+.chat-menu .chat-menu-danger { color: var(--status-danger-text); }
+.chat-del-confirm { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-body); color: var(--text-primary); }
+.btn-danger-text { color: var(--status-danger-text); }
+.msg.msg-assistant { max-width: 100%; width: 100%; }
+.msg-meta { display: flex; align-items: center; gap: 12px; }
+.msg-actions { display: inline-flex; gap: 2px; }
+.msg-act { border: 0; background: none; padding: 1px 6px; border-radius: var(--r-xs); font-size: var(--fs-xs); color: var(--text-secondary); cursor: pointer; }
+.msg-act:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.msg-act:disabled { opacity: .5; cursor: default; }
+.chat-scope-note .chat-more { display: inline; margin-left: 6px; }
 .chat-composer textarea { min-height: 56px; }
 /* 问答的适用范围（D-225）：常驻一行安静提示，次要字、不加盒子 */
 .chat-scope-note { margin: var(--sp-1) 0 0; font-size: var(--fs-xs); color: var(--text-secondary); }
+.chat-scope-note .chat-more[open] { display: block; margin: 4px 0 0; }
 
 /* 等回答的状态（第 48 批；第 51 批改为 Kimi 蓝点，动画与减少动效见 styles-motion.css 的 .kwl-pulse）：蓝点 + 说明 + 已用时间 + 补充说明 */
 .chat-wait { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 280px; max-width: 520px; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-subtle); color: var(--text-secondary); }
@@ -1188,6 +1209,13 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 /* 开通向导的三步（第 14 批续） */
 .welcome-steps { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; }
 .welcome-steps li.done b { color: var(--status-success-text); }
+/* 开通的最后一步（第 71 批 D12）：一句为什么 → 三张卡片 → “以后再说”与说明同一行、垂直居中，与上方卡片留出间距 */
+.welcome-why { margin: 12px 0 12px; color: var(--text-primary); }
+.settings-choice.welcome-actions { align-items: center; gap: var(--sp-3); margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
+/* 三张步骤卡等高、按钮贴卡底对齐（说明行 flex:1 撑开；第 71 批） */
+.steps3 li > button, .steps3 li > .settings-choice { margin-top: auto; }
+.steps3 li .steps3-why { display: block; margin-top: 2px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.settings-choice.welcome-actions > .muted { line-height: 20px; }
 /* 打印只露出恢复码卡片（抬头、编号行、创始提示），其余页面内容不打（复核 R2A-04、R2B-21） */
 @media print { body * { visibility: hidden; } .recovery-print, .recovery-print * { visibility: visible; } .recovery-print .no-print { display: none !important; } .recovery-print { position: fixed; top: 40px; left: 40px; background: none; border: none; box-shadow: none; } }
 

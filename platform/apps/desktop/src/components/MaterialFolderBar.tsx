@@ -41,7 +41,18 @@ export function MaterialFolderBar(p: { matterId: string; folder: MatterFolder | 
       setSince(null);
     }
   };
-  const link = () => void run("link", () => api.linkFolder(p.matterId, devPath));
+  // 第 71 批（区域 8）：网页开发形态没有系统对话框——原先在事项页常驻一个只给开发用的“文件夹位置”输入框，律师看得见；
+  // 改成点“关联案卷文件夹”时问一次路径（记住上次填的），页面上不再出现这个字段
+  const link = () => {
+    let path = devPath;
+    if (!dialogs) {
+      const v = typeof window.prompt === "function" ? window.prompt("案卷文件夹的完整路径（网页开发形态没有系统对话框）", devPath) : devPath;
+      if (!v || !v.trim()) return;
+      path = v.trim();
+      setDevPath(path);
+    }
+    void run("link", () => api.linkFolder(p.matterId, path));
+  };
   const sync = () => void run("sync", () => api.syncFolder(p.matterId));
   const unlink = () => void run("unlink", () => api.unlinkFolder(p.matterId));
   const off = !!busy || !!p.disabled;
@@ -68,12 +79,6 @@ export function MaterialFolderBar(p: { matterId: string; folder: MatterFolder | 
           </>
         ) : (
           <>
-            {!dialogs && (
-              <label className="mf-dev">
-                <span>文件夹位置（开发调试）</span>
-                <input value={devPath} onChange={(e) => setDevPath(e.target.value)} placeholder="完整路径" />
-              </label>
-            )}
             <button className="btn-ghost btn-sm" disabled={off} aria-busy={busy === "link"} onClick={link}>
               <BusyLabel busy={busy === "link"} busyText="正在关联并同步…">
                 <Icon.folder />

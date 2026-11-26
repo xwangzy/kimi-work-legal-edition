@@ -51,14 +51,16 @@ test("我的电脑与登录记录：第几台、这台电脑、最近使用、�
   assert.equal(cur.title, "这台电脑");
   // 第 70 批：“最近使用”改为相对时间（与电脑数已满的列表同一写法），当天写“今天”
   assert.equal(cur.meta, "11 月 1 日登记 · 最近使用 今天 · 版本 0.2.0");
-  assert.deepEqual(cur.state, { text: "已登录", tone: "ok" });
+  // 第 71 批（V45，D-298）：电脑状态词全库统一为“登录中 / 已退出登录 / 已移除”
+  assert.deepEqual(cur.state, { text: "登录中", tone: "ok" });
   const other = deviceLine({ device_id: "dev_firm_li_D2", registered_at: "2025-12-31T17:00:00.000Z", client_version: null, last_seen_on: null, session: "none" }, NOW);
   assert.equal(other.title, "第 2 台电脑");
   assert.equal(other.meta, "2026 年 1 月 1 日登记".replace("2026 年 ", ""), "北京时间已是 1 月 1 日，今年不写年份");
   assert.equal(deviceLine({ device_id: "dev_firm_li_D2", registered_at: null, revoked_at: "2026-11-02T00:00:00Z", client_version: null, last_seen_on: null }, NOW).state.text, "已移除");
   const s = sessionLine({ sid: "ses_aaaaaaaaaaaaaaaa", kind: "desktop", device_id: "dev_firm_li_D2", created_at: "2026-11-10T01:00:00Z", last_seen_at: "2026-11-13T01:00:00Z", idle_expires_at: "2026-12-13T01:00:00Z", client: { platform: "win32" }, current: false }, NOW);
-  assert.equal(s.title, "Windows 电脑（第 2 台）");
-  assert.equal(s.meta, "11 月 10 日登录 · 最近活动 11 月 13 日 · 不使用到 12 月 13 日会自动退出");
+  // 第 71 批（独立评分区域 4-5）：全角括号后再接“ · ”间距别扭，改为“Mac 电脑 · 第 1 台”的写法；“最近活动”与“最近使用”同一种相对写法
+  assert.equal(s.title, "Windows 电脑 · 第 2 台");
+  assert.equal(s.meta, "11 月 10 日登录 · 最近活动 昨天 09:00 · 不使用到 12 月 13 日会自动退出");
   assert.match(sessionLine({ sid: "ses_bbbbbbbbbbbbbbbb", kind: "web", device_id: null, created_at: "2026-11-14T01:00:00Z", last_seen_at: null, idle_expires_at: "2026-11-14T13:00:00Z", current: true }, NOW).title, /^网页 · 当前这次登录$/);
   assert.equal(dayLabel("bad"), "—");
   assert.equal(roleLabel("partner"), "合伙人");
@@ -158,7 +160,10 @@ test("源码门禁：Kimi 账号绑定已撤（组件、方法、样式）；渲
 test("源码门禁：激活页缺省登录、可切注册与忘记密码，保留开通码与从备份恢复；退出登录与解绑用自绘确认；App 有登录失效横幅与轮询", () => {
   const act = src("pages/Activate.tsx");
   assert.match(act, /\? "restore" : "login"\);/, "缺省登录");
-  for (const s of ["account.login(", "account.register(", "account.resetRequest(", "account.resetConfirm(", "onboarding.redeem(", "<RestoreFromBackup", "via_account", "firm_check_code", "next === \"blocked\""]) assert.ok(act.includes(s), s);
+  for (const s of ["account.login(", "account.register(", "<ForgotPassword", "onboarding.redeem(", "<RestoreFromBackup", "via_account", "firm_check_code", "next === \"blocked\""]) assert.ok(act.includes(s), s);
+  // 第 71 批（V45，独立评分区域 7-1）：找回密码开通页与重新登录页合并成一条流程（AccountPanel 的 ResetPasswordForm），开通页只预填
+  assert.match(act, /<ResetPasswordForm meta=\{p\.meta\} prefill=\{p\.email\}/);
+  for (const s of ["account.resetRequest(", "account.resetConfirm(", "account.resetConfirmByPhone("]) assert.ok(src("components/AccountPanel.tsx").includes(s), s);
   const panel = src("components/AccountPanel.tsx");
   const flat = panel.replace(/\s+/g, "");
   for (const s of ["account.unbindDevice(", "account.revokeSession(", "account.changePassword(", "account.logout(", "<Modal", "<ConfirmButton"]) assert.ok(flat.includes(s), s);

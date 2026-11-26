@@ -394,7 +394,8 @@ export function displayVersion(appVersion: string | null | undefined, kernelVers
 
 /** 确认卡的材料一行：至多列 3 个文件名，多了写“等 n 份”；没有指定材料时说按需读取。 */
 export function materialsLine(n: number, names?: string[]): string {
-  if (n === 0) return "没有指定：按需读取本事项的材料";
+  // 第 71 批：与开始面板、任务页、复核页同一口径（D-183：一份不勾 = 本事项的材料都可读）
+  if (n === 0) return "全部（没有勾选：本事项的材料都可读）";
   const list = (names ?? []).filter(Boolean);
   if (list.length === 0) return `${n} 份`;
   return `${list.slice(0, 3).join("、")}${n > 3 ? ` 等 ${n} 份` : ""}`;

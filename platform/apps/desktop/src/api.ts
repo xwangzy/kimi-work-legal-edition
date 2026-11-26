@@ -895,7 +895,7 @@ export interface UsagePageRow {
 }
 
 /** 第 70 批（V44）：明细一行用在哪——任务名（卡片名）与事项名（问答为会话标题）；elsewhere = 在本账号的另一台电脑上。 */
-export type UsageWhere = { task: string; matter: string | null; matter_id: string | null; run_id: string | null; conversation_id: string | null; how: "id" | "match" } | { elsewhere: true };
+export type UsageWhere = { task: string; matter: string | null; /** 第 71 批：问答第一问全文（界面按显示宽度截断、悬停给全称）。 */ matter_full?: string | null; matter_id: string | null; run_id: string | null; conversation_id: string | null; how: "id" | "match" } | { elsewhere: true };
 
 /** 第 66 批：明细一页；next_before = 下一页的 before（null = 没有更早的了）。mode = local_dev 时没有明细。 */
 export interface UsagePage {
@@ -1662,6 +1662,10 @@ export const onboarding = {
   deviceConfirm: (phone: string, smsCode: string) => invoke<any>("onboarding.device_confirm", { phone, sms_code: smsCode }),
   /** 第 68 批（V42）：电脑数已满时，用刚完成的登录就地移除这个账号的一台旧电脑，再继续登记这台电脑（结果同登录）。 */
   unbindDevice: (deviceId: string) => invoke<any>("onboarding.unbind_device", { device_id: deviceId }),
+  /** 第 71 批（V45，D-298）：同时登录已满时，用刚完成的登录让这个账号的一台电脑退出登录（可逆：资料留在那台电脑上），再继续登记这台电脑（结果同登录）。 */
+  signoutDevice: (deviceId: string) => invoke<any>("onboarding.signout_device", { device_id: deviceId }),
+  /** 第 71 批：这台电脑正在为另一个账号等批准时，放弃那个申请、接着用刚才登录的账号继续（结果同登录）。 */
+  abandonPending: () => invoke<any>("onboarding.abandon_pending"),
   /** 从备份恢复（第 14 批）：安装包形态传句柄；开发形态（无对话框）传路径。 */
   restore: (o: { file_handle?: string; folder_handle?: string; file?: string; dir?: string; code: string; legacy_ack?: boolean; older_ack?: boolean }) => invoke<any>("onboarding.restore", o),
 };
@@ -1675,6 +1679,10 @@ export const account = {
   login: (email: string, password: string) => invoke<any>("account.login", { email, password }),
   // 第 63 批：手机号 + 短信验证码登录（同一个内核方法，结果与密码登录相同）
   loginByPhone: (phone: string, smsCode: string) => invoke<any>("account.login", { phone, sms_code: smsCode }),
+  /** 第 71 批（V45）：这台已登记的电脑上重新登录——验证码发到这个账号绑定的手机号（不用再输手机号；应答里只有打码号）。 */
+  smsSendRelogin: () => invoke<{ ok: true; phone: string | null; resend_after_s: number; expires_in_s: number; code_length: number; dry_run?: true; debug_code?: string }>("account.sms_send", { purpose: "login", relogin: true }),
+  /** 第 71 批：用上面发到绑定手机号的验证码重新登录（结果同 login）。 */
+  loginRelogin: (smsCode: string) => invoke<any>("account.login", { relogin: true, sms_code: smsCode }),
   resetRequest: (email: string) => invoke<{ ok: boolean; channel: "email" | "admin"; message?: string }>("account.reset_request", { email }),
   resetConfirm: (email: string, code: string, password: string) => invoke<{ ok: true }>("account.reset_confirm", { email, code, password }),
   // 第 62 批：注册策略（旧云端回 legacy）、短信验证码、用手机号找回密码
@@ -1693,6 +1701,10 @@ export const account = {
   renameDevice: (deviceId: string, name: string) => invoke<{ ok: true; name: string | null }>("account.rename_device", { device_id: deviceId, name }),
   /** 第 68 批（V42）：换账号登录时那个账号电脑数已满——就地移除它的一台旧电脑后继续切换（结果同 login）。 */
   unbindForLogin: (deviceId: string) => invoke<any>("account.unbind_for_login", { device_id: deviceId }),
+  /** 第 71 批（V45，D-298）：重新登录 / 换账号时同时登录已满——让那个账号的一台电脑退出登录后继续（结果同 login）。 */
+  signoutForLogin: (deviceId: string) => invoke<any>("account.signout_for_login", { device_id: deviceId }),
+  /** 第 71 批：在设置里让本人账号的另一台电脑退出登录（那台电脑上的资料保留，回去重新登录即可）。 */
+  signoutDevice: (deviceId: string) => invoke<{ ok: true; signed_out: number }>("account.signout_device", { device_id: deviceId }),
 };
 
 /** 恢复包与备份（第 14 批）：安装包形态经系统对话框拿句柄；开发形态（浏览器）没有对话框，界面让开发者填路径。 */

@@ -34,49 +34,43 @@ export function WelcomePage() {
   }, []);
   const steps = welcomeSteps(st);
   const allDone = steps.every((x) => x.done);
+  const actions = (
+    <div className="settings-choice welcome-actions">
+      {allDone ? (
+        <button className="btn-primary" onClick={() => nav("/")}>
+          开始使用
+        </button>
+      ) : (
+        <button className="btn-ghost" onClick={() => nav("/")}>
+          以后再说
+        </button>
+      )}
+      <span className="muted">进入首页后，会用一分钟带你认识事项、发起任务、复核成果和期限提醒。</span>
+    </div>
+  );
   return (
     <main className="main">
       <div className="main-wide">
-        <h1 className="page-title">开通的最后一步</h1>
+        {/* 第 71 批（区域 1）：原标题“开通的最后一步”与下面“还差 3 步”自相矛盾——开通已经完成，这一页只做备份三步 */}
+        <h1 className="page-title">开通完成，先做好备份</h1>
         {who && (
           <p className="muted">
             已加入 {who.firm}
             {who.name ? ` · ${who.name}` : ""}
           </p>
         )}
-        <div className="panel">
-          {st ? <p>{welcomeHeadline(steps)}</p> : loadErr !== null ? <LoadError what="备份状态" message={loadErr} onRetry={() => void load()} /> : <ListSkeleton rows={1} label="正在载入备份状态" />}
-          <ol className="welcome-steps">
-            {steps.map((x) => (
-              <li key={x.key} className={x.done ? "done" : ""}>
-                <b>
-                  {x.done ? "✓ " : ""}
-                  {x.title}
-                </b>
-                <div className="muted">{x.hint}</div>
-              </li>
-            ))}
-          </ol>
-        </div>
-        {!st?.revoked && (
+        {/* 第 71 批 D12：上方只留一句为什么要做（按缺的是哪一步说后果）；三步只在下面的卡片里列一次（原先上方 1/2/3 与卡片重复） */}
+        {st ? <p className="welcome-why">{welcomeHeadline(steps).replace(/^还差 \d+ 步。/, "")}</p> : loadErr !== null ? <LoadError what="备份状态" message={loadErr} onRetry={() => void load()} /> : <ListSkeleton rows={1} label="正在载入备份状态" />}
+        {/* “以后再说”放回卡内（第 71 批，区域 1：原先在卡片外、压着卡片下边线） */}
+        {!st?.revoked ? (
           <div className="device">
             <div className="panel">
-              <RecoveryBackup onChanged={() => void load()} />
+              <RecoveryBackup onChanged={() => void load()} footer={actions} />
             </div>
           </div>
+        ) : (
+          actions
         )}
-        <div className="settings-choice">
-          {allDone ? (
-            <button className="btn-primary" onClick={() => nav("/")}>
-              开始使用
-            </button>
-          ) : (
-            <button className="btn-ghost" onClick={() => nav("/")}>
-              以后再说
-            </button>
-          )}
-          <span className="muted">进入首页后，会用一分钟带你认识事项、发起任务、复核成果和期限提醒。</span>
-        </div>
       </div>
     </main>
   );

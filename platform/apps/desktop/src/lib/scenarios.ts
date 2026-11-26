@@ -140,6 +140,28 @@ export function cardGets(c: Pick<ScenarioCard, "gets">): string {
 }
 
 /** 交付件的律师写法（第 26 批，评审 U2-26②）：去掉扩展名，保留括注（开始面板、意图建议、输入框菜单用）。 */
+/**
+ * 开始面板副标题（第 71 批，区域 6/8）：“诉讼仲裁 · 交付：测算说明（Word）、测算表（Excel）”——原先“交付 测算说明、诉讼成本与回收测算”
+ * 缺冒号，后半句把卡名又写了一遍。交付件名与卡名相同的按文件类型写“表格 / 文书”。纯函数。
+ */
+export function deliverableSubtitle(c: Pick<ScenarioCard, "gets" | "line" | "title">): string {
+  const kind: Record<string, string> = { docx: "Word", xlsx: "Excel", pptx: "PPT", pdf: "PDF", md: "文字" };
+  const generic: Record<string, string> = { docx: "文书", xlsx: "表格", pptx: "演示稿", pdf: "文件", md: "说明" };
+  const items = c.gets.map((g) => {
+    const ext = /\.(docx|xlsx|pptx|md|pdf)\b/i.exec(g)?.[1]?.toLowerCase() ?? "";
+    let base = g.replace(/\.(docx|xlsx|pptx|md|pdf)\b/gi, "").replace(/（[^）]*）/g, "").trim();
+    if (!base || base === c.title) base = generic[ext] ?? "文件";
+    return kind[ext] ? `${base}（${kind[ext]}）` : base;
+  });
+  return `${LINE_LABELS[c.line]} · 交付：${items.join("、")}`;
+}
+
+/** 材料一栏的短说明（第 71 批：开始面板、确认框、任务页同一口径）：全勾或一份不勾都是“全部 n 份”，勾了一部分写“已选 k/n 份”。纯函数。 */
+export function materialsShort(picked: number, total: number): string {
+  if (total <= 0) return "还没有";
+  return picked === 0 || picked >= total ? `全部 ${total} 份` : `已选 ${picked}/${total} 份`;
+}
+
 export function getsPlain(c: Pick<ScenarioCard, "gets">): string[] {
   return c.gets.map((g) => g.replace(/\.(docx|xlsx|pptx|md|pdf)\b/gi, "").trim()).filter(Boolean);
 }
@@ -275,8 +297,8 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始分析",
     goal: "请梳理争点与证据：拟主张或需应对的请求为{claims}；我方诉讼地位：{side}；已知的对方抗辩：{defenses}。有我确认过的事实时只用确认的事实；还没有确认的，用材料载明的事实并标【未确认】，评估写“初步判断”。不评估胜诉率。",
     fields: [
-      { key: "claims", label: "涉及的请求", kind: "text", required: true, placeholder: "例如：支付货款 120 万元及逾期利息", help: "我方要主张的，或要应对的对方请求" },
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人"], required: true },
+      { key: "claims", label: "涉及的请求", kind: "text", required: true, placeholder: "例如：支付货款 120 万元及逾期利息", help: "我方要主张的，或要应对的对方请求" },
       { key: "defenses", label: "已知的对方抗辩", kind: "text", placeholder: "例如：已付清；质量有问题；超过诉讼时效", more: true },
     ],
     minMaterials: 0,
@@ -295,8 +317,9 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始分析",
     goal: "请分析案情并提出诉讼策略建议：我方目标为{goal}；我方地位：{side}。未确认的事实请标出，不评估胜诉率。",
     fields: [
-      { key: "goal", label: "我方目标", kind: "text", required: true, placeholder: "例如：追回货款 120 万元及违约金" },
+      // 第 71 批（区域 6）：“我方地位”固定放第一行，与其他卡一致
       { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "尚未起诉（我方拟起诉）", "尚未起诉（对方可能起诉）"], required: true },
+      { key: "goal", label: "我方目标", kind: "text", required: true, placeholder: "例如：追回货款 120 万元及违约金" },
     ],
     // 第 55 批：新案常常只有口头案情——没有材料时可以直接写案情（原来至少要一份材料才能开始）
     minMaterials: 0,
@@ -455,8 +478,8 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始研读",
     goal: "请研读这份裁判文书，目的是{purpose}。我方在本案中是{side}；文书送达我方的日期：{served_on}。逐项拆出裁判结果并与我方请求对照，复算受理费，按法定期间算出上诉、申请撤销或申请执行等期限，梳理争点与裁判理由、核验所引条文；评估救济的理由强弱与成本，不预测二审结果。",
     fields: [
-      { key: "purpose", label: "研读目的", kind: "select", options: ["上诉评估", "给客户汇报结果", "准备履行或申请执行"], goalText: { 上诉评估: "评估是否上诉（或申请撤销）", 给客户汇报结果: "给客户或管理层汇报结果", 准备履行或申请执行: "准备履行或申请执行" } },
       { key: "side", label: "我方地位", kind: "select", options: ["原告", "被告", "第三人", "申请人", "被申请人"], required: true },
+      { key: "purpose", label: "研读目的", kind: "select", options: ["上诉评估", "给客户汇报结果", "准备履行或申请执行"], goalText: { 上诉评估: "评估是否上诉（或申请撤销）", 给客户汇报结果: "给客户或管理层汇报结果", 准备履行或申请执行: "准备履行或申请执行" } },
       { key: "served_on", label: "文书送达日期", kind: "date", help: "上诉等期限从这天起算；不填从送达回证里找" },
     ],
     minMaterials: 1,
@@ -632,9 +655,9 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始核查",
     goal: "请核查管辖与诉讼时效：拟主张的请求为{claims}；我方：{side}；标的额：{amount}；收到诉状或仲裁申请书的日期：{received_on}。",
     fields: [
-      { key: "claims", label: "拟主张的请求", kind: "text", required: true, placeholder: "例如：支付货款 50 万元及逾期利息" },
       // 第 26 批（评审 S2 §3 第 9 条）：方法参数本来就有 side
       { key: "side", label: "我方地位", kind: "select", options: ["拟起诉", "已被诉"], required: true },
+      { key: "claims", label: "拟主张的请求", kind: "text", required: true, placeholder: "例如：支付货款 50 万元及逾期利息" },
       { key: "amount", label: "标的额", kind: "text", placeholder: "例如：120 万元", help: "定级别管辖要用" },
       { key: "received_on", label: "收到诉状日期", kind: "date", help: "已被诉时填：答辩与管辖异议期限从这天起算", more: true },
     ],
@@ -757,8 +780,9 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始比对",
     goal: "请用我提供的裁判文书做类案比对：{question}。我方地位：{side}。逐案抽取要素、与本案比对并分为支持、对立、可区分，归纳裁判规则（写明样本边界），只引用材料里的判决，不凭记忆补案例。",
     fields: [
+      // 第 71 批（区域 6）：与其他卡同一个下拉框、按事项立场预选；只做研究的选最后一项（原先是自由文字框、可不填）
+      { key: "side", label: "我方地位", kind: "select", goalOnly: true, required: true, options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "上诉人", "被上诉人", "只做研究（不选立场）"] },
       { key: "question", label: "要回答的问题", kind: "long", required: true, goalOnly: true, placeholder: "例如：买受人签署验收单后以性能不达标主张减价，质量瑕疵的举证责任如何分配" },
-      { key: "side", label: "我方地位", kind: "text", goalOnly: true, placeholder: "例如：出卖人（一审原告），拟上诉；只做研究可不填" },
     ],
     minMaterials: 2,
     steps: ["逐份抽取案号、法院、争点、理由与结果", "与本案逐项比对，分出支持、对立与可区分的裁判", "归纳裁判规则并写明样本边界，对立裁判单列", "写出哪几份可提交法院、怎么引用"],
@@ -1700,15 +1724,49 @@ export function matterLine(m: { stance?: string | null } | null | undefined): Bu
  * “我方地位”按事项立场预选（第 31 批真实走查：事项立场已是“劳动者”，开始面板仍要再选一次）：
  * 立场（含括注里的词，“申请人（劳动者）”）与选项或选项的一半（“原告 / 申请人”）相同才预选；对不上返回 null，留给律师选。
  */
-export function sideOptionFor(options: readonly string[] | undefined, stance: string | null | undefined): string | null {
+export function sideOptionFor(options: readonly string[] | undefined, stance: string | null | undefined, clientName?: string | null): string | null {
   const st = String(stance ?? "").trim();
   if (!options || !st) return null;
-  const words = [st.replace(/[（(].*$/, "").trim(), ...[...st.matchAll(/[（(]([^）)]+)[）)]/g)].map((m) => m[1]!.trim())].filter(Boolean);
+  const words = [st.replace(/[（(].*$/, "").trim(), ...[...st.matchAll(/[（(]([^）)]+)[）)]/g)].map((m) => m[1]!.trim())]
+    .filter(Boolean)
+    .map((w) => STANCE_CODE_WORDS[w] ?? w);
   for (const w of words) {
     const hit = options.find((o) => o === w || o.split(/\s*\/\s*/).includes(w));
     if (hit) return hit;
   }
+  // 第 71 批 D7：劳动争议卡的“我方地位”是“用人单位 / 劳动者”，事项立场是程序地位（原告、申请人……）对不上——
+  // 看事项的委托人：单位名称（公司、厂、事务所……）→ 用人单位；像自然人姓名（2～4 个汉字）→ 劳动者；看不出的不猜
+  if (options.includes("用人单位") && options.includes("劳动者")) {
+    const kind = clientKindOf(clientName);
+    if (kind === "org") return "用人单位";
+    if (kind === "person") return "劳动者";
+  }
   return null;
+}
+
+/** 事项立场的英文代码（老数据、接口写入）→ 中文词，与选项比对用。 */
+const STANCE_CODE_WORDS: Readonly<Record<string, string>> = { plaintiff: "原告", defendant: "被告" };
+
+/** 委托人是单位还是自然人（只看名称写法；看不出返回 null）。纯函数。 */
+export function clientKindOf(name: string | null | undefined): "org" | "person" | null {
+  const n = String(name ?? "").replace(/\s+/g, "");
+  if (!n) return null;
+  if (/(公司|集团|企业|厂|店|中心|医院|学校|大学|学院|协会|事务所|研究院|研究所|银行|合作社|商行|工作室|门诊部|酒店|局|委员会|基金会)$|有限|股份/.test(n)) return "org";
+  if (/^[\u4e00-\u9fa5]{2,4}$/.test(n)) return "person";
+  return null;
+}
+
+/**
+ * 开始面板顶部事项一行的立场文字（第 71 批 D7）：与下方“我方地位”同一口径——
+ * 卡片的选项能直接对上事项立场（或没有“我方地位”下拉）时照写“我方 原告”；按委托人推断出劳动争议一方时写“我方 原告（用人单位）”；
+ * 对不上时不硬写一个与卡片不符的立场，写明本卡要另选。纯函数。
+ */
+export function stanceChipText(options: readonly string[] | undefined, stanceText: string, stance: string | null | undefined, clientName?: string | null): string {
+  if (!options || !String(stance ?? "").trim()) return `我方 ${stanceText}`;
+  if (sideOptionFor(options, stance)) return `我方 ${stanceText}`;
+  const inferred = sideOptionFor(options, stance, clientName);
+  if (inferred) return `我方 ${stanceText}（${inferred}）`;
+  return `事项立场 ${stanceText} · 本卡请另选我方地位`;
 }
 
 type PickableMatter = { matter_id: string; stance?: string | null; created_at?: string | null; activity?: { last_at?: string } | null };
@@ -1773,6 +1831,9 @@ export function sampleBannerText(m: { stance?: string | null } | null | undefine
  * 律师在成果页点“作为底稿继续修改”后，开始面板勾的是原件而不是刚加进来的上一轮清洁稿，直接开始就在原件上改了第二轮。
  */
 export function preselectDocs(card: Pick<ScenarioCard, "minMaterials" | "scenario" | "skill">, all: readonly { document_version_id: string; filename: string; supersedes?: string | null }[]): string[] {
+  // 第 71 批（主 Agent 拍板）：不需要材料也能做的卡（minMaterials 0）仍一份不预选——没勾 = 助手按需读取本事项全部材料（D-183），
+  // 改成默认全勾会把这 17 张卡从“按需读取”变成“材料快照交给助手”，读取行为与用量都会变，不为显示统一而改行为。
+  // “全部材料”的显示已统一：开始面板全勾、全不勾都写“全部 N 份”，确认框、任务页、复核页（已读 x/N 份）同一口径
   if (card.minMaterials === 0) return [];
   // 第 48 批：案卷文件夹同步后，同一文件的旧版本仍在材料里（标“旧版本”）——缺省只选最新版，旧版本要律师自己勾
   const old = new Set(all.map((d) => d.supersedes).filter((x): x is string => typeof x === "string" && x.length > 0));

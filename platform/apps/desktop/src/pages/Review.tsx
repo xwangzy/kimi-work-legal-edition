@@ -20,6 +20,7 @@ type SignAction = "approved" | "rejected" | "submit";
 
 /** 成果状态 → 律师称呼。 */
 import { reviewSteps } from "../lib/deliverables.ts";
+import { systemChecks, type Check } from "../lib/system-checks.ts";
 import "../styles-review.css";
 
 const STATUS_TEXT: Record<string, string> = {
@@ -42,36 +43,7 @@ function openItemText(it: any): string {
   return typeof it === "string" ? it : "有一项需要你确认的事项";
 }
 
-/** fix：没通过的项可以直接去处理的地方（Astra M-2）。 */
-type Check = { label: string; ok: boolean | null; text: string; fix?: "materials" | "citations" | "version" };
-
-/** 系统已核对的事实（来自内核完整性单；只陈述结果）。 */
-function systemChecks(c: any, latest: boolean): Check[] {
-  const out: Check[] = [];
-  const m = c.materials ?? {};
-  if (m.requested !== undefined) {
-    const ok = Number(m.failed ?? 0) === 0 && Number(m.loaded) === Number(m.requested);
-    out.push({ label: "材料读取", ok, text: `已读 ${m.loaded}/${m.requested} 份${Number(m.failed ?? 0) > 0 ? `，${m.failed} 份没有读到` : ""}`, ...(ok ? {} : { fix: "materials" as const }) });
-  }
-  else out.push({ label: "材料读取", ok: null, text: "不是任务产出（无材料读取记录）" });
-  const ct = c.citations ?? {};
-  if (ct.total !== undefined) {
-    const bad = Number(ct.intercepted ?? 0) + Number(ct.unverified_offline ?? 0);
-    out.push({
-      label: "引用核验",
-      ok: bad === 0,
-      ...(bad === 0 ? {} : { fix: "citations" as const }),
-      text: `共 ${ct.total} 条${Number(ct.intercepted ?? 0) > 0 ? `，${ct.intercepted} 条被拦下` : ""}${Number(ct.unverified_offline ?? 0) > 0 ? `，${ct.unverified_offline} 条离线未能核实` : ""}${ct.as_of ? `（法规版本截至 ${ct.as_of}）` : ""}`,
-    });
-  } else out.push({ label: "引用核验", ok: null, text: "本成果没有引用核验记录" });
-  out.push({ label: "文件未被改动", ok: c.file_integrity === "ok", text: c.file_integrity === "ok" ? "与生成时一致" : "与生成时不一致，不能签发" });
-  out.push({ label: "版本", ok: latest, text: latest ? "这是最新版本" : "已有更新版本，本版不能签发", ...(latest ? {} : { fix: "version" as const }) });
-  out.push({ label: "受众", ok: null, text: c.audience_check });
-  out.push({ label: "AI 辅助标识", ok: null, text: "文档属性中已标明 AI 辅助起草" });
-  if (c.egress?.note) out.push({ label: "数据去向", ok: null, text: c.egress.note });
-  return out;
-}
-
+/** 系统已核对（第 71 批抽到 lib/system-checks.ts：材料读取按实际读过的份数、引用核验与论断与依据同源）。 */
 /**
  * 成果详情 / 复核签发页（§5.4 签发页线框；v9.2 §4.4 / Y4 #18、§5 D-3；Z3 评审 #2）：左预览，右“签发前检查”——系统已核对与你来核对分开。
  * 任何状态的成果都进这一页：草稿也能看到检查清单，主动作是“提交复核”；待复核的是“确认签发”。右上角始终可下载。
@@ -330,6 +302,24 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                 <BusyLabel busy={fileDoing === "office"} busyText="正在打开…">在 {/\.xlsx$/i.test(data.filename) ? "Excel" : "Word"} 中打开</BusyLabel>
               </button>
             )}
+            {/* 第 71 批（区域 8）：顶栏最右给一个主按钮——草稿“提交复核”直接提交；待复核“去签发”滚到签发区（签发须先勾选确认，不在顶栏一键签发） */}
+            {data && draft && latest && (
+              <button className="btn-primary" disabled={busy} aria-busy={signing === "submit"} onClick={() => void submitForReview()}>
+                <BusyLabel busy={signing === "submit"} busyText="正在提交…">提交复核</BusyLabel>
+              </button>
+            )}
+            {data && pending && latest && (
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  const el = document.getElementById("review-sign");
+                  el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  el?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+                }}
+              >
+                去签发
+              </button>
+            )}
           </span>
         </div>
         {data && (
@@ -574,7 +564,7 @@ export function ReviewPage({ artifactId }: { artifactId: string }) {
                   {outlineReason.trim() !== "" && [...outlineReason.replace(/\s+/g, " ").trim()].length < 4 && <small className="muted">理由至少写 4 个字</small>}
                 </label>
               )}
-              <label className="review-ack">
+              <label className="review-ack" id="review-sign">
                 <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
                 我已实质复核全部内容{openItems.length > 0 ? "与需要确认的事项" : ""}（点选不等于复核，系统会记录这次确认）
               </label>

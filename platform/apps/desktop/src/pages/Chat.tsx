@@ -40,6 +40,9 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   const [err, setErr] = useState("");
   /** 删除这个问答：先问一句再删（删除后找不回来）。 */
   const [askDelete, setAskDelete] = useState(false);
+  // 第 71 批（区域 2）：删除挪进标题行右侧的“…”菜单（原先是正文上方一条黑色文字链，像提示条的一部分）
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   /** 正在回答的问题与到目前为止的回答（流式）；conv 是发问时所在的会话（新问答为 undefined）。 */
   const [pending, setPending] = useState<{ question: string; draft: string; conv: string | undefined; startedAt: number; deep: boolean; control?: ThinkingControl | undefined; phase: ChatPhase; thoughtChars: number } | null>(null);
   const streamRef = useRef<string | null>(null);
@@ -154,8 +157,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
     void endRef.current?.scrollIntoView({ behavior: scrollBehavior() });
   }, [messages, pending]);
 
-  const send = async () => {
-    const t = text.trim();
+  const send = async (again?: string) => {
+    const t = (again ?? text).trim();
     // 一次只问一个问题（复核 Q5-01：回车不看按钮是否灰着，回答生成中再回车会并发两问）
     if (!t || streamRef.current) return;
     // 第一次用 AI 时先给律师本人看数据去向告知（第 51 批；看过一次即不再出现）
@@ -218,28 +221,28 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   return (
     <div className={`chat${messages.length === 0 && !pending && !opening && loadErr === null ? " chat-blank" : ""}`}>
       <main className="chat-main">
-        {/* 一句话说清楚（Y4 C-1）；机制放进“了解更多” */}
-        <div className="chat-notice">
-          {/* 首句先说能做什么（U1 §1.6：原来首屏第一句是“不会读取……”，太防御） */}
-          一般法律问题直接问；要结合案卷材料，到事项里发起任务。
-          <details className="chat-more">
-            <summary>了解更多</summary>
-            发送前，问题里能识别的姓名、证件号、账号、联系方式会换成代号（识别依靠规则与名单，可能有遗漏），并与你的事项当事人名单比对：涉及“客户要求不上云”事项的当事人会被拦下。问答不读取事项材料。问题经 Kimi Work 的安全通道发给 Kimi 模型；问答记录只保存在这台电脑上。
-            {/* 内容安全说明（D-142，10-23 拍板接受“先显示后撤回”） */}
-            回答边生成边显示；如果被内容安全规则拦下，已经显示的部分会撤回，改为“未能取得回答”，这次回答不保存。
-          </details>
-        </div>
-        {/* 问答记录只在这台电脑上，留存到你删除（驻留面第 27 类）：原来没有删除的入口 */}
+        {/* 问答记录只在这台电脑上，留存到你删除（驻留面第 27 类）。第 71 批（区域 2）：删除收进右上角“…”菜单、红字、二次确认 */}
         {conversationId && !answeringHere && (
           <div className="chat-tools">
             {askDelete ? (
-              <span>
-                删除后找不回来。{" "}
-                <button className="btn-ghost btn-sm" onClick={() => void remove()}>删除</button>{" "}
-                <button className="btn-link" onClick={() => setAskDelete(false)}>取消</button>
+              <span className="chat-del-confirm" role="alertdialog" aria-label="确认删除这个问答">
+                删除后找不回来。
+                <button className="btn-ghost btn-sm btn-danger-text" onClick={() => void remove()}>删除</button>
+                <button className="btn-ghost btn-sm" onClick={() => setAskDelete(false)}>取消</button>
               </span>
             ) : (
-              <button className="btn-link" onClick={() => setAskDelete(true)}>删除这个问答</button>
+              <span className="chat-menu-wrap">
+                <button className="icon-btn chat-menu-btn" aria-label="更多操作" aria-expanded={menuOpen} title="更多操作" onClick={() => setMenuOpen((v) => !v)}>
+                  <Icon.more />
+                </button>
+                {menuOpen && (
+                  <span className="chat-menu" role="menu">
+                    <button role="menuitem" className="chat-menu-danger" onClick={() => { setMenuOpen(false); setAskDelete(true); }}>
+                      删除这个问答…
+                    </button>
+                  </span>
+                )}
+              </span>
             )}
           </div>
         )}
@@ -260,16 +263,44 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
               </div>
             </div>
           )}
-          {!opening && messages.map((m) => (
-            <div key={m.message_id} className={`msg msg-${m.role}`}>
-              {m.role === "assistant" ? <Markdown text={m.text} /> : <div className="msg-text">{m.text}</div>}
-              {m.citations && <CitationCheck c={m.citations} />}
-              <div className="msg-meta" title={fmtTime(m.created_at)}>
-                {m.role === "assistant" && m.route_label ? `${m.route_label} · ` : ""}
-                {fmtWhen(m.created_at)}
+          {!opening && messages.map((m, i) => {
+            // 第 71 批（区域 2）：回答下方常驻“复制 / 重新回答”（重新回答 = 把上一问再问一次，新回答接在后面；只在最后一条回答上）
+            const isLast = i === messages.length - 1;
+            const prevQ = m.role === "assistant" ? [...messages.slice(0, i)].reverse().find((x) => x.role === "user")?.text : undefined;
+            return (
+              <div key={m.message_id} className={`msg msg-${m.role}`}>
+                {m.role === "assistant" ? <Markdown text={m.text} /> : <div className="msg-text">{m.text}</div>}
+                {m.citations && <CitationCheck c={m.citations} />}
+                <div className="msg-meta">
+                  <span title={fmtTime(m.created_at)}>
+                    {m.role === "assistant" && m.route_label ? `${m.route_label} · ` : ""}
+                    {fmtWhen(m.created_at)}
+                  </span>
+                  {m.role === "assistant" && (
+                    <span className="msg-actions">
+                      <button
+                        type="button"
+                        className="msg-act"
+                        onClick={() => {
+                          void navigator.clipboard?.writeText(m.text).then(() => {
+                            setCopied(m.message_id);
+                            setTimeout(() => setCopied((c) => (c === m.message_id ? null : c)), 1500);
+                          });
+                        }}
+                      >
+                        {copied === m.message_id ? "已复制" : "复制"}
+                      </button>
+                      {isLast && prevQ && (
+                        <button type="button" className="msg-act" disabled={busy} title="把上一问再问一次，新回答接在后面" onClick={() => void send(prevQ)}>
+                          重新回答
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {pending && pending.conv === conversationId && (
             <>
               {/* 切走再切回来时问题已从本机记录载入：不再重复显示 */}
@@ -339,7 +370,16 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
             <button className="send" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送" title="发送（回车）"><Icon.send /></button>
           </div>
           {/* D-225：问答不绑定事项、不查客户授权——常驻说明适用范围，案件材料与当事人请在事项里发起 */}
-          <p className="chat-scope-note">{CHAT_SCOPE_NOTE}</p>
+          {/* 第 71 批（区域 2）：原先顶部还有一条提示条，与这条说的是同一件事，只留这一条；“了解更多”随它 */}
+          <div className="chat-scope-note">
+            {CHAT_SCOPE_NOTE}
+            <details className="chat-more">
+              <summary>了解更多</summary>
+              发送前，问题里能识别的姓名、证件号、账号、联系方式会换成代号（识别依靠规则与名单，可能有遗漏），并与你的事项当事人名单比对：涉及“客户要求不上云”事项的当事人会被拦下。问答不读取事项材料。问题经 Kimi Work 的安全通道发给 Kimi 模型；问答记录只保存在这台电脑上。
+              {/* 内容安全说明（D-142，10-23 拍板接受“先显示后撤回”） */}
+              回答边生成边显示；如果被内容安全规则拦下，已经显示的部分会撤回，改为“未能取得回答”，这次回答不保存。
+            </details>
+          </div>
         </div>
       </main>
     </div>

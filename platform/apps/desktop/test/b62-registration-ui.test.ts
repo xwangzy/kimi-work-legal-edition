@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { codeLengthOk, phoneLooksValid, registerCodeLengthOk, registrationFields, smsCodeLooksValid } from "../src/lib/account.ts";
 
 // 第 63 批：手机号 + 验证码与注册策略的读取抽到 components/SmsCodeFields.tsx（开通页与“设置 → 账号”共用），两处一起查
-const src = ["../src/pages/Activate.tsx", "../src/components/SmsCodeFields.tsx"].map((f) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8")).join("\n");
+const src = ["../src/pages/Activate.tsx", "../src/components/SmsCodeFields.tsx", "../src/components/AccountPanel.tsx"].map((f) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8")).join("\n");
 
 test("旧云端或取不到策略：照旧流程（不显示手机号、码用勾选框）", () => {
   for (const m of [null, undefined, { legacy: true }, { legacy: true, mode: "code" as const }]) assert.deepEqual(registrationFields(m), { legacy: true, phone: "hidden", code: "checkbox", codeLength: 6, resendSeconds: 60, phoneReset: false });
@@ -39,5 +39,6 @@ test("注册页与找回密码页：取策略失败按旧流程、发验证码�
   assert.ok(src.includes("秒后重新获取") && src.includes("获取验证码"), "倒计时按钮");
   assert.ok(src.includes("retry_after_s"), "频控时按云端给的秒数倒计时");
   assert.ok(src.includes("测试环境：验证码是"), "dry-run 写明是测试环境");
-  assert.ok(src.includes('f.phoneReset && by === "phone"') && src.includes("resetConfirmByPhone"), "找回密码的手机号方式只在云端支持时出现");
+  // 第 71 批（V45）：找回密码合并为一个“手机号或邮箱”框（resetIdKind）——云端没开手机号找回时只认邮箱
+  assert.ok(src.includes("resetIdKind(id, f.phoneReset)") && src.includes("resetConfirmByPhone"), "找回密码的手机号方式只在云端支持时出现");
 });

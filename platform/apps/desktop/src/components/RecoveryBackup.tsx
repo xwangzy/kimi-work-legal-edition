@@ -76,7 +76,8 @@ function useRecoveryBackup(onChanged?: () => void) {
     run(async () => {
       const target = dialogs ? await recovery.pickPackageSave() : null;
       if (dialogs && !target) throw new Error("没有选择保存位置");
-      const r = await recovery.createPackage(target ? { save_handle: target.handle } : { path: devPath });
+      const path = dialogs ? devPath : askDevPath("恢复包保存到哪个文件（完整路径）", devPath, setDevPath);
+      const r = await recovery.createPackage(target ? { save_handle: target.handle } : { path });
       setCreated({ code: r.code_text, setId: String(r.set_id ?? ""), firmName: String(r.firm_name ?? ""), createdAt: String(r.created_at ?? ""), founder: !!r.includes_firm_root });
       setCopied(false);
       setPlaceNote(target?.risk === "onedrive" || target?.risk === "cloud" ? "sync" : "local");
@@ -87,7 +88,7 @@ function useRecoveryBackup(onChanged?: () => void) {
     run(async () => {
       const f = dialogs ? await recovery.pickPackageFile() : null;
       if (dialogs && !f) throw new Error("没有选择恢复包");
-      const r = await recovery.verifyPackage(f ? { file_handle: f.handle, code: verifyCode } : { file: devPath, code: verifyCode });
+      const r = await recovery.verifyPackage(f ? { file_handle: f.handle, code: verifyCode } : { file: dialogs ? devPath : askDevPath("恢复包文件（完整路径）", devPath, setDevPath), code: verifyCode });
       if (!r.same_device) throw new Error("这份恢复包能打开，但不是这台电脑的");
     }, "试过了：恢复包和恢复码都能用。");
 
@@ -95,7 +96,7 @@ function useRecoveryBackup(onChanged?: () => void) {
     run(async () => {
       const f = dialogs ? await recovery.pickFolder() : null;
       if (dialogs && !f) throw new Error("没有选择备份位置");
-      await recovery.configureBackup(f ? { folder_handle: f.handle } : { dir: devPath });
+      await recovery.configureBackup(f ? { folder_handle: f.handle } : { dir: dialogs ? devPath : askDevPath("备份文件夹（完整路径）", devPath, setDevPath) });
       await recovery.runBackup();
       // 同步盘、网络位置：内容与文件名都是加密的，网盘服务商只看得到文件数量、大小与时间——如实告知
       if (f?.risk === "onedrive" || f?.risk === "cloud" || f?.risk === "network") setSyncNote(true);
@@ -106,6 +107,19 @@ function useRecoveryBackup(onChanged?: () => void) {
   return { st, created, setCreated, copied, setCopied, msg, busy, verifyCode, setVerifyCode, verifyOpen, setVerifyOpen, verifyByButton, setVerifyByButton, devPath, setDevPath, syncNote, placeNote, dialogs, create, verify, chooseFolder, runNow };
 }
 type Rb = ReturnType<typeof useRecoveryBackup>;
+
+/**
+ * 网页开发形态没有系统对话框（第 71 批，区域 1）：原先在三张步骤卡下面常驻一个“文件位置（恢复包文件或备份文件夹）”输入框，
+ * 与卡片脱节、正式包里也没有；改成点按钮时问一次路径（记住上次填的）。正式客户端走系统对话框，不经这里。
+ */
+function askDevPath(question: string, last: string, remember: (v: string) => void): string {
+  // 设置页的备份卡在网页形态有自己的路径输入框（BackupTrack）：填过就用它，不再问
+  if (last.trim()) return last.trim();
+  const v = typeof window !== "undefined" && typeof window.prompt === "function" ? window.prompt(`${question}（网页开发形态没有系统对话框）`, last) : last;
+  if (!v || !v.trim()) throw new Error("没有选择位置");
+  remember(v.trim());
+  return v.trim();
+}
 
 /** 刚生成的恢复码（只显示这一次）：可打印；勾“我已抄下或打印好”才能收起。 */
 function CreatedCard({ rb }: { rb: Rb }) {
@@ -177,9 +191,9 @@ function Running({ st }: { st: any }) {
 }
 
 /** 首次使用引导（Welcome）里的三格呈现（原样保留）。 */
-export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
+export function RecoveryBackup({ onChanged, footer }: { onChanged?: () => void; footer?: ReactNode } = {}) {
   const rb = useRecoveryBackup(onChanged);
-  const { st, busy, msg, devPath, setDevPath, syncNote, dialogs, verifyOpen, setVerifyOpen, setVerifyByButton, create, chooseFolder, runNow } = rb;
+  const { st, busy, msg, syncNote, verifyOpen, setVerifyOpen, setVerifyByButton, create, chooseFolder, runNow } = rb;
   const days = typeof st?.stale_days === "number" ? st.stale_days : null;
   const step1 = !!st?.packages_created;
   const step2 = !!st?.packages_verified;
@@ -204,13 +218,15 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
             <span className="steps3-no" aria-hidden="true">{step2 ? "✓" : "2"}</span>
             <b>试一下</b>
           </div>
-          <p className="muted">用恢复码打开一次恢复包，确认真的能用。{step2 ? `已试过 ${st.packages_verified} 次。` : ""}</p>
+          <p className="muted">
+            用恢复码打开一次恢复包，确认真的能用。{step2 ? `已试过 ${st.packages_verified} 次。` : ""}
+            {/* 禁用要说原因（U2 §1.4）；第 71 批：写在说明里，按钮与另两张卡一样贴卡底 */}
+            {!step1 && <span className="steps3-why">生成恢复包后才能试。</span>}
+          </p>
           {/* 复核 Q8-10：只有律师点这个按钮打开时才把焦点放进输入框；生成恢复包后自动展开时不抢焦点（不越过只显示一次的恢复码与警告） */}
           <button className="btn-ghost btn-sm" disabled={busy || !step1} onClick={() => { setVerifyByButton(true); setVerifyOpen(true); }}>
             试一下
           </button>
-          {/* 禁用要说原因（U2 §1.4） */}
-          {!step1 && <span className="muted steps3-why">先生成恢复包</span>}
         </li>
         <li className={step3 ? "done" : ""}>
           <div className="steps3-head">
@@ -227,7 +243,7 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
           </p>
           <div className="settings-choice">
             <button className={st?.configured || !step1 ? "btn-ghost btn-sm" : "btn-primary btn-sm"} disabled={busy || st?.revoked} onClick={() => void chooseFolder()}>
-              {st?.configured ? "更换位置" : "选择备份位置"}
+              {st?.configured ? "更换位置…" : "选择位置…"}
             </button>
             {st?.configured && (
               <button className="btn-ghost btn-sm" disabled={busy || st?.revoked} onClick={() => void runNow()}>
@@ -244,17 +260,12 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
           以前生成的恢复包仍然有效（最近几次：{(st.recent_packages as string[]).map((t) => fmtTime(t)).join("、")}）。不用的那份请销毁；丢了请告诉所内 IT。
         </p>
       )}
-      {!dialogs && (
-        <label className="field">
-          <span>文件位置（恢复包文件或备份文件夹）</span>
-          <input value={devPath} onChange={(e) => setDevPath(e.target.value)} />
-        </label>
-      )}
       <CreatedCard rb={rb} />
       {/* 只留一个“试一下”入口（第 27 批，评审 U3-34）：第 2 步的按钮点开这里；原来下方还常驻一个同名折叠，展开是空文本框 */}
       {verifyOpen && <VerifyPanel rb={rb} />}
       {msg && <p className="muted" role="status">{msg}</p>}
       {syncNote && <p className="muted">提示：这个备份位置会同步到网盘或网络存储。备份的内容与文件名都是加密的，对方只看得到文件数量、大小与备份时间。</p>}
+      {footer}
     </div>
   );
 }

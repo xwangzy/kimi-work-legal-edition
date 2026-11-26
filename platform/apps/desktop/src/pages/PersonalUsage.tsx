@@ -388,21 +388,21 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
                         <span className="pu-t">{bjClock(r.at) || "—"}</span>
                         <span className={`pu-kind-tag kind-${r.kind}`}>{r.kind === "qa" ? "问答" : "任务"}</span>
                         {w?.href ? (
-                          <a className="pu-what" href={w.href} title={[w.main, w.sub].filter(Boolean).join(" · ")}>
+                          <a className="pu-what" href={w.href} title={w.full ?? [w.main, w.sub].filter(Boolean).join(" · ")}>
                             {what}
                           </a>
                         ) : (
-                          <span className={`pu-what${w?.elsewhere ? " is-elsewhere" : ""}`} title={w ? [w.main, w.sub].filter(Boolean).join(" · ") : undefined}>
+                          <span className={`pu-what${w?.elsewhere ? " is-elsewhere" : ""}`} title={w ? (w.full ?? [w.main, w.sub].filter(Boolean).join(" · ")) || undefined : undefined}>
                             {what}
                           </span>
                         )}
-                        <span className="pu-model">
-                          {r.label ?? (r.alias ? modelLabel(r.alias) : "—")}
-                          {n > 1 && <span className="pu-runs">{c.counted ? `${n} 次调用` : `连续 ${n} 次（自动重试）`}</span>}
-                        </span>
-                        <span className="pu-charge" title={n > 1 ? (c.counted ? `同一分钟内 ${n} 次调用，合计计入` : `连续 ${n} 次，都没有计入额度`) : `读入 ${fmtCount(r.tokens_in)}（其中重复利用 ${fmtCount(r.tokens_cached)}）· 写出 ${fmtCount(r.tokens_out)}`}>
+                        {/* 第 71 批（区域 3）：模型 | 调用 | 计入 三个固定列，右对齐、等宽数字；可点的行悬停出“›” */}
+                        <span className="pu-model">{r.label ?? (r.alias ? modelLabel(r.alias) : "—")}</span>
+                        <span className="pu-runs">{n > 1 ? (c.counted ? `${n} 次调用` : `${n} 次重试`) : "1 次"}</span>
+                        <span className="pu-charge" title={n > 1 ? (c.counted ? `这一单的 ${n} 次调用，合计计入` : `连续 ${n} 次，都没有计入额度`) : `读入 ${fmtCount(r.tokens_in)}（其中重复利用 ${fmtCount(r.tokens_cached)}）· 写出 ${fmtCount(r.tokens_out)}`}>
                           {c.text}
                         </span>
+                        <span className="pu-go" aria-hidden="true">{w?.href ? "›" : ""}</span>
                       </li>
                       );
                     })}

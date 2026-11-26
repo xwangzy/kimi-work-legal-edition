@@ -101,7 +101,8 @@ test("管理员层说法（U1 §2.7）：控制面、吊销、连接器、白名
   assert.deepEqual(conn.match(/控制面|吊销|连接器|白名单|出站闸门|中软客服/g) ?? [], [], "Connections（数据去向说明里的“中软”保留）");
   assert.ok(!/中软/.test(strip(src("pages/Activate.tsx"))), "开通页");
   const chat = src("pages/Chat.tsx");
-  assert.ok(chat.includes("一般法律问题直接问"));
+  // 第 71 批（区域 2）：顶部提示条与输入框下面那条重复，只留下面的 CHAT_SCOPE_NOTE
+  assert.ok(chat.includes("这里用于一般法律问题"));
   assert.ok(!chat.includes("中软安全通道"));
 });
 

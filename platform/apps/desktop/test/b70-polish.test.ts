@@ -15,9 +15,9 @@ import { SCENARIOS } from "../src/lib/scenarios.ts";
 const src = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 
 test("whereView：任务 = 卡片名 + 事项名并能点开任务页；问答 = 会话标题、点开会话；另一台电脑；对不上为 null", () => {
-  assert.deepEqual(whereView({ task: "诉讼成本与回收测算", matter: "锐川诉禾丰", matter_id: "mat_1", run_id: "run_1", conversation_id: null, how: "id" }), { main: "诉讼成本与回收测算", sub: "锐川诉禾丰", href: "#/run/run_1/mat_1", elsewhere: false });
-  assert.deepEqual(whereView({ task: "问答", matter: "诉讼时效从什么时候起算？", matter_id: null, run_id: null, conversation_id: "qac_1", how: "id" }), { main: "诉讼时效从什么时候起算？", sub: null, href: "#/chat/qac_1", elsewhere: false });
-  assert.deepEqual(whereView({ elsewhere: true }), { main: "在另一台电脑上", sub: null, href: null, elsewhere: true });
+  assert.deepEqual(whereView({ task: "诉讼成本与回收测算", matter: "锐川诉禾丰", matter_id: "mat_1", run_id: "run_1", conversation_id: null, how: "id" }), { main: "诉讼成本与回收测算", sub: "锐川诉禾丰", href: "#/run/run_1/mat_1", elsewhere: false, full: "诉讼成本与回收测算 · 锐川诉禾丰" }); // 第 71 批：悬停全称
+  assert.deepEqual(whereView({ task: "问答", matter: "诉讼时效从什么时候起算？", matter_id: null, run_id: null, conversation_id: "qac_1", how: "id" }), { main: "诉讼时效从什么时候起算？", sub: null, href: "#/chat/qac_1", elsewhere: false, full: "诉讼时效从什么时候起算？" });
+  assert.deepEqual(whereView({ elsewhere: true }), { main: "在另一台电脑上", sub: null, href: null, elsewhere: true, full: null });
   assert.equal(whereView(undefined), null);
 });
 
@@ -36,7 +36,8 @@ test("电脑名称：起过名字的用名字（这台电脑写“名字（这�
   assert.match(deviceLine(dev({ name: "办公室 iMac", current: true }), now).meta, /^Mac 电脑 · /);
   assert.equal(deviceLine(dev({ name: null, current: true }), now).title, "这台电脑");
   assert.equal(deviceLine(dev({ name: "家里的 ThinkPad", platform: "win32", device_id: "dev_qian_qian_D2" }), now).title, "家里的 ThinkPad");
-  assert.equal(deviceLine(dev({ name: null, device_id: "dev_qian_qian_D2" }), now).title, "Mac 电脑");
+  // 第 71 批：没起名字的别的电脑与选择卡、登录记录同一写法（两台同型号时靠第几台区分）
+  assert.equal(deviceLine(dev({ name: null, device_id: "dev_qian_qian_D2" }), now).title, "Mac 电脑 · 第 2 台");
   const c = deviceChoiceLine(dev({ name: "办公室 iMac", device_id: "dev_qian_qian_D3" }), now);
   assert.equal(c.title, "办公室 iMac");
   assert.match(c.meta, /^Mac 电脑 · 最近使用/);
@@ -47,7 +48,8 @@ test("电脑名称：起过名字的用名字（这台电脑写“名字（这�
   assert.equal(canRenameDevices([]), false);
   const s = { sid: "ses_x", kind: "desktop" as const, device_id: "dev_qian_qian_D2", created_at: "2026-11-26T01:00:00Z", last_seen_at: null, idle_expires_at: "2026-12-10T01:00:00Z", client: { platform: "win32" } };
   assert.match(sessionLine(s, now, [dev({ device_id: "dev_qian_qian_D2", name: "家里的 ThinkPad" })]).title, /^家里的 ThinkPad/);
-  assert.match(sessionLine(s, now).title, /^Windows 电脑（第 2 台）/);
+  // 第 71 批（独立评分区域 4-5）：“Windows 电脑（第 2 台） · 当前这次登录”括号后再接间隔点，改为“Windows 电脑 · 第 2 台”
+  assert.match(sessionLine(s, now).title, /^Windows 电脑 · 第 2 台/);
 });
 
 test("checkDeviceName：与云端同一口径（去首尾空白并空白；空 = 去掉名字；超 20 字与控制、方向、零宽字符给原因）", () => {

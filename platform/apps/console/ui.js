@@ -346,7 +346,7 @@ export function meter(o) {
       "div",
       { class: "meter compact", title: [amounts, resets ? fmt.resetLine(o.resetsAt) : null].filter(Boolean).join(" · ") },
       h("div", { class: "meter-line" }, h("b", { class: `meter-pct tone-${tone}` }, r === null ? "—" : fmt.pct(r)), bar),
-      h("div", { class: "meter-sub" }, [pausedText ?? (remain === null ? null : `剩 ${fmt.left(remain)}`), short, rs].filter(Boolean).join(" · ")),
+      h("div", { class: "meter-sub" }, [pausedText ?? (remain === null || o.noRemain ? null : `剩 ${fmt.left(remain)}`), short, rs].filter(Boolean).join(" · ")),
     );
   }
   return h(
@@ -1024,3 +1024,83 @@ export const sectionTitle = (t, sub) => h("div", { class: "section-title" }, h("
 export function clientOnlyList(items) {
   return h("ul", { class: "client-only" }, items.map(([t, d]) => h("li", {}, h("span", { class: "co-icon", "aria-hidden": "true" }, icon("laptop")), h("div", {}, h("b", {}, t), d ? h("small", {}, d) : null))));
 }
+
+/**
+ * 行尾“…”菜单（第 71 批；第三轮改为浮层）：菜单渲染到 body（触发按钮在对话框里时渲染到那个对话框，免得被顶层遮住），
+ * 按触发按钮的位置定位，不再被表格卡片的 overflow 裁掉；靠近视口底部时向上展开；滚动、缩放、换页时收起。
+ * items: [{label, onClick, danger?, disabled?, title?}]，空项跳过；没有可做的事返回 null。o.label = 带字的按钮（如“更多”）。
+ */
+let openMenu = null;
+const closeMenu = () => {
+  if (!openMenu) return;
+  const m = openMenu;
+  openMenu = null;
+  m.pop.remove();
+  m.btn.setAttribute("aria-expanded", "false");
+  m.btn.classList.remove("open");
+};
+let menuWatch = false;
+export function rowMenu(items, o = {}) {
+  const list = items.filter(Boolean);
+  if (!list.length) return null;
+  const trigger = h("button", { type: "button", class: ["row-menu-btn", o.label && "labeled"], "aria-haspopup": "menu", "aria-expanded": "false", "aria-label": o.aria ?? "更多操作", title: o.aria ?? "更多操作" }, o.label ?? "⋯");
+  const wrap = h("span", { class: ["row-menu", o.align === "start" && "start"] }, trigger);
+  const open = () => {
+    const pop = h(
+      "div",
+      { class: "menu-pop floating", role: "menu" },
+      list.map((it) =>
+        h("button", {
+          type: "button",
+          role: "menuitem",
+          class: ["menu-item", it.danger && "danger"],
+          disabled: it.disabled,
+          title: it.title,
+          onclick: (ev) => {
+            ev.stopPropagation();
+            closeMenu();
+            it.onClick?.();
+          },
+        }, it.label),
+      ),
+    );
+    pop.addEventListener("click", (ev) => ev.stopPropagation());
+    (trigger.closest("dialog[open]") ?? document.body).append(pop);
+    const r = trigger.getBoundingClientRect();
+    const pw = pop.offsetWidth;
+    const ph = pop.offsetHeight;
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+    let left = o.align === "start" ? r.left : r.right - pw;
+    left = Math.max(8, Math.min(left, vw - pw - 8));
+    let top = r.bottom + 4;
+    if (top + ph > vh - 8) top = Math.max(8, r.top - ph - 4); // 靠近底部：向上展开
+    cssVars(pop, { "--console-x": `${Math.round(left)}px`, "--console-y": `${Math.round(top)}px` });
+    pop.classList.add(top < r.top ? "up" : "down");
+    openMenu = { pop, btn: trigger };
+    trigger.setAttribute("aria-expanded", "true");
+    trigger.classList.add("open");
+    pop.querySelector("button:not(:disabled)")?.focus({ preventScroll: true });
+  };
+  trigger.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const mine = openMenu?.btn === trigger;
+    closeMenu();
+    if (!mine) open();
+  });
+  wrap.addEventListener("click", (ev) => ev.stopPropagation());
+  if (!menuWatch) {
+    menuWatch = true;
+    document.addEventListener("click", closeMenu);
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && openMenu) (openMenu.btn.focus(), closeMenu());
+    });
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("hashchange", closeMenu);
+  }
+  return wrap;
+}
+
+/** 状态格：圆点 + 文字（常态不用底色徽标，例外才用 badge） */
+export const stateCell = (text, tone = "neutral", title) => h("span", { class: "state-cell", title }, dot(tone), text);

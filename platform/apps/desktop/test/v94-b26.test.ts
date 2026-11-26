@@ -169,7 +169,7 @@ test("两步确认（U2-21）：放弃按钮缺省“取消”；说明超过 20
 
 test("开始前确认回显（U2-23）：任务说明原文两行以内；材料列出至多 3 个文件名，多了写“等 n 份”", async () => {
   const { materialsLine } = await import("../src/lib/labels.ts");
-  assert.equal(materialsLine(0), "没有指定：按需读取本事项的材料");
+  assert.equal(materialsLine(0), "全部（没有勾选：本事项的材料都可读）"); // 第 71 批：四处同一口径
   assert.equal(materialsLine(2, ["签收单.txt", "合同.docx"]), "签收单.txt、合同.docx");
   assert.equal(materialsLine(5, ["a.docx", "b.docx", "c.docx", "d.docx", "e.docx"]), "a.docx、b.docx、c.docx 等 5 份");
   assert.equal(materialsLine(2), "2 份", "老调用点没给文件名时只写份数");

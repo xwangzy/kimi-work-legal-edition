@@ -341,11 +341,53 @@ function whereKey(w: UsageRow["where"]): string {
  * 第 70 批（V44）：明细一行“用在哪”的显示——任务名与事项名（问答为会话标题），只在本机对回；另一台电脑上的写明；对不上为 null（界面只留“任务 / 问答”标签）。
  * href = 点开去哪（任务的运行页、问答会话）。纯函数。
  */
-export function whereView(w: UsageRow["where"]): { main: string; sub: string | null; href: string | null; elsewhere: boolean } | null {
+export function whereView(w: UsageRow["where"]): { main: string; sub: string | null; href: string | null; elsewhere: boolean; full: string | null } | null {
   if (!w) return null;
-  if ("elsewhere" in w) return { main: "在另一台电脑上", sub: null, href: null, elsewhere: true };
-  if (w.conversation_id) return { main: w.matter ?? "问答", sub: null, href: `#/chat/${encodeURIComponent(w.conversation_id)}`, elsewhere: false };
-  return { main: w.task, sub: w.matter, href: w.run_id && w.matter_id ? `#/run/${encodeURIComponent(w.run_id)}/${encodeURIComponent(w.matter_id)}` : null, elsewhere: false };
+  if ("elsewhere" in w) return { main: "在另一台电脑上", sub: null, href: null, elsewhere: true, full: null };
+  if (w.conversation_id) {
+    // 第 71 批 D11：问答写会话标题——按显示宽度截断、去掉末尾标点、加省略号，悬停给第一问全文（内核 matter_full；老内核没有时给标题）
+    const title = w.matter ?? "";
+    const fullAsk = (w as { matter_full?: string | null }).matter_full ?? null;
+    if (!title && !fullAsk) return { main: "问答", sub: null, href: `#/chat/${encodeURIComponent(w.conversation_id)}`, elsewhere: false, full: null };
+    const source = fullAsk ?? title;
+    // 会话标题存的是第一问的前 24 字：没有全文、标题恰好 24 字时按“被截过”处理（末尾补省略号）
+    const cut = !fullAsk && [...title].length >= QA_TITLE_STORED_CHARS;
+    return { main: clipByWidth(source, WHERE_TITLE_WIDTH, cut), sub: null, href: `#/chat/${encodeURIComponent(w.conversation_id)}`, elsewhere: false, full: source };
+  }
+  return { main: w.task, sub: w.matter, href: w.run_id && w.matter_id ? `#/run/${encodeURIComponent(w.run_id)}/${encodeURIComponent(w.matter_id)}` : null, elsewhere: false, full: [w.task, w.matter].filter(Boolean).join(" · ") };
+}
+
+/** 内核存的会话标题长度（qa-chat：第一问的前 24 字）。 */
+const QA_TITLE_STORED_CHARS = 24;
+/** 最近记录里问答标题的显示宽度（汉字算 2、半角算 1）：约 24 个汉字（与原先内核存的标题同长）。 */
+export const WHERE_TITLE_WIDTH = 48;
+const TRAILING_PUNCT = /[\s，,。．.、；;：:！!？?…—\-－（(“"‘'《〈【[]+$/u;
+
+/** 一个字的显示宽度：全角（汉字、全角标点）算 2，其余算 1。 */
+function charWidth(ch: string): number {
+  const c = ch.codePointAt(0) ?? 0;
+  return (c >= 0x1100 && c <= 0x115f) || (c >= 0x2e80 && c <= 0xa4cf) || (c >= 0xac00 && c <= 0xd7a3) || (c >= 0xf900 && c <= 0xfaff) || (c >= 0xfe30 && c <= 0xfe4f) || (c >= 0xff00 && c <= 0xff60) || (c >= 0xffe0 && c <= 0xffe6) || c >= 0x20000 ? 2 : 1;
+}
+
+/**
+ * 按显示宽度截断（第 71 批 D11：原先内核按 24 个字硬截，断在“，”上且没有省略号）：放得下就原样；放不下（或 alreadyCut）
+ * 截到留出省略号的位置，去掉末尾的标点与空白，再加“…”。纯函数。
+ */
+export function clipByWidth(text: string, maxWidth: number, alreadyCut = false): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  const chars = [...t];
+  const total = chars.reduce((n, ch) => n + charWidth(ch), 0);
+  if (total <= maxWidth && !alreadyCut) return t;
+  let w = 0;
+  let out = "";
+  for (const ch of chars) {
+    const cw = charWidth(ch);
+    if (w + cw > maxWidth - 2) break;
+    out += ch;
+    w += cw;
+  }
+  const trimmed = out.replace(TRAILING_PUNCT, "");
+  return `${trimmed || out}…`;
 }
 
 /**
@@ -362,8 +404,10 @@ export function collapseFree<T extends UsageRow>(rows: T[], scale: number): { at
     // 第 70 批（V44）：用在不同任务（不同运行或问答会话）的行不合并
     const same = !!last && last.row.kind === r.kind && (last.row.label ?? last.row.alias) === (r.label ?? r.alias) && whereKey(last.row.where) === whereKey(r.where);
     if (same && !c.counted && !last!.charge.counted && last!.charge.text === c.text && day(last!.at) === day(r.at)) last!.n += 1;
-    // 第四轮（独立评审 R3-1 过渡办法）：同一分钟里同一类、同一模型的计入调用（一单任务一步里的连续调用）合成一行，计入额度相加
-    else if (same && c.counted && last!.charge.counted && typeof r.charge_ratio === "number" && typeof last!.sum === "number" && !r.estimated && !last!.row.estimated && minute(last!.at) === minute(r.at)) {
+    // 第四轮（独立评审 R3-1 过渡办法）：同一分钟里同一类、同一模型的计入调用（一单任务一步里的连续调用）合成一行，计入额度相加。
+    // 第 71 批（区域 3）：本机对得上用在哪一次运行（或哪段问答）的，同一天里连着的计入调用不论隔几分钟都合成一行——
+    // 律师心里的单位是“这一单任务”，原来一单任务列 11 行同名记录、看不出哪行是哪次
+    else if (same && c.counted && last!.charge.counted && typeof r.charge_ratio === "number" && typeof last!.sum === "number" && !r.estimated && !last!.row.estimated && (minute(last!.at) === minute(r.at) || (whereKey(r.where) !== "" && whereKey(r.where) !== "elsewhere" && day(last!.at) === day(r.at)))) {
       last!.n += 1;
       last!.sum += r.charge_ratio * scale;
       last!.charge = { counted: true, text: fmtPct(last!.sum) };

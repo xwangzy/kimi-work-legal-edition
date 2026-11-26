@@ -5,7 +5,8 @@
  *   本所      律所 admin / partner：概览、成员、电脑、用量、账单；只能在客户端做的事写明“在管理员电脑上完成”
  *   平台运营  中软平台人员，按角色权限出现子页，第 62 批按工作分四组：
  *               工作台  总览、告警
- *               客户    客户、账号、设备、注册管理（注册策略 / 邀请码 / 短信服务）
+ *               客户    客户、账号、电脑、注册管理（注册策略 / 邀请码 / 短信服务）
+ *             第 71 批（V45）：以“客户”为主轴——客户详情含成员与电脑；账号详情是页面 #/ops/accounts/<aid>；账号、电脑两页是查找入口
  *               经营    套餐、模型与价目、计费、用量
  *               平台    模型与路由、人员与权限、系统
  *             旧地址照认：#/ops/plans?tab=settings → 注册管理 · 注册策略；?tab=alerts → 告警；#/ops/routing?tab=prices → 模型与价目
@@ -51,7 +52,7 @@ export const NAV = [
     id: "me",
     label: "我的",
     items: [
-      { id: "overview", label: "概览", icon: "home", mod: meOverview, member: true },
+      { id: "overview", label: "我的概览", icon: "home", mod: meOverview, member: true },
       { id: "devices", label: "我的电脑", icon: "laptop", mod: meDevices, member: true },
       { id: "security", label: "账号与安全", icon: "shield", mod: meSecurity },
     ],
@@ -60,7 +61,7 @@ export const NAV = [
     id: "firm",
     label: "本所",
     items: [
-      { id: "overview", label: "概览", icon: "building", mod: firmOverview },
+      { id: "overview", label: "本所概览", icon: "building", mod: firmOverview },
       { id: "members", label: "成员", icon: "members", mod: firmMembers },
       { id: "devices", label: "电脑", icon: "devices", mod: firmDevices },
       { id: "usage", label: "用量", icon: "usage", mod: firmUsage },
@@ -76,7 +77,7 @@ export const NAV = [
       { id: "tenants", label: "客户", icon: "tenants", mod: tenants, perms: ["tenant.read"], group: "客户" },
       { id: "accounts", label: "账号", icon: "accounts", mod: accounts, perms: ["account.read", "account.support"], group: "客户" },
       // GET /v1/ops/devices 控制面按“查看账号”（account.read）鉴权：只有“查看客户”的财务看得到菜单却永远 403
-      { id: "devices", label: "设备", icon: "devices", mod: devices, perms: ["account.read"], group: "客户" },
+      { id: "devices", label: "电脑", icon: "devices", mod: devices, perms: ["account.read"], group: "客户" },
       {
         id: "registration",
         label: "注册管理",
@@ -158,7 +159,10 @@ function setMe(me) {
   ctx.tenants = null;
 }
 const sectionVisible = (s) => (s === "me" ? true : s === "firm" ? ctx.kind === "member" && isFirmManager(ctx.firmRole) : s === "ops" ? ctx.kind === "staff" : false);
-const itemVisible = (s, it) => sectionVisible(s) && (!it.member || ctx.kind === "member") && (s !== "ops" || canAny(it.perms));
+/** 第 71 批（第二轮，13）：个人客户（一人一所）的“本所”改叫“我的工作室”，只留用量与账单——没有成员、电脑在“我的电脑”里 */
+const personalFirm = () => ctx.kind === "member" && ctx.me?.personal === true;
+const PERSONAL_FIRM_ITEMS = new Set(["usage", "billing"]);
+const itemVisible = (s, it) => sectionVisible(s) && (!it.member || ctx.kind === "member") && (s !== "ops" || canAny(it.perms)) && !(s === "firm" && personalFirm() && !PERSONAL_FIRM_ITEMS.has(it.id));
 function landing() {
   if (ctx.kind === "staff") {
     const first = NAV[2].items.find((it) => itemVisible("ops", it));
@@ -278,7 +282,8 @@ function buildNav() {
       for (const g of groups) nav.append(h("div", { class: "nav-section", "aria-label": g || s.label }, h("div", { class: "nav-heading" }, g || s.label), items.filter((it) => (it.group ?? "") === g).map((it) => link(s, it))));
       continue;
     }
-    nav.append(h("div", { class: "nav-section", "aria-label": s.label }, h("div", { class: "nav-heading" }, s.label), items.map((it) => link(s, it))));
+    const label = s.id === "firm" && personalFirm() ? "我的工作室" : s.label;
+    nav.append(h("div", { class: "nav-section", "aria-label": label }, h("div", { class: "nav-heading" }, label), items.map((it) => link(s, it))));
   }
 }
 /** 侧栏数字角标；不带分区的 id 归平台运营（总览与告警页调 setNavBadge("alerts", 未确认告警数)） */
@@ -319,17 +324,21 @@ function cycleTheme() {
 function buildSearch() {
   const box = $("#gsearch");
   clear(box);
-  if (ctx.kind !== "staff" || !canAny(["account.read", "tenant.read", "usage.read"])) return void (box.hidden = true);
+  if (ctx.kind !== "staff" || !canAny(["account.read", "tenant.read", "usage.read"])) return void ((box.hidden = true), (ctx.gsearchOn = false));
   box.hidden = false;
-  const input = h("input", { type: "search", class: "search", placeholder: "搜索邮箱、律所、请求编号", "aria-label": "全局搜索：邮箱、律所或请求编号", autocomplete: "off", spellcheck: "false" });
+  ctx.gsearchOn = true;
+  const input = h("input", { type: "search", class: "search", placeholder: "搜索手机号、邮箱、律所、电脑、请求编号", "aria-label": "全局搜索：手机号、邮箱、律所、电脑编号或名称、请求编号", autocomplete: "off", spellcheck: "false" });
   const menu = h("div", { class: "gs-menu", role: "listbox", hidden: true });
   let items = [];
   let sel = 0;
-  const guess = (q) => (q.includes("@") ? "account" : /^ten_/i.test(q) ? "tenant" : /^[A-Za-z0-9][A-Za-z0-9_.:-]{11,}$/.test(q) && !/^ten_|^acc_|^dev_|^stf_/i.test(q) ? "request" : /[一-龥]/.test(q) ? "tenant" : "account");
+  const guess = (q) => (q.includes("@") || /^\+?[\d\s-]{7,}$/.test(q) ? "account" : /^acc_/i.test(q) ? "account_id" : /^ten_/i.test(q) ? "tenant" : /^dev_/i.test(q) ? "device" : /^[A-Za-z0-9][A-Za-z0-9_.:-]{11,}$/.test(q) && !/^ten_|^acc_|^dev_|^stf_/i.test(q) ? "request" : /[一-龥]/.test(q) ? "tenant" : "account");
   const run = (kind, q) => {
     menu.hidden = true;
     input.blur();
-    if (kind === "account") go(`ops/accounts?q=${encodeURIComponent(q)}`);
+    // 第 71 批：账号只命中一个时直接进账号详情（jump=1，由账号页判断）
+    if (kind === "account") go(`ops/accounts?q=${encodeURIComponent(q)}&jump=1`);
+    else if (kind === "account_id") go(`ops/accounts/${encodeURIComponent(q)}`);
+    else if (kind === "device") go(`ops/devices?status=&q=${encodeURIComponent(q)}`);
     else if (kind === "tenant") go(`ops/tenants?q=${encodeURIComponent(q)}`);
     else if (kind === "request") go(`ops/usage?request_id=${encodeURIComponent(q)}&view=records`);
   };
@@ -338,10 +347,12 @@ function buildSearch() {
     if (!q) return void (menu.hidden = true);
     const first = guess(q);
     const all = [
-      ["account", `在账号里搜“${q}”`, "邮箱或姓名", "account.read"],
+      ["account", `在账号里搜“${q}”`, "手机号、邮箱或姓名；只命中一个时直接打开", "account.read"],
+      ["account_id", `打开账号 ${q}`, "账号编号", "account.read"],
+      ["device", `在电脑里搜“${q}”`, "电脑编号、名称或版本", "account.read"],
       ["tenant", `在客户里搜“${q}”`, "律所名称或编号", "tenant.read"],
       ["request", `按请求编号查“${q}”`, "逐请求明细", "usage.read"],
-    ].filter((x) => canAny([x[3]]));
+    ].filter((x) => canAny([x[3]]) && (x[0] !== "account_id" || /^acc_/i.test(q)));
     items = [...all.filter((x) => x[0] === first), ...all.filter((x) => x[0] !== first)];
     sel = 0;
     clear(menu, items.map(([k, t, s], i) => h("button", { type: "button", role: "option", class: ["gs-item", i === sel && "active"], "aria-selected": i === sel ? "true" : "false", onmousedown: (e) => (e.preventDefault(), run(k, q)) }, h("span", {}, t), h("small", {}, s))));
@@ -407,7 +418,10 @@ function route() {
   }
   for (const box of document.querySelectorAll(".nav-sub")) box.hidden = box.dataset.sub !== key;
   $("#sidebar-foot .user")?.classList.toggle("active", key === "me/security" && ctx.kind === "staff");
-  clear($("#crumbs"), h("span", { class: "crumb-sec" }, sec.label), icon("chevron", "crumb-sep"), sub ? [h("span", { class: "crumb-sec" }, item.label), icon("chevron", "crumb-sep"), h("b", {}, sub[1])] : h("b", {}, item.label));
+  // 第 71 批（第二轮，05）：账号列表页自带搜手机号 / 邮箱的搜索框，顶栏全局搜索在这一页收起，免得同屏两个搜索框
+  if ($("#gsearch")) $("#gsearch").hidden = !ctx.gsearchOn || (key === "ops/accounts" && !r.arg);
+  const secLabel = r.section === "firm" && personalFirm() ? "我的工作室" : sec.label;
+  clear($("#crumbs"), h("span", { class: "crumb-sec" }, secLabel), icon("chevron", "crumb-sep"), sub ? [h("span", { class: "crumb-sec" }, item.label), icon("chevron", "crumb-sep"), h("b", {}, sub[1])] : h("b", {}, item.label));
   $("#app").classList.remove("nav-open");
   closeDrawer();
   const main = $("#content");
@@ -447,7 +461,19 @@ document.addEventListener("keydown", (e) => {
   } else if (e.key.toLowerCase() === "r") route();
   else if (e.key === "Escape") $("#app").classList.remove("nav-open");
 });
-ctx.openAccount = (aid) => accounts.openAccount(aid);
+// 第 71 批（V45）：账号详情是页面（有网址、可后退），不再是抽屉
+ctx.openAccount = (aid) => go(`ops/accounts/${encodeURIComponent(aid)}`);
+/** 详情页把面包屑写到对象名：parts = [[文字, 路径?], …]，最后一项加粗 */
+ctx.setCrumbs = (parts) => {
+  const r = parseHash(location.hash);
+  const sec = NAV.find((s) => s.id === r.section);
+  const items = (parts ?? []).filter(Boolean);
+  clear(
+    $("#crumbs"),
+    h("span", { class: "crumb-sec" }, sec?.label ?? ""),
+    items.map(([t, to], i) => [icon("chevron", "crumb-sep"), i === items.length - 1 || !to ? h(i === items.length - 1 ? "b" : "span", { class: i === items.length - 1 ? "crumb-cur" : "crumb-sec" }, t) : h("a", { class: "crumb-link", href: `#/${to}` }, t)]),
+  );
+};
 ctx.logout = (m) => logout(m);
 ctx.refreshMe = async () => {
   try {

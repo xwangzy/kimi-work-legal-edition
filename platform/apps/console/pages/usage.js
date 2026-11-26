@@ -7,7 +7,7 @@
  *   - 价目生效前 = 行发生时价目里还没有它的价格：不改写，金额“未定价”，另给“按现行价估算”（只读）。
  */
 import * as api from "../api.js";
-import { billingBadges, ctx, OUTCOME, outcomeBadge, pageHead, sourceBadge, tenantOptions, USAGE_SOURCE } from "../domain.js";
+import { billingBadges, ctx, go as goTo, OUTCOME, outcomeBadge, pageHead, sourceBadge, tenantOptions, USAGE_SOURCE } from "../domain.js";
 import {
   badge, bjDay, btn, clear, dataTable, emptyBlock, errorBlock, facts, field, fmt, h, hbars, icon, load, loadingBlock, mono, note, openDrawer, panel,
   readForm, segmented, stat, tabBar, toast, trendChart,
@@ -273,8 +273,9 @@ function openRecord(r) {
           ["上游请求编号", mono(r.upstream_request_id ?? "—")],
           ["开始 / 结束", `${fmt.full(r.started_at)} → ${fmt.full(r.at)}`],
           ["周期", r.period ?? "—"],
-          ["律所", `${r.tenant_name ?? "—"}（${r.tid ?? "—"}）`],
-          ["账号", r.email ?? r.aid ?? "—"],
+          // 第 71 批（V45，P-11）：律所与账号可点，直达客户详情与账号详情（原先是纯文字，要复制邮箱再搜一次）
+          ["律所", r.tid ? h("button", { type: "button", class: "link", onclick: () => goTo(`ops/tenants/${encodeURIComponent(r.tid)}`) }, `${r.tenant_name ?? r.tid}（${r.tid}）`) : "—"],
+          ["账号", r.aid ? h("button", { type: "button", class: "link", onclick: () => goTo(`ops/accounts/${encodeURIComponent(r.aid)}`) }, r.email ?? r.aid) : r.email ?? "—"],
           ["成员 / 会话 / 设备", h("span", {}, mono(r.uid ?? "—"), " / ", mono(r.sid ?? "—"), " / ", mono(r.dev ?? "—"))],
           ["模型", h("span", {}, mono(r.alias), " → ", mono(r.provider ?? "—"), " · ", mono(r.upstream_model ?? "—"))],
           ["流式", r.stream ? "是" : "否"],

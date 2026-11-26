@@ -163,6 +163,43 @@ export function notRegisteredActions(where: "activate" | "relogin"): ("register"
   return where === "activate" ? ["register", "password"] : ["password"];
 }
 
+/**
+ * 第 71 批（V45）：这台已登记的电脑上重新登录、发验证码到账号绑定手机号（account.smsSendRelogin）失败时怎么办：
+ * 限频（要等一会儿再发）→ "wait"，照常倒计时并说明；其余一切失败（没绑手机号 phone_unbound、旧云端不认 relogin 回 400、设备签名不通过等）
+ * → "fallback"，退回可输入手机号的原流程，不把失败原因甩给律师。纯函数。
+ */
+export function reloginSmsFailure(e: unknown): "wait" | "fallback" {
+  const d = (e as { detail?: { reason?: unknown; retry_after_s?: unknown } } | null)?.detail;
+  const r = errorReason(e) ?? (typeof (e as { code?: unknown } | null)?.code === "string" ? String((e as { code: string }).code) : "");
+  if (typeof d?.retry_after_s === "number" && d.retry_after_s > 0) return "wait";
+  return /rate_limit|too_many|sms_frequent|sms_daily/.test(r) ? "wait" : "fallback";
+}
+
+/** 第 71 批（V45）：找回密码那一个框里填的是什么——11 位手机号（云端开了手机号找回时）、邮箱，或还认不出（null）。纯函数。 */
+export function resetIdKind(v: string, phoneReset: boolean): "phone" | "email" | null {
+  const s = v.trim();
+  if (phoneReset && !s.includes("@") && phoneLooksValid(s)) return "phone";
+  return emailLooksValid(s) ? "email" : null;
+}
+
+/** 手机号打码成紧凑写法“138****0000”（云端给的已打码的原样去空格）；不是 11 位手机号的原样返回。纯函数。 */
+export function maskPhoneTight(v: string): string {
+  const s = v.replace(/\s+/g, "");
+  if (s.includes("*")) return s;
+  const d = s.replace(/\D/g, "");
+  return /^1\d{10}$/.test(d) ? `${d.slice(0, 3)}****${d.slice(7)}` : s;
+}
+
+/**
+ * 第 71 批（V45）：称呼本人——“姓名（138****0000）”（登录以手机号为主，邮箱不一定认得）；没有手机号写姓名，再没有写邮箱。纯函数。
+ */
+export function accountWho(o: { name?: string | null; phone?: string | null; email?: string | null } | null | undefined): string | null {
+  const name = (o?.name ?? "").trim();
+  const phone = o?.phone && o.phone.trim() ? maskPhoneTight(o.phone) : "";
+  if (name && phone) return `${name}（${phone}）`;
+  return name || phone || (o?.email ?? "").trim() || null;
+}
+
 /** 账号卡上的手机号一栏：打码后的号码，或“未绑定”。 */
 export function phoneLabel(phone: string | null | undefined): string {
   return phone && phone.trim() ? phone.trim() : "未绑定";
@@ -236,6 +273,26 @@ export interface AccountDevice {
   last_seen_at?: string | null;
   /** 第 70 批（V44）：律师给这台电脑起的名字（云端 1.5.1 起；没起过为 null，旧云端没有这一字段）。 */
   name?: string | null;
+  /** 第 71 批（V45，D-298）：登录中（占名额）/ 已退出登录（资料还在那台电脑上，可再登录）/ 已移除。旧云端没有时按 session 推断。 */
+  state?: "signed_in" | "signed_out" | "revoked";
+  /** 第 71 批：被本人在别的电脑上让出登录的时刻（没有为 null）。 */
+  signed_out_at?: string | null;
+}
+
+/** 第 71 批（D-298）：这台电脑此刻的状态（云端没给 state 时按 session / revoked_at 推断）。纯函数。 */
+export function deviceState(d: AccountDevice): "signed_in" | "signed_out" | "revoked" {
+  if (d.state === "signed_in" || d.state === "signed_out" || d.state === "revoked") return d.state;
+  return d.revoked_at ? "revoked" : d.session === "active" ? "signed_in" : "signed_out";
+}
+
+/**
+ * 第 71 批（D-298）：同时登录已满时默认预选“让哪台退出登录”——登录中的电脑里最久没用的一台（不是这台正在登录的电脑）。
+ * 只有登录中的电脑占名额，选已退出登录的那台没有用；律师可以改选。没有可让出的返回 null。纯函数。
+ */
+export function defaultSignoutPick(devices: readonly AccountDevice[], thisDevice: string | null = null): string | null {
+  const at = (d: AccountDevice) => d.last_seen_at ?? d.last_seen_on ?? d.registered_at ?? "";
+  const pool = devices.filter((d) => deviceState(d) === "signed_in" && d.device_id !== thisDevice);
+  return pool.length ? [...pool].sort((x, y) => at(x).localeCompare(at(y)))[0]!.device_id : null;
 }
 
 /** 相对时间：刚刚 / N 分钟前 / 今天 14:20 / 昨天 / 11 月 3 日（北京时间）。纯函数。 */
@@ -280,7 +337,7 @@ export function deviceChoiceLine(d: AccountDevice, now = Date.now()): { title: s
   const reg = !Number.isFinite(regMs) ? "" : regDay === todayDay ? `今天 ${new Date(regMs + 8 * 3600_000).toISOString().slice(11, 16)} 登记` : `${dayLabel(d.registered_at, now)}登记`;
   // 第五轮（独立评审 R4-1）：两者相近时留“最近使用”（“最久没用”的依据就是它），省掉登记
   const meta = [named && d.platform ? platformLabel(d.platform) : "", seen ? `最近使用 ${seen}` : "", sameAsReg ? "" : reg, version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
-  return { title: kind, meta, active: d.session === "active" };
+  return { title: kind, meta, active: deviceState(d) === "signed_in" };
 }
 
 /** 第 70 批（V44）：律师给电脑起的名字（规整后；没起过或旧云端为 null）。纯函数。 */
@@ -323,7 +380,8 @@ export function deviceLine(d: AccountDevice, now = Date.now()): { title: string;
   // 第 69 批（D-297）：云端给了平台时写电脑类型（“Mac 电脑”），与电脑数已满时的选择列表同一说法；旧云端仍写第几台
   // 第 70 批（V44）：起过名字的用名字，这台电脑写“名字（这台电脑）”，电脑类型挪到说明行开头
   const named = deviceName(d);
-  const title = named ? (d.current ? `${named}（这台电脑）` : named) : d.current ? "这台电脑" : d.platform ? platformLabel(d.platform) : `第 ${n} 台电脑`;
+  // 第 71 批：没起名字的别的电脑与选择卡、登录记录同一写法“Mac 电脑 · 第 2 台”（原来只写“Mac 电脑”，两台同型号时分不清）
+  const title = named ? (d.current ? `${named}（这台电脑）` : named) : d.current ? "这台电脑" : d.platform ? `${platformLabel(d.platform)} · 第 ${n} 台` : `第 ${n} 台电脑`;
   // 第 55 批（真实控制面复评）：①“最近使用”是服务器按 UTC 记的日子，北京时间 0～8 点登记的电脑会显示成“登记 22 日 · 最近使用 21 日”——
   // 不早于登记日（按北京时间的日子比）；②没有上报版本的客户端，服务器记占位值 legacy，不显示给律师看。
   const regDay = d.registered_at && Number.isFinite(Date.parse(d.registered_at)) ? new Date(Date.parse(d.registered_at) + 8 * 3600_000).toISOString().slice(0, 10) : null;
@@ -332,7 +390,9 @@ export function deviceLine(d: AccountDevice, now = Date.now()): { title: string;
   // 第 70 批（V44）：“最近使用”与电脑数已满的列表同一种写法（相对时间：刚刚 / N 分钟前 / 今天 14:20 / 昨天 / 日期），云端给了会话时刻时用它
   const seenText = d.last_seen_at && Number.isFinite(Date.parse(d.last_seen_at)) ? agoLabel(d.last_seen_at, now) : seen ? agoLabel(seen, now) : "";
   const meta = [named && d.platform ? platformLabel(d.platform) : "", `${dayLabel(d.registered_at, now)}登记`, seenText ? `最近使用 ${seenText}` : "", version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
-  const state = d.revoked_at ? { text: "已移除", tone: "bad" as const } : d.session === "active" ? { text: "已登录", tone: "ok" as const } : { text: "未登录", tone: "gray" as const };
+  // 第 71 批（D-298）：“登录中”占名额；“已退出登录”的电脑资料还在、回去重新登录即可
+  const st = deviceState(d);
+  const state = st === "revoked" ? { text: "已移除", tone: "bad" as const } : st === "signed_in" ? { text: "登录中", tone: "ok" as const } : { text: "已退出登录", tone: "gray" as const };
   return { title, meta, state };
 }
 
@@ -351,9 +411,9 @@ export interface AccountSession {
 export function sessionLine(s: AccountSession, now = Date.now(), devices: readonly AccountDevice[] = []): { title: string; meta: string } {
   // 第 70 批（V44）：那台电脑起过名字的写名字
   const named = s.device_id ? deviceName(devices.find((d) => d.device_id === s.device_id)) : null;
-  const where = s.kind === "web" ? "网页" : named ?? `${platformLabel(s.client?.platform)}${s.device_id ? `（第 ${deviceOrdinal(s.device_id)} 台）` : ""}`;
+  const where = s.kind === "web" ? "网页" : named ?? `${platformLabel(s.client?.platform)}${s.device_id ? ` · 第 ${deviceOrdinal(s.device_id)} 台` : ""}`;
   const title = s.current ? `${where} · 当前这次登录` : where;
-  const meta = [`${dayLabel(s.created_at, now)}登录`, s.last_seen_at ? `最近活动 ${dayLabel(s.last_seen_at, now)}` : "", `不使用到 ${dayLabel(s.idle_expires_at, now)}会自动退出`].filter(Boolean).join(" · ");
+  const meta = [`${dayLabel(s.created_at, now)}登录`, s.last_seen_at ? `最近活动 ${agoLabel(s.last_seen_at, now)}` : "", `不使用到 ${dayLabel(s.idle_expires_at, now)}会自动退出`].filter(Boolean).join(" · ");
   return { title, meta };
 }
 
@@ -366,7 +426,15 @@ export function loginRequiredText(reason: string | null | undefined): string {
         ? "登录状态与这台电脑上打开的账号不一致"
         : reason === "session_required"
           ? "你已退出登录"
-          : "登录已失效";
+          : reason === "session_signed_out"
+            ? "这个账号在另一台电脑上登录，这台电脑已退出登录"
+            : reason === "session_signed_out_admin"
+              ? "律所管理员让这台电脑退出了登录"
+              : reason === "session_signed_out_support"
+                ? "客服协助让这台电脑退出了登录"
+                : reason === "session_device_limit"
+                  ? "这个账号同时登录的电脑已达上限"
+                  : "登录已失效";
   return `${why}，请重新登录（本机资料照常可用，AI 暂停）`;
 }
 
@@ -383,6 +451,13 @@ export function reloginView(reason: string | null | undefined): { title: string;
   if (reason === "account_disabled") return { title: "账号已停用", lead: "请联系律所管理员或客服启用后再登录。本机的事项与成果都还在。" };
   if (reason === "session_member_mismatch") return { title: "请重新登录", lead: "登录状态与这台电脑上打开的账号不一致。" };
   if (reason === "session_required") return { title: "你已退出登录", lead: "" };
+  // 第 71 批（V45，D-298）：被本人在别的电脑上选了“让它退出登录”——写清原因，资料都在，重新登录即可（满额时会请你选一台让出）
+  if (reason === "session_signed_out") return { title: "这台电脑已退出登录", lead: "这个账号在另一台电脑上登录，选了让这台退出。事项和成果都还在这台电脑上，重新登录即可继续。" };
+  // 第 71 批（安全审查 S-06）：律所管理员、客服协助让这台退出——与本人让出同一种写法，只换“谁让它退出的”
+  if (reason === "session_signed_out_admin") return { title: "这台电脑已退出登录", lead: "律所管理员让这台电脑退出了登录。事项和成果都还在这台电脑上，重新登录即可继续。" };
+  if (reason === "session_signed_out_support") return { title: "这台电脑已退出登录", lead: "客服协助让这台电脑退出了登录。事项和成果都还在这台电脑上，重新登录即可继续。" };
+  // 新口径（D-298）：标题与电脑数已满选择卡同一句；说明只讲下一步与“资料都在”
+  if (reason === "session_device_limit") return { title: "同时登录的电脑已达上限", lead: "重新登录后选一台让它退出登录，就能在这台电脑上继续。事项和成果都还在这台电脑上。" };
   // 第 69 批真实验收：被移除的电脑上同一账号不能再登录（云端吊销是终局的）——不写“重新登录即可”，给出还能做的事
   if (reason === "device_revoked") return { title: "这台电脑已从账号移除", lead: "这个账号不能再在这台电脑上使用，本机资料仍加密保存在这里。如果不是你本人移除的，请尽快在另一台电脑上修改密码。" };
   return { title: "登录已过期", lead: "为了账号安全，请重新登录。本机的事项与成果都还在。" };

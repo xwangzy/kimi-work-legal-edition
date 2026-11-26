@@ -18,7 +18,7 @@ import { notifyDataChanged } from "../lib/events.ts";
 import { nav } from "../App.tsx";
 import type { ScenarioCard } from "../lib/scenarios.ts";
 import type { ScenarioField } from "../lib/scenarios.ts";
-import { briefFilename, briefGoalLine, buildGoal, canStartPartial, caseGap, materialScopeText, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelBrief, startPanelInitial, wordDocGap } from "../lib/scenarios.ts";
+import { briefFilename, briefGoalLine, buildGoal, canStartPartial, caseGap, materialScopeText, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, deliverableSubtitle, materialsShort, sideOptionFor, skillArgsOf, stanceChipText, splitIssues, startPanelBrief, startPanelInitial, wordDocGap } from "../lib/scenarios.ts";
 import { localDay } from "../lib/recovery-reminder.ts";
 import { cardForm, compareSlots, consentFirst, extraPlaceholder, helpOnlyRestatesDefault, isCalcCard, materialsHint, provisionalSendLine, sectionOrder, sectionTitle, selectDefaultPlaceholder, sendLine, stanceMismatchText } from "../lib/card-layout.ts";
 import { agentLabelFor, agentsLine, PARTIES_PREFIX, partiesDigest, withPartiesDoc } from "../lib/parties.ts";
@@ -33,6 +33,7 @@ import { BusyLabel, ListSkeleton } from "./Loading.tsx";
 import { startHintOf, type StartHint } from "../lib/start-block.ts";
 import { SendSummary } from "./SendSummary.tsx";
 import { SendPoints } from "./SendPoints.tsx";
+import { DateField } from "./DateField.tsx";
 import { stanceLabel } from "../lib/labels.ts";
 import { RolePills, Select, type MaterialRole } from "./Select.tsx";
 import { scenarioIcon } from "./ScenarioIcon.tsx";
@@ -301,9 +302,10 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const sideField = card.fields.find((f) => f.key === "side" && f.kind === "select");
   useEffect(() => {
     if (!sideField || values[sideField.key]) return;
-    const g = sideOptionFor(sideField.options, matter?.stance);
+    // 第 71 批 D7：劳动争议卡按事项委托人推断用人单位 / 劳动者（事项立场是“原告”这类程序地位时）
+    const g = sideOptionFor(sideField.options, matter?.stance, matter?.client_name);
     if (g) setValues((cur) => (cur[sideField.key] ? cur : { ...cur, [sideField.key]: g }));
-  }, [sideField, matter?.stance, values]);
+  }, [sideField, matter?.stance, matter?.client_name, values]);
   const order = (id: string) => docIds.indexOf(id) + 1;
   // 面板里添加文件：显示“正在添加…”，完成后由“新导入的自动勾选”勾上
   const addFiles = async (files: FileList | MaterialFile[]) => {
@@ -397,7 +399,12 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
         ) : f.kind === "long" ? (
           <textarea aria-label={f.label} rows={4} placeholder={f.placeholder ?? ""} value={String(values[f.key] ?? "")} onChange={(e) => setField(f.key, e.target.value)} />
         ) : (
-          <input aria-label={f.label} type={f.kind === "date" ? "date" : "text"} placeholder={f.placeholder ?? ""} value={String(values[f.key] ?? "")} onChange={(e) => setField(f.key, e.target.value)} />
+          f.kind === "date" ? (
+            // 第 71 批（区域 6）：中文日期栏，不再出现原生的“mm/dd/yyyy”
+            <DateField label={f.label} placeholder={f.placeholder} value={String(values[f.key] ?? "")} onChange={(v) => setField(f.key, v)} />
+          ) : (
+            <input aria-label={f.label} type="text" placeholder={f.placeholder ?? ""} value={String(values[f.key] ?? "")} onChange={(e) => setField(f.key, e.target.value)} />
+          )
         )}
         {f.help && !(f.kind === "select" && !f.chips && helpOnlyRestatesDefault(f.help)) && !(f.chips && helpOnlyRestatesDefault(f.help) && values[f.key]) && <span className="ss-field-help muted">{f.help}</span>}
       </span>
@@ -410,7 +417,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   // 第 66 批（V40 P0-2）：材料段头一行写清“助手读哪些”，长句留在悬停说明里
   // 第 67 批：不用 AI 的流程没有“可读全部”这回事，一份都没勾时不写“读取全部”
   // 第 67 批第二轮：全勾上时写“已选全部 n 份”（不再出现“已选 8/8 份 · 改为全部”的自相矛盾）
-  const scopeShort = !docsReady || documents.length === 0 ? "" : docIds.length === 0 ? (card.scenario === "a1.agent_task" ? `读取全部 ${documents.length} 份` : "") : docIds.length === documents.length ? `已选全部 ${documents.length} 份` : `已选 ${docIds.length}/${documents.length} 份`;
+  // 第 71 批：全勾与一份不勾（D-183：都可读）都写“全部 n 份”，勾了一部分写“已选 k/n 份”——与确认框、任务页、复核页同一口径
+  const scopeShort = !docsReady || documents.length === 0 ? "" : docIds.length === 0 && card.scenario !== "a1.agent_task" ? "" : materialsShort(docIds.length, documents.length);
   const footWhy = !ready && !busy && (missing.length > 0 || needDocs > 0 || !!wordGap || noCase) ? (missing.length > 0 ? `先填写：${missing.map((f) => f.label).join("、")}` : wordGap ? "先添加或勾选要修改的 Word 文书（.docx）" : needDocs > 0 ? "先选择材料" : `先写${card.brief!.label}，或添加材料`) : "";
   const hasDecide = mainFields.length > 0 || moreFields.length > 0 || !!rules;
   const focusMissing = () => {
@@ -692,7 +700,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
       onClose={onClose}
       size="card"
       icon={scenarioIcon(card)}
-      subtitle={<span title={gets.join("、")}>{LINE_LABELS[card.line]} · 交付 {gets.map((g) => g.replace(/（[^）]*）/g, "")).join("、")}</span>}
+      subtitle={<span title={gets.join("、")}>{deliverableSubtitle(card)}</span>}
       headExtra={<HowItWorks card={card} gets={gets} hasPrefs={hasPrefs} isAgent={isAgent} />}
     >
       <div className="ss ss2 ss3" ref={panelRef} data-form={form}>
@@ -731,7 +739,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
               </div>
             )}
           </span>
-          {matter && <span className="ss-ctx-stance">我方 {stanceLabel(matter.stance)}</span>}
+          {/* 第 71 批 D7：与下方“我方地位”同一口径（对不上时不硬写“我方 原告”） */}
+          {matter && <span className="ss-ctx-stance">{stanceChipText(sideField?.options, stanceLabel(matter.stance), matter.stance, matter.client_name)}</span>}
           {/* 第 67 批第二轮（独立评审 R1-6）：材料段排在后面的形态（起草、研究），事项一行先说明读哪些材料，点一下跳过去 */}
           {matter && docsReady && sectionKeys[0] !== "materials" && (
             <button

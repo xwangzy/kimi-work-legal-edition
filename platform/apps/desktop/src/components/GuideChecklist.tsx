@@ -88,16 +88,15 @@ export function GuideChecklist({ onNewMatter }: { onNewMatter: () => void }) {
             {next.cta}
           </button>
         )}
+        {/* 第 71 批（V45，独立评分区域 1-6）：原来一行四个操作（去做 / 展开 / 看看界面 / 收起），“展开”和“收起”同时出现自相矛盾——
+            标题行只留主按钮与“展开 / 收拢”，“收起”改为右侧 ×（关掉这张卡），“看看界面”挪进展开后的清单底部 */}
         {!allDone && (
           <button className="btn-link" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded}>
             {expanded ? "收拢" : "展开"}
           </button>
         )}
-        <button className="btn-link" onClick={() => window.dispatchEvent(new Event(OPEN_GUIDE))}>
-          看看界面
-        </button>
-        <button className="btn-link" onClick={hide} aria-label="收起上手清单">
-          收起
+        <button className="icon-btn guide-checklist-close" onClick={hide} aria-label="关闭上手清单" title="关闭上手清单（之后不再显示）">
+          {Icon.x()}
         </button>
       </div>
       {allDone ? (
@@ -124,6 +123,15 @@ export function GuideChecklist({ onNewMatter }: { onNewMatter: () => void }) {
           ))}
         </ol>
       ) : null}
+      {expanded && !allDone && (
+        <p className="guide-checklist-lead">
+          不熟悉界面？
+          <button className="btn-link" onClick={() => window.dispatchEvent(new Event(OPEN_GUIDE))}>
+            看看界面
+          </button>
+          ，逐一认识侧栏、输入框和成果页。
+        </p>
+      )}
     </section>
   );
 }

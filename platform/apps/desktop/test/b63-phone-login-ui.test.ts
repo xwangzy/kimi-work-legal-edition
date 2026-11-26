@@ -41,7 +41,8 @@ test("云端有无验证码登录：没有（旧云端、legacy、缺这一项�
   assert.deepEqual(loginMethods({ ...base, phone_login: true }), { phone: true, password: true });
   // 界面：只有云端开了才渲染“验证码登录 | 密码登录”；密码登录的原文案保留（旧云端与第 62 批完全相同）
   // 第 64 批：两种方式都有时页签就是卡片标题行；只有密码登录时换成一个标题（不再空着）
-  assert.match(activate, /\{lm\.methods\.phone \? <LoginMethodTabs value=\{lm\.method\} onChange=\{switchTo\} \/> : <h1 className="auth-method-single">账号密码登录<\/h1>\}/);
+  // 第 71 批（V45，独立评分区域 7-4）：每页一个标题“登录”，登录方式页签（14 号）在标题之下；只有密码登录时不再另起“账号密码登录”
+  assert.match(activate, /<h1 className="auth-title">登录<\/h1>\s*\{lm\.methods\.phone && <LoginMethodTabs value=\{lm\.method\} onChange=\{switchTo\} \/>\}/);
   // 第 69 批：重新登录页（subtle）标题已在外层，只有密码登录时不再重复“账号密码登录”
   assert.match(panel, /\{lm\.methods\.phone \? <LoginMethodTabs value=\{lm\.method\} onChange=\{switchTo\} \/> : page && !subtle \?/);
   // 第 64 批：登录卡片不再放一行说明（参照 Kimi 登录框），“第一次使用请先注册”由表单下方“还没有账号？注册”承担

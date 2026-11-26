@@ -30,6 +30,8 @@
   --p-gray-300: #e3dfda;
   --p-gray-400: #d0cbc5;
   --p-gray-500: #8f8a84;
+  /* 第 71 批（V45）：禁用主按钮文字（浅灰底上 3.2:1，看得清又明显是不可点） */
+  --p-gray-550: #85807a;
   --p-gray-600: #666666;
   --p-gray-700: #555555;
   --p-gray-800: #333333;
@@ -182,8 +184,9 @@
   --btn-primary-hover: var(--p-black);
   --btn-primary-text: var(--p-white);
   /* 第 70 批（V44，全库统一）：禁用的主按钮——主按钮底色约 30% 叠在面板上（实色），白字；不用半透明（部分合成层上会出竖向接缝） */
-  --btn-primary-disabled: color-mix(in srgb, var(--btn-primary) 30%, var(--bg-surface));
-  --btn-primary-disabled-text: var(--p-white);
+  /* 第 71 批（V45，独立评分共性问题）：原来是 30% 黑叠白底 + 白字（约 #BABABA 上白字，对比 1.9:1，看不清写的是什么）；改为浅灰底 + 中灰字（3.2:1） */
+  --btn-primary-disabled: var(--p-gray-200);
+  --btn-primary-disabled-text: var(--p-gray-550);
 
   /* 品牌标识（第 48 批：Kimi 官方素材包 Logomark）：浅色为黑底白 K、深色为白底黑 K，蓝点两套相同 */
   --brand-mark-bg: var(--p-black);
@@ -369,7 +372,7 @@
   --btn-primary-text: #141312;
   /* 深色：白底按钮压暗到约 #4A4745、字约 #8A8580（与输入框、卡片都分得开） */
   --btn-primary-disabled: color-mix(in srgb, var(--btn-primary) 22%, var(--bg-surface));
-  --btn-primary-disabled-text: color-mix(in srgb, var(--btn-primary) 52%, var(--bg-surface));
+  --btn-primary-disabled-text: color-mix(in srgb, var(--btn-primary) 66%, var(--bg-surface));
   --brand-mark-bg: #ffffff;
   --brand-mark-fg: #000000;
   --brand-mark-dot: #1783ff;

@@ -211,9 +211,33 @@
 .top-notice.tone-orange::before { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-warning-solid); flex: none; }
 
 /* 第 70 批（V44）：电脑改名（设置 · 账号 › 登录过的电脑） */
+/*
+ * 第 71 批（V45，独立评分区域 4）：
+ * - 登录过的电脑、最近登录、登录记录三张列表统一全宽（与设置内容区右边界对齐），查看与编辑同宽、不跳；
+ * - 编辑在原卡内就地展开、保留标题行（多台电脑时分得清在改哪一台）；名字输入至少 320 宽，框内右侧“n/20”，出错时边框与字数变红；
+ * - 操作结果（已保存、已让它退出登录、已移除）就地显示在电脑名旁边，几秒后淡出，不推动布局；去掉名字可撤销。
+ */
+.set-page .account-list, .account-list.account-devices { max-width: none; width: 100%; }
+.account-list li { min-height: 56px; box-sizing: border-box; }
+.account-device-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 22px; }
+.account-device-title .tag { margin-left: 0; }
 .account-name-hint { margin-top: 2px; font-size: var(--fs-xs); }
-.account-rename { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.account-rename-row { display: flex; align-items: center; gap: 8px; }
-.account-rename-label { flex: none; font-size: var(--fs-caption); color: var(--text-secondary); }
-.account-rename-row input { flex: 1 1 auto; min-width: 0; height: 30px; }
-.account-rename-note { font-size: var(--fs-xs); }
+.account-list li.is-editing { align-items: flex-start; background: var(--bg-subtle); }
+.account-rename { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.account-rename-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.account-rename-input { position: relative; flex: 0 1 360px; min-width: 320px; }
+.account-rename-input input { box-sizing: border-box; width: 100%; height: 34px; padding: 0 56px 0 10px; border: 1px solid var(--border-default); border-radius: var(--r-sm); background: var(--bg-surface); color: var(--text-primary); font-size: var(--fs-body); }
+.account-rename-input input:focus { outline: none; border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); }
+.account-rename.bad .account-rename-input input, .account-rename.bad .account-rename-input input:focus { border-color: var(--status-danger-text); box-shadow: 0 0 0 3px var(--status-danger-bg); }
+.account-rename-count { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-label); pointer-events: none; }
+.account-rename-count.over { color: var(--status-danger-text); }
+.account-rename-row .btn-sm { height: 34px; white-space: nowrap; min-width: 56px; }
+.account-rename-note { font-size: var(--fs-xs); color: var(--text-secondary); }
+.account-rename-note.is-bad { color: var(--status-danger-text); }
+.account-list-actions { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.account-list-actions .btn-sm { white-space: nowrap; min-width: 56px; }
+.account-inline-note { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--status-success-text); animation: account-note-in var(--motion-fast) var(--ease-standard); }
+.account-inline-note.is-bad { color: var(--status-danger-text); }
+.account-inline-note .btn-link { padding: 0; font-size: var(--fs-caption); }
+@keyframes account-note-in { from { transform: translateX(-4px); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .account-inline-note { animation: none; } }
