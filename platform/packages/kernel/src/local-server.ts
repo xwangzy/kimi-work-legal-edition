@@ -255,7 +255,8 @@ export async function startLocalServer(deps: LocalServerDeps, opts: { host?: str
       }
       return db.tx(() => {
         requireLive(claims);
-        recordOp(rid, aid, name, paramsHash, "succeeded", sideEffect, null, resultDigest(result), toolResultSummaryJson(result));
+        // 读材料片段另记材料编号（第 71 批 D1：复核页按实际读过的份数写“材料读取”）
+        recordOp(rid, aid, name, paramsHash, "succeeded", sideEffect, null, resultDigest(result), toolResultSummaryJson(result, name));
         return result;
       });
     }

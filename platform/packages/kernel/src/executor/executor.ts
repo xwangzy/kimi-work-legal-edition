@@ -44,6 +44,7 @@ import { isMachineFinding, issueKey, machineFindings, MACHINE_FINDINGS_MAX, newI
 import { docFindings, runDocIssues } from "./doc-reconcile.ts";
 import { scrubLocalPaths } from "../services/reply-local-paths.ts";
 import { materialRepealedPromptLine, materialRepealedReviewLines } from "../services/material-repealed.ts";
+import { onDemandMaterialsOf } from "../services/material-reads.ts";
 import { REVIEW_KIND_OF_SKILL, findingLevel, reviewItems, fixPrompt, headerFooterText, labeledText, labeledTextWithRows, lawExcerptLines, lawRefsIn, parseFindings, workbookText, reportText, reviewMessages, reviewNote, revisionDiff, type FixTarget, type ReviewDoc, type ReviewFinding, type ReviewKind, followUpMessages, followUpSection, parseFollowUp, quoteHints, type FollowUpItem } from "../services/independent-review.ts";
 import { CLOUD_BUILD_TEXT, CLOUD_CERT_TEXT, cloudFailureKind } from "../services/cloud-connection.ts";
 
@@ -417,11 +418,15 @@ async function stepLoadMaterials(ctx: Ctx, runId: string, attemptId: string): Pr
       pages: pages.map((pg) => ({ pageNo: pg.page_no, quality: pg.quality, note: pg.note ?? undefined })),
     });
   }
+  // 没勾材料（D-183：本事项的现行材料都可读，助手按需读取）：记下发起时本事项有哪几份现行材料，
+  // 复核页“材料读取”按实际读过的份数 / 这几份写（第 71 批 D1：此前写成“已读 0/0 份”并打绿勾）
+  const onDemand = docIds.length === 0 ? onDemandMaterialsOf(db, run.matter_id) : null;
   // 进度只说事实（第 2 篇 §4.4 交互 2）
   appendEvent(ctx.deps, runId, attemptId, 20, "materials.loaded", {
     requested: docIds.length,
     loaded: out.length,
     failed,
+    ...(onDemand ? { on_demand: onDemand } : {}),
     files: out.map((m) => ({ name: m.filename, chars: m.chars, quality: m.quality_flags })),
     ...(missing.length ? { missing } : {}),
     // 本次读的是哪一版解析结果、哪几份只读了前 5 万字（复核页按这一版列读不清的页；余项续复核 RC-B-05）

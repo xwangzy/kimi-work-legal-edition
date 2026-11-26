@@ -122,3 +122,22 @@ test("查不了本机账本时不影响用量页（照旧只写任务 / 问答�
   assert.deepEqual(withUsageWhere(broken, { tenantId: T, userId: ME }, rows), [{ ...rows[0] }]);
   assert.equal(withUsageWhere(broken, { tenantId: T, userId: ME }, undefined), undefined);
 });
+
+test("第 71 批 D11 根因：会话标题只存第一问的前 24 字（断在“，”上）——给出第一问全文 matter_full，界面按显示宽度截断、悬停给全称；改过标题的不给", () => {
+  const { db, egress } = setup();
+  const ask = "买卖合同纠纷中，买方逾期付款的违约金约定过高时，法院如何调整？请列明依据。";
+  db.run(`INSERT INTO qa_conversations (conversation_id, tenant_id, user_id, title, token_key_b64) VALUES (?,?,?,?,?)`, ["qa_long", T, ME, ask.slice(0, 24), "k"]);
+  db.run(`INSERT INTO qa_messages (message_id, conversation_id, seq, role, text) VALUES (?,?,?,?,?)`, ["qm_1", "qa_long", 1, "user", ask]);
+  db.run(`INSERT INTO qa_conversations (conversation_id, tenant_id, user_id, title, token_key_b64) VALUES (?,?,?,?,?)`, ["qa_renamed", T, ME, "违约金调整", "k"]);
+  db.run(`INSERT INTO qa_messages (message_id, conversation_id, seq, role, text) VALUES (?,?,?,?,?)`, ["qm_2", "qa_renamed", 1, "user", ask]);
+  egress("kwlg_cccccccc-0001", "qa_long", "qa_long", at(BASE, 0), { input: 300, output: 30 }, "qa");
+  egress("kwlg_cccccccc-0002", "qa_renamed", "qa_renamed", at(BASE, 1), { input: 300, output: 30 }, "qa");
+  const out = usageWhereOf(db, { tenantId: T, userId: ME }, [
+    { at: at(BASE, 1), kind: "qa", client_request_id: "kwlg_cccccccc-0001", this_device: true },
+    { at: at(BASE, 2), kind: "qa", client_request_id: "kwlg_cccccccc-0002", this_device: true },
+  ]);
+  const a = out[0] as { matter: string; matter_full?: string };
+  assert.equal(a.matter, "买卖合同纠纷中，买方逾期付款的违约金约定过高时，", "标题本身断在逗号上（根因）");
+  assert.equal(a.matter_full, ask);
+  assert.equal((out[1] as { matter_full?: string }).matter_full, undefined, "改过标题的不给全文");
+});

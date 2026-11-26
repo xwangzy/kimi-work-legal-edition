@@ -41,7 +41,7 @@ import { activationFilePath, PENDING_WORKSPACE_SLUG, type ActivationFile, type K
 import { configureSecretSealing, generateJoinDeviceKeys, getFirmRootPrivateKey, keysDirOf, readSecretFile, writeStagedSecret, type FirmIdentityRow } from "../devices.ts";
 import type { KernelDb } from "../db.ts";
 import type { Identity } from "../identity.ts";
-import { accountErrorText, accountFailure, dropLoginRequired, onboardingStateText, writeAccountSession } from "../account-session.ts";
+import { accountErrorText, accountFailure, dropLoginRequired, maskedPhoneOrNull, onboardingStateText, writeAccountSession } from "../account-session.ts";
 import { cloudFailureText } from "./cloud-connection.ts";
 import { allocateWorkspace, findProfile, PROFILE_FILE, workspaceNameOf, writeProfile, type ProfileHandoff } from "../profiles.ts";
 
@@ -136,7 +136,7 @@ async function cpPost(
   body: unknown,
   method: "POST" | "GET" = "POST",
   headers: Record<string, string> = {},
-): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string; retry_after_s?: number; hold?: { reason: string; sms_available: boolean; phone_masked: string | null }; devices?: unknown[]; device_limit?: number }> {
+): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string; retry_after_s?: number; hold?: { reason: string; sms_available: boolean; phone_masked: string | null }; devices?: unknown[]; device_limit?: number; limit_kind?: "signed_in" | "registered" }> {
   const r = await relay({ method, path, headers, body: method === "GET" ? "" : JSON.stringify(body) });
   // 证书类、安装包配置类的代码原样保留（cp_tls_*、cp_upstream_*），其余通道错误并成 cp_unreachable
   if (!r.ok) return { ok: false, code: r.reason.startsWith("cp_") && !cloudFailureText(r.reason) ? "cp_unreachable" : r.reason };
@@ -163,6 +163,8 @@ async function cpPost(
       // 第 68 批（V42，D-295）：登记新电脑时电脑数已满，云端给出已登记的电脑
       ...(json?.error?.code === "device_limit" && Array.isArray(json.error.devices) ? { devices: (json.error.devices as unknown[]).slice(0, 20) } : {}),
       ...(json?.error?.code === "device_limit" && Number.isSafeInteger(json.error.device_limit) && json.error.device_limit > 0 && json.error.device_limit <= 99 ? { device_limit: json.error.device_limit as number } : {}),
+      // 第 71 批（D-298）：满额的口径（同时登录已满 / 登记数封顶）
+      ...(json?.error?.code === "device_limit" && (json.error.limit_kind === "signed_in" || json.error.limit_kind === "registered") ? { limit_kind: json.error.limit_kind as "signed_in" | "registered" } : {}),
     };
   return { ok: true, json };
 }
@@ -297,6 +299,9 @@ export class OnboardingService {
         check_code: p.check_code,
         requested_at: p.created_at,
         ...(p.via_account ? { via_account: true } : {}),
+        // 第 71 批（V45，根因 R1）：换账号交接的结果是“等批准”时，内核已写好待批准记录——原来这里提前返回、不带交接结果，
+        // 激活页的等待循环只认 handoff，于是空等 120 秒报“还没有登记完成”。现在一并带上，界面立即转到“等待批准”
+        ...(this.handoffResult ? { handoff: this.handoffResult } : {}),
       };
     }
     const failed = readJoinFailure(this.root);
@@ -524,7 +529,7 @@ export class OnboardingService {
     // 会话令牌：能在这台电脑上继续时才暂存（入组等待期间也算已登录；重启后按新身份读回）；不能继续的不留会话文件
     const proceed = state === "needs_founder_setup" || state === "needs_device_join" || state === "needs_device_auto";
     if (proceed) {
-      writeAccountSession(keysDir, { token: j.session_token, ...account });
+      writeAccountSession(keysDir, { token: j.session_token, ...account, ...(maskedPhoneOrNull(acc.phone) ? { phone: String(acc.phone) } : {}) });
       // 第 64 批：同一工作区留有“要重新登录”的旧记录时一并删掉（开通 / 入组之后按新会话打开）
       try {
         dropLoginRequired(keysDir);
@@ -532,7 +537,9 @@ export class OnboardingService {
         // 启动时会话比记录新，记录也会作废
       }
     }
-    const view = { account: { email: account.email, name: account.name, role }, firm: { name: firmName }, state };
+    // 第 71 批（V45）：带上打码手机号（电脑数已满等页面用“姓名（138****0000）”称呼本人，不用律师未必认得的邮箱）
+    const phoneMasked = typeof acc.phone === "string" && /^[0-9*+ ]{7,20}$/.test(acc.phone) ? acc.phone : null;
+    const view = { account: { email: account.email, name: account.name, role, ...(phoneMasked ? { phone: phoneMasked } : {}) }, firm: { name: firmName }, state };
     if (state === "needs_founder_setup") {
       const c = onb.claim ?? {};
       if (c.kind !== "founder" || role !== "admin" || typeof c.activation_id !== "string" || typeof c.claim_secret !== "string" || c.claim_secret.length < 32) throw new DomainError("provider_unavailable", cpErrorText("reply_invalid"), 502);
@@ -564,13 +571,17 @@ export class OnboardingService {
     // ready（控制面认得这台电脑是该成员的设备，但本机没有对应工作区，例如重装后）也说清怎么办，不再落到“请联系客服”
     // 第 68 批（V42，D-295）：电脑数已满——记下这次登录的会话（只在内存、10 分钟内有效），律师可在这一页就地移除一台再继续，不必再收一次验证码
     let canUnbind = false;
+    let canSignout = false;
     if (state === "device_limit" && typeof j.session_token === "string" && Array.isArray(onb.devices) && onb.devices.length > 0) {
       this.limitSession = { token: j.session_token, at: Date.now() };
-      canUnbind = (await this.registrationMeta().catch(() => null))?.device_unbind_on_login === true;
+      const meta = await this.registrationMeta().catch(() => null);
+      canUnbind = meta?.device_unbind_on_login === true;
+      // 第 71 批（V45，D-298）：云端支持“让它退出登录”（可逆）时，这是默认动作；登记数封顶（limit_kind = registered）时只能移除
+      canSignout = meta?.device_signout === true && onb.limit_kind !== "registered";
     }
     // 第 69 批（D-297）：带上云端设定的电脑数上限（界面写“最多同时在 N 台电脑上使用”；客户端不另设上限）
     const limitN = Number.isSafeInteger(onb.device_limit) && (onb.device_limit as number) > 0 && (onb.device_limit as number) <= 99 ? (onb.device_limit as number) : null;
-    return { ...view, next: "blocked", reason: state, message: onboardingStateText(state, { admin: role === "admin" }), devices: Array.isArray(onb.devices) ? onb.devices : [], ...(limitN ? { device_limit: limitN } : {}), ...(canUnbind ? { can_unbind: true } : {}) };
+    return { ...view, next: "blocked", reason: state, message: onboardingStateText(state, { admin: role === "admin" }), devices: Array.isArray(onb.devices) ? onb.devices : [], ...(limitN ? { device_limit: limitN } : {}), ...(canUnbind ? { can_unbind: true } : {}), ...(canSignout ? { can_signout: true } : {}), ...(onb.limit_kind === "registered" || onb.limit_kind === "signed_in" ? { limit_kind: onb.limit_kind } : {}) };
   }
 
   /** 第 68 批：电脑数已满时这次登录的会话（只在内存里；就地移除一台后用它继续登记这台电脑）。 */
@@ -606,6 +617,52 @@ export class OnboardingService {
     }
     this.limitSession = null;
     return this.afterAuth({ ...o.json, session_token: ls.token }, null);
+  }
+
+  /**
+   * 第 71 批（V45，D-298）：同时登录已满时，让这个账号的一台电脑退出登录（可逆：那台电脑上的资料保留，回去重新登录即可），
+   * 再按同一会话重取“这台电脑该做什么”继续登记——与就地移除同一张一次性票据，不用再输密码或再收验证码。
+   */
+  async signoutForLogin(p: { device_id?: unknown }): Promise<Record<string, unknown>> {
+    const done = this.exclusive();
+    try {
+      const ls = this.limitSession;
+      if (!ls || Date.now() - ls.at > 9 * 60_000) throw new DomainError("conflict", "这次登录已超过 10 分钟：请重新登录后再选", 409);
+      const dev = String(p.device_id ?? "");
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(dev)) throw new DomainError("validation", "设备编号不合法", 400);
+      const r = await cpPost(this.d.relay, `/v1/auth/devices/${dev}/signout`, {}, "POST", { "x-kwl-session": ls.token });
+      if (!r.ok) {
+        const f = accountFailure(r.code, r.message ?? null);
+        throw new DomainError(f.fault, r.code === "not_found" ? "云端暂不支持在这里让别的电脑退出登录：请改为移除，或在那台电脑上退出登录" : f.text, f.status, { reason: f.reason });
+      }
+      const o = await cpPost(this.d.relay, "/v1/auth/onboarding", {}, "POST", { "x-kwl-session": ls.token });
+      if (!o.ok) {
+        const f = accountFailure(o.code, o.message ?? null);
+        throw new DomainError(f.fault, `已让那台电脑退出登录；${f.text}`, f.status, { reason: f.reason, signed_out: true });
+      }
+      this.limitSession = null;
+      return await this.afterAuth({ ...o.json, session_token: ls.token }, null);
+    } finally {
+      if (!this.restarting) done();
+    }
+  }
+
+  /** 第 71 批：等批准期间登录了另一个账号（这台电脑上还没有它的档案）——那次登录的答复只在内存里，律师确认“放弃那个申请”后接着登记，不必再收一次验证码。 */
+  private pendingOther: { j: Record<string, any>; at: number; aid: string } | null = null;
+
+  /** 第 71 批：放弃这台电脑上正在等批准的申请（撤回云端申请、清本机暂存），接着按刚才那次登录登记另一个账号。 */
+  async abandonPendingAndContinue(): Promise<Record<string, unknown>> {
+    const po = this.pendingOther;
+    // 安全审查 S-07：只在报出 pending_other 之后 2 分钟内、且其间没有别的登录 / 注册 / 重新输入时有效（共用电脑时下一个人用不上前一个人的会话）
+    this.pendingOther = null;
+    if (!po || Date.now() - po.at > 2 * 60_000) throw new DomainError("conflict", "这次登录已过期：请重新登录", 409);
+    await this.reset();
+    const done = this.exclusive();
+    try {
+      return await this.afterAuth(po.j, null);
+    } finally {
+      if (!this.restarting) done();
+    }
   }
 
   /** 第 66 批：正在自动登记的新电脑（登录应答里的会话与预分配编号；风控暂停后用短信验证码重试时沿用同一对设备密钥）。只在内存里。 */
@@ -648,8 +705,10 @@ export class OnboardingService {
       if (r.code === "device_limit") {
         this.limitSession = { token: a.token, at: Date.now() };
         this.autoPending = null;
-        const canUnbind = (await this.registrationMeta().catch(() => null))?.device_unbind_on_login === true;
-        return { kind: "member", next: "blocked", reason: "device_limit", message: onboardingStateText("device_limit"), devices: r.devices ?? [], ...(r.device_limit ? { device_limit: r.device_limit } : {}), ...(canUnbind && (r.devices ?? []).length > 0 ? { can_unbind: true } : {}) };
+        const meta = await this.registrationMeta().catch(() => null);
+        const canUnbind = meta?.device_unbind_on_login === true;
+        const canSignout = meta?.device_signout === true && r.limit_kind !== "registered";
+        return { kind: "member", next: "blocked", reason: "device_limit", message: onboardingStateText("device_limit"), devices: r.devices ?? [], ...(r.device_limit ? { device_limit: r.device_limit } : {}), ...(canUnbind && (r.devices ?? []).length > 0 ? { can_unbind: true } : {}), ...(canSignout && (r.devices ?? []).length > 0 ? { can_signout: true } : {}), ...(r.limit_kind ? { limit_kind: r.limit_kind } : {}) };
       }
       if (r.hold)
         return {
@@ -764,6 +823,7 @@ export class OnboardingService {
   async accountRegister(p: { email?: unknown; password?: unknown; name?: unknown; org_name?: unknown; code?: unknown; phone?: unknown; sms_code?: unknown }): Promise<Record<string, unknown>> {
     const done = this.exclusive();
     try {
+      this.pendingOther = null;
       if (this.pending()) throw new DomainError("conflict", "这台电脑正在等待批准；如要改用别的账号，请先点“重新输入”", 409);
       const hasCode = typeof p.code === "string" && p.code.trim() !== "";
       const input = hasCode ? (splitInvitationInput(p.code) ?? registrationInviteInput(p.code)) : null;
@@ -782,6 +842,7 @@ export class OnboardingService {
   async accountLogin(p: { email?: unknown; password?: unknown; phone?: unknown; sms_code?: unknown }): Promise<Record<string, unknown>> {
     const done = this.exclusive();
     try {
+      this.pendingOther = null;
       // 第 68 批（安全复核 P-1）：一个账号在等批准时，别的账号仍可登录回这台电脑上它自己的档案（等批准的申请原样保留）；
       // 只有“再为一个新账号登记”要先点“重新输入”
       const waiting = this.pending();
@@ -789,7 +850,17 @@ export class OnboardingService {
       if (waiting) {
         const ex = this.switchToExisting(j);
         if (ex) return ex;
-        throw new DomainError("conflict", "这台电脑正在等待批准；如要改用别的账号，请先点“重新输入”", 409);
+        const acc = j.account ?? {};
+        // 第 71 批（V45）：同一个账号在等批准时再登录——云端签发新认领时已把原来那次申请撤回（同一账号同一种类只留一份），
+        // 原来这里仍报“正在等待批准”，界面上留着一张已作废的核对码、管理员那边却看不到申请（死路）。改为清掉本机作废的暂存，按这次登录重新走一遍
+        if (String(acc.tid ?? "") === waiting.tid && String(acc.member_slug ?? "") === waiting.member_slug) {
+          // 安全审查 S-08：云端只在真的签发新认领时才撤回原申请（满额、已可自动登记等情况不会）——一律经 reset() 撤回原申请再清本机暂存，不留孤儿申请
+          await this.reset();
+          return await this.afterAuth(j, null);
+        }
+        // 别的账号：这台电脑正在为另一个账号等批准（共用电脑时不替别人撤申请）——记下这次登录，由律师确认“放弃那个申请”后一步继续
+        this.pendingOther = { j, at: Date.now(), aid: String(acc.aid ?? "") };
+        throw new DomainError("conflict", `这台电脑正在为${waiting.member_name ? `「${waiting.member_name}」` : "另一个账号"}等待批准。放弃那个申请后，即可用这个账号继续`, 409, { reason: "pending_other" });
       }
       return await this.afterAuth(j, null);
     } finally {
@@ -881,6 +952,7 @@ export class OnboardingService {
 
   /** 放弃本机的待批准申请（被拒、换邀请码）：同时请控制面撤回（复核 A-09，不必等 7 天）；撤回失败不影响本机重来。 */
   async reset(): Promise<Record<string, unknown>> {
+    this.pendingOther = null;
     const p = this.pending();
     if (p) {
       const pendingPath = join(this.keysDirFor(p.workspace ?? p.firm_slug), "join-pending.json");
@@ -1209,6 +1281,8 @@ export function registrationMetaOf(json: Record<string, unknown> | null): Record
     // 第 68 批（V42）：云端支持同一台电脑换账号（带签名登录别的账号不再被拒）、电脑数已满时用刚完成的登录就地移除一台
     account_switch: features.includes("account_switch"),
     device_unbind_on_login: features.includes("device_limit_unbind"),
+    // 第 71 批（V45，D-298）：云端支持“让别的电脑退出登录”（可逆）
+    device_signout: features.includes("device_signout"),
     // 第 69 批：密码登录可填手机号
     password_by_phone: pol.password_by_phone === true,
     sms: { code_length: int(sms.code_length, 4, 8, 6), resend_seconds: int(sms.resend_seconds, 30, 600, 60), ttl_minutes: int(sms.ttl_minutes, 1, 30, 10) },
@@ -1255,7 +1329,7 @@ export function loginBody(p: { email?: unknown; password?: unknown; phone?: unkn
   return { phone: smsPhoneInput(p.phone), sms_code: typeof p.sms_code === "string" ? p.sms_code.replace(/\s+/g, "") : "" };
 }
 
-export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "onboarding.unbind_device", "onboarding.device_confirm", "device.env_probe", "account.register", "account.login", "account.reset_request", "account.reset_confirm", "account.registration_meta", "account.sms_send"]);
+export const ONBOARDING_METHODS: ReadonlySet<string> = new Set(["kernel.status", "onboarding.status", "onboarding.redeem", "onboarding.check", "onboarding.reset", "onboarding.restore", "onboarding.unbind_device", "onboarding.signout_device", "onboarding.abandon_pending", "onboarding.device_confirm", "device.env_probe", "account.register", "account.login", "account.reset_request", "account.reset_confirm", "account.registration_meta", "account.sms_send"]);
 
 /** 第 62 批：12 位注册邀请码（Crockford Base32，与开通码同一归一规则）；不是即 null。纯函数。 */
 export function registrationInviteInput(input: unknown): { code: string; secret: null } | null {

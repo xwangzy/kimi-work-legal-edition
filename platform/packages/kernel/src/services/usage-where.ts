@@ -31,6 +31,8 @@ export interface UsageWhere {
   task: string;
   /** 事项名（任务）或会话标题（问答）；对不上事项时为 null。 */
   matter: string | null;
+  /** 问答：会话的第一问全文（空白合并，至多 200 字）——会话标题只存了前 24 字，界面按显示宽度截断、悬停给这句全称（第 71 批 D11）。 */
+  matter_full?: string | null;
   matter_id: string | null;
   run_id: string | null;
   conversation_id: string | null;
@@ -132,13 +134,18 @@ export function usageWhereOf(db: KernelDb, me: { tenantId: string; userId: strin
       runs.set(r.run_id, r);
   }
   const convs = new Map<string, string>();
+  const firstAsk = new Map<string, string>();
   for (let i = 0; i < runIds.length; i += 200) {
     const part = runIds.slice(i, i + 200);
-    for (const c of db.all<{ conversation_id: string; title: string }>(
-      `SELECT conversation_id, title FROM qa_conversations WHERE tenant_id = ? AND user_id = ? AND conversation_id IN (${part.map(() => "?").join(",")})`,
+    for (const c of db.all<{ conversation_id: string; title: string; first_q: string | null }>(
+      `SELECT c.conversation_id, c.title,
+              (SELECT m.text FROM qa_messages m WHERE m.conversation_id = c.conversation_id AND m.role = 'user' ORDER BY m.seq LIMIT 1) AS first_q
+         FROM qa_conversations c WHERE c.tenant_id = ? AND c.user_id = ? AND c.conversation_id IN (${part.map(() => "?").join(",")})`,
       [me.tenantId, me.userId, ...part],
-    ))
+    )) {
       convs.set(c.conversation_id, c.title);
+      if (c.first_q) firstAsk.set(c.conversation_id, c.first_q);
+    }
   }
 
   rows.forEach((r, i) => {
@@ -152,7 +159,10 @@ export function usageWhereOf(db: KernelDb, me: { tenantId: string; userId: strin
     if (r.kind === "qa") {
       if (!convs.has(h.run_id)) return;
       const t = String(convs.get(h.run_id) ?? "").replace(/\s+/g, " ").trim();
-      out[i] = { task: "问答", matter: t || null, matter_id: null, run_id: null, conversation_id: h.run_id, how };
+      // 标题是第一问的前 24 字（同一份令牌形态）：第一问以标题开头时给全称，改过标题的不给
+      const q = String(firstAsk.get(h.run_id) ?? "").replace(/\s+/g, " ").trim();
+      const full = t && q.startsWith(t) ? q.slice(0, 200) : null;
+      out[i] = { task: "问答", matter: t || null, ...(full && full !== t ? { matter_full: full } : {}), matter_id: null, run_id: null, conversation_id: h.run_id, how };
       return;
     }
     const run = runs.get(h.run_id);

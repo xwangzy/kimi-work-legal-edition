@@ -31,8 +31,8 @@ import { runChildSelftest, type ChildSelftestResult } from "./services/child-sel
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
 import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
 import { onboardingStateText } from "./account-session.ts";
-import { accountErrorText, dropAccountSession, dropLoginRequired, modelRejectionProblem, readAccountSession, readLoginRequired, writeAccountSession, writeLoginRequired, type AccountSessionFile } from "./account-session.ts";
-import { allocateWorkspace, findProfile, profileScopeId, validHandoff, writeProfile, type ProfileHandoff } from "./profiles.ts";
+import { accountErrorText, dropAccountSession, dropLoginRequired, maskedPhoneOrNull, modelRejectionProblem, readAccountSession, readLoginRequired, writeAccountSession, writeLoginRequired, type AccountSessionFile } from "./account-session.ts";
+import { allocateWorkspace, findProfile, listProfiles, profileScopeId, validHandoff, writeProfile, type ProfileHandoff } from "./profiles.ts";
 import { writeActivationFile } from "./services/onboarding.ts";
 import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, reconcilePendingRestore, removePendingWorkspace, writeJoinFailure, writePendingActivation } from "./services/onboarding.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
@@ -376,16 +376,19 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   let accountClearedAt = Number.NEGATIVE_INFINITY;
   /** 第 66 批：云端模型目录（下面建好后填入；登录成功、网关按模型拒绝时据此刷新）。 */
   const modelCatalogRef: { current: ModelCatalogService | null } = { current: null };
+  /** 第 71 批：控制面客户端的引用（会话核对在客户端建好之前就要定义）。 */
+  const controlPlaneRef: { current: ControlPlaneClient | null } = { current: null };
   /** 退出登录后仍记住上次的邮箱与姓名（不含令牌）：重新登录页预填与称呼；第 64 批起重启后也记得（读本机记录）。 */
-  let lastAccount: { email: string; name: string; role: string } | null = accountSession
-    ? { email: accountSession.email, name: accountSession.name, role: accountSession.role }
+  // 第 71 批：另记打码手机号（重新登录页称呼本人、只填验证码的那一行显示用）
+  let lastAccount: { email: string; name: string; role: string; phone?: string } | null = accountSession
+    ? { email: accountSession.email, name: accountSession.name, role: accountSession.role, ...(maskedPhoneOrNull(accountSession.phone) ? { phone: accountSession.phone! } : {}) }
     : persistedProblem && persistedProblem.email
-      ? { email: persistedProblem.email, name: persistedProblem.name, role: persistedProblem.role }
+      ? { email: persistedProblem.email, name: persistedProblem.name, role: persistedProblem.role, ...(maskedPhoneOrNull(persistedProblem.phone) ? { phone: persistedProblem.phone! } : {}) }
       : null;
   /** 记下“要重新登录”（内存 + 本机记录）；写不进去只影响重启后的表现，不影响这次。 */
   const persistProblem = (code: string): void => {
     try {
-      writeLoginRequired(keysDir, { reason: code, email: lastAccount?.email ?? accountSession?.email ?? null, name: lastAccount?.name ?? accountSession?.name ?? null, role: lastAccount?.role ?? accountSession?.role ?? null });
+      writeLoginRequired(keysDir, { reason: code, email: lastAccount?.email ?? accountSession?.email ?? null, name: lastAccount?.name ?? accountSession?.name ?? null, role: lastAccount?.role ?? accountSession?.role ?? null, phone: lastAccount?.phone ?? accountSession?.phone ?? null });
     } catch (e) {
       slog.event("KERNEL_ACCOUNT_MARK_FAILED", errFields(e));
     }
@@ -396,7 +399,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     save: (x: Omit<AccountSessionFile, "v" | "saved_at">) => {
       writeAccountSession(keysDir, x);
       accountSession = readAccountSession(keysDir);
-      lastAccount = { email: x.email, name: x.name, role: x.role };
+      lastAccount = { email: x.email, name: x.name, role: x.role, ...(maskedPhoneOrNull(x.phone) ? { phone: x.phone! } : {}) };
       // 第 66 批：登录成功后取一次模型目录（会话换了，套餐可能也不同）；不阻塞登录
       setTimeout(() => void modelCatalogRef.current?.refresh("login"), 0).unref?.();
     },
@@ -435,7 +438,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       // 安全复核 U-2：取不到 /v1/meta（网络抖动、云端 5xx）不当作旧云端——照常带签名登录、不记缓存；只有云端答了而没有 account_switch 才是旧云端
       if (!m || !m.ok) return true;
       const features = Array.isArray((m.json as { features?: unknown }).features) ? ((m.json as { features: unknown[] }).features.filter((x) => typeof x === "string") as string[]) : [];
-      cloudSwitch = { at: now, ok: (m.json as { account_switch?: unknown }).account_switch === true, unbind: features.includes("device_limit_unbind") };
+      cloudSwitch = { at: now, ok: (m.json as { account_switch?: unknown }).account_switch === true, unbind: features.includes("device_limit_unbind"), signout: features.includes("device_signout") };
       return cloudSwitch.ok;
     },
     switchTo: (j: Record<string, unknown>): Record<string, unknown> => {
@@ -484,7 +487,25 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       const devices = Array.isArray(onb.devices) ? onb.devices.slice(0, 20) : [];
       if (state === "device_limit" && devices.length > 0) limitSession = { token: j.session_token, at: Date.now() };
       const limitN = Number.isSafeInteger(onb.device_limit) && (onb.device_limit as number) > 0 && (onb.device_limit as number) <= 99 ? (onb.device_limit as number) : null;
-      throw new DomainError("conflict", onboardingStateText(state, { admin: acc.role === "admin" }), 409, { reason, devices, ...(limitN ? { device_limit: limitN } : {}), ...(state === "device_limit" && devices.length > 0 && cloudSwitch?.unbind ? { can_unbind: true } : {}) });
+      throw new DomainError("conflict", onboardingStateText(state, { admin: acc.role === "admin" }), 409, { reason, devices, ...(limitN ? { device_limit: limitN } : {}), ...(state === "device_limit" && devices.length > 0 && cloudSwitch?.unbind ? { can_unbind: true } : {}), ...(state === "device_limit" && devices.length > 0 && cloudSwitch?.signout ? { can_signout: true } : {}), ...(onb.limit_kind === "registered" || onb.limit_kind === "signed_in" ? { limit_kind: onb.limit_kind } : {}), account: { name: typeof acc.name === "string" ? acc.name.slice(0, 80) : null, phone: typeof acc.phone === "string" && /^[0-9*+ ]{7,20}$/.test(acc.phone) ? acc.phone : null } });
+    },
+    // ─── 第 71 批（V45，D-298）：同时登录已满时就地让一台退出登录（或移除）再继续 ───
+    holdLimitSession: (token: string, same: boolean) => {
+      limitSession = { token, at: Date.now(), same };
+    },
+    limitSessionPeek: () => (limitSession && Date.now() - limitSession.at <= 9 * 60_000 ? { token: limitSession.token, at: limitSession.at, same: limitSession.same === true } : null),
+    clearLimitSession: () => {
+      limitSession = null;
+    },
+    cloudDeviceFeatures: () => ({ unbind: cloudSwitch?.unbind === true, signout: cloudSwitch?.signout === true }),
+    // 第 71 批：这台电脑上别的账号的工作空间个数（不列姓名；共用电脑的人看不到彼此是谁）
+    otherProfiles: () => {
+      try {
+        const here = config.activation;
+        return listProfiles(config.dataRoot).filter((x) => !(here && x.tid === here.tid && x.member_slug === here.member_slug)).length;
+      } catch {
+        return 0;
+      }
     },
     unbindForLogin: async (deviceId: string): Promise<Record<string, unknown>> => {
       const ls = limitSession;
@@ -504,9 +525,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     },
   };
   /** 第 68 批：云端是否支持带签名登录别的账号（/v1/meta 取一次记 60 秒）。 */
-  let cloudSwitch: { at: number; ok: boolean; unbind: boolean } | null = null;
-  /** 第 68 批：换到的账号电脑数已满时那次登录的会话（只在内存、10 分钟内），就地移除一台后继续。 */
-  let limitSession: { token: string; at: number } | null = null;
+  let cloudSwitch: { at: number; ok: boolean; unbind: boolean; signout: boolean } | null = null;
+  /** 第 68 批：换到的账号电脑数已满时那次登录的会话（只在内存、10 分钟内），就地移除一台后继续。第 71 批：same = 本档案账号重新登录满额 */
+  let limitSession: { token: string; at: number; same?: boolean } | null = null;
   /**
    * 记下“要重新登录”（第 44 批同步口径；第 47 批起模型调用被网关确定地按身份拒绝时也走这里，不等下一次同步）：
    * 原因写进同一个 accountProblem（kernel.status 的 account.login_required / reason、发起前检查的拦截都读它）；
@@ -528,12 +549,29 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
    * 只有账号停用、登录失效这类确定的身份拒绝才切到“要重新登录”；额度、限流、5xx、网络错误不动登录状态（identityRejectionOf）。
    * 只在接入控制面（有账号）时；本机开发形态没有账号。
    */
+  /** 第 71 批（D-298）：问一次云端这台电脑的登录会话还在不在（要重新登录的原因由 ControlPlaneClient 的 onSessionProblem 记下并广播）；网络失败不动登录状态。 */
+  let sessionCheckTimer: ReturnType<typeof setInterval> | null = null;
+  let sessionChecking: Promise<unknown> | null = null;
+  const checkSessionNow = (): Promise<unknown> => {
+    if (!controlPlaneRef.current || !accountSession) return Promise.resolve();
+    sessionChecking ??= controlPlaneRef.current
+      .account("GET", "/v1/auth/me")
+      .catch(() => undefined)
+      .finally(() => {
+        sessionChecking = null;
+      });
+    return sessionChecking;
+  };
   const onModelRejection = (codeOrMessage: string | null | undefined): void => {
     if (!controlPlane) return;
     // 第 66 批：所选模型被网关按模型拒绝（套餐不含、停用、未登记、未定价、无可用上游）→ 刷新一次模型目录（至多 30 秒一次），界面随之置灰并说明
     if (isModelRejection(codeOrMessage)) void modelCatalogRef.current?.refresh("model_rejection", { minIntervalMs: 30_000 });
     const code = modelRejectionProblem(codeOrMessage, Date.now() - accountClearedAt);
-    if (code) markAccountProblem(code, "model");
+    if (code) {
+      markAccountProblem(code, "model");
+      // 第 71 批（V45，D-298）：网关只说“这台电脑被暂停”（会话失效），说不出是不是本人在别的电脑上让它退出了——问一次云端，取准确原因（session_signed_out 等）
+      if (code === "session_invalid") void checkSessionNow();
+    }
   };
   // 控制面客户端（只在配置了控制面时）：请求经闸门代发，内核本身不联网
   const controlPlane =
@@ -582,6 +620,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
           },
         })
       : null;
+  controlPlaneRef.current = controlPlane;
   /** 确定性工作流经闸门的任务令牌：绑定当前执行中的尝试与纪元（尝试已结束 → 令牌不绑定纪元 → 闸门拒绝）。 */
   // 内核自己发起的独立复核（knownOnly）另带 model:known_only：闸门整段只替换已知名单（V16 第 41 批）。这个函数只在内核进程里由 broker 调用，
   // 交给助手宿主的运行令牌另由 kap-agent-client 按固定 scope 签发，宿主拿不到带这一项的令牌
@@ -1137,6 +1176,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     api["onboarding.device_confirm"] = (p) => onboarding.deviceConfirm((p ?? {}) as { phone?: unknown; sms_code?: unknown });
     // 第 68 批（V42，D-295）：电脑数已满时就地移除一台再继续
     api["onboarding.unbind_device"] = (p) => onboarding.unbindForLogin((p ?? {}) as { device_id?: unknown });
+    // 第 71 批（V45，D-298）：同时登录已满时就地让一台退出登录（可逆）再继续；等批准期间改用另一个账号（放弃那个申请）
+    api["onboarding.signout_device"] = (p) => onboarding.signoutForLogin((p ?? {}) as { device_id?: unknown });
+    api["onboarding.abandon_pending"] = () => onboarding.abandonPendingAndContinue();
     // 第 44 批：账号注册与登录（这台电脑还没有身份）；找回密码两种模式都可用
     api["account.register"] = (p) => onboarding.accountRegister((p ?? {}) as Record<string, unknown>);
     api["account.login"] = (p) => onboarding.accountLogin((p ?? {}) as Record<string, unknown>);
@@ -1423,6 +1465,15 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   }
 
   if (controlPlane && env.ZR_CONTROL_PLANE_SYNC_MS !== "off") controlPlane.start(Number(env.ZR_CONTROL_PLANE_SYNC_MS ?? 600_000) || 600_000);
+  // 第 71 批（V45，D-298）：登录会话的轻量核对（缺省每 2 分钟一次，一个 GET /v1/auth/me）——本人在别的电脑上选了“让这台退出登录”、
+  // 运营或管理员让它退出、账号被停用时，这台电脑约 2 分钟内转到重新登录页并写明原因；不等 10 分钟一次的同步，也不等下一次用 AI 才被网关挡下
+  if (controlPlane && env.ZR_SESSION_CHECK_MS !== "off") {
+    const ms = Math.max(15_000, Number(env.ZR_SESSION_CHECK_MS ?? 120_000) || 120_000);
+    sessionCheckTimer = setInterval(() => {
+      if (accountSession && !accountProblem) void checkSessionNow();
+    }, ms);
+    sessionCheckTimer.unref();
+  }
   // 第 66 批：模型目录每 10 分钟取一次（启动即取；ZR_MODEL_CATALOG_MS=off 关，开发联调可调短）
   if (controlPlane && env.ZR_MODEL_CATALOG_MS !== "off" && (env.ZR_CONTROL_PLANE_SYNC_MS !== "off" || env.ZR_MODEL_CATALOG_MS)) modelCatalog.start(Number(env.ZR_MODEL_CATALOG_MS ?? 600_000) || 600_000);
 
@@ -1484,6 +1535,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       await gate.close().catch(() => {});
       clearInterval(dailyTimer);
       if (syncTimer) clearInterval(syncTimer);
+      if (sessionCheckTimer) clearInterval(sessionCheckTimer);
       if (contentTimer) clearInterval(contentTimer);
       if (reminderTimer) clearInterval(reminderTimer);
       if (contentFirst) clearTimeout(contentFirst);

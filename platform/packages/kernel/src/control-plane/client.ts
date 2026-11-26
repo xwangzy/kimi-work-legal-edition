@@ -175,7 +175,7 @@ type CallResult = { ok: true; status: number; json: Record<string, unknown> } | 
  * base64url，大小写都有）在本机就被拒——“我的电脑 → 解绑”“登录记录 → 让这处下线”自第 44 批起在桌面端从没成功过（报“没有完成，请稍后重试”）。
  */
 export const ACCOUNT_PATH = /^\/v1\/auth\/[A-Za-z0-9/_-]{2,120}$/;
-const SESSION_PROBLEMS: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch"]);
+const SESSION_PROBLEMS: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch", "session_signed_out", "session_signed_out_admin", "session_signed_out_support", "session_device_limit"]);
 
 export class ControlPlaneClient {
   private readonly d: ControlPlaneClientDeps;
@@ -193,6 +193,25 @@ export class ControlPlaneClient {
 
   constructor(d: ControlPlaneClientDeps) {
     this.d = d;
+  }
+
+  /**
+   * 第 71 批（V45，首次打开的竞态）：刚开通 / 入组的电脑，内核重启后第一次同步才在云端登记这台电脑；登记完成前界面查用量、取模型目录，
+   * 云端只会答 device_unknown_or_revoked（Windows 线上日志与本机复现都有：首屏用量报错、模型目录要等 10 分钟后才再取）。
+   * start() 时记下“首次登记这一步”的完成信号，用量、模型目录、账号接口先等它（至多 8 秒；不开同步的形态不等）。
+   */
+  private registerSettled: Promise<void> | null = null;
+  private resolveRegister: (() => void) | null = null;
+  private async afterFirstRegister(): Promise<void> {
+    const p = this.registerSettled;
+    if (!p) return;
+    await Promise.race([
+      p,
+      new Promise<void>((r) => {
+        const t = setTimeout(r, 8000);
+        t.unref?.();
+      }),
+    ]);
   }
 
   /** 最近一次的用量视图（没有取到过为 null；调用方按 at 判断是否过时）。 */
@@ -225,9 +244,9 @@ export class ControlPlaneClient {
     return this.call(method, path, body);
   }
 
-  private async call(method: string, path: string, body?: unknown): Promise<CallResult> {
+  private async call(method: string, path: string, body?: unknown, sessionOverride?: string): Promise<CallResult> {
     const raw = body === undefined ? "" : JSON.stringify(body);
-    const session = this.d.sessionToken?.() ?? null;
+    const session = sessionOverride ?? this.d.sessionToken?.() ?? null;
     const headers = { ...signDeviceRequest({ method, path, body: raw, tid: this.d.tenantId, deviceId: this.d.device.deviceId, signer: this.d.device.signer, ...(this.d.now ? { now: this.d.now() } : {}) }), ...(session ? { "x-kwl-session": session } : {}) };
     const r = await this.d.relay({ method, path, headers, body: raw });
     if (!r.ok) return { ok: false, error: r.reason };
@@ -262,7 +281,9 @@ export class ControlPlaneClient {
     const v = this.d.clientVersion;
     const fb = this.d.firmBundle?.() ?? null;
     const body = { tid: this.d.tenantId, cert: this.d.device.cert, ...(v && CLIENT_VERSION_RE.test(v) ? { client: { version: v } } : {}), ...(fb ? { firm_bundle: fb } : {}) };
-    let r = await this.call("POST", "/v1/devices/register", body);
+    // 第 71 批：刚开通的创始设备（还握着认领凭据）律所根一定还没登记——直接先登记根，省掉一次注定失败的往返
+    const pendingClaim = this.d.activationClaim?.() ?? null;
+    let r: CallResult = pendingClaim && this.d.firmRoot?.() ? { ok: false, error: "root_not_enrolled" } : await this.call("POST", "/v1/devices/register", body);
     if (!r.ok && r.error === "root_not_enrolled") {
       const root = this.d.firmRoot?.() ?? null;
       if (!root) return "root_not_enrolled";
@@ -270,7 +291,17 @@ export class ControlPlaneClient {
       const proof = sign(null, enrollProofBytes(this.d.tenantId, root.publicKeyPem, ts), root.privateKeyPem).toString("base64url");
       const claim = this.d.activationClaim?.() ?? null;
       const e = await this.call("POST", "/v1/enroll", { tid: this.d.tenantId, root_public_key_pem: root.publicKeyPem, ts, proof, ...(claim ? { activation_id: claim.activation_id, claim_secret: claim.claim_secret } : {}), ...(fb ? { firm_bundle: fb } : {}) });
-      if (!e.ok) return `enroll:${e.error}`;
+      if (!e.ok) {
+        // 第 71 批：跳过了第一次登记、而律所根其实已登记过（上次登记后认领凭据没来得及删）——照常登记设备，成功即删掉过期的认领凭据
+        if (pendingClaim) {
+          const again = await this.call("POST", "/v1/devices/register", body);
+          if (again.ok) {
+            this.d.onEnrolled?.();
+            return "ok";
+          }
+        }
+        return `enroll:${e.error}`;
+      }
       if (claim) this.d.onEnrolled?.();
       r = await this.call("POST", "/v1/devices/register", body);
     }
@@ -320,18 +351,28 @@ export class ControlPlaneClient {
       }
     };
     await step("register", () => this.register());
+    // 第 71 批：首次登记这一步有结果了（成功或失败都放行，等着的请求照常发出、如实报错）
+    if (this.resolveRegister) {
+      this.resolveRegister();
+      this.resolveRegister = null;
+      this.registerSettled = null;
+    }
     if (steps.register === "ok") {
       await step("pending_actions", async () => `sent:${await this.flushPendingActions(!!opts.retryFailed)}`);
-      const fetchDoc = (name: string, path: string, apply: (env: unknown) => { accepted: boolean; changed: boolean; code?: string }) =>
-        step(name, async () => {
-          const r = await this.call("GET", path);
-          return r.ok ? outcome(apply(r.json)) : r.error;
-        });
-      await fetchDoc("license", "/v1/license", (e) => gov.applyLicense(e));
-      await fetchDoc("salt", "/v1/tenant-salt", (e) => gov.applySalt(e));
-      await fetchDoc("directory", "/v1/directory", (e) => gov.applyDirectory(e));
-      await fetchDoc("policy", "/v1/policy", (e) => gov.applyPolicy(e));
-      await fetchDoc("connectors", "/v1/connectors", (e) => gov.applyConnectors(e));
+      // 第 71 批（V45）：五份文档并行取（原来逐个串行，开通后首次同步约 11 次往返，跨地域时要几秒），仍按原顺序逐个验签应用
+      const docs: [string, string, (env: unknown) => { accepted: boolean; changed: boolean; code?: string }][] = [
+        ["license", "/v1/license", (e) => gov.applyLicense(e)],
+        ["salt", "/v1/tenant-salt", (e) => gov.applySalt(e)],
+        ["directory", "/v1/directory", (e) => gov.applyDirectory(e)],
+        ["policy", "/v1/policy", (e) => gov.applyPolicy(e)],
+        ["connectors", "/v1/connectors", (e) => gov.applyConnectors(e)],
+      ];
+      const fetched = await Promise.all(docs.map(([, path]) => this.call("GET", path).catch((e: unknown) => ({ ok: false as const, error: `error:${(e as Error)?.message ?? e}`.slice(0, 200) }))));
+      for (let i = 0; i < docs.length; i++) {
+        const [name, , apply] = docs[i]!;
+        const r = fetched[i]!;
+        await step(name, async () => (r.ok ? outcome(apply(r.json)) : r.error));
+      }
       await step("seat", async () => {
         const exit = gov.exitMode();
         if (exit) return `skipped:${exit.code}`;
@@ -435,6 +476,9 @@ export class ControlPlaneClient {
   /** 定时同步；间隔钳在 10 秒～1 小时（复核 S6-A21）。 */
   start(intervalMs: number): void {
     if (this.timer) return;
+    this.registerSettled ??= new Promise<void>((r) => {
+      this.resolveRegister = r;
+    });
     void this.sync().catch(() => {});
     this.timer = setInterval(() => void this.sync().catch(() => {}), Math.min(SYNC_MAX_INTERVAL_MS, Math.max(10_000, intervalMs)));
     this.timer.unref();
@@ -579,6 +623,7 @@ export class ControlPlaneClient {
 
   /** 本所本月用量与上限（控制面签名的视图；管理员与合伙人另含按成员明细与池余额）。 */
   async quota(): Promise<QuotaView> {
+    await this.afterFirstRegister();
     const r = await this.call("GET", "/v1/quota");
     if (!r.ok) throw new Error(r.error);
     const v = this.d.gov.openSigned<QuotaView & { tid: string }>(r.json, "kwl-quota-view");
@@ -593,6 +638,7 @@ export class ControlPlaneClient {
   async quotaUsagePage(o: { before?: string | null; limit?: number }): Promise<{ rows: UsagePageRow[]; next_before: string | null }> {
     const lim = Math.min(100, Math.max(1, Math.floor(o.limit ?? 50)));
     const before = o.before && Number.isFinite(Date.parse(o.before)) ? new Date(Date.parse(o.before)).toISOString() : null;
+    await this.afterFirstRegister();
     const r = await this.call("GET", `/v1/quota/usage?${before ? `before=${before}&` : ""}limit=${lim}`);
     if (!r.ok) throw new Error(r.error);
     const v = this.d.gov.openSigned<{ tid: string; uid: string; rows: UsagePageRow[]; next_before: string | null }>(r.json, "kwl-usage-page");
@@ -605,6 +651,7 @@ export class ControlPlaneClient {
    * 失败抛带 code 的错误（离线、会话失效等；调用方用上一版）。
    */
   async modelCatalogEnvelope(): Promise<unknown> {
+    await this.afterFirstRegister();
     const r = await this.call("GET", "/v1/models");
     if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error });
     return r.json;
@@ -623,8 +670,20 @@ export class ControlPlaneClient {
   /** 账号接口原样调用（带设备签名与会话头）；失败抛带 code 的错误。 */
   async account(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<Record<string, unknown>> {
     if (!ACCOUNT_PATH.test(path)) throw new Error("account_path_invalid");
+    await this.afterFirstRegister();
     const r = await this.call(method, path, method === "GET" ? undefined : (body ?? {}));
     if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null, retryAfter: r.retry_after_s ?? null, ...(r.error === "client_outdated" ? { minVersion: this.outdated?.min_version ?? null } : {}) });
+    return r.json;
+  }
+
+  /**
+   * 第 71 批（V45，D-298）：带本机设备签名、但用指定会话的账号接口调用——同一账号在这台已登记的电脑上重新登录、同时登录已满时，
+   * 本次登录的会话还没绑这台电脑（不是本档案存着的会话），让出一台之后用它带签名取 /v1/auth/onboarding，云端即把会话绑到这台电脑。
+   */
+  async accountAs(session: string, method: "GET" | "POST", path: string, body?: unknown): Promise<Record<string, unknown>> {
+    if (!ACCOUNT_PATH.test(path)) throw new Error("account_path_invalid");
+    const r = await this.call(method, path, method === "GET" ? undefined : (body ?? {}), session);
+    if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null, retryAfter: r.retry_after_s ?? null });
     return r.json;
   }
 

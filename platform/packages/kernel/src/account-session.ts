@@ -16,7 +16,14 @@ export interface AccountSessionFile {
   name: string;
   tid: string;
   role: string;
+  /** 第 71 批（V45）：账号绑定手机号的打码形式（138****0000；云端给的就是打码号，本机不存完整号）。重新登录页称呼本人用。 */
+  phone?: string;
   saved_at: string;
+}
+
+/** 第 71 批：只认打码手机号的样子（数字、星号、加号与空格），别的一律不存。纯函数。 */
+export function maskedPhoneOrNull(v: unknown): string | null {
+  return typeof v === "string" && /^[0-9*+ ]{7,20}$/.test(v) && v.includes("*") ? v : null;
 }
 
 const FILE = "account-session.json";
@@ -57,6 +64,8 @@ export interface LoginRequiredFile {
   email: string;
   name: string;
   role: string;
+  /** 第 71 批：打码手机号（可无）。 */
+  phone?: string;
   at: string;
 }
 
@@ -79,9 +88,10 @@ export function readLoginRequired(keysDir: string): LoginRequiredFile | null {
   }
 }
 
-export function writeLoginRequired(keysDir: string, x: { reason: string; email?: string | null; name?: string | null; role?: string | null }): void {
+export function writeLoginRequired(keysDir: string, x: { reason: string; email?: string | null; name?: string | null; role?: string | null; phone?: string | null }): void {
   if (!SESSION_PROBLEM_CODES.has(x.reason)) return;
-  writeStagedSecret(loginRequiredPath(keysDir), { v: 1, reason: x.reason, email: x.email ?? "", name: x.name ?? "", role: x.role ?? "", at: new Date().toISOString() } satisfies LoginRequiredFile);
+  const phone = maskedPhoneOrNull(x.phone);
+  writeStagedSecret(loginRequiredPath(keysDir), { v: 1, reason: x.reason, email: x.email ?? "", name: x.name ?? "", role: x.role ?? "", ...(phone ? { phone } : {}), at: new Date().toISOString() } satisfies LoginRequiredFile);
 }
 
 export function dropLoginRequired(keysDir: string): void {
@@ -89,7 +99,8 @@ export function dropLoginRequired(keysDir: string): void {
 }
 
 /** 控制面答复里表示“要重新登录”的错误代码。 */
-export const SESSION_PROBLEM_CODES: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch"]);
+// 第 71 批（V45，D-298）：session_signed_out = 本人在别的电脑上选了让这台退出登录；session_device_limit = 会话第一次绑这台电脑时同时登录已满
+export const SESSION_PROBLEM_CODES: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch", "session_signed_out", "session_signed_out_admin", "session_signed_out_support", "session_device_limit"]);
 
 /**
  * 模型调用被法律模型网关**确定地**按身份拒绝 → 本机“要重新登录”的原因代码（第 47 批，第 46 批遗留 11）。
@@ -168,7 +179,7 @@ export function accountErrorText(code: string, fallback?: string): string {
     case "sms_code_attempts":
       return "验证码输错次数过多，请重新获取";
     case "sms_too_frequent":
-      return fallback ?? "验证码已发送，请稍后再重新获取";
+      return fallback ?? "刚发过验证码，请稍后再获取";
     case "sms_daily_limit":
       return "这个手机号今天获取验证码的次数已达上限，请明天再试";
     case "sms_ip_limit":
@@ -219,11 +230,28 @@ export function accountErrorText(code: string, fallback?: string): string {
     case "session_invalid":
     case "session_expired":
       return "登录已失效，请重新登录";
+    // 第 71 批（D-298）
+    case "session_signed_out":
+      return "这个账号在另一台电脑上登录，这台电脑已退出登录。资料都还在这台电脑上，重新登录即可继续";
+    case "session_signed_out_admin":
+      return "律所管理员让这台电脑退出了登录。资料都还在这台电脑上，重新登录即可继续";
+    case "session_signed_out_support":
+      return "客服协助让这台电脑退出了登录。资料都还在这台电脑上，重新登录即可继续";
+    case "session_device_limit":
+      return "这个账号同时登录的电脑已达上限：请重新登录，并选一台电脑退出登录";
+    case "signout_not_allowed":
+      return "这次登录不能让别的电脑退出：请重新登录后再试";
+    case "signout_self":
+      return "这就是你正在用的电脑：请用“退出登录”";
+    case "enroll_in_progress":
+      return "这个账号正在登记另一台电脑，请稍后重试";
+    case "device_enroll_unavailable":
+      return "云端暂时不能为这个账号登记新电脑（服务端配置待补），请联系客服；已登记的电脑不受影响";
     // 第 68 批（V42，D-294）：不再有“这台电脑只许某位成员登录”——旧云端答这个代码时如实说明是云端版本问题
     case "device_mismatch":
       return "云端服务暂不支持在这台电脑上切换账号：请稍后重试；仍不行请联系客服";
     case "device_limit":
-      return "这个账号的电脑数已达云端设定的上限：请先移除一台不再使用的电脑";
+      return "这个账号同时登录的电脑已达云端设定的上限：请选一台电脑退出登录后继续";
     // 第 66 批（V40，D-292）：个人账号新电脑自动登记的几种失败
     case "device_enroll_hold":
       return "短时间内有多台新电脑登录这个账号，为安全起见已暂停自动登记：请用账号绑定的手机号接收验证码确认是本人";
@@ -292,7 +320,7 @@ export function accountFailure(code: string, cpMessage?: string | null, extra?: 
   // 第 63 批：绑定手机号时被别的账号占用（云端原话“已绑定在别的账号上”），不能说成“请直接登录”
   const smsText =
     c === "sms_too_frequent" && wait
-      ? `验证码已发送，请 ${wait} 秒后再重新获取`
+      ? `刚发过验证码，请 ${wait} 秒后再获取`
       : c === "sms_code_invalid" && typeof cpMessage === "string" && /^验证码不正确（还可再试 \d 次）$/.test(cpMessage)
         ? cpMessage
         : c === "phone_taken" && typeof cpMessage === "string" && /^这个手机号已绑定在别的账号上[^<>]{0,40}$/.test(cpMessage)
@@ -311,7 +339,10 @@ export function onboardingStateText(state: string, o: { admin?: boolean } = {}):
     // 第 68 批（V42，D-295）：电脑数上限由云端设定；可在登录页就地移除一台，也可在已登录的电脑或云端控制台移除
     case "device_limit":
       // 个人账号的“管理员”就是本人，调不了自己的上限（由套餐决定）：不再按角色给“调高本所成员上限”的说法
-      return "这个账号登录过的电脑已达云端设定的上限：请移除一台不再使用的电脑后继续";
+      return "这个账号同时登录的电脑已达云端设定的上限：选一台让它退出登录即可继续（那台电脑上的资料不受影响）";
+    // 第 71 批（根因 R3）：个人账号而云端缺账号设备签发钥、又没有别的电脑可批准——不让律师进“等批准”死路
+    case "device_enroll_unavailable":
+      return "云端暂时不能为这个账号登记新电脑（服务端配置待补）：请联系客服；已登记的电脑不受影响";
     case "device_mismatch":
       return "云端服务暂不支持在这台电脑上切换账号：请稍后重试；仍不行请联系客服";
     case "waiting_founder":

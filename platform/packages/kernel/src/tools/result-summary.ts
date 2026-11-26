@@ -6,7 +6,13 @@
  * （tool_operations.result_summary），验收脚本 eval/ledger-summary.mjs 直接汇总。
  *
  * 只收白名单里的字段，值只取：数字、布尔、[a-z_]{1,24} 的状态词；数组只记长度；按类别计数的只记类别（枚举词）与次数。纯函数。
+ * 例外（第 71 批 D1）：读材料片段（materials.read_excerpt）另记读的是哪份材料的编号 doc（不透明编号，不含文件名与正文）——
+ * 没勾材料的任务，复核页“材料读取”按实际读过的份数写（services/material-reads.ts）。
  */
+
+/** 读材料片段的工具名：账本摘要里记材料编号的只有它。 */
+export const MATERIAL_READ_TOOL = "materials.read_excerpt";
+const OPAQUE_ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 
 const STATUS_RE = /^[a-z][a-z_]{0,23}$/;
 const COUNT_FIELDS = ["applied", "patches", "sheets", "rows", "sections", "tables", "total", "count", "pages", "version"] as const;
@@ -26,10 +32,11 @@ function tally(list: unknown, key: string): Record<string, number> | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
-export function toolResultSummary(result: unknown): Record<string, unknown> | null {
+export function toolResultSummary(result: unknown, tool?: string): Record<string, unknown> | null {
   if (!result || typeof result !== "object" || Array.isArray(result)) return Array.isArray(result) ? { n: result.length } : null;
   const r = result as Record<string, unknown>;
   const out: Record<string, unknown> = {};
+  if (tool === MATERIAL_READ_TOOL && typeof r.document_version_id === "string" && OPAQUE_ID_RE.test(r.document_version_id)) out.doc = r.document_version_id;
   if (typeof r.status === "string" && STATUS_RE.test(r.status)) out.status = r.status;
   for (const k of COUNT_FIELDS) if (typeof r[k] === "number" && Number.isFinite(r[k])) out[k] = r[k];
   for (const k of BOOL_FIELDS) if (typeof r[k] === "boolean") out[k] = r[k];
@@ -54,12 +61,12 @@ export function toolResultSummary(result: unknown): Record<string, unknown> | nu
 }
 
 /** 写库用：摘要转成不超过 800 字符的 JSON；没有可记的返回 null。 */
-export function toolResultSummaryJson(result: unknown): string | null {
+export function toolResultSummaryJson(result: unknown, tool?: string): string | null {
   try {
-    const s = toolResultSummary(result);
+    const s = toolResultSummary(result, tool);
     if (!s) return null;
     const j = JSON.stringify(s);
-    return j.length <= 800 ? j : JSON.stringify({ status: s.status ?? null, truncated_summary: true });
+    return j.length <= 800 ? j : JSON.stringify({ status: s.status ?? null, truncated_summary: true, ...(s.doc ? { doc: s.doc } : {}) });
   } catch {
     return null;
   }

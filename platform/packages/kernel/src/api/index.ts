@@ -4,9 +4,11 @@
  * 所内节点都走这同一份方法表。签发已接入设备签名（§6.3）；审计事件入签名 hash 链（§6.4）；
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
-import { accountErrorText, accountFailure, controlPlaneErrorText, CP_RULE_REJECTIONS, onboardingStateText, seatBlockReason } from "../account-session.ts";
+import { accountErrorText, accountFailure, controlPlaneErrorText, CP_RULE_REJECTIONS, maskedPhoneOrNull, onboardingStateText, seatBlockReason } from "../account-session.ts";
 import { fetchRegistrationMeta, loginBody, smsPhoneInput, smsSendResult } from "../services/onboarding.ts";
 import { diagnoseView } from "../services/cloud-connection.ts";
+import { materialIdsRead, materialsCheckOf } from "../services/material-reads.ts";
+import { followUpChain } from "../executor/executor.ts";
 import { BUILTIN_MODEL_IDS, catalogReasonText, ModelCatalogService, type ModelScope } from "../services/model-catalog.ts";
 import { saveModelPref, selectedModelOf } from "../services/model-prefs.ts";
 import { launchCheck, QUOTA_VIEW_MAX_AGE_MS, type LaunchHint } from "../services/launch-check.ts";
@@ -160,7 +162,7 @@ export interface ApiDeps {
   account?: {
     session(): AccountSessionFile | null;
     /** 上次登录的账号（退出登录后仍记得，只有邮箱、姓名、角色）。 */
-    last?(): { email: string; name: string; role: string } | null;
+    last?(): { email: string; name: string; role: string; phone?: string } | null;
     save(s: Omit<AccountSessionFile, "v" | "saved_at">): void;
     drop(): void;
     /** 控制面最近一次答复“要重新登录”的原因（null = 没有）。 */
@@ -178,6 +180,14 @@ export interface ApiDeps {
     switchTo?(j: Record<string, unknown>): Record<string, unknown>;
     /** 第 68 批：换到的账号电脑数已满时，用那次登录的会话就地移除它的一台旧电脑，再继续切换。 */
     unbindForLogin?(deviceId: string): Promise<Record<string, unknown>>;
+    /** 第 71 批（V45，D-298）：同时登录已满时那次登录的会话（只在内存、10 分钟内）；same = 登录的就是本档案的账号（这台已登记的电脑重新登录）。 */
+    holdLimitSession?(token: string, same: boolean): void;
+    limitSessionPeek?(): { token: string; at: number; same: boolean } | null;
+    clearLimitSession?(): void;
+    /** 第 71 批：云端是否支持就地移除（device_limit_unbind）与让别的电脑退出登录（device_signout）。最近一次 /v1/meta 的结果；没取过按都不支持。 */
+    cloudDeviceFeatures?(): { unbind: boolean; signout: boolean };
+    /** 第 71 批：这台电脑上别的账号的工作空间个数（不列姓名）。 */
+    otherProfiles?(): number;
   };
   /** 方法模板包（Kimi Code Skills）验签结果：方法库页展示可用的方法模板，校验失败如实显示原因。 */
   skills?: SkillsBundleStatus;
@@ -2663,13 +2673,19 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           `SELECT type, payload FROM run_events WHERE run_id = ? AND type IN ('materials.loaded','citations.verified') ORDER BY seq`,
           [art.run_id],
         );
+        let loadedPayload: Record<string, unknown> | null = null;
         for (const e of evs as any[]) {
           const payload = parseJson<any>(e.payload, {});
-          if (e.type === "materials.loaded") materials = { loaded: payload.loaded, requested: payload.requested, failed: payload.failed };
+          if (e.type === "materials.loaded") loadedPayload = payload;
           if (e.type === "citations.verified") {
             citations = { total: payload.total, intercepted: payload.intercepted, unverified_offline: payload.unverified_offline ?? 0, as_of: payload.as_of };
             unverifiedOffline = Number(payload.unverified_offline ?? 0);
           }
+        }
+        // 第 71 批 D1：没勾材料（D-183）按实际读过的份数写，读取记录含追问链上此前各轮（同一会话里读过的不再读）
+        if (loadedPayload) {
+          const readIds = Number(loadedPayload.requested ?? 0) > 0 ? new Set<string>() : materialIdsRead(db, followUpChain(db, String(art.run_id)));
+          materials = materialsCheckOf(loadedPayload, readIds, (docId) => db.get<{ filename: string }>(`SELECT filename FROM document_versions WHERE document_version_id = ? AND matter_id = ?`, [docId, art.matter_id])?.filename ?? null);
         }
       }
       let fileOk = false;
@@ -4074,7 +4090,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 第 69 批：同上，这台电脑已被移除时原因写 device_revoked
       const problem = rawProblem && deps.governance?.exitMode()?.code === "device_revoked" ? "device_revoked" : rawProblem;
       const last = deps.account?.last?.() ?? null;
-      return { mode: deps.controlPlane ? "control_plane" : "local_dev", edition, logged_in: !!s && !problem, account: s ? { email: s.email, name: s.name, role: s.role } : null, last_account: last, login_required: !!problem, reason: problem, message: problem ? accountErrorText(problem) : null };
+      // 第 71 批：带打码手机号；other_profiles = 这台电脑上别的账号的工作空间个数（不列姓名）
+      const others = deps.account?.otherProfiles?.() ?? 0;
+      return { mode: deps.controlPlane ? "control_plane" : "local_dev", edition, logged_in: !!s && !problem, account: s ? { email: s.email, name: s.name, role: s.role, ...(maskedPhoneOrNull(s.phone) ? { phone: s.phone } : {}) } : null, last_account: last, login_required: !!problem, reason: problem, message: problem ? accountErrorText(problem) : null, ...(others > 0 ? { other_profiles: others } : {}) };
     },
     "account.login": async (p, id) => {
       const cp = requireCpAccount();
@@ -4083,7 +4101,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       // 新云端（/v1/meta account_switch）照旧带本机设备签名：同一账号当场认出这台电脑（ready、会话直接绑定），别的账号云端不再拒绝；
       // 旧云端见到别人的设备签名会整个拒绝登录，所以不签名登录，会话在本档案第一次同步时绑定。
       // account_switch：告诉云端这是能换账号的客户端（不再做第 56 批的“改绑”，见安全复核 C-4）
-      const body = { ...loginBody((p ?? {}) as Record<string, unknown>), client: clientInfo(), account_switch: true };
+      // 第 71 批（V45）：relogin = 这台电脑所属账号用验证码重新登录（手机号由云端按本机设备签名得出，律师只填验证码）
+      const relogin = p?.relogin === true;
+      const body = relogin ? { relogin: true, sms_code: typeof p?.sms_code === "string" ? p.sms_code.replace(/\s+/g, "") : "", client: clientInfo(), account_switch: true } : { ...loginBody((p ?? {}) as Record<string, unknown>), client: clientInfo(), account_switch: true };
       let signed = deps.account?.signedLogin ? await deps.account.signedLogin() : true;
       let signFailure: string | null = null;
       // 本档案的设备签名不成立（这台电脑在云端已被移除、还没登记上、本机时钟偏差）不该挡住登录——尤其是换别的账号：
@@ -4118,8 +4138,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       }
       // 同一账号：带签名时云端应答 ready（这台电脑就是这个账号的）；不是 ready 说明这台电脑在云端已被移除等——如实说原因。
       // 不签名（旧云端）时云端不知道是哪台电脑，状态按“新电脑”给出——本机档案就是这个账号的，照常继续（下一次同步会核对设备是否仍有效）
+      // 第 71 批（V45，D-298）：这台已登记的电脑重新登录，而这个账号别的电脑同时登录已满——会话先不绑，记在内存里，界面列出电脑由本人选一台退出登录（或移除），
+      // 再经 account.signout_for_login / account.unbind_for_login 用这次会话带签名取 onboarding，云端即绑到这台电脑
+      if (signed && onb.state === "device_limit") throw sameAccountLimit(String(j.session_token), onb, acc);
       if (signed && onb.state !== "ready") throw new DomainError("conflict", onboardingStateText(String(onb.state ?? ""), { admin: acc.role === "admin" }), 409, { reason: /^[a-z_]{1,40}$/.test(String(onb.state ?? "")) ? String(onb.state) : "unknown" });
-      deps.account!.save({ token: String(j.session_token), aid: String(acc.aid), email: String(acc.email), name: String(acc.name ?? ""), tid: id.tenantId, role: String(acc.role ?? "") });
+      deps.account!.save({ token: String(j.session_token), aid: String(acc.aid), email: String(acc.email), name: String(acc.name ?? ""), tid: id.tenantId, role: String(acc.role ?? ""), ...(maskedPhoneOrNull(acc.phone) ? { phone: String(acc.phone) } : {}) });
       deps.account!.clearProblem();
       audit(db, id, "account.login", "user", id.userId, undefined, keyctx);
       // 登录后立即同步：席位令牌此时才签得出
@@ -4127,14 +4150,43 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return { ok: true, account: { email: acc.email, name: acc.name, role: acc.role } };
     },
     // 第 68 批（V42，D-295）：换账号时那个账号的电脑数已满——就地移除它的一台旧电脑（云端核对这次登录 10 分钟内、会话未绑电脑），再继续切换
+    // 第 71 批（D-298）：同一账号在这台已登记的电脑上重新登录满额时，移除一台后在本档案里继续（不切换）
     "account.unbind_for_login": async (p, id) => {
-      requireCpAccount();
+      const cp = requireCpAccount();
       const dev = String(p?.device_id ?? "");
       if (!/^[A-Za-z0-9_-]{1,128}$/.test(dev)) throw validation("设备编号不合法");
+      const ls = deps.account?.limitSessionPeek?.() ?? null;
+      if (ls?.same) {
+        await accountCp(() => cp.accountUnsigned("POST", `/v1/auth/devices/${dev}/unbind`, {}, ls.token));
+        audit(db, id, "account.device_unbind_for_login", "device", dev, undefined, keyctx);
+        return continueSameAccount(cp, ls.token, id, "已移除那台电脑");
+      }
       if (!deps.account?.unbindForLogin) throw validation("这台电脑不支持在这里移除电脑");
       const r = await accountCp(() => deps.account!.unbindForLogin!(dev));
       audit(db, id, "account.device_unbind_for_login", "device", dev, undefined, keyctx);
       return r;
+    },
+    // 第 71 批（V45，D-298）：同时登录已满时，用刚完成的这次登录让这个账号的一台电脑退出登录（可逆：那台电脑上的资料保留、回去重新登录即可），再继续——
+    // 同一账号（这台已登记的电脑）在本档案里继续登录；别的账号按换账号继续（打开或登记它的档案）
+    "account.signout_for_login": async (p, id) => {
+      const cp = requireCpAccount();
+      const dev = String(p?.device_id ?? "");
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(dev)) throw validation("设备编号不合法");
+      const ls = deps.account?.limitSessionPeek?.() ?? null;
+      if (!ls) throw new DomainError("conflict", "这次登录已超过 10 分钟：请重新登录后再选", 409, { reason: "session_not_fresh" });
+      await accountCp(() => cp.accountUnsigned("POST", `/v1/auth/devices/${dev}/signout`, {}, ls.token));
+      audit(db, id, "account.device_signout_for_login", "device", dev, undefined, keyctx);
+      if (ls.same) return continueSameAccount(cp, ls.token, id, "已让那台电脑退出登录");
+      let o: Record<string, unknown>;
+      try {
+        o = await cp.accountUnsigned("POST", "/v1/auth/onboarding", {}, ls.token);
+      } catch (e) {
+        const code = String((e as { code?: unknown })?.code ?? "error");
+        throw new DomainError("provider_unavailable", `已让那台电脑退出登录；${accountErrorText(code)}`, 502, { reason: code, signed_out: true });
+      }
+      deps.account?.clearLimitSession?.();
+      if (!deps.account?.switchTo) throw new DomainError("conflict", accountErrorText("device_mismatch"), 409);
+      return deps.account.switchTo({ ...o, session_token: ls.token });
     },
     "account.logout": async (_p, id) => {
       const cp = requireCpAccount();
@@ -4176,6 +4228,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       void cp.sync().catch(() => undefined);
       return { ok: true };
     },
+    // 第 71 批（V45，D-298）：让本人账号的另一台电脑退出登录（可逆：那台电脑上的资料保留，回去重新登录即可；不是移除）
+    "account.signout_device": async (p, id) => {
+      const cp = requireCpAccount();
+      const dev = String(p?.device_id ?? "");
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(dev)) throw validation("设备编号不合法");
+      const r = await accountCp(() => cp.account("POST", `/v1/auth/devices/${dev}/signout`, {}));
+      audit(db, id, "account.device_signout", "device", dev, undefined, keyctx);
+      return { ok: true, signed_out: Number((r as { signed_out?: unknown })?.signed_out ?? 0) || 0 };
+    },
     // 第 70 批（V44）：给本人账号的一台电脑起名字（只上传律师自填的名字；空串 = 去掉名字）。名字的规整与长度由云端定，本机先粗查
     "account.rename_device": async (p, id) => {
       const cp = requireCpAccount();
@@ -4207,6 +4268,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "account.sms_send": async (p) => {
       const cp = requireCpAccount();
       const purpose = p?.purpose === "bind" || p?.purpose === "reset" ? p.purpose : "login";
+      // 第 71 批（V45）：这台已登记的电脑上重新登录——不再输手机号：凭本机设备签名，验证码发到这个账号绑定的手机号（应答只有打码号）
+      if (purpose === "login" && p?.relogin === true) return smsSendResult(await accountCp(() => cp.account("POST", "/v1/auth/sms/send", { purpose: "login", relogin: true, client: clientInfo() })));
       const phone = smsPhoneInput(p?.phone);
       // 绑定要会话（控制面通道带上本机的会话头）；登录、找回不看会话
       return smsSendResult(await accountCp(() => cp.account("POST", "/v1/auth/sms/send", { phone, purpose, client: clientInfo() })));
@@ -5434,6 +5497,51 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   function launchHintOf(viaGateway: boolean): LaunchHint | null {
     if (!viaGateway || !deps.controlPlane) return null;
     return launchCheck({ viaGateway, accountProblem: deps.account?.problem() ?? null, clientOutdated: deps.controlPlane.clientOutdated(), quota: deps.controlPlane.cachedQuota(), now: Date.now() });
+  }
+
+  /**
+   * 第 71 批（V45，D-298）：本档案的账号在这台已登记的电脑上重新登录、而别的电脑同时登录已满——记下这次会话（内存、10 分钟），
+   * 给界面一份可选的电脑列表（与换账号、新电脑同一形状：devices / device_limit / limit_kind / this_device / can_signout / can_unbind）。
+   */
+  function sameAccountLimit(token: string, onb: Record<string, any>, acc: Record<string, any> = {}): DomainError {
+    deps.account?.holdLimitSession?.(token, true);
+    const f = deps.account?.cloudDeviceFeatures?.() ?? { unbind: false, signout: false };
+    const devices = Array.isArray(onb.devices) ? onb.devices.slice(0, 20) : [];
+    const n = Number.isSafeInteger(onb.device_limit) && onb.device_limit > 0 && onb.device_limit <= 99 ? (onb.device_limit as number) : null;
+    return new DomainError("conflict", onboardingStateText("device_limit"), 409, {
+      reason: "device_limit",
+      devices,
+      ...(n ? { device_limit: n } : {}),
+      ...(onb.limit_kind === "signed_in" || onb.limit_kind === "registered" ? { limit_kind: onb.limit_kind } : {}),
+      ...(typeof onb.this_device === "string" ? { this_device: onb.this_device } : {}),
+      // 本档案的电脑重新登录：云端新版本一定支持让出（这条路径只在新云端出现）；旧云端不会答 device_limit
+      can_signout: true,
+      ...(f.unbind ? { can_unbind: true } : {}),
+      same_account: true,
+      // 第 71 批：称呼本人用姓名与打码手机号（不用邮箱）
+      account: { name: typeof acc.name === "string" ? acc.name.slice(0, 80) : null, phone: typeof acc.phone === "string" && /^[0-9*+ ]{7,20}$/.test(acc.phone) ? acc.phone : null },
+    });
+  }
+  /** 第 71 批：让出 / 移除一台之后，用那次会话带本机签名取 onboarding——有名额即 ready（云端把会话绑到这台电脑），在本档案里完成登录。 */
+  async function continueSameAccount(cp: ControlPlaneClient, token: string, id: Identity, done: string): Promise<Record<string, unknown>> {
+    let o: Record<string, any>;
+    try {
+      o = await cp.accountAs(token, "POST", "/v1/auth/onboarding", {});
+    } catch (e) {
+      const code = String((e as { code?: unknown })?.code ?? "error");
+      throw new DomainError("provider_unavailable", `${done}；${accountErrorText(code)}`, 502, { reason: code, freed: true });
+    }
+    const onb = (o.onboarding ?? {}) as Record<string, any>;
+    const acc = (o.account ?? {}) as Record<string, any>;
+    // 让出之后又被别的电脑占上：再选一次（云端已给新的一次性票据）
+    if (onb.state === "device_limit") throw sameAccountLimit(token, onb, acc);
+    if (onb.state !== "ready") throw new DomainError("conflict", onboardingStateText(String(onb.state ?? ""), { admin: acc.role === "admin" }), 409, { reason: /^[a-z_]{1,40}$/.test(String(onb.state ?? "")) ? String(onb.state) : "unknown" });
+    deps.account?.clearLimitSession?.();
+    deps.account!.save({ token, aid: String(acc.aid ?? ""), email: String(acc.email ?? ""), name: String(acc.name ?? ""), tid: id.tenantId, role: String(acc.role ?? ""), ...(maskedPhoneOrNull(acc.phone) ? { phone: String(acc.phone) } : {}) });
+    deps.account!.clearProblem();
+    audit(db, id, "account.login", "user", id.userId, undefined, keyctx);
+    void cp.sync().catch(() => undefined);
+    return { ok: true, account: { email: acc.email, name: acc.name, role: acc.role } };
   }
 
   /** 第 44 批账号接口：需要控制面与本机会话存放处（开发形态没有）。 */
