@@ -5,7 +5,7 @@
  */
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { agentFollowUpPrompt, agentGoalPrompt, preflightLine, preflightOf, PREFLIGHT_EMPTY_RULE, PREFLIGHT_KNOWN_RULE, PREFLIGHT_PARTIES_RULE, PREFLIGHT_UNSELECTED_RULE } from "../src/executor/executor.ts";
+import { agentFollowUpPrompt, agentGoalPrompt, preflightLine, preflightOf, PREFLIGHT_ALL_RULE, PREFLIGHT_EMPTY_RULE, PREFLIGHT_KNOWN_RULE, PREFLIGHT_PARTIES_RULE, PREFLIGHT_UNSELECTED_RULE } from "../src/executor/executor.ts";
 import { importText, makeKernel, type TestKernel } from "./helpers.ts";
 
 const KNOWN = "这一行的份数、条数是给你安排工作用的，不写进任何交付文件；任务说明与方法参数里律师已经写明的（法院、请求、日期、立场、金额口径等）不再问；";
@@ -33,6 +33,10 @@ test("三种情形逐字：空事项 / 有材料无确认事实 / 有确认事�
   );
   // 事项有材料但本次没指定：不算“空事项”
   assert.ok(!preflightLine({ selected: 0, matterMaterials: 2, confirmedFacts: 0, pendingFacts: 0 }).includes(EMPTY));
+  // 第 70 批：一份没勾、事项里有材料——说清可读全部（真实运行里助手把“指定 0 份”当作没有材料）；勾了的不写这句
+  assert.ok(preflightLine({ selected: 0, matterMaterials: 2, confirmedFacts: 0, pendingFacts: 0 }).includes(PREFLIGHT_ALL_RULE));
+  assert.ok(!preflightLine({ selected: 2, matterMaterials: 2, confirmedFacts: 0, pendingFacts: 0 }).includes(PREFLIGHT_ALL_RULE));
+  assert.ok(!preflightLine({ selected: 0, matterMaterials: 0, confirmedFacts: 0, pendingFacts: 0 }).includes(PREFLIGHT_ALL_RULE));
 });
 
 test("agentGoalPrompt：这一行紧跟【任务】；不传时与旧版逐字相同；追问不加", () => {
@@ -107,7 +111,7 @@ test("D-224 当事人信息：固定句逐字；有材料才加；新版本替�
   assert.equal(PREFLIGHT_PARTIES_RULE, PARTIES);
   assert.equal(
     preflightLine({ selected: 0, matterMaterials: 1, confirmedFacts: 0, pendingFacts: 0, parties: true }),
-    `【开工前已知】本次指定材料 0 份；本事项共 1 份材料；本事项已确认事实 0 条、待确认 0 条。${KNOWN}${PARTIES}\n`,
+    `【开工前已知】本次指定材料 0 份；本事项共 1 份材料；本事项已确认事实 0 条、待确认 0 条。${KNOWN}${PREFLIGHT_ALL_RULE}${PARTIES}\n`,
   );
   assert.equal(preflightLine({ selected: 0, matterMaterials: 1, confirmedFacts: 0, pendingFacts: 0 }).includes("当事人信息"), false);
 

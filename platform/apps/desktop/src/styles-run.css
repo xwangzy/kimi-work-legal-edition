@@ -31,7 +31,7 @@
 .step-fold > summary > .step-dot { background: var(--border-default); box-shadow: 0 0 0 3px var(--bg-main), 0 -6px 0 -1px var(--border-default), 0 6px 0 -1px var(--border-default); }
 .step-fold > summary .step-title { font-size: var(--fs-caption); color: var(--text-secondary); line-height: 22px; }
 .step-fold > summary:hover .step-title { color: var(--text-primary); }
-.step-fold-more { color: var(--accent-text); }
+.step-fold-more { color: var(--text-label); text-decoration: underline; text-decoration-color: var(--border-hover); text-underline-offset: 3px; }
 .step-fold[open] .step-fold-more { display: none; }
 .step-fold[open] > .step { margin-left: 0; }
 /* 失败：红底叉 */

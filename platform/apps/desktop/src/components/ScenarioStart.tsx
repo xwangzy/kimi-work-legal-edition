@@ -295,16 +295,14 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
       setGuessed(null);
     }
   }, [matter?.matter_id, typeField, guessed, values]);
-  // “我方是”按事项立场预选（第 31 批）：律师没选过、事项立场对得上某个选项时才填，下拉框下写“按事项立场预选，可改”
+  // “我方地位”按事项立场预选（第 31 批）：律师没选过、事项立场对得上某个选项时才填。
+  // 第 70 批（V44，全库统一）：十张卡都叫“我方地位”、都必填（预选后一般不用再点）；不再在下拉框下写“按事项立场预选，可改”——
+  // 面板顶部的事项一行已写着“我方 原告”，同一信息不说两遍（独立评审第 69 批 R1-6）
   const sideField = card.fields.find((f) => f.key === "side" && f.kind === "select");
-  const [sideGuessed, setSideGuessed] = useState<string | null>(null);
   useEffect(() => {
     if (!sideField || values[sideField.key]) return;
     const g = sideOptionFor(sideField.options, matter?.stance);
-    if (g) {
-      setValues((cur) => (cur[sideField.key] ? cur : { ...cur, [sideField.key]: g }));
-      setSideGuessed(g);
-    }
+    if (g) setValues((cur) => (cur[sideField.key] ? cur : { ...cur, [sideField.key]: g }));
   }, [sideField, matter?.stance, values]);
   const order = (id: string) => docIds.indexOf(id) + 1;
   // 面板里添加文件：显示“正在添加…”，完成后由“新导入的自动勾选”勾上
@@ -327,7 +325,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
     return Array.isArray(v) && v.length > 0 ? v : [""];
   };
   const renderField = (f: ScenarioField) => (
-    <div key={f.key} data-field={f.key} className={`ss-field${f.kind === "long" || f.kind === "list" ? " ss-field-long" : ""}`}>
+    <div key={f.key} data-field={f.key} data-kind={f.kind === "select" && f.chips ? "chips" : f.kind} className={`ss-field${f.kind === "long" || f.kind === "list" ? " ss-field-long" : ""}`}>
       <span className="ss-label">
         {f.label}
         {f.required ? <span className="ss-req" aria-label="必填">*</span> : null}
@@ -349,7 +347,6 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
           <span className="ss-select">
             <Select aria-label={f.label} value={String(values[f.key] ?? "")} onChange={(v) => setField(f.key, v)} options={f.options!.map((o) => ({ value: o, label: o }))} placeholder={selectDefaultPlaceholder(f.help) ?? (f.required ? "请选择" : "请选择（可不选）")} />
             {guessed && f === typeField && values[f.key] === guessed && <span className="ss-guess muted">按文件名预选，可改</span>}
-            {sideGuessed && f === sideField && values[f.key] === sideGuessed && <span className="ss-guess muted">按事项立场预选，可改</span>}
           </span>
         ) : f.kind === "multi" ? (
           <span className="ss-multi">
@@ -853,8 +850,9 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             </label>
           )}
           <button className="btn-ghost" onClick={onClose}>取消</button>
-          {/* 还不能开始时（例如疑似姓名待核对）不占主按钮：同屏的主动作是待办那一步（复核 S7B-01） */}
-          <button className={ready ? "btn-primary" : "btn-ghost"} disabled={busy || !ready} aria-busy={busy} onClick={() => void start()}>
+          {/* 还不能开始时（例如疑似姓名待核对）不能点（复核 S7B-01：同屏的主动作是待办那一步）。
+              第 70 批（V44，全库统一）：仍用主按钮样式、禁用时压淡（--btn-primary-disabled）——原来换成描边按钮，比旁边的“取消”还弱，主次反了 */}
+          <button className="btn-primary" disabled={busy || !ready} aria-busy={busy} onClick={() => void start()}>
             {/* 第 27 批（评审 U3-49）：点了还要再确认的（依据未齐、去向有提醒）写“下一步”，直接开始的写动词；
                 第 51 批：点下后按钮内显示圆环与“正在开始…”，看得出点上了 */}
             <BusyLabel busy={busy} busyText={estimate && (estimate.estimate.data_where?.start_blocked || estimate.estimate.data_where?.warning) ? "正在准备确认…" : "正在开始…"}>

@@ -7,7 +7,7 @@
 .rm-head-text { min-width: 0; }
 .rm-head .page-title { margin: 0; }
 .rm-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3); margin: var(--sp-2) 0 0; font-size: var(--fs-body); color: var(--text-strong); }
-.rm-sub-new { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-text); }
+.rm-sub-new { display: inline-flex; align-items: center; gap: 6px; color: var(--text-primary); }
 .rm-sub-new .btn-link { font-size: var(--fs-body); }
 
 /* 送达方式：一行安静的小字，机制说明点开 */

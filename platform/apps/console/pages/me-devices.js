@@ -44,7 +44,7 @@ function draw(box, me, reload) {
         empty: "还没有登记电脑：在 Windows 客户端用本账号登录并完成入组后出现在这里",
         rowClass: (d) => (d.revoked_at ? "dim" : ""),
         columns: [
-          { key: "device_id", label: "电脑编号", render: (d) => h("span", { class: "badges" }, mono(d.device_id), d.current ? badge("本次登录所用", "accent") : null) },
+          { key: "device_id", label: "电脑编号", render: (d) => h("span", { class: "badges" }, d.name ? h("b", {}, d.name) : null, mono(d.device_id), d.current ? badge("本次登录所用", "accent") : null) },
           { key: "client_version", label: "客户端", render: (d) => mono(d.client_version ?? "—") },
           { key: "last_seen_on", label: "最近报到", render: (d) => h("span", { title: fmt.full(d.last_seen_on) }, fmt.ago(d.last_seen_on)) },
           { key: "registered_at", label: "登记于", render: (d) => fmt.date(d.registered_at) },

@@ -234,6 +234,8 @@ export interface AccountDevice {
   /** 第 69 批（D-297）：云端补的平台（这个账号在那台电脑上最近一次会话报的）与最近使用时刻（会话级，比只到日的 last_seen_on 细）。旧云端没有。 */
   platform?: string | null;
   last_seen_at?: string | null;
+  /** 第 70 批（V44）：律师给这台电脑起的名字（云端 1.5.1 起；没起过为 null，旧云端没有这一字段）。 */
+  name?: string | null;
 }
 
 /** 相对时间：刚刚 / N 分钟前 / 今天 14:20 / 昨天 / 11 月 3 日（北京时间）。纯函数。 */
@@ -263,7 +265,9 @@ export function agoLabel(v: string | null | undefined, now = Date.now()): string
 export function deviceChoiceLine(d: AccountDevice, now = Date.now()): { title: string; meta: string; active: boolean } {
   const n = deviceOrdinal(d.device_id);
   // 第三轮（独立评审 R2-2）：同型号的几台都叫“Mac 电脑”时靠编号区分（第几台登记的）
-  const kind = d.platform ? `${platformLabel(d.platform)} · 第 ${n} 台` : `第 ${n} 台电脑`;
+  // 第 70 批（V44）：律师起过名字的用名字（“办公室 iMac”），电脑类型挪到说明行开头
+  const named = deviceName(d);
+  const kind = named ?? (d.platform ? `${platformLabel(d.platform)} · 第 ${n} 台` : `第 ${n} 台电脑`);
   const seen = agoLabel(d.last_seen_at ?? d.last_seen_on, now);
   const version = d.client_version && d.client_version !== "legacy" ? d.client_version : null;
   // 第二轮（独立评审）：另写登记日期——两台同型号电脑时，靠“哪天登记的”认出是哪一台
@@ -275,8 +279,30 @@ export function deviceChoiceLine(d: AccountDevice, now = Date.now()): { title: s
   const todayDay = new Date(now + 8 * 3600_000).toISOString().slice(0, 10);
   const reg = !Number.isFinite(regMs) ? "" : regDay === todayDay ? `今天 ${new Date(regMs + 8 * 3600_000).toISOString().slice(11, 16)} 登记` : `${dayLabel(d.registered_at, now)}登记`;
   // 第五轮（独立评审 R4-1）：两者相近时留“最近使用”（“最久没用”的依据就是它），省掉登记
-  const meta = [seen ? `最近使用 ${seen}` : "", sameAsReg ? "" : reg, version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
+  const meta = [named && d.platform ? platformLabel(d.platform) : "", seen ? `最近使用 ${seen}` : "", sameAsReg ? "" : reg, version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
   return { title: kind, meta, active: d.session === "active" };
+}
+
+/** 第 70 批（V44）：律师给电脑起的名字（规整后；没起过或旧云端为 null）。纯函数。 */
+export function deviceName(d: Pick<AccountDevice, "name"> | null | undefined): string | null {
+  const v = typeof d?.name === "string" ? d.name.replace(/\s+/g, " ").trim() : "";
+  return v ? v : null;
+}
+
+/** 第 70 批（V44）：云端支不支持给电脑起名字——1.5.1 起设备列表每台都带 name（没起过为 null），旧云端没有这一字段。纯函数。 */
+export function canRenameDevices(devices: readonly AccountDevice[] | null | undefined): boolean {
+  return Array.isArray(devices) && devices.length > 0 && devices.every((d) => Object.prototype.hasOwnProperty.call(d, "name"));
+}
+
+/** 电脑名称最多几个字（与云端同一上限）。 */
+export const DEVICE_NAME_MAX = 20;
+
+/** 电脑名称输入的检查（与云端同一口径：去首尾空白、并空白；空 = 去掉名字；超长或含控制字符给一句原因）。纯函数。 */
+export function checkDeviceName(v: string): { ok: true; name: string } | { ok: false; why: string } {
+  if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(v)) return { ok: false, why: "名称里有换行等不能显示的字符" };
+  const t = v.replace(/\s+/g, " ").trim();
+  if ([...t].length > DEVICE_NAME_MAX) return { ok: false, why: `最多 ${DEVICE_NAME_MAX} 个字` };
+  return { ok: true, name: t };
 }
 
 /**
@@ -295,13 +321,17 @@ export function defaultRemovalPick(devices: readonly AccountDevice[]): string | 
 export function deviceLine(d: AccountDevice, now = Date.now()): { title: string; meta: string; state: { text: string; tone: "ok" | "gray" | "bad" } } {
   const n = deviceOrdinal(d.device_id);
   // 第 69 批（D-297）：云端给了平台时写电脑类型（“Mac 电脑”），与电脑数已满时的选择列表同一说法；旧云端仍写第几台
-  const title = d.current ? "这台电脑" : d.platform ? platformLabel(d.platform) : `第 ${n} 台电脑`;
+  // 第 70 批（V44）：起过名字的用名字，这台电脑写“名字（这台电脑）”，电脑类型挪到说明行开头
+  const named = deviceName(d);
+  const title = named ? (d.current ? `${named}（这台电脑）` : named) : d.current ? "这台电脑" : d.platform ? platformLabel(d.platform) : `第 ${n} 台电脑`;
   // 第 55 批（真实控制面复评）：①“最近使用”是服务器按 UTC 记的日子，北京时间 0～8 点登记的电脑会显示成“登记 22 日 · 最近使用 21 日”——
   // 不早于登记日（按北京时间的日子比）；②没有上报版本的客户端，服务器记占位值 legacy，不显示给律师看。
   const regDay = d.registered_at && Number.isFinite(Date.parse(d.registered_at)) ? new Date(Date.parse(d.registered_at) + 8 * 3600_000).toISOString().slice(0, 10) : null;
   const seen = d.last_seen_on && regDay && /^\d{4}-\d{2}-\d{2}$/.test(d.last_seen_on) && d.last_seen_on < regDay ? regDay : d.last_seen_on;
   const version = d.client_version && d.client_version !== "legacy" ? d.client_version : null;
-  const meta = [`${dayLabel(d.registered_at, now)}登记`, seen ? `最近使用 ${dayLabel(seen, now)}` : "", version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
+  // 第 70 批（V44）：“最近使用”与电脑数已满的列表同一种写法（相对时间：刚刚 / N 分钟前 / 今天 14:20 / 昨天 / 日期），云端给了会话时刻时用它
+  const seenText = d.last_seen_at && Number.isFinite(Date.parse(d.last_seen_at)) ? agoLabel(d.last_seen_at, now) : seen ? agoLabel(seen, now) : "";
+  const meta = [named && d.platform ? platformLabel(d.platform) : "", `${dayLabel(d.registered_at, now)}登记`, seenText ? `最近使用 ${seenText}` : "", version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
   const state = d.revoked_at ? { text: "已移除", tone: "bad" as const } : d.session === "active" ? { text: "已登录", tone: "ok" as const } : { text: "未登录", tone: "gray" as const };
   return { title, meta, state };
 }
@@ -318,8 +348,10 @@ export interface AccountSession {
 }
 
 /** “登录记录”一行：在哪儿登录、何时登录、最近活动、多久不用会自动退出。 */
-export function sessionLine(s: AccountSession, now = Date.now()): { title: string; meta: string } {
-  const where = s.kind === "web" ? "网页" : `${platformLabel(s.client?.platform)}${s.device_id ? `（第 ${deviceOrdinal(s.device_id)} 台）` : ""}`;
+export function sessionLine(s: AccountSession, now = Date.now(), devices: readonly AccountDevice[] = []): { title: string; meta: string } {
+  // 第 70 批（V44）：那台电脑起过名字的写名字
+  const named = s.device_id ? deviceName(devices.find((d) => d.device_id === s.device_id)) : null;
+  const where = s.kind === "web" ? "网页" : named ?? `${platformLabel(s.client?.platform)}${s.device_id ? `（第 ${deviceOrdinal(s.device_id)} 台）` : ""}`;
   const title = s.current ? `${where} · 当前这次登录` : where;
   const meta = [`${dayLabel(s.created_at, now)}登录`, s.last_seen_at ? `最近活动 ${dayLabel(s.last_seen_at, now)}` : "", `不使用到 ${dayLabel(s.idle_expires_at, now)}会自动退出`].filter(Boolean).join(" · ");
   return { title, meta };

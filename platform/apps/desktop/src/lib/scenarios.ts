@@ -276,7 +276,7 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "请梳理争点与证据：拟主张或需应对的请求为{claims}；我方诉讼地位：{side}；已知的对方抗辩：{defenses}。有我确认过的事实时只用确认的事实；还没有确认的，用材料载明的事实并标【未确认】，评估写“初步判断”。不评估胜诉率。",
     fields: [
       { key: "claims", label: "涉及的请求", kind: "text", required: true, placeholder: "例如：支付货款 120 万元及逾期利息", help: "我方要主张的，或要应对的对方请求" },
-      { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人"] },
+      { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人"], required: true },
       { key: "defenses", label: "已知的对方抗辩", kind: "text", placeholder: "例如：已付清；质量有问题；超过诉讼时效", more: true },
     ],
     minMaterials: 0,
@@ -296,7 +296,7 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "请分析案情并提出诉讼策略建议：我方目标为{goal}；我方地位：{side}。未确认的事实请标出，不评估胜诉率。",
     fields: [
       { key: "goal", label: "我方目标", kind: "text", required: true, placeholder: "例如：追回货款 120 万元及违约金" },
-      { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "尚未起诉（我方拟起诉）", "尚未起诉（对方可能起诉）"] },
+      { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人", "第三人", "尚未起诉（我方拟起诉）", "尚未起诉（对方可能起诉）"], required: true },
     ],
     // 第 55 批：新案常常只有口头案情——没有材料时可以直接写案情（原来至少要一份材料才能开始）
     minMaterials: 0,
@@ -345,7 +345,7 @@ export const SCENARIOS: ScenarioCard[] = [
     // 补“请求金额”一栏（只进任务说明，方法从起诉状等材料摘录时以材料为准、对不上的会问），“执行回收”提到主区（卡名里的“回收”在首屏看得到）
     goal: "请做诉讼成本与回收测算。我方是{side}；案件阶段：{stage}；请求金额：{claims_amount}；律师费安排：{fee_arrangement}；拟比较的和解金额：{offer}；执行回收：{recovery}。按本案决定金额的争点设几个情景（法院支持哪几项、各支持多少），算出各情景的净回收或总支出、和解持平点与和解方案比较；不给胜诉率或期望值，和不和解由客户决定。",
     fields: [
-      { key: "side", label: "我方是", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人"], required: true },
+      { key: "side", label: "我方地位", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人"], required: true },
       { key: "stage", label: "案件阶段", kind: "select", chips: true, options: ["尚未起诉", "已立案，一审中", "一审判决后（考虑上诉）"], required: true },
       // 第四轮（独立评审 R3-2、R3-3）：三行说明并进占位文字，“案情与材料”回到首屏
       { key: "claims_amount", label: "请求金额", kind: "text", goalOnly: true, placeholder: "例如：货款 31 万元，违约金暂计 3.4 万元（不填从材料摘录）" },
@@ -456,7 +456,7 @@ export const SCENARIOS: ScenarioCard[] = [
     goal: "请研读这份裁判文书，目的是{purpose}。我方在本案中是{side}；文书送达我方的日期：{served_on}。逐项拆出裁判结果并与我方请求对照，复算受理费，按法定期间算出上诉、申请撤销或申请执行等期限，梳理争点与裁判理由、核验所引条文；评估救济的理由强弱与成本，不预测二审结果。",
     fields: [
       { key: "purpose", label: "研读目的", kind: "select", options: ["上诉评估", "给客户汇报结果", "准备履行或申请执行"], goalText: { 上诉评估: "评估是否上诉（或申请撤销）", 给客户汇报结果: "给客户或管理层汇报结果", 准备履行或申请执行: "准备履行或申请执行" } },
-      { key: "side", label: "我方地位", kind: "select", options: ["原告", "被告", "第三人", "申请人", "被申请人"] },
+      { key: "side", label: "我方地位", kind: "select", options: ["原告", "被告", "第三人", "申请人", "被申请人"], required: true },
       { key: "served_on", label: "文书送达日期", kind: "date", help: "上诉等期限从这天起算；不填从送达回证里找" },
     ],
     minMaterials: 1,
@@ -634,7 +634,7 @@ export const SCENARIOS: ScenarioCard[] = [
     fields: [
       { key: "claims", label: "拟主张的请求", kind: "text", required: true, placeholder: "例如：支付货款 50 万元及逾期利息" },
       // 第 26 批（评审 S2 §3 第 9 条）：方法参数本来就有 side
-      { key: "side", label: "我方是", kind: "select", options: ["拟起诉", "已被诉"] },
+      { key: "side", label: "我方地位", kind: "select", options: ["拟起诉", "已被诉"], required: true },
       { key: "amount", label: "标的额", kind: "text", placeholder: "例如：120 万元", help: "定级别管辖要用" },
       { key: "received_on", label: "收到诉状日期", kind: "date", help: "已被诉时填：答辩与管辖异议期限从这天起算", more: true },
     ],
@@ -684,7 +684,7 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始起草",
     goal: "请起草劳动仲裁申请书：我方为{side}；拟主张的请求：{claims}。入职日期：{hired_on}；离职日期：{left_on}；离职方式：{leave_type}；月工资：{monthly_wage}。",
     fields: [
-      { key: "side", label: "我方是", kind: "select", options: ["劳动者", "用人单位"], required: true },
+      { key: "side", label: "我方地位", kind: "select", options: ["劳动者", "用人单位"], required: true },
       claimsField("仲裁请求", "例如：支付违法解除劳动合同赔偿金", "一项一行；金额可留空，助手按工资与工龄算"),
       // 第 66 批（V40-C）：入职、离职、月工资助手先从劳动合同与工资记录里找，收进更多选项
       ...LABOR_BASICS.map(more),
@@ -711,7 +711,7 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始起草",
     goal: "请起草劳动仲裁答辩书：我方为{side}；收到仲裁申请书副本的日期：{received_on}；请算出答辩期届满日，管辖异议与反申请须在期满前提出；对方请求：{claims}。",
     fields: [
-      { key: "side", label: "我方是", kind: "select", options: ["用人单位", "劳动者"], required: true },
+      { key: "side", label: "我方地位", kind: "select", options: ["用人单位", "劳动者"], required: true },
       { key: "received_on", label: "收到申请书日期", kind: "date", required: true, help: "答辩期与管辖异议、反申请期限从这天起算" },
       { key: "claims", label: "对方请求", kind: "text", placeholder: "例如：违法解除赔偿金 12 万元、加班费" },
     ],
@@ -755,10 +755,10 @@ export const SCENARIOS: ScenarioCard[] = [
     args: { mode: "类案比对" },
     primary: "类案检索报告.docx",
     verb: "开始比对",
-    goal: "请用我提供的裁判文书做类案比对：{question}。我方立场：{side}。逐案抽取要素、与本案比对并分为支持、对立、可区分，归纳裁判规则（写明样本边界），只引用材料里的判决，不凭记忆补案例。",
+    goal: "请用我提供的裁判文书做类案比对：{question}。我方地位：{side}。逐案抽取要素、与本案比对并分为支持、对立、可区分，归纳裁判规则（写明样本边界），只引用材料里的判决，不凭记忆补案例。",
     fields: [
       { key: "question", label: "要回答的问题", kind: "long", required: true, goalOnly: true, placeholder: "例如：买受人签署验收单后以性能不达标主张减价，质量瑕疵的举证责任如何分配" },
-      { key: "side", label: "我方立场", kind: "text", goalOnly: true, placeholder: "例如：出卖人（一审原告），拟上诉" },
+      { key: "side", label: "我方地位", kind: "text", goalOnly: true, placeholder: "例如：出卖人（一审原告），拟上诉；只做研究可不填" },
     ],
     minMaterials: 2,
     steps: ["逐份抽取案号、法院、争点、理由与结果", "与本案逐项比对，分出支持、对立与可区分的裁判", "归纳裁判规则并写明样本边界，对立裁判单列", "写出哪几份可提交法院、怎么引用"],
@@ -1169,7 +1169,7 @@ export const SCENARIOS: ScenarioCard[] = [
     verb: "开始体检",
     goal: "请对这份已签合同做履约体检，我方是{side}，侧重{focus}，客户的目的是{goal}。材料之后的最新进展：{latest}。抽出双方义务与期限成台账、期限届满日用工具算，判定违约形态并挂事实出处，列对方可能的抗辩与可选的救济路径和时间节点，金额用工具算；需要我定的取舍合并成一次提问。",
     fields: [
-      { key: "side", label: "我方是", kind: "select", options: ["买方", "卖方", "发包人", "承包人", "出租人", "承租人", "委托方", "受托方", "其他"] },
+      { key: "side", label: "我方地位", kind: "select", options: ["买方", "卖方", "发包人", "承包人", "出租人", "承租人", "委托方", "受托方", "其他"], required: true },
       { key: "focus", label: "体检侧重", kind: "select", options: ["全面体检", "对方违约与救济", "我方自身履约风险", "指定订单或条款"] },
       { key: "goal", label: "处理目的", kind: "select", options: ["继续合作并追究", "尽快退出或更换合作方", "先评估再定"] },
       { key: "latest", label: "最新进展", kind: "long", goalOnly: true, placeholder: "例如：对方 11 月 20 日电话说下周补货，没有书面答复", help: "材料之后的电话、口头承诺等；不填按材料截止日分析" },
@@ -1697,7 +1697,7 @@ export function matterLine(m: { stance?: string | null } | null | undefined): Bu
 }
 
 /**
- * “我方是”按事项立场预选（第 31 批真实走查：事项立场已是“劳动者”，开始面板仍要再选一次）：
+ * “我方地位”按事项立场预选（第 31 批真实走查：事项立场已是“劳动者”，开始面板仍要再选一次）：
  * 立场（含括注里的词，“申请人（劳动者）”）与选项或选项的一半（“原告 / 申请人”）相同才预选；对不上返回 null，留给律师选。
  */
 export function sideOptionFor(options: readonly string[] | undefined, stance: string | null | undefined): string | null {

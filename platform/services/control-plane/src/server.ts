@@ -136,6 +136,11 @@ export interface DeviceRecord {
   /** 客户端版本（v9.3 P3 版本分布统计；随签名的登记请求上报）与最近一次报到的日期（只到日，避免每次同步都改写状态）。 */
   client_version?: string;
   client_seen_on?: string;
+  /**
+   * 第 70 批（V44）：律师给这台电脑起的名字（“办公室 iMac”）。只有律师自己填的这一串上云——不读主机名、不读系统用户名；
+   * 1～20 个字（去首尾空白、连续空白并成一个，不含控制字符与方向控制符）；没起过为缺省。
+   */
+  name?: string;
 }
 
 export interface SeatRecord {
@@ -427,6 +432,20 @@ class CpError extends Error {
 
 /** 客户端版本号：数字点分，可带短后缀（与内核 control-plane/client.ts 同一口径）。 */
 const CLIENT_VERSION_RE = /^\d{1,4}\.\d{1,4}\.\d{1,6}(?:-[0-9a-z.]{1,20})?$/;
+/** 第 70 批（V44）：电脑名称最多几个字（按字符计，中文一个字算一个）。 */
+export const DEVICE_NAME_MAX = 20;
+/**
+ * 电脑名称规整（第 70 批）：去首尾空白、连续空白并成一个空格；空串 / null = 去掉名字（返回 null）；
+ * 超长、含控制字符、方向控制符或零宽字符（可伪装成别的名字）的返回 undefined（调用方回 400）。纯函数。
+ */
+export function deviceNameOf(v: unknown): string | null | undefined {
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "string") return undefined;
+  if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/.test(v)) return undefined;
+  const t = v.replace(/\s+/g, " ").trim();
+  if (t === "") return null;
+  return [...t].length <= DEVICE_NAME_MAX ? t : undefined;
+}
 
 /** 每租户预先吊销的设备数上限（复核 S6-C09：防止目录被撑过通道响应上限）。 */
 const MAX_PRE_REVOKED = 1000;
@@ -1707,6 +1726,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const last = ss[0];
         return {
           device_id: d.cert.deviceId,
+          // 第 70 批（V44）：律师起的名字（没起过为 null，客户端按电脑类型 + 第几台写）
+          name: d.name ?? null,
           registered_at: d.registered_at,
           client_version: d.client_version ?? null,
           last_seen_on: d.client_seen_on ?? null,
@@ -2145,7 +2166,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (!d.revoked_at && d.client_version && newest && (d.client_version === "legacy" || cmpVer(d.client_version, newest) < 0)) flags.push("outdated");
     if (!d.revoked_at && t.accounts_required === true && !live) flags.push("suspended");
     // 没有账号的成员：设备编号与成员编号里含成员标识（可能是姓名拼音），只给证书指纹（复核 RA10B-05）
-    return { tid: t.tid, tenant_name: t.name ?? t.tid.replace(/^ten_/, ""), device_id: a ? d.cert.deviceId : `fp:${certFingerprint(d.cert)}`, uid: a ? d.cert.memberId : null, aid: a?.aid ?? null, email: a?.email ?? null, role: d.cert.role, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, registered_at: d.registered_at, revoked_at: d.revoked_at, session: live ? "active" : "none", flags };
+    return { tid: t.tid, tenant_name: t.name ?? t.tid.replace(/^ten_/, ""), device_id: a ? d.cert.deviceId : `fp:${certFingerprint(d.cert)}`, name: d.name ?? null, uid: a ? d.cert.memberId : null, aid: a?.aid ?? null, email: a?.email ?? null, role: d.cert.role, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, registered_at: d.registered_at, revoked_at: d.revoked_at, session: live ? "active" : "none", flags };
   };
   const cmpVer = (x: string, y: string): number => {
     const px = x.split(/[.-]/).map((n) => Number(n) || 0);
@@ -3951,7 +3972,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         session: sessionView(s, s.sid),
         onboarding: dev && !dev.revoked_at ? { state: "ready", tid: t.tid, device_id: dev.cert.deviceId } : null,
         // 第 69 批（D-297）：每台另给平台与最近使用时刻（deviceSummaries，与电脑数已满时的列表同一口径）
-        devices: devs.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, revoked_at: d.revoked_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, platform: sumById.get(d.cert.deviceId)?.platform ?? null, last_seen_at: sumById.get(d.cert.deviceId)?.last_seen_at ?? null, current: d.cert.deviceId === s.device_id, issuer: certIssuerOf(d.cert), session: liveSessionsOf(a.aid).some((x) => x.device_id === d.cert.deviceId) ? "active" : "none" })),
+        devices: devs.map((d) => ({ device_id: d.cert.deviceId, name: d.name ?? null, registered_at: d.registered_at, revoked_at: d.revoked_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, platform: sumById.get(d.cert.deviceId)?.platform ?? null, last_seen_at: sumById.get(d.cert.deviceId)?.last_seen_at ?? null, current: d.cert.deviceId === s.device_id, issuer: certIssuerOf(d.cert), session: liveSessionsOf(a.aid).some((x) => x.device_id === d.cert.deviceId) ? "active" : "none" })),
         sessions: liveSessionsOf(a.aid).map((x) => sessionView(x, s.sid)),
         // 第 66 批（V40）：个人账号（新电脑直接登录；第 68 批起台数按云端配置）与最近 5 次登录（时刻、类型、设备编号、平台、粗粒度网段）
         personal: autoEnrollReady(t),
@@ -4090,6 +4111,25 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "account", id: a.aid }, action: "device.auto_enroll", target: deviceId }, written: false, extra: rotated.map((id) => ({ tid: t.tid, actor: { kind: "account" as const, id: a.aid }, action: "device.auto_revoke", target: id })) });
       return send(res, 200, await seal("kwl-device-enroll", { tid: t.tid, issued_at: iso(at), device_id: deviceId, cert, root_public_key_pem: t.root_public_key_pem!, firm_bundle: t.firm_bundle!, ca: { kid: ca.kid, public_key_pem: ca.public_key_pem }, rotated }));
     }
+    // ─── 第 70 批（V44）：给本人账号的一台电脑起名字（PUT，账号会话；name 为空串或 null = 去掉名字）。不改设备证书与目录，只改这条登记的显示名 ───
+    const dn = /^\/v1\/auth\/devices\/([A-Za-z0-9_-]{1,128})\/name$/.exec(p);
+    if (method === "PUT" && dn) {
+      const b = parseJson(raw);
+      if (!("name" in b)) throw new CpError(400, "device_name_invalid", "缺少电脑名称（去掉名字请传空串）");
+      const name = deviceNameOf(b.name);
+      if (name === undefined) throw new CpError(400, "device_name_invalid", `电脑名称须为 1～${DEVICE_NAME_MAX} 个字，不含换行等控制字符`);
+      const d = accountDevices(a).find((x) => x.cert.deviceId === dn[1]);
+      if (!d) throw new CpError(404, "device_unknown", "这台设备不属于你的账号");
+      if (d.revoked_at) throw new CpError(409, "device_revoked", "这台电脑已经移除，不能再改名");
+      if ((d.name ?? null) !== name) {
+        if (name === null) delete d.name;
+        else d.name = name;
+        persistNow();
+      }
+      // 审计只记哪台电脑改了名，不记名字本身
+      auditCtx.set(res, { entry: { tid: a.tid, actor: { kind: "account", id: a.aid }, action: "device.rename", target: d.cert.deviceId, ...(name === null ? { detail: { cleared: 1 } } : {}) }, written: false });
+      return send(res, 200, { ok: true, device_id: d.cert.deviceId, name });
+    }
     const du = /^\/v1\/auth\/devices\/([A-Za-z0-9_-]{1,128})\/unbind$/.exec(p);
     if (method === "POST" && du) {
       const b = parseJson(raw);
@@ -4127,7 +4167,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 第 62 批：registration_policy / sms_available / features 是能力字段——客户端按它们做特性检测（旧云端没有，客户端照旧流程注册）
     if (method === "GET" && p === "/v1/meta") {
       const pol = registrationPolicy();
-      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites", "phone_login", "phone_bind", "account_switch", "device_limit_unbind", ...(accountCa() ? ["device_auto_enroll"] : [])], account_switch: true, ...(accountCa() ? { account_device_ca: { kid: accountCa()!.kid } } : {}) });
+      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites", "phone_login", "phone_bind", "account_switch", "device_limit_unbind", "device_name", "usage_request_ids", ...(accountCa() ? ["device_auto_enroll"] : [])], account_switch: true, ...(accountCa() ? { account_device_ca: { kid: accountCa()!.kid } } : {}) });
     }
     if (p.startsWith("/v1/me/") || p.startsWith("/v1/firm/")) return memberRoute(req, res, method, p, url, raw);
 
@@ -4505,8 +4545,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 第 68 批（V42）：明细与 personal 大数字用同一个分母（personalDenom；原来明细按“个人上限 ?? 每席位额度”，单席位加量后两者对不上），
       // 信封带 ratio_basis = "personal"，客户端据此不再折算
       const ownDenom = personalDenom(q, ctx, dev.cert.memberId);
+      // 第 70 批（V44）：每行另给客户端请求编号（出站闸门自己生成的 kwlg_…，云端账本本来就记着）与是否本机发出——
+      // 律师端内核在本机按编号对回“哪件事项的哪个任务”（事项名只在本机显示，不上云）
       const ownRecent = book.query({ tid: t.tid, uid: dev.cert.memberId, from: q.period_from, to: q.period_to, limit: 20 }).rows.map((r) => ({
         at: r.at,
+        client_request_id: r.client_request_id ?? null,
+        this_device: r.dev === dev.cert.deviceId,
         kind: r.qa ? ("qa" as const) : ("task" as const),
         alias: r.alias,
         label: r.alias ? (routing.models.find((x) => x.alias === r.alias)?.label ?? r.alias) : null,
@@ -4576,6 +4620,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const r = book.query({ tid: t.tid, uid: dev.cert.memberId, from: dayOf(now() - 180 * DAY_MS), ...(before ? { before } : {}), limit: lim + 1 });
       const rows = r.rows.slice(0, lim).map((x) => ({
         at: x.at,
+        // 第 70 批（V44）：同 /v1/quota 的 own_recent
+        client_request_id: x.client_request_id ?? null,
+        this_device: x.dev === dev.cert.deviceId,
         kind: x.qa ? ("qa" as const) : ("task" as const),
         alias: x.alias,
         label: x.alias ? (routing.models.find((m) => m.alias === x.alias)?.label ?? x.alias) : null,
@@ -4992,7 +5039,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         if (!d.revoked_at && d.client_version && (d.client_version === "legacy" || (clients.min_version && compareVersion(d.client_version, clients.min_version) < 0))) flags.push("old_client");
         if (!d.revoked_at && susp.has(d.cert.deviceId)) flags.push("rejected_after_logout");
         const last = [...sessions.values()].filter((x) => x.device_id === d.cert.deviceId && !isStaffId(x.aid) && accounts.get(x.aid)?.tid === t.tid).sort((x, y) => y.last_seen_at.localeCompare(x.last_seen_at))[0];
-        return { device_id: d.cert.deviceId, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, registered_at: d.registered_at, revoked: !!d.revoked_at, flags };
+        return { device_id: d.cert.deviceId, name: d.name ?? null, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, registered_at: d.registered_at, revoked: !!d.revoked_at, flags };
       });
       return send(res, 200, { devices: list.sort((x, y) => (y.last_seen_at ?? "").localeCompare(x.last_seen_at ?? "")) });
     }

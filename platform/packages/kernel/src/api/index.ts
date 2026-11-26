@@ -10,6 +10,7 @@ import { diagnoseView } from "../services/cloud-connection.ts";
 import { BUILTIN_MODEL_IDS, catalogReasonText, ModelCatalogService, type ModelScope } from "../services/model-catalog.ts";
 import { saveModelPref, selectedModelOf } from "../services/model-prefs.ts";
 import { launchCheck, QUOTA_VIEW_MAX_AGE_MS, type LaunchHint } from "../services/launch-check.ts";
+import { withUsageWhere, type UsageWhereRow } from "../services/usage-where.ts";
 import { calcDeadline } from "../tools/tools/deadline.ts";
 import { localToday } from "../services/local-date.ts";
 import { createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
@@ -4036,21 +4037,24 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const view = await cpCall(() => deps.controlPlane!.quota());
       // 成员编号换成本机成员名（控制面只知道有账号的成员的姓名）
       const names = new Map(db.all<{ user_id: string; display_name: string }>(`SELECT user_id, display_name FROM users WHERE tenant_id = ?`, [id.tenantId]).map((r) => [r.user_id, r.display_name]));
+      // 第 70 批（V44）：最近记录每行在本机对回“哪件事项的哪个任务”（按云端带回的请求编号；旧云端按 token 数与时刻），事项名只在本机
+      const ownRecent = (view as { own_recent?: UsageWhereRow[] }).own_recent;
       return {
         mode: "control_plane",
         ...view,
         ...(view.by_member ? { by_member: view.by_member.map((m) => ({ ...m, name: m.name ?? (m.uid ? (names.get(m.uid) ?? null) : null) })) } : {}),
+        ...(Array.isArray(ownRecent) ? { own_recent: withUsageWhere(db, id, ownRecent) } : {}),
       };
     },
     // 第 66 批（V40）：本人用量明细翻页（控制面签名信封 kwl-usage-page，只含本人的行；before = 上一页最后一行的时刻）
-    "quota.usage_page": async (p) => {
+    "quota.usage_page": async (p, id) => {
       if (!deps.controlPlane) return { mode: "local_dev", rows: [], next_before: null };
       const before = p?.before == null || p.before === "" ? null : String(p.before);
       if (before !== null && !Number.isFinite(Date.parse(before))) throw validation("翻页位置不正确");
       const limit = p?.limit == null ? 50 : Number(p.limit);
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw validation("每页条数须为 1～100");
       const page = await cpCall(() => deps.controlPlane!.quotaUsagePage({ before, limit }));
-      return { mode: "control_plane", ...page };
+      return { mode: "control_plane", ...page, rows: withUsageWhere(db, id, page.rows) ?? [] };
     },
     "quota.set_cap": async (p, id) => {
       requireAdminDevice(id);
@@ -4171,6 +4175,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       audit(db, id, "account.device_unbind", "device", dev, undefined, keyctx);
       void cp.sync().catch(() => undefined);
       return { ok: true };
+    },
+    // 第 70 批（V44）：给本人账号的一台电脑起名字（只上传律师自填的名字；空串 = 去掉名字）。名字的规整与长度由云端定，本机先粗查
+    "account.rename_device": async (p, id) => {
+      const cp = requireCpAccount();
+      const dev = String(p?.device_id ?? "");
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(dev)) throw validation("设备编号不合法");
+      const raw = p?.name === null || p?.name === undefined ? "" : p.name;
+      if (typeof raw !== "string" || [...raw.trim()].length > 20) throw validation("电脑名称最多 20 个字");
+      const r = await accountCp(() => cp.account("PUT", `/v1/auth/devices/${dev}/name`, { name: raw.replace(/\s+/g, " ").trim() }));
+      audit(db, id, "account.device_rename", "device", dev, undefined, keyctx);
+      return { ok: true, name: (r as { name?: string | null })?.name ?? null };
     },
     "account.reset_request": async (p) => {
       const cp = requireCpAccount();

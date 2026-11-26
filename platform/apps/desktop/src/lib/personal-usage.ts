@@ -107,7 +107,7 @@ export function rowScale(q: QuotaStatus): number {
 }
 
 /** 明细一行（own_recent 与翻页行合并后的统一形态）。 */
-export type UsageRow = Pick<UsagePageRow, "at" | "kind" | "alias" | "label" | "tokens_in" | "tokens_cached" | "tokens_out" | "outcome" | "partial" | "estimated"> & {
+export type UsageRow = Pick<UsagePageRow, "at" | "kind" | "alias" | "label" | "tokens_in" | "tokens_cached" | "tokens_out" | "outcome" | "partial" | "estimated" | "where"> & {
   charge_ratio?: number;
   /** 旧云端 own_recent 才有（内部单位）；只用来判断“是否计入”，不显示。 */
   charge?: number;
@@ -330,6 +330,24 @@ export function resetIn(resetsAt: string | null | undefined, nowMs: number): { n
   return { n: "1", unit: "小时内" };
 }
 
+/** 第 70 批（V44）：明细行“用在哪”的比较键（同一运行 / 同一问答会话 / 另一台电脑 / 不知道）。 */
+function whereKey(w: UsageRow["where"]): string {
+  if (!w) return "";
+  if ("elsewhere" in w) return "elsewhere";
+  return w.run_id ? `run:${w.run_id}` : w.conversation_id ? `qa:${w.conversation_id}` : `t:${w.task}|${w.matter ?? ""}`;
+}
+
+/**
+ * 第 70 批（V44）：明细一行“用在哪”的显示——任务名与事项名（问答为会话标题），只在本机对回；另一台电脑上的写明；对不上为 null（界面只留“任务 / 问答”标签）。
+ * href = 点开去哪（任务的运行页、问答会话）。纯函数。
+ */
+export function whereView(w: UsageRow["where"]): { main: string; sub: string | null; href: string | null; elsewhere: boolean } | null {
+  if (!w) return null;
+  if ("elsewhere" in w) return { main: "在另一台电脑上", sub: null, href: null, elsewhere: true };
+  if (w.conversation_id) return { main: w.matter ?? "问答", sub: null, href: `#/chat/${encodeURIComponent(w.conversation_id)}`, elsewhere: false };
+  return { main: w.task, sub: w.matter, href: w.run_id && w.matter_id ? `#/run/${encodeURIComponent(w.run_id)}/${encodeURIComponent(w.matter_id)}` : null, elsewhere: false };
+}
+
 /**
  * 最近记录里连续的“未计入”行并成一行（第 69 批）：上游临时出错时网关会自动重试，同一分钟里常连着好几条“未计入 · 未成功”，
  * 逐条列出只是噪声。只合并相邻、用途与模型相同、同为未计入且原因相同的行；计入额度的行一律逐条列。
@@ -341,7 +359,8 @@ export function collapseFree<T extends UsageRow>(rows: T[], scale: number): { at
   for (const r of rows) {
     const c = rowCharge(r, scale);
     const last = out[out.length - 1];
-    const same = !!last && last.row.kind === r.kind && (last.row.label ?? last.row.alias) === (r.label ?? r.alias);
+    // 第 70 批（V44）：用在不同任务（不同运行或问答会话）的行不合并
+    const same = !!last && last.row.kind === r.kind && (last.row.label ?? last.row.alias) === (r.label ?? r.alias) && whereKey(last.row.where) === whereKey(r.where);
     if (same && !c.counted && !last!.charge.counted && last!.charge.text === c.text && day(last!.at) === day(r.at)) last!.n += 1;
     // 第四轮（独立评审 R3-1 过渡办法）：同一分钟里同一类、同一模型的计入调用（一单任务一步里的连续调用）合成一行，计入额度相加
     else if (same && c.counted && last!.charge.counted && typeof r.charge_ratio === "number" && typeof last!.sum === "number" && !r.estimated && !last!.row.estimated && minute(last!.at) === minute(r.at)) {

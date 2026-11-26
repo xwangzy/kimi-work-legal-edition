@@ -15,7 +15,7 @@ export function render(page) {
   page.append(pageHead("电脑", "停用电脑请在管理员电脑的“设置 → 管理”里完成"), tools, box);
   let rows = [];
   const draw = () => {
-    const list = rows.filter((d) => (st.status === "active" ? !d.revoked : st.status === "revoked" ? d.revoked : true) && (!st.flag || (d.flags ?? []).includes(st.flag)) && matches(st.q, d.device_id, d.member, d.version, d.platform));
+    const list = rows.filter((d) => (st.status === "active" ? !d.revoked : st.status === "revoked" ? d.revoked : true) && (!st.flag || (d.flags ?? []).includes(st.flag)) && matches(st.q, d.device_id, d.name, d.member, d.version, d.platform));
     const versions = {};
     for (const d of rows) if (!d.revoked) versions[d.version ?? "未知"] = (versions[d.version ?? "未知"] ?? 0) + 1;
     clear(
@@ -35,7 +35,8 @@ export function render(page) {
         empty: rows.length ? "没有符合条件的电脑" : "还没有登记电脑",
         rowClass: (d) => (d.revoked ? "dim" : (d.flags ?? []).length ? "flagged" : ""),
         columns: [
-          { key: "device_id", label: "电脑编号", render: (d) => mono(d.device_id) },
+          // 第 70 批（V44）：律师给电脑起的名字（只有律师自填的这一串；没起过不显示）
+          { key: "device_id", label: "电脑编号", render: (d) => (d.name ? h("span", {}, h("div", {}, d.name), mono(d.device_id)) : mono(d.device_id)) },
           { key: "member", label: "成员", value: (d) => d.member ?? d.aid ?? "" },
           { key: "platform", label: "系统", value: (d) => d.platform ?? "—" },
           { key: "version", label: "客户端", render: (d) => mono(d.version ?? "—") },

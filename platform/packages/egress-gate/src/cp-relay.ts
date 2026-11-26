@@ -45,6 +45,8 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/auth\/(?:register|login|logout|me|password|password-reset\/request|password-reset\/confirm|sms\/send|phone)$/,
   /^\/v1\/auth\/sessions\/ses_[A-Za-z0-9_-]{16}\/revoke$/,
   /^\/v1\/auth\/devices\/[A-Za-z0-9_-]{1,128}\/unbind$/,
+  // 第 70 批（V44）：给本人账号的电脑起名字（PUT，账号会话；请求体只有律师自填的名字）
+  /^\/v1\/auth\/devices\/[A-Za-z0-9_-]{1,128}\/name$/,
   /^\/v1\/audit\?after=\d{1,15}&limit=\d{1,3}$/,
   // 第 13 批：开通与成员入组（开通码兑换、入组申请与取回、管理员发邀请与批准；记录编号固定 16 位）
   /^\/v1\/activation\/redeem$/,

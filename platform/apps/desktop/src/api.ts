@@ -850,7 +850,7 @@ export interface QuotaStatus {
   boosts?: { at: string; pct: number }[];
   unreconciled_leases?: number;
   /** 本人的使用明细（第 47 批）：本期最近 20 条，新的在前；不含请求内容。旧控制面没有该字段。 */
-  own_recent?: { at: string; kind: "qa" | "task"; alias: string | null; label: string | null; tokens_in: number; tokens_cached: number; tokens_out: number; charge: number; /** 第 62 批：这一条占本人分母的比例（控制面算；客户端不用 charge 折算金额）。旧控制面没有。 */ charge_ratio?: number; unit: "tokens" | "cny"; value_cny: number | null; outcome: string; partial: boolean; estimated: boolean; /** 第 62 批：上游没给真实用量、按估算——不计入额度，待核对。 */ pending?: boolean }[];
+  own_recent?: { at: string; kind: "qa" | "task"; alias: string | null; label: string | null; tokens_in: number; tokens_cached: number; tokens_out: number; charge: number; /** 第 62 批：这一条占本人分母的比例（控制面算；客户端不用 charge 折算金额）。旧控制面没有。 */ charge_ratio?: number; unit: "tokens" | "cny"; value_cny: number | null; outcome: string; partial: boolean; estimated: boolean; /** 第 62 批：上游没给真实用量、按估算——不计入额度，待核对。 */ pending?: boolean; /** 第 70 批：用在哪（本机对回）。 */ where?: UsageWhere }[];
   /**
    * 第 66 批（V40）：个人口径——真正卡住“我”的那一项（额度、律所上限、5 小时窗口、个人上限四者最小）。界面的“已用 / 剩余”优先用它；
    * limited_by = 正在卡住的那项（null = 都没卡）。旧控制面没有，回退到 own。
@@ -890,7 +890,12 @@ export interface UsagePageRow {
   estimated: boolean;
   pending: boolean;
   in_period: boolean;
+  /** 第 70 批（V44）：用在哪（内核在本机按请求编号对回的任务名与事项名，只在本机；对不上没有这一字段；别的电脑发出的为 elsewhere）。 */
+  where?: UsageWhere;
 }
+
+/** 第 70 批（V44）：明细一行用在哪——任务名（卡片名）与事项名（问答为会话标题）；elsewhere = 在本账号的另一台电脑上。 */
+export type UsageWhere = { task: string; matter: string | null; matter_id: string | null; run_id: string | null; conversation_id: string | null; how: "id" | "match" } | { elsewhere: true };
 
 /** 第 66 批：明细一页；next_before = 下一页的 before（null = 没有更早的了）。mode = local_dev 时没有明细。 */
 export interface UsagePage {
@@ -1684,6 +1689,8 @@ export const account = {
   changePassword: (current: string, next: string) => invoke<{ ok: true; other_sessions_revoked: number }>("account.change_password", { current, next }),
   revokeSession: (sid: string) => invoke<{ ok: true }>("account.revoke_session", { sid }),
   unbindDevice: (deviceId: string, password: string) => invoke<{ ok: true }>("account.unbind_device", { device_id: deviceId, password }),
+  /** 第 70 批（V44）：给本人账号的一台电脑起名字（空串 = 去掉名字；只上传这一串）。 */
+  renameDevice: (deviceId: string, name: string) => invoke<{ ok: true; name: string | null }>("account.rename_device", { device_id: deviceId, name }),
   /** 第 68 批（V42）：换账号登录时那个账号电脑数已满——就地移除它的一台旧电脑后继续切换（结果同 login）。 */
   unbindForLogin: (deviceId: string) => invoke<any>("account.unbind_for_login", { device_id: deviceId }),
 };

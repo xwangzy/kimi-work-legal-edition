@@ -69,7 +69,7 @@ export function sectionTitle(form: CardForm, key: SectionKey, o: { hasBrief: boo
     if (!o.hasDecide) return "补充要求";
     // 研究分析类：有“问题”栏的叫“要回答的问题”，其余（测算、争点、核查）叫“分析要点”
     if (form === "analyze") return o.hasQuestion ? "要回答的问题" : o.calc ? "测算口径" : "分析要点";
-    // 审查类：卡上有“我方是”一栏才叫“立场与重点”；立场取自事项的（审合同）叫“审查重点”，立场写在事项一行
+    // 审查类：卡上有“我方地位”一栏才叫“立场与重点”；立场取自事项的（审合同）叫“审查重点”，立场写在事项一行
     if (form === "review") return o.hasSide ? "立场与重点" : "审查重点";
     return { draft: "文书要点", compare: "比对重点", organize: "整理方式" }[form];
   }

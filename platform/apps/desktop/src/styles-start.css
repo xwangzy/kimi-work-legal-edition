@@ -115,7 +115,9 @@
 .ss-hint-btn { padding: 0; font-size: inherit; }
 .ss-hint-why { margin-left: var(--sp-1); color: var(--text-label); }
 .ss2 .ss-hint-edit { display: inline-flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); }
-.modal-actions-sticky button.ss-foot-why { flex: 1; text-align: left; padding: 0; font-size: var(--fs-caption); color: var(--status-warning-text); }
+/* 第 70 批（V44，全库统一）：“先填写：X”用中性灰（原来是全卡唯一的橙色，视线先落在提示上而不是表单上）；仍可点，点了滚到第一个没填的栏 */
+.modal-actions-sticky button.ss-foot-why { flex: 1; text-align: left; padding: 0; font-size: var(--fs-caption); color: var(--text-secondary); text-decoration: none; }
+.modal-actions-sticky button.ss-foot-why:hover { color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--border-hover); }
 
 /* ── 第 67 批（V41 工作线 B）开始面板单栏：右栏取消；交付与步骤收进标题栏“怎么做”，模型、去向、先看计划在开工按钮旁 ──
    版心 840px；段与段之间只有留白 + 一条细线；段名随业务形态（lib/card-layout.ts）；输入控件是面板里唯一有边框的东西 */
@@ -168,7 +170,8 @@
 .ss-send-ico { flex: none; display: inline-flex; color: var(--status-success-text); }
 .ss-send-ico svg { width: 14px; height: 14px; }
 .ss-send-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ss-send-more { flex: none; color: var(--accent-text); }
+.ss-send-more { flex: none; color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--border-hover); text-underline-offset: 3px; }
+.ss-send-btn:hover .ss-send-more { text-decoration-color: currentColor; }
 .ss-send-btn.warn { background: var(--status-warning-bg); color: var(--status-warning-text); }
 .ss-send-btn.warn .ss-send-ico { color: var(--status-warning-text); }
 .ss-send-btn.blocked { color: var(--status-danger-text); }
@@ -243,3 +246,13 @@
 
 /* 第五轮：补充要求缺省一行（聚焦或有内容时 3 行） */
 .ss-field textarea[rows="1"] { min-height: 0; resize: none; }
+
+/* 第 70 批（V44，全库统一）：标签对齐控件的第一行（原来对着“控件 + 说明行”整体居中，带说明的栏标签比控件中线低约 11）。
+   各类控件第一行高度：文字框 38、下拉 36、胶囊 29；多行文字与逐项填写按第一行（38）对 */
+.ss3 .ss-field { align-items: start; }
+.ss3 .ss-field > .ss-label, .ss3 .ss-field-long > .ss-label { display: flex; align-items: center; min-height: 38px; padding-top: 0; }
+.ss3 .ss-field[data-kind="select"] > .ss-label { min-height: 36px; }
+.ss3 .ss-field[data-kind="chips"] > .ss-label, .ss3 .ss-field[data-kind="multi"] > .ss-label { min-height: 29px; }
+@media (max-width: 760px) {
+  .ss3 .ss-field > .ss-label, .ss3 .ss-field-long > .ss-label { min-height: 0; }
+}

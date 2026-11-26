@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type QuotaStatus } from "../api.ts";
 import { fmtCount, fmtLeft, fmtPct, modelLabel, periodRange } from "../lib/firm-usage.ts";
-import { bjClock, bjDayTime, burstView, collapseFree, dailySeries, dayGroups, kindSplit, limitedNote, ownModels, paceView, personalView, planNoteText, resetIn, rowScale, usageStatus, usageTone, type UsageRow } from "../lib/personal-usage.ts";
+import { bjClock, bjDayTime, burstView, collapseFree, dailySeries, dayGroups, kindSplit, limitedNote, ownModels, paceView, personalView, planNoteText, resetIn, rowScale, usageStatus, usageTone, whereView, type UsageRow } from "../lib/personal-usage.ts";
 export { personalView };
 import { ListSkeleton, LoadError } from "../components/Loading.tsx";
 import { DailyBars, UsageRing } from "../components/UsageCharts.tsx";
@@ -349,7 +349,7 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
           <h2 className="pu-h" id="pu-log-h">
             最近记录
           </h2>
-          <span className="pu-sec-sub">只记用量，不含提问与文书内容</span>
+          <span className="pu-sec-sub">只记用量，不含提问与文书内容；事项名只在这台电脑上显示</span>
         </header>
 
         {!ledger ? (
@@ -374,10 +374,28 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
                     )}
                   </div>
                   <ul className="pu-day-rows">
-                    {g.rows.map(({ row: r, n, charge: c }, i) => (
+                    {g.rows.map(({ row: r, n, charge: c }, i) => {
+                      // 第 70 批（V44）：用在哪——本机按请求编号对回的任务名与事项名（事项名只在这台电脑上显示）
+                      const w = whereView(r.where);
+                      const what = w ? (
+                        <>
+                          <span className="pu-what-main">{w.main}</span>
+                          {w.sub && <span className="pu-what-sub">{w.sub}</span>}
+                        </>
+                      ) : null;
+                      return (
                       <li key={`${r.at}-${i}`} className={c.counted ? "" : "is-free"}>
                         <span className="pu-t">{bjClock(r.at) || "—"}</span>
                         <span className={`pu-kind-tag kind-${r.kind}`}>{r.kind === "qa" ? "问答" : "任务"}</span>
+                        {w?.href ? (
+                          <a className="pu-what" href={w.href} title={[w.main, w.sub].filter(Boolean).join(" · ")}>
+                            {what}
+                          </a>
+                        ) : (
+                          <span className={`pu-what${w?.elsewhere ? " is-elsewhere" : ""}`} title={w ? [w.main, w.sub].filter(Boolean).join(" · ") : undefined}>
+                            {what}
+                          </span>
+                        )}
                         <span className="pu-model">
                           {r.label ?? (r.alias ? modelLabel(r.alias) : "—")}
                           {n > 1 && <span className="pu-runs">{c.counted ? `${n} 次调用` : `连续 ${n} 次（自动重试）`}</span>}
@@ -386,7 +404,8 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
                           {c.text}
                         </span>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 </div>
               );

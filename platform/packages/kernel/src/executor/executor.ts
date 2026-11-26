@@ -1136,6 +1136,11 @@ export const PREFLIGHT_UNSELECTED_RULE = "本事项还有材料这次没有勾�
 export const PARTIES_MATERIAL_PREFIX = "当事人信息（律师填写）";
 // 第 64 批：材料里加了委托诉讼代理人与按各项自动生成的“文书首部写法”（apps/desktop/src/lib/parties.ts headerLines），首部照抄、不再由模型自己拼
 export const PREFLIGHT_PARTIES_RULE = "本事项有《当事人信息（律师填写）》：文书首部的当事人身份事项与委托诉讼代理人以它为准（材料末尾“文书首部写法”可直接照抄，称谓按本文书的诉讼地位改写），它没写的项写【待填】，不向律师追问。";
+/**
+ * 第 70 批（V44）：这次一份材料都没勾（D-183：没勾 = 不设边界，本事项全部材料都可读）。真实运行里助手读到“本次指定材料 0 份”就当作没有材料，
+ * 回报“本次指定材料为 0 份，因此未读取本事项其余材料”，转头向律师要请求金额等材料里本来就有的数——开始面板却写着“读取全部 8 份”。份数照写，另说清可读全部。
+ */
+export const PREFLIGHT_ALL_RULE = "这次律师没有勾选材料，表示本事项的全部材料你都可以读（不是没有材料）：先看材料目录、读与本任务相关的材料再动笔，材料里有的数据不向律师追问；";
 export const PREFLIGHT_EMPTY_RULE =
   "本事项没有材料、也没有确认过的事实：案情以任务说明为准，不必先查材料目录；任务说明里也没有案情的，第一步就用提问工具一次问清（纠纷类型、基本事实、请求、对方是谁），不要先起草。";
 
@@ -1146,7 +1151,8 @@ export function preflightLine(p: Preflight): string {
   const empty = p.selected === 0 && p.matterMaterials === 0 && p.confirmedFacts === 0 ? PREFLIGHT_EMPTY_RULE : "";
   const parties = p.parties ? PREFLIGHT_PARTIES_RULE : "";
   const unselected = p.selected > 0 && p.matterMaterials > p.selected ? PREFLIGHT_UNSELECTED_RULE : "";
-  return `【开工前已知】${counts}${PREFLIGHT_KNOWN_RULE}${unselected}${parties}${empty}\n`;
+  const all = p.selected === 0 && p.matterMaterials > 0 ? PREFLIGHT_ALL_RULE : "";
+  return `【开工前已知】${counts}${PREFLIGHT_KNOWN_RULE}${unselected}${all}${parties}${empty}\n`;
 }
 
 /** 从库里算开工前已知的各项数目（不信任界面传值）。纯查询。 */

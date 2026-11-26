@@ -175,7 +175,7 @@
 .pu-day-tag { margin-left: 8px; padding: 1px 6px; border-radius: var(--r-xs); background: var(--bg-muted); font-weight: 500; color: var(--text-secondary); }
 .pu-day-sum b { font-weight: 600; color: var(--text-strong); }
 .pu-day-rows { margin: 0; padding: 0; list-style: none; }
-.pu-day-rows li { display: grid; grid-template-columns: 48px 52px minmax(0, 1fr) auto; align-items: center; gap: 12px; height: 38px; border-bottom: 1px solid var(--border-subtle); }
+.pu-day-rows li { display: grid; grid-template-columns: 48px 52px minmax(0, 1fr) auto auto; align-items: center; gap: 12px; height: 38px; border-bottom: 1px solid var(--border-subtle); }
 .pu-day-rows li:hover { background: var(--bg-hover-soft); }
 .pu-t { font-size: var(--fs-caption); color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pu-kind-tag { justify-self: start; padding: 1px 8px; border-radius: var(--r-full); background: var(--bg-muted); font-size: var(--fs-xs); color: var(--text-label); white-space: nowrap; }
@@ -261,3 +261,12 @@
 /* 第六轮评审后（R6-1）：横排套餐卡三等分、上下内边距相同 */
 .pu-split.single .pu-plan { grid-template-columns: repeat(3, minmax(0, 1fr)); padding-top: 24px; padding-bottom: 24px; }
 .pu-split.single .pu-plan > * { align-self: start; }
+
+/* 第 70 批（V44）：最近记录每行用在哪（任务名 · 事项名；问答为会话标题）——本机对回，事项名只在这台电脑上显示 */
+.pu-what { min-width: 0; display: flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap; color: var(--text-primary); font-size: var(--fs-caption); text-decoration: none; }
+.pu-what-main { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.pu-what-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); }
+a.pu-what:hover .pu-what-main { text-decoration: underline; text-underline-offset: 3px; }
+.pu-what.is-elsewhere { color: var(--text-secondary); }
+.pu-what.is-elsewhere .pu-what-main { font-weight: 400; }
+.pu-day-rows .pu-model { justify-self: end; color: var(--text-secondary); }

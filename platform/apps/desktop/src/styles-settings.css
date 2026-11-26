@@ -209,3 +209,11 @@
 /* 第 66 批第二轮（独立评审 R1）：顶部橙色提醒（如“还没有生成恢复包”）降为中性小条：浅灰底、正文色、前面一个橙点；红色（要马上处理的）不变 */
 .top-notice.tone-orange { background: var(--bg-subtle); color: var(--text-primary); border: 1px solid var(--border-subtle); }
 .top-notice.tone-orange::before { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-warning-solid); flex: none; }
+
+/* 第 70 批（V44）：电脑改名（设置 · 账号 › 登录过的电脑） */
+.account-name-hint { margin-top: 2px; font-size: var(--fs-xs); }
+.account-rename { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.account-rename-row { display: flex; align-items: center; gap: 8px; }
+.account-rename-label { flex: none; font-size: var(--fs-caption); color: var(--text-secondary); }
+.account-rename-row input { flex: 1 1 auto; min-width: 0; height: 30px; }
+.account-rename-note { font-size: var(--fs-xs); }

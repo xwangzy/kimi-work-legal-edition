@@ -1,6 +1,6 @@
 {
   "name": "kimi-work-legal-cloud",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "private": true,
   "type": "module",
   "description": "Kimi Work 法律行业发行版——云端：统一控制台、控制面（账号、设备、额度、路由、计费）、签名服务、法律模型网关、检索等。运行时只依赖 Node.js 内置模块。",

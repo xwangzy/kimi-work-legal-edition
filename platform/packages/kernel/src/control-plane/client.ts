@@ -164,6 +164,9 @@ export interface UsagePageRow {
   estimated: boolean;
   pending: boolean;
   in_period: boolean;
+  /** 第 70 批（V44）：出站闸门给这次请求生成的编号（kwlg_…；云端 1.5.1 起有，旧云端没有这一字段）与是否本机发出。 */
+  client_request_id?: string | null;
+  this_device?: boolean;
 }
 
 type CallResult = { ok: true; status: number; json: Record<string, unknown> } | { ok: false; error: string; status?: number; message?: string; retry_after_s?: number };
@@ -618,7 +621,7 @@ export class ControlPlaneClient {
   // ─── 账号（第 44 批）：已激活设备上的登录（带设备签名，会话直接绑本机）、退出、改密、设备与会话管理 ───
 
   /** 账号接口原样调用（带设备签名与会话头）；失败抛带 code 的错误。 */
-  async account(method: "GET" | "POST", path: string, body?: unknown): Promise<Record<string, unknown>> {
+  async account(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<Record<string, unknown>> {
     if (!ACCOUNT_PATH.test(path)) throw new Error("account_path_invalid");
     const r = await this.call(method, path, method === "GET" ? undefined : (body ?? {}));
     if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null, retryAfter: r.retry_after_s ?? null, ...(r.error === "client_outdated" ? { minVersion: this.outdated?.min_version ?? null } : {}) });

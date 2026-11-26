@@ -15,7 +15,7 @@ import { MetaGate } from "./AuthShell.tsx";
 import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta, useRegistrationMetaState } from "./SmsCodeFields.tsx";
 import { DeviceLimitList } from "./DeviceLimitList.tsx";
 import { currentProfileMark, isSwitchResult, waitForProfileSwitch } from "../lib/account-switch.ts";
-import { maskPhone, passwordIdOk, switchingText, type AccountDevice } from "../lib/account.ts";
+import { canRenameDevices, checkDeviceName, DEVICE_NAME_MAX, deviceName, maskPhone, passwordIdOk, switchingText, type AccountDevice } from "../lib/account.ts";
 
 /** 账号状态变了（登录、退出）：App 顶部横幅据此立即刷新。 */
 export const ACCOUNT_CHANGED = "kwl:account-changed";
@@ -277,6 +277,57 @@ function ResetBox({ email: initialEmail, onBack, page = false }: { email: string
   );
 }
 
+/**
+ * 第 70 批（V44）：电脑改名的一行编辑框（设置 · 账号 › 登录过的电脑）。回车保存、Esc 取消；空 = 去掉名字；
+ * 口径与云端同一（最多 20 个字，不含换行等控制字符）。只上传这一串，不读主机名。
+ */
+function DeviceNameEditor({ initial, current, onSave, onCancel }: { initial: string; current: boolean; onSave: (name: string) => Promise<void>; onCancel: () => void }) {
+  const [v, setV] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const chk = checkDeviceName(v);
+  const save = async () => {
+    if (!chk.ok || busy) return;
+    if (chk.name === initial) return onCancel();
+    setBusy(true);
+    setErr("");
+    try {
+      await onSave(chk.name);
+    } catch (e) {
+      setErr((e as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="account-rename">
+      <label className="account-rename-row">
+        <span className="account-rename-label">{current ? "这台电脑的名字" : "电脑名字"}</span>
+        <input
+          type="text"
+          aria-label="电脑名字"
+          value={v}
+          maxLength={DEVICE_NAME_MAX + 8}
+          placeholder="例如：办公室 iMac、家里的 ThinkPad"
+          autoFocus
+          onChange={(e) => setV(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === "Enter") void save();
+            if (e.key === "Escape") onCancel();
+          }}
+        />
+        <button type="button" className="btn-primary btn-sm" disabled={busy || !chk.ok} onClick={() => void save()}>
+          {busy ? "正在保存…" : "保存"}
+        </button>
+        <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={onCancel}>
+          取消
+        </button>
+      </label>
+      <div className={!chk.ok || err ? "account-rename-note activate-error" : "account-rename-note muted"}>{!chk.ok ? chk.why : err || `最多 ${DEVICE_NAME_MAX} 个字；留空即去掉名字。名字会保存到云端，在你登录的各台电脑上显示。`}</div>
+    </div>
+  );
+}
+
 /** 第 66 批（V40）：“最近登录”一行——哪台电脑、登录还是新电脑登记、平台、时刻与粗粒度网段。 */
 function recentLoginLine(x: NonNullable<AccountMe["recent_logins"]>[number], devices: AccountMe["devices"]): { title: string; meta: string } {
   const d = x.device_id ? devices.find((y) => y.device_id === x.device_id) : undefined;
@@ -476,6 +527,8 @@ export function AccountSection({ firm }: { firm: string | null }) {
   const [meErr, setMeErr] = useState("");
   const [msg, setMsg] = useState("");
   const [unbind, setUnbind] = useState<{ id: string; title: string } | null>(null);
+  // 第 70 批（V44）：正在改名的那台电脑
+  const [renaming, setRenaming] = useState<string | null>(null);
   const load = () => {
     setMeErr("");
     account
@@ -520,6 +573,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
   const devices = me?.devices ?? [];
   const sessions = me?.sessions ?? [];
   const activeDevices = devices.filter((d) => !d.revoked_at);
+  const renamable = canRenameDevices(devices);
   return (
     <>
       {msg && <div className="banner">{msg}</div>}
@@ -565,12 +619,35 @@ export function AccountSection({ firm }: { firm: string | null }) {
           <ul className="account-list">
             {devices.map((d) => {
               const l = deviceLine(d);
+              if (renaming === d.device_id)
+                return (
+                  <li key={d.device_id}>
+                    <DeviceNameEditor
+                      initial={deviceName(d) ?? ""}
+                      current={!!d.current}
+                      onCancel={() => setRenaming(null)}
+                      onSave={async (name) => {
+                        await account.renameDevice(d.device_id, name);
+                        setRenaming(null);
+                        setMsg(name ? `已改名为“${name}”。` : "已去掉这台电脑的名字。");
+                        load();
+                      }}
+                    />
+                  </li>
+                );
               return (
                 <li key={d.device_id} className={d.revoked_at ? "off" : ""}>
                   <div className="account-list-main">
                     <b>{l.title}</b> <span className={`tag tag-${l.state.tone === "ok" ? "ok" : l.state.tone === "bad" ? "bad" : "gray"}`}>{l.state.text}</span>
                     <div className="muted">{l.meta}</div>
+                    {/* 第 70 批（V44）：这台电脑还没有名字时提示起一个——换电脑、电脑数已满要移除一台时，靠名字认出是哪一台 */}
+                    {renamable && d.current && !d.revoked_at && !deviceName(d) && <div className="account-name-hint muted">给这台电脑起个名字（例如“办公室 iMac”），换电脑或移除时好认。只上传你填的名字。</div>}
                   </div>
+                  {renamable && !d.revoked_at && (
+                    <button type="button" className="btn-ghost btn-sm" onClick={() => setRenaming(d.device_id)}>
+                      {deviceName(d) ? "改名" : "起名"}
+                    </button>
+                  )}
                   {!d.revoked_at &&
                     (d.current ? (
                       <span className="muted">{me.personal ? "要停用这台，退出登录即可" : "要停用这台，请退出登录或请管理员处理"}</span>
@@ -607,7 +684,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
         <SettingRow label="登录记录" hint="仍有效的登录。不认识的登录请马上下线，并修改密码。">
           <ul className="account-list">
             {sessions.map((s) => {
-              const l = sessionLine(s);
+              const l = sessionLine(s, Date.now(), devices);
               return (
                 <li key={s.sid}>
                   <div className="account-list-main">

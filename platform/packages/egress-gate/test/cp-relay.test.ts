@@ -17,10 +17,13 @@ test("路径与方法白名单：控制面已知接口可达；网关订阅、�
     ["POST", "/v1/drafts/drf_0123456789abcdef/signatures"],
     ["PUT", "/v1/anon-matters/AAAAAAAAAAAAAAAAAAAAAA"],
     ["DELETE", "/v1/connectors/firm-dms"],
+    // 第 70 批：给本人账号的电脑起名字
+    ["PUT", "/v1/auth/devices/dev_qian_qian_D2/name"],
   ] as const) {
     assert.equal(cpRelayAllowed({ method: m, path: p, headers: H, body: "" }), null, `${m} ${p}`);
   }
   assert.equal(cpRelayAllowed({ method: "GET", path: "/v1/feed/gateway", headers: H, body: "" }), "cp_path_not_allowed");
+  assert.equal(cpRelayAllowed({ method: "PUT", path: "/v1/auth/devices/dev_x/name/extra", headers: H, body: "" }), "cp_path_not_allowed", "改名路径只许到 /name");
   assert.equal(cpRelayAllowed({ method: "GET", path: "/v1/../admin", headers: H, body: "" }), "cp_path_not_allowed");
   assert.equal(cpRelayAllowed({ method: "GET", path: "https://elsewhere.example/v1/policy", headers: H, body: "" }), "cp_path_not_allowed");
   assert.equal(cpRelayAllowed({ method: "PATCH", path: "/v1/policy", headers: H, body: "" }), "cp_method_not_allowed");

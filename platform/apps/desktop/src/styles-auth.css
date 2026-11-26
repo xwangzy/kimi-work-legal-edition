@@ -91,7 +91,7 @@
 /* ── 按钮 ── */
 .auth-card .activate-submit, .auth-card .auth-btn { width: 100%; height: 46px; margin-top: 4px; padding: 0 16px; border-radius: var(--r-md); font-size: var(--fs-md); font-weight: 500; }
 /* 不可点：实心中灰白字（不用半透明：部分合成层上出现竖向接缝），既不像输入框，也不像可点的黑按钮 */
-.auth-card .activate-submit:disabled, .auth-card .auth-btn:disabled { background: var(--border-hover); border-color: transparent; color: var(--text-on-solid); opacity: 1; cursor: default; }
+.auth-card .activate-submit:disabled, .auth-card .auth-btn:disabled { background: var(--btn-primary-disabled); border-color: transparent; color: var(--btn-primary-disabled-text); opacity: 1; cursor: default; }
 .auth-card .activate-actions { gap: 10px; margin-top: 16px; }
 .auth-card .activate-actions .btn-primary, .auth-card .activate-actions .btn-ghost { height: 44px; padding: 0 18px; border-radius: var(--r-md); font-size: var(--fs-body); }
 .auth-card .activate-actions .btn-primary { flex: 1 1 auto; }
@@ -191,4 +191,4 @@ button.auth-device-row:focus-visible { outline: 2px solid var(--focus-ring); out
 /* 第 69 批第三轮（独立评审 R2-4）：深色下输入框比卡片亮一档、禁用主按钮压暗（原来输入框与卡片几乎同色，禁用按钮反而最亮） */
 :root[data-theme="dark"] .auth-card .auth-input, :root[data-theme="dark"] .auth-card .activate-code, :root[data-theme="dark"] .auth-card .auth-input-group, :root[data-theme="dark"] .auth-card .sms-row { background: var(--bg-elevated); }
 :root[data-theme="dark"] .auth-card .auth-input-group .auth-input, :root[data-theme="dark"] .auth-card .sms-row .auth-input { background: transparent; }
-:root[data-theme="dark"] .auth-card .activate-submit:disabled, :root[data-theme="dark"] .auth-card .auth-btn:disabled { background: var(--border-default); color: var(--text-secondary); }
+/* 第 70 批（V44）：禁用主按钮与全库同一写法（--btn-primary-disabled，深色下自动是白底按钮压暗），不再单独压成与输入框同色 */

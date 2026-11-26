@@ -49,7 +49,8 @@ test("我的电脑与登录记录：第几台、这台电脑、最近使用、�
   assert.equal(deviceOrdinal("dev_firm_li_D3"), 3);
   const cur = deviceLine({ device_id: "dev_firm_li", registered_at: "2026-11-01T02:00:00.000Z", client_version: "0.2.0", last_seen_on: "2026-11-14", current: true, session: "active" }, NOW);
   assert.equal(cur.title, "这台电脑");
-  assert.equal(cur.meta, "11 月 1 日登记 · 最近使用 11 月 14 日 · 版本 0.2.0");
+  // 第 70 批：“最近使用”改为相对时间（与电脑数已满的列表同一写法），当天写“今天”
+  assert.equal(cur.meta, "11 月 1 日登记 · 最近使用 今天 · 版本 0.2.0");
   assert.deepEqual(cur.state, { text: "已登录", tone: "ok" });
   const other = deviceLine({ device_id: "dev_firm_li_D2", registered_at: "2025-12-31T17:00:00.000Z", client_version: null, last_seen_on: null, session: "none" }, NOW);
   assert.equal(other.title, "第 2 台电脑");

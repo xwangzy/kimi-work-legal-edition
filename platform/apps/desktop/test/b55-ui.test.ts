@@ -175,10 +175,10 @@ test("我的电脑一行（连真实控制面复评发现）：不显示占位�
   const NOW = Date.parse("2026-11-22T04:00:00.000Z");
   // 北京时间 11 月 22 日 03:04 登记；服务器把当天记成 UTC 的 11 月 21 日
   const d = deviceLine({ device_id: "dev_firm_li", registered_at: "2026-11-21T19:04:00.000Z", client_version: "legacy", last_seen_on: "2026-11-21", current: true, session: "active" }, NOW);
-  assert.equal(d.meta, "11 月 22 日登记 · 最近使用 11 月 22 日");
+  assert.equal(d.meta, "11 月 22 日登记 · 最近使用 今天", "第 70 批起相对时间；仍不早于登记日");
   // 正常情形不变：最近使用晚于登记日照原样显示，真实版本号照常显示
   const e = deviceLine({ device_id: "dev_firm_li", registered_at: "2026-11-01T02:00:00.000Z", client_version: "0.2.0", last_seen_on: "2026-11-14", current: true, session: "active" }, NOW);
-  assert.equal(e.meta, "11 月 1 日登记 · 最近使用 11 月 14 日 · 版本 0.2.0");
+  assert.equal(e.meta, "11 月 1 日登记 · 最近使用 11 月 14 日 · 版本 0.2.0", "不是今天、昨天的写日期");
 });
 
 test("第三轮入口还在：账号页“本所”一行名称与姓名同一个 span；起草律所策略一行一项；操作记录时间列不再靠右", () => {
