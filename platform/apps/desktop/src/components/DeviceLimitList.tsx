@@ -44,7 +44,7 @@ export function DeviceLimitList(p: { devices: AccountDevice[]; canUnbind: boolea
       </div>
       <p className="auth-lead">
         {who ? <b>{who}</b> : "这个账号"}
-        {who ? " " : ""}最多同时在 {n} 台电脑上使用{p.canUnbind ? "，移除一台即可在这台电脑上继续。" : "。"}
+        {who ? " " : ""}最多登记 {n} 台电脑{p.canUnbind ? "，移除一台即可在这台电脑上继续。" : "。"}
       </p>
       <div className="auth-devices" role={p.canUnbind ? "radiogroup" : "list"} aria-label="这个账号已登记的电脑">
         {p.devices.map((d) => {
@@ -86,7 +86,7 @@ export function DeviceLimitList(p: { devices: AccountDevice[]; canUnbind: boolea
         <>
           {/* 第 69 批真实验收：被移除的电脑在云端吊销，同一账号不能再在那里登录，备份、导出也随之停用（防丢失电脑上的案卷被复制）。
               第 68 批这里写“之后可重新登录”，与实际不符；第二轮（独立评审）：后果放在按钮上方，做决定前读到 */}
-          <p className="auth-fine">{chosen?.session === "active" ? "那台电脑正在使用，移除后立即停用；那里的资料如还要用，先在那台电脑上备份。" : "移除后那台电脑上的这个账号随即停用（不能再用 AI、备份或导出）；那里的资料如还要用，先在那台电脑上备份。"}</p>
+          <p className="auth-fine">{chosen?.session === "active" ? "那台电脑正在使用，移除后立即停用；那台电脑上的资料仍加密保留。" : "移除后那台电脑上的这个账号随即停用（不能再用 AI、备份或导出），资料仍加密保留在那台电脑上。"}</p>
           <button type="button" className="btn-primary activate-submit" disabled={!pick || busy} onClick={() => void submit()}>
             {busy ? "正在移除…" : "移除并继续"}
           </button>

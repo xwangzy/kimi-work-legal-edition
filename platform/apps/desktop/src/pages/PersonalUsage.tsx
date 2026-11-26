@@ -68,6 +68,17 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
           <div>
             <b>暂时看不到用量</b>
             <span>{q.edition === "trial" ? "试用版不统计用量。" : (q.note ?? "还没有连接 Kimi Work 服务。登录后，这里显示你本期的用量、每天用了多少与重置时间。")}</span>
+            {/* 第四轮（独立评审 R3-3）：异常状态给出能做的事 */}
+            {q.edition !== "trial" && (
+              <span className="pu-empty-actions">
+                <button type="button" className="btn-ghost btn-sm" onClick={load}>
+                  重试
+                </button>
+                <button type="button" className="btn-ghost btn-sm" onClick={() => (window.location.hash = "#/connections/general")}>
+                  检测连接
+                </button>
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -98,6 +109,8 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
   const planNote = planNoteText(plan?.note);
   const validUntil = plan?.valid_until ? dayLabel(plan.valid_until, nowMs) : "";
   const usedSum = kinds ? kinds.task.ratio + kinds.qa.ratio : 0;
+  // 第五轮（独立评审 R4-1）：只用过一类、一个模型时不单独成卡（每日用量卡头已写明“任务调用 / 问答”），套餐卡占满一行横排
+  const whereShown = (!!kinds && kinds.task.requests > 0 && kinds.qa.requests > 0) || models.length > 1;
 
   const more = async () => {
     if (items.length > visible) {
@@ -184,7 +197,8 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
         </div>
 
         {/* 5 小时频率限制：窗口是全所共用的，单席位时就是本人的才显示；多人律所被窗口卡住时只在上面的状态句里说 */}
-        {burst && v.solo && (() => {
+        {/* 第五轮：本期额度已用完时 5 小时一行没有意义（新任务本来就发不起），不显示 */}
+        {burst && v.solo && !(v.capped && v.left <= 0) && (() => {
           const w = burstView(burst, v);
           const wt = w.used >= 1 || v.paused === "burst" ? "full" : w.used >= 0.8 ? "high" : "ok";
           return (
@@ -210,7 +224,7 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
 
       {/* ── 每天用了多少（旧云端没有按日聚合时整块不显示） ── */}
       {series && (
-        <section className="pu-card pu-daily" aria-labelledby="pu-daily-h">
+        <section className={`pu-card pu-daily${series.active < 3 ? " sparse" : ""}`} aria-labelledby="pu-daily-h">
           <header className="pu-sec-head">
             <h2 className="pu-h" id="pu-daily-h">
               每日用量
@@ -226,8 +240,9 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
         </section>
       )}
 
-      <div className="pu-split">
-        {/* ── 用在哪 ── */}
+      <div className={`pu-split${whereShown ? "" : " single"}`}>
+        {/* ── 用在哪 ── 第四轮：旧云端没有用途拆分、又只用过一个模型时没有可说的，整卡不显示（不留一张空卡） */}
+        {whereShown && (
         <section className="pu-card pu-where" aria-labelledby="pu-where-h">
           <header className="pu-sec-head">
             <h2 className="pu-h" id="pu-where-h">
@@ -239,7 +254,13 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
             <p className="pu-quiet">{per}还没有用量。用过之后，这里按任务与问答、按模型分开列出各计入多少。</p>
           ) : (
             <>
-              {kinds && usedSum > 0 && (
+              {/* 第四轮（独立评审 R3-2）：只用过一类时一句话说完（不画只有一段的条、不列“0 次 0%”的零值行） */}
+              {kinds && usedSum > 0 && (kinds.task.requests === 0 || kinds.qa.requests === 0) && (
+                <p className="pu-kind-one">
+                  全部用在<b>{kinds.qa.requests === 0 ? "任务" : "问答"}</b>：{fmtCount(kinds.qa.requests === 0 ? kinds.task.requests : kinds.qa.requests)} 次调用，计入 <b>{fmtPct(usedSum)}</b>
+                </p>
+              )}
+              {kinds && usedSum > 0 && kinds.task.requests > 0 && kinds.qa.requests > 0 && (
                 <div className="pu-kind">
                   <div className="pu-kind-bar" aria-hidden="true">
                     {kinds.task.ratio > 0 && <span className="k-task" style={{ flexGrow: kinds.task.ratio / usedSum }} />}
@@ -286,6 +307,7 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
             </>
           )}
         </section>
+        )}
 
         {/* ── 套餐 ── */}
         <section className="pu-card pu-plan" aria-labelledby="pu-plan-h">
@@ -353,9 +375,9 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
                         <span className={`pu-kind-tag kind-${r.kind}`}>{r.kind === "qa" ? "问答" : "任务"}</span>
                         <span className="pu-model">
                           {r.label ?? (r.alias ? modelLabel(r.alias) : "—")}
-                          {n > 1 && <span className="pu-runs">连续 {n} 次（自动重试）</span>}
+                          {n > 1 && <span className="pu-runs">{c.counted ? `${n} 次调用` : `连续 ${n} 次（自动重试）`}</span>}
                         </span>
-                        <span className="pu-charge" title={n > 1 ? `连续 ${n} 次，都没有计入额度` : `读入 ${fmtCount(r.tokens_in)}（其中重复利用 ${fmtCount(r.tokens_cached)}）· 写出 ${fmtCount(r.tokens_out)}`}>
+                        <span className="pu-charge" title={n > 1 ? (c.counted ? `同一分钟内 ${n} 次调用，合计计入` : `连续 ${n} 次，都没有计入额度`) : `读入 ${fmtCount(r.tokens_in)}（其中重复利用 ${fmtCount(r.tokens_cached)}）· 写出 ${fmtCount(r.tokens_out)}`}>
                           {c.text}
                         </span>
                       </li>

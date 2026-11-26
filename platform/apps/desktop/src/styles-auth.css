@@ -191,4 +191,4 @@ button.auth-device-row:focus-visible { outline: 2px solid var(--focus-ring); out
 /* 第 69 批第三轮（独立评审 R2-4）：深色下输入框比卡片亮一档、禁用主按钮压暗（原来输入框与卡片几乎同色，禁用按钮反而最亮） */
 :root[data-theme="dark"] .auth-card .auth-input, :root[data-theme="dark"] .auth-card .activate-code, :root[data-theme="dark"] .auth-card .auth-input-group, :root[data-theme="dark"] .auth-card .sms-row { background: var(--bg-elevated); }
 :root[data-theme="dark"] .auth-card .auth-input-group .auth-input, :root[data-theme="dark"] .auth-card .sms-row .auth-input { background: transparent; }
-:root[data-theme="dark"] .auth-card .activate-submit:disabled, :root[data-theme="dark"] .auth-card .auth-btn:disabled { background: var(--bg-elevated); color: var(--text-secondary); }
+:root[data-theme="dark"] .auth-card .activate-submit:disabled, :root[data-theme="dark"] .auth-card .auth-btn:disabled { background: var(--border-default); color: var(--text-secondary); }

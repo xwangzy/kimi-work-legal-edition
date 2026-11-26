@@ -267,8 +267,15 @@ export function deviceChoiceLine(d: AccountDevice, now = Date.now()): { title: s
   const seen = agoLabel(d.last_seen_at ?? d.last_seen_on, now);
   const version = d.client_version && d.client_version !== "legacy" ? d.client_version : null;
   // 第二轮（独立评审）：另写登记日期——两台同型号电脑时，靠“哪天登记的”认出是哪一台
-  const reg = d.registered_at ? agoLabel(d.registered_at, now) : "";
-  const meta = [seen ? `最近使用 ${seen}` : "", reg ? `${reg}${/\d$/.test(reg) ? " " : ""}登记` : "", version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
+  // 第四轮（独立评审 R3-3）：最近使用用相对时间，登记用日期（今天的写时刻）——两种说法各管一件事；登记后再没用过（两个时刻相差不到 2 分钟）只写一次
+  const regMs = d.registered_at ? Date.parse(d.registered_at) : NaN;
+  const seenMs = d.last_seen_at ? Date.parse(d.last_seen_at) : NaN;
+  const sameAsReg = Number.isFinite(regMs) && Number.isFinite(seenMs) && Math.abs(seenMs - regMs) < 120_000;
+  const regDay = Number.isFinite(regMs) ? new Date(regMs + 8 * 3600_000).toISOString().slice(0, 10) : "";
+  const todayDay = new Date(now + 8 * 3600_000).toISOString().slice(0, 10);
+  const reg = !Number.isFinite(regMs) ? "" : regDay === todayDay ? `今天 ${new Date(regMs + 8 * 3600_000).toISOString().slice(11, 16)} 登记` : `${dayLabel(d.registered_at, now)}登记`;
+  // 第五轮（独立评审 R4-1）：两者相近时留“最近使用”（“最久没用”的依据就是它），省掉登记
+  const meta = [seen ? `最近使用 ${seen}` : "", sameAsReg ? "" : reg, version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
   return { title: kind, meta, active: d.session === "active" };
 }
 
@@ -345,7 +352,7 @@ export function reloginView(reason: string | null | undefined): { title: string;
   if (reason === "session_member_mismatch") return { title: "请重新登录", lead: "登录状态与这台电脑上打开的账号不一致。" };
   if (reason === "session_required") return { title: "你已退出登录", lead: "" };
   // 第 69 批真实验收：被移除的电脑上同一账号不能再登录（云端吊销是终局的）——不写“重新登录即可”，给出还能做的事
-  if (reason === "device_revoked") return { title: "这台电脑已从账号移除", lead: "这个账号不能再在这台电脑上使用，本机资料仍加密保存在这里。可以登录其他账号。" };
+  if (reason === "device_revoked") return { title: "这台电脑已从账号移除", lead: "这个账号不能再在这台电脑上使用，本机资料仍加密保存在这里。如果不是你本人移除的，请尽快在另一台电脑上修改密码。" };
   return { title: "登录已过期", lead: "为了账号安全，请重新登录。本机的事项与成果都还在。" };
 }
 

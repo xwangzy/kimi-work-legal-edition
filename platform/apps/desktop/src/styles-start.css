@@ -240,3 +240,6 @@
 /* 第 69 批第三轮（独立评审 R2-1）：开始面板里的选项胶囊（多选、单选）选中后黑底白字——原来只是浅灰底，深色下几乎看不出选了哪个 */
 .ss-multi .chip.active { background: var(--btn-primary); border-color: var(--btn-primary); color: var(--btn-primary-text); font-weight: 500; }
 .ss-multi .chip.active:hover { background: var(--btn-primary-hover); border-color: var(--btn-primary-hover); }
+
+/* 第五轮：补充要求缺省一行（聚焦或有内容时 3 行） */
+.ss-field textarea[rows="1"] { min-height: 0; resize: none; }

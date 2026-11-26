@@ -52,8 +52,7 @@ export function ReloginPage(p: { reason: string | null; email: string; firm?: st
           </div>
         )}
         <LoginBox key={other || revoked ? "other" : "me"} page subtle email={other || revoked ? "" : p.email} onDone={p.onDone} />
-        {/* 第三轮（独立评审 R2-3）：移除可能不是本人做的——给出该做的一件事 */}
-        {revoked && <p className="auth-fine auth-revoked-hint">如果不是你本人移除的，请尽快在另一台电脑上修改这个账号的密码。</p>}
+        {/* 第三轮（独立评审 R2-3）：“不是本人移除的？”在标题下的说明里（reloginView），不放在登录按钮下面——那里像登录报错 */}
       </AuthCard>
     </AuthPage>
   );

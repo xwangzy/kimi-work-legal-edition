@@ -102,7 +102,7 @@ test("页脚去向一行：只说发给谁 + 哪些先换成代号（到“等�
   assert.match(s, /headExtra=\{<HowItWorks/);
   assert.match(s, /结果都是草稿，需要你复核后使用。/, "草稿须复核的告知仍在（怎么做弹层）");
   assert.match(s, /<span className="ss-foot-draft">结果是草稿，须你复核后使用<\/span>/, "第二轮：开工按钮旁常驻");
-  assert.match(s, /provisionalSendLine\(matter\)/, "第二轮：估算到之前去向一行也在");
+  assert.match(s, /provisionalSendLine\(matter, consentFirst\(matter\)\)/, "第二轮：估算到之前去向一行也在（第 69 批：首次用 AI 时后接“先记录客户授权”，估算前后同一句）");
   // 弹层的 Esc 不把开始面板一起关掉
   assert.match(s, /document\.addEventListener\("keydown", esc, true\)/);
   assert.match(src("components/Modal.tsx"), /headExtra\?: ReactNode/);
@@ -171,4 +171,17 @@ test("第 53 张卡（诉讼成本与回收测算）按测算类排段；每张 
     const ph = extraPlaceholder(cardForm(x), true, x.id);
     assert.ok(!formDefaults.has(ph) || ["pleading", "contract-review", "redraft"].includes(x.id), `${x.id} 没有自己的补充要求示例（借用了形态缺省“${ph}”）`);
   }
+});
+
+test("第 69 批第五轮：首次在事项上用 AI——底栏去向照写并接“先记录客户授权”，估算前后同一句；主按钮仍是卡的动作（加“…”）", async () => {
+  const { provisionalSendLine, consentFirst, sendLine } = await import("../src/lib/card-layout.ts");
+  const m = { model_endpoint: "standard", data_level: "L2", full_pseudonym: false, basis_state: "pending" };
+  assert.equal(consentFirst(m), true);
+  assert.equal(consentFirst({ ...m, basis_state: "valid" }), false);
+  assert.equal(consentFirst({ ...m, model_endpoint: "none" }), false);
+  const line = provisionalSendLine(m, consentFirst(m));
+  assert.equal(line, "发给 Kimi AI（经中软） · 姓名等先换成代号 · 先记录客户授权");
+  // 估算回来（block_kind = consent）仍是同一句、不是红字
+  assert.deepEqual(sendLine(["四项依据有“待确认”（……）"], ["blocked"], "consent", line), { text: line, tone: "normal" });
+  assert.match(src("components/ScenarioStart.tsx"), /\(matter && consentFirst\(matter\)\) \? `\$\{card\.verb\}…` : card\.verb/);
 });

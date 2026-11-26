@@ -20,7 +20,7 @@ import type { ScenarioCard } from "../lib/scenarios.ts";
 import type { ScenarioField } from "../lib/scenarios.ts";
 import { briefFilename, briefGoalLine, buildGoal, canStartPartial, caseGap, materialScopeText, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelBrief, startPanelInitial, wordDocGap } from "../lib/scenarios.ts";
 import { localDay } from "../lib/recovery-reminder.ts";
-import { cardForm, compareSlots, extraPlaceholder, helpOnlyRestatesDefault, isCalcCard, materialsHint, provisionalSendLine, sectionOrder, sectionTitle, selectDefaultPlaceholder, sendLine, stanceMismatchText } from "../lib/card-layout.ts";
+import { cardForm, compareSlots, consentFirst, extraPlaceholder, helpOnlyRestatesDefault, isCalcCard, materialsHint, provisionalSendLine, sectionOrder, sectionTitle, selectDefaultPlaceholder, sendLine, stanceMismatchText } from "../lib/card-layout.ts";
 import { agentLabelFor, agentsLine, PARTIES_PREFIX, partiesDigest, withPartiesDoc } from "../lib/parties.ts";
 import { PartiesDialog, usePartiesInfo } from "./PartiesInfo.tsx";
 import { Icon } from "./Icons.tsx";
@@ -72,6 +72,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   // 律师在输入框写的是问题时预填进“问题”栏（第 35 批）
   const [values, setValues] = useState<Record<string, string | string[]>>(() => startPanelInitial(card, initialExtra).values);
   const [extra, setExtra] = useState(() => startPanelInitial(card, initialExtra).extra);
+  const [extraOpen, setExtraOpen] = useState(false);
   // 案情（第 55 批）：律师在输入框里写的长段话预填进来；开始时存成本事项的一份材料
   const [brief, setBrief] = useState(() => startPanelBrief(card, initialExtra));
   // 第 66 批：有材料时案情栏收成一行，点开再写；材料多于 4 份时清单先收起
@@ -515,7 +516,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
               <label className="ss-field ss-field-long">
                 <span className="ss-label">{card.scenario !== "a1.agent_task" ? "备注（可选）" : hasDecide ? "补充要求（可选）" : "给助手的话（可选）"}</span>
                 {/* V13 第 38 批真实走查 W3：审合同这类没有主要请求栏的卡，律师的具体指示（要哪几份文件、谈判优先级）都写在这里（346 字），单行框只看得到末尾 */}
-                <textarea aria-label="补充要求" rows={2} value={extra} placeholder={extraPlaceholder(form, card.scenario === "a1.agent_task", card.id)} onChange={(e) => setExtra(e.target.value)} />
+                {/* 第 69 批第五轮（独立评审 R4-2）：可选的补充要求缺省一行，聚焦或有内容时展开——首屏多露出材料 */}
+                <textarea aria-label="补充要求" rows={extraOpen || extra ? 3 : 1} value={extra} placeholder={extraPlaceholder(form, card.scenario === "a1.agent_task", card.id)} onFocus={() => setExtraOpen(true)} onBlur={() => setExtraOpen(false)} onChange={(e) => setExtra(e.target.value)} />
               </label>
             </section>
   );
@@ -811,6 +813,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
                 docIds={docIds}
                 goal={goal}
                 onReviewed={() => setReestimateTick((n) => n + 1)}
+                provisional={matter ? provisionalSendLine(matter, consentFirst(matter)) : null}
               />
             ) : !isAgent ? (
               // 不用 AI 的流程（回稿比对、整理案卷、对外脱敏）：估算到之前也如实写本机完成
@@ -821,7 +824,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             ) : (
               <span className="ss-send-pre" title="开始前会按勾选的材料核对一遍发送范围">
                 <span className="ss-send-ico" aria-hidden="true"><Icon.lock /></span>
-                <span className="ss-send-text">{(matter && provisionalSendLine(matter)) || "选好事项后写明发给谁 · 姓名等先换成代号"}</span>
+                <span className="ss-send-text">{(matter && provisionalSendLine(matter, consentFirst(matter))) || "选好事项后写明发给谁 · 姓名等先换成代号"}</span>
               </span>
             )}
             {isAgent && <span className="ss-foot-draft">结果是草稿，须你复核后使用</span>}
@@ -855,7 +858,8 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
             {/* 第 27 批（评审 U3-49）：点了还要再确认的（依据未齐、去向有提醒）写“下一步”，直接开始的写动词；
                 第 51 批：点下后按钮内显示圆环与“正在开始…”，看得出点上了 */}
             <BusyLabel busy={busy} busyText={estimate && (estimate.estimate.data_where?.start_blocked || estimate.estimate.data_where?.warning) ? "正在准备确认…" : "正在开始…"}>
-              {estimate && (estimate.estimate.data_where?.start_blocked || estimate.estimate.data_where?.warning) ? "下一步：确认" : card.verb}
+              {/* 第 69 批第四轮（独立评审 R3-1）：主按钮始终是这张卡的动作（“开始测算”）；还要先过一步确认时加“…”，不再在估算回来后整个换成“下一步：确认” */}
+              {(estimate && (estimate.estimate.data_where?.start_blocked || estimate.estimate.data_where?.warning)) || (matter && consentFirst(matter)) ? `${card.verb}…` : card.verb}
             </BusyLabel>
           </button>
         </div>
@@ -908,11 +912,11 @@ function HowItWorks({ card, gets, hasPrefs, isAgent }: { card: ScenarioCard; get
  * 去向一行（第 67 批）：开工按钮旁说清发给谁、哪些先换成代号；按原文发送的类别、联网检索、是否保存、用量与疑似姓名核对
  * 在“详情”里（与开始前确认同一份内核数据，同一套记号）。还有像姓名的文字没换成代号时，这一行变橙并直接给“核对”。
  */
-function SendLine({ estimate, matterId, docIds, goal, onReviewed }: { estimate: PendingStart; matterId: string; docIds: string[]; goal: string; onReviewed: () => void }) {
+function SendLine({ estimate, matterId, docIds, goal, onReviewed, provisional }: { estimate: PendingStart; matterId: string; docIds: string[]; goal: string; onReviewed: () => void; provisional?: string | null }) {
   const [open, setOpen] = useState(false);
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
   const dw = estimate.estimate.data_where;
-  const line = sendLine(dw?.bullets, dw?.bullet_kinds, dw?.block_kind);
+  const line = sendLine(dw?.bullets, dw?.bullet_kinds, dw?.block_kind, provisional);
   const suspects = dw?.send_summary?.suspects.unreviewed ?? 0;
   if (!line) return null;
   return (

@@ -347,9 +347,10 @@ export const SCENARIOS: ScenarioCard[] = [
     fields: [
       { key: "side", label: "我方是", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人"], required: true },
       { key: "stage", label: "案件阶段", kind: "select", chips: true, options: ["尚未起诉", "已立案，一审中", "一审判决后（考虑上诉）"], required: true },
-      { key: "claims_amount", label: "请求金额", kind: "text", goalOnly: true, placeholder: "例如：货款 31 万元，违约金暂计 3.4 万元", help: "不填从起诉状等材料摘录；被告写对方的请求" },
-      { key: "fee_arrangement", label: "我方律师费", kind: "text", placeholder: "例如：一审 3 万元、二审 2 万元", help: "按委托合同写，风险代理写比例；不填则不计律师费" },
-      { key: "offer", label: "和解金额", kind: "text", placeholder: "例如：对方提出一次性付 28 万元", help: "可写几个，用“；”隔开；不填只算和解持平点" },
+      // 第四轮（独立评审 R3-2、R3-3）：三行说明并进占位文字，“案情与材料”回到首屏
+      { key: "claims_amount", label: "请求金额", kind: "text", goalOnly: true, placeholder: "例如：货款 31 万元，违约金暂计 3.4 万元（不填从材料摘录）" },
+      { key: "fee_arrangement", label: "我方律师费", kind: "text", placeholder: "例如：一审 3 万元、二审 2 万元（不填则不计）" },
+      { key: "offer", label: "和解金额", kind: "text", placeholder: "例如：一次付清 28 万元；分 3 期共 30 万元（不填只算持平点）" },
       { key: "recovery", label: "执行回收", kind: "select", chips: true, options: ["能足额收回", "不确定", "可能收不回"], goalText: { 能足额收回: "已保全足额或对方明显有能力履行，按全部收回测算", 不确定: "并列全部收回与收回一半", 可能收不回: "对方财产状况不好，并列全部收回、收回一半与收不回" }, help: "不选按材料里的保全与财产线索判断" },
     ],
     minMaterials: 0,

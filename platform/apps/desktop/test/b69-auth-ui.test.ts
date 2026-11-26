@@ -29,6 +29,8 @@ test("电脑数已满的一行：电脑类型、最近使用（相对时间）�
   const c = deviceChoiceLine(dev("dev_f_m_D4", { last_seen_on: "2026-11-26", client_version: "legacy" }), NOW);
   assert.equal(c.title, "第 4 台电脑");
   assert.equal(c.meta, "最近使用 今天 · 11 月 1 日登记", "旧客户端的占位版本不给律师看");
+  // 第五轮：登记后再没用过（两个时刻相差不到 2 分钟）只写“最近使用”
+  assert.equal(deviceChoiceLine(dev("dev_f_m_D5", { platform: "darwin", registered_at: "2026-11-26T05:40:00.000Z", last_seen_at: "2026-11-26T05:41:00.000Z" }), NOW).meta, "最近使用 19 分钟前 · 版本 0.9.0");
   assert.equal(agoLabel("2026-11-26T05:59:30.000Z", NOW), "刚刚");
   assert.equal(agoLabel("2026-11-20T05:59:30.000Z", NOW), "11 月 20 日");
 });
@@ -51,7 +53,7 @@ test("选一台移除：整卡（一个标题）、单选、默认预选、主�
   assert.match(s, /role=\{p\.canUnbind \? "radiogroup" : "list"\}/);
   assert.match(s, /defaultRemovalPick\(p\.devices\)/);
   assert.match(s, /移除并继续/);
-  assert.match(s, /最多同时在 \{n\} 台电脑上使用/);
+  assert.match(s, /最多登记 \{n\} 台电脑/);
   // 上限只来自云端（limit = 云端 device_limit；没给时按列表台数说），界面没有写死的台数
   assert.doesNotMatch(s.replace(/\/\*[\s\S]*?\*\//g, ""), /\b(?:20|9)\s*台/);
   // 重新登录页里换成选电脑时外层标题让位

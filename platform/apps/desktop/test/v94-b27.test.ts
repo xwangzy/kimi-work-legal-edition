@@ -96,7 +96,8 @@ test("场景卡开始面板与开始前确认用同一块“发送什么、发�
   const ss = read("../src/components/ScenarioStart.tsx");
   assert.match(ss, /<SendPoints dataWhere=\{estimate\.estimate\.data_where\}>/);
   assert.ok(!ss.includes('preview.split("；")'), "不再把整段说明拆成一句标题 + 长段");
-  assert.match(ss, /"下一步：确认" : card\.verb/);
+  // 第 69 批第四轮：还要再确认时主按钮仍是卡的动作，只加“…”（不再整个换成“下一步：确认”）
+  assert.match(ss, /\? `\$\{card\.verb\}…` : card\.verb/);
   assert.match(read("../src/components/SendPoints.tsx"), /preview_rows\?\.length/);
 });
 

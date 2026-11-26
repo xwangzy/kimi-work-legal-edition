@@ -77,7 +77,7 @@
 .pu-fact .pu-fact-sub { margin-top: 6px; font-size: var(--fs-xs); line-height: 1.55; color: var(--text-secondary); text-wrap: pretty; }
 .pu-pace-dot { flex: none; align-self: center; width: 8px; height: 8px; margin-right: 4px; border-radius: 50%; background: var(--status-success-solid); }
 .pace-tight .pu-pace-dot { background: var(--status-warning-solid); }
-.pace-fast .pu-pace-dot,
+.pace-fast .pu-pace-dot { background: var(--status-warning-solid); }
 .pace-out .pu-pace-dot { background: var(--status-danger-solid); }
 .pace-idle .pu-pace-dot { background: var(--border-strong); }
 
@@ -97,12 +97,12 @@
 .pu-flight { background: var(--accent-border); }
 .pu-window.tone-high .pu-fill { background: var(--status-warning-solid); }
 .pu-window.tone-high .pu-flight { background: var(--status-warning-border); }
-.pu-window.tone-full .pu-fill { background: var(--status-danger-solid); }
-.pu-window.tone-full .pu-flight { background: var(--status-danger-border); }
+.pu-window.tone-full .pu-fill { background: var(--status-warning-solid); }
+.pu-window.tone-full .pu-flight { background: var(--status-warning-border); }
 .pu-window-v { display: flex; align-items: baseline; justify-content: flex-end; gap: 8px; min-width: 132px; font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; }
 .pu-window-v b { font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); font-variant-numeric: tabular-nums; }
 .pu-window.tone-high .pu-window-v b { color: var(--status-warning-text); }
-.pu-window.tone-full .pu-window-v b { color: var(--status-danger-text); }
+.pu-window.tone-full .pu-window-v b { color: var(--status-warning-text); }
 
 /* ── 每日用量 ── */
 .pu-daily { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "head readout" "chart chart" "axis axis" "note note"; align-items: baseline; }
@@ -225,3 +225,21 @@
 
 /* 第三轮：三个读数与环同一行、竖直居中（刻度说明在环下，不把读数往下拉） */
 .pu-hero-body > .pu-facts { align-self: center; }
+/* 第四轮（独立评审 R3-2、R3-5）：两卡不强制等高；只剩套餐卡时占满一行；只用过一类时一句话；用过不足 3 天时每日图压低 */
+.pu-split { align-items: start; }
+.pu-split.single { grid-template-columns: minmax(0, 1fr); }
+.pu-kind-one { margin: 4px 0 0; font-size: var(--fs-body); line-height: 1.7; color: var(--text-secondary); }
+.pu-kind-one b { font-weight: 600; color: var(--text-strong); }
+.pu-daily.sparse .pu-chart { height: 96px; }
+.pu-empty-actions { display: inline-flex; align-items: center; gap: 12px; margin-top: 10px; }
+
+/* 第五轮（独立评审 R4-1、R4-2、R4-3）：只剩套餐卡时横排一行（名称与有效期 · 可用模型 · 更多额度），不留空洞；
+   警示色只用一种：偏快、频率窗口卡住用橙色，红色只给“本期额度已用完” */
+.pu-split.single .pu-plan { display: grid; grid-template-columns: minmax(180px, auto) minmax(0, 1fr) auto; grid-template-areas: "head head head" "name models more" "admin admin admin"; align-items: center; column-gap: 40px; row-gap: 10px; }
+.pu-split.single .pu-plan .pu-sec-head { grid-area: head; }
+.pu-split.single .pu-plan .pu-plan-name { grid-area: name; }
+.pu-split.single .pu-plan .pu-plan-models { grid-area: models; }
+.pu-split.single .pu-plan .pu-plan-models ul { margin-top: 6px; }
+.pu-split.single .pu-plan .pu-plan-more { grid-area: more; margin: 0; text-align: right; }
+.pu-split.single .pu-plan .pu-plan-admin { grid-area: admin; }
+@media (max-width: 900px) { .pu-split.single .pu-plan { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "name" "models" "more" "admin"; } .pu-split.single .pu-plan .pu-plan-more { text-align: left; } }

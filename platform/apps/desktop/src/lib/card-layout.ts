@@ -81,12 +81,12 @@ export function sectionTitle(form: CardForm, key: SectionKey, o: { hasBrief: boo
  * 页脚一行“去向”（第 67 批）：开工按钮旁只说发给谁、哪些先换成代号；按原文发送的类别、检索、留存在“去向详情”里逐条列出。
  * bullets / kinds 来自内核 runs.estimate（与开始前确认同一份）。
  */
-export function sendLine(bullets: readonly string[] | undefined, kinds: readonly string[] | undefined, blockKind?: string | null): { text: string; tone: "normal" | "local" | "blocked" } | null {
+export function sendLine(bullets: readonly string[] | undefined, kinds: readonly string[] | undefined, blockKind?: string | null, provisional?: string | null): { text: string; tone: "normal" | "local" | "blocked" } | null {
   if (!bullets || bullets.length === 0) return null;
   const k0 = kinds?.[0];
   // 第 69 批（独立评审）：本事项第一次用 AI、客户授权依据还没记录（block_kind = consent）——这不是“不会发送”，下一步“开始前确认”里记下即可。
   // 原来整行红字“不会发送：四项依据有‘待确认’（委托 / 保密授权、个人信息处理依据……”且被截断，律师以为这张卡不能用
-  if (k0 === "blocked" && blockKind === "consent") return { text: "本事项第一次用 AI：下一步记录客户授权依据", tone: "normal" };
+  if (k0 === "blocked" && blockKind === "consent") return { text: provisional || "发给 AI · 姓名等先换成代号 · 先记录客户授权", tone: "normal" };
   if (k0 === "blocked") return { text: bullets[0]!, tone: "blocked" };
   if (k0 === "local") return { text: bullets[0]!, tone: "local" };
   const route = bullets[kinds?.indexOf("route") ?? 0] ?? bullets[0]!;
@@ -195,12 +195,18 @@ export function selectDefaultPlaceholder(help: string | undefined): string | und
 }
 
 /** 开工前（估算出来之前）先按事项设置写出去向（与内核 runs.estimate 的口径相同），估算到了再换成内核给的那一句。 */
-export function provisionalSendLine(m: { model_endpoint?: string | null; data_level?: string | null; full_pseudonym?: boolean | null } | null): string | null {
+export function provisionalSendLine(m: { model_endpoint?: string | null; data_level?: string | null; full_pseudonym?: boolean | null } | null, consent = false): string | null {
   if (!m || !m.model_endpoint) return null;
   if (m.model_endpoint === "none") return "全部在这台电脑上完成，不发送任何内容";
   const dest = { standard: "发给 Kimi AI（经中软）", byok: "发给本所 Kimi 账号（不经中软）", private: "发给本所的 AI（不经中软）" }[m.model_endpoint as "standard" | "byok" | "private"] ?? "发给 AI";
   const full = m.data_level === "L3a" || !!m.full_pseudonym;
-  return `${dest} · ${full ? "姓名、公司名等先换成代号" : "姓名等先换成代号"}`;
+  // 第 69 批第五轮（独立评审 R4-1）：本事项第一次用 AI——去向照写，后面接一句下一步，估算前后同一句（不再在估算回来后换掉去向）
+  return `${dest} · ${full ? "姓名、公司名等先换成代号" : "姓名等先换成代号"}${consent ? " · 先记录客户授权" : ""}`;
+}
+
+/** 本事项还没有有效的客户授权记录（D-216 / D-225：待确认、待补出处、待重新确认）——开工前要过一步“记录授权”。纯函数。 */
+export function consentFirst(m: { model_endpoint?: string | null; basis_state?: string | null } | null): boolean {
+  return !!m && m.model_endpoint !== "none" && !!m.basis_state && m.basis_state !== "valid";
 }
 
 /** 帮助小字只是“不选按 X”时，缺省已写进占位，下面不再重复（第 67 批第三轮，独立评审 R2-7）。 */

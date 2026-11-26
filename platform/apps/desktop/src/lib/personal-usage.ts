@@ -289,10 +289,8 @@ export function paceView(q: QuotaStatus, v: Pick<PersonalView, "used" | "capped"
   const end = q.period?.kind === "week" ? "周末" : "月底";
   const daily = q.personal?.daily;
   // 旧云端没有按日聚合：不推算期末，只把“时间走到哪”和“额度用到哪”并排说（第三轮，独立评审 R2-2：原来这里按本期开始推算，与新云端口径不一）
-  if (!Array.isArray(daily)) {
-    const tone = v.used <= elapsed * 0.85 ? "ok" : v.used <= elapsed ? "tight" : "fast";
-    return { tone, label: tone === "ok" ? "宽裕" : tone === "tight" ? "偏紧" : "偏快", text: `${per}时间已过 ${fmtPct(elapsed)}，额度已用 ${fmtPct(v.used)}`, elapsed };
-  }
+  // 第四轮（独立评审 R3-4）：旧云端不下判断（没有按日数据，判断不可靠），只陈述
+  if (!Array.isArray(daily)) return { tone: "idle", label: "—", text: `${per}时间已过 ${fmtPct(elapsed)}，额度已用 ${fmtPct(v.used)}`, elapsed };
   // 第三轮：期末推算用“近 7 天日均”（不足 7 天按实际用过的天数），并且第一次用起不满 3 天不推算——只用过一天就外推到月底会夸大
   const dayMs = (k: string) => Date.parse(`${k}T00:00:00+08:00`);
   const today = bjDayKey(nowMs);
@@ -337,13 +335,20 @@ export function resetIn(resetsAt: string | null | undefined, nowMs: number): { n
  * 逐条列出只是噪声。只合并相邻、用途与模型相同、同为未计入且原因相同的行；计入额度的行一律逐条列。
  */
 export function collapseFree<T extends UsageRow>(rows: T[], scale: number): { at: string; in_period?: boolean; row: T; n: number; charge: { counted: boolean; text: string } }[] {
-  const out: { at: string; in_period?: boolean; row: T; n: number; charge: { counted: boolean; text: string } }[] = [];
+  const out: { at: string; in_period?: boolean; row: T; n: number; charge: { counted: boolean; text: string }; sum?: number | null }[] = [];
   const day = (at: string) => (Number.isFinite(Date.parse(at)) ? bjDayKey(Date.parse(at)) : at);
+  const minute = (at: string) => (Number.isFinite(Date.parse(at)) ? new Date(Date.parse(at) + 8 * 3600_000).toISOString().slice(0, 16) : at);
   for (const r of rows) {
     const c = rowCharge(r, scale);
     const last = out[out.length - 1];
-    if (last && !c.counted && !last.charge.counted && last.charge.text === c.text && last.row.kind === r.kind && (last.row.label ?? last.row.alias) === (r.label ?? r.alias) && day(last.at) === day(r.at)) last.n += 1;
-    else out.push({ at: r.at, ...(r.in_period !== undefined ? { in_period: r.in_period } : {}), row: r, n: 1, charge: c });
+    const same = !!last && last.row.kind === r.kind && (last.row.label ?? last.row.alias) === (r.label ?? r.alias);
+    if (same && !c.counted && !last!.charge.counted && last!.charge.text === c.text && day(last!.at) === day(r.at)) last!.n += 1;
+    // 第四轮（独立评审 R3-1 过渡办法）：同一分钟里同一类、同一模型的计入调用（一单任务一步里的连续调用）合成一行，计入额度相加
+    else if (same && c.counted && last!.charge.counted && typeof r.charge_ratio === "number" && typeof last!.sum === "number" && !r.estimated && !last!.row.estimated && minute(last!.at) === minute(r.at)) {
+      last!.n += 1;
+      last!.sum += r.charge_ratio * scale;
+      last!.charge = { counted: true, text: fmtPct(last!.sum) };
+    } else out.push({ at: r.at, ...(r.in_period !== undefined ? { in_period: r.in_period } : {}), row: r, n: 1, charge: c, sum: c.counted && typeof r.charge_ratio === "number" && !r.estimated ? r.charge_ratio * scale : null });
   }
-  return out;
+  return out.map(({ sum: _s, ...x }) => x);
 }

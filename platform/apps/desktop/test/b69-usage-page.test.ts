@@ -89,7 +89,8 @@ test("节奏（第三轮）：按近 7 天日均推算期末；第一次用起�
   assert.deepEqual([paceView(idle, personalView(idle), NOW)!.label, paceView(idle, personalView(idle), NOW)!.text], ["还没用", "本月还没有计入额度的调用"]);
   // 旧云端（没有 daily）：不推算期末，并排说时间与用量
   const old = q({ used_ratio: 0.12 });
-  assert.deepEqual([paceView(old, personalView(old), NOW)!.label, paceView(old, personalView(old), NOW)!.text], ["宽裕", "本月时间已过 85%，额度已用 12%"]);
+  // 第四轮：旧云端不下判断，只陈述
+  assert.deepEqual([paceView(old, personalView(old), NOW)!.label, paceView(old, personalView(old), NOW)!.text], ["—", "本月时间已过 85%，额度已用 12%"]);
   assert.equal(paceView(q({}, { period: undefined }), personalView(q()), NOW), null);
 });
 test("用途与按模型：任务 + 问答同一分母；模型带 used_ratio 按计入额度排序，旧云端为 null（按处理量份额说）；距重置的大字", () => {
@@ -126,4 +127,14 @@ test("源码门禁：每日图只用云端 personal.daily；不拼 own_recent、
     assert.doesNotMatch(code, /Math\.random|mock|setTimeout/i);
     assert.doesNotMatch(code, /#[0-9a-fA-F]{3,8}\b|rgba?\(|\b(fill|stroke|color|background)=\{?["'`]/, "颜色只走样式表令牌");
   }
+});
+
+test("最近记录（第四轮）：同一分钟里同一类、同一模型的计入调用合成一行、计入额度相加；不同分钟、不同类不合并；未计入的重试照旧合并", async () => {
+  const { collapseFree } = await import("../src/lib/personal-usage.ts");
+  const row = (at: string, kind: "task" | "qa", ratio: number | null, outcome = "ok") => ({ at, kind, alias: "legal/k3", label: "K3", tokens_in: 1, tokens_cached: 0, tokens_out: 1, outcome, partial: false, estimated: false, ...(ratio === null ? { charge_ratio: 0 } : { charge_ratio: ratio }) });
+  const items = collapseFree(
+    [row("2026-11-26T04:10:05.000Z", "task", 0.002), row("2026-11-26T04:10:40.000Z", "task", 0.003), row("2026-11-26T04:11:02.000Z", "task", 0.004), row("2026-11-26T04:11:30.000Z", "qa", 0.001), row("2026-11-26T04:12:00.000Z", "task", null, "upstream_error"), row("2026-11-26T04:12:30.000Z", "task", null, "upstream_error")] as never,
+    1,
+  );
+  assert.deepEqual(items.map((x) => [x.n, x.charge.text]), [[2, "0.5%"], [1, "0.4%"], [1, "0.1%"], [2, "未计入 · 未成功"]]);
 });

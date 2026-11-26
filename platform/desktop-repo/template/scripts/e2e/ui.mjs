@@ -723,7 +723,8 @@ async function task(cardFile) {
   if (card.extra) await sp.locator('textarea[aria-label="补充要求"]').fill(card.extra);
   await sleep(1500);
   await shot("12-开始面板");
-  const verb = sp.locator("button").filter({ hasText: new RegExp(`^\\s*(${VERB[card.id] ?? "开始"}|下一步：确认)\\s*$`) }).first();
+  // 第 69 批：还要先过一步确认时主按钮写“开始起草…”（原“下一步：确认”）；三种都认
+  const verb = sp.locator("button").filter({ hasText: new RegExp(`^\\s*(${VERB[card.id] ?? "开始"}…?|下一步：确认)\\s*$`) }).first();
   await verb.click();
   for (let i = 0; i < 10 && !/#\/run\//.test(page.url()); i++) {
     await sleep(1500);

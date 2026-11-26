@@ -146,10 +146,15 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
         />
       ) : (
         <>
-          <label className="field">
-            <span>邮箱</span>
-            <input className="auth-input" type={meta?.password_by_phone ? "text" : "email"} value={email} onChange={(e) => (lm.lock(), setEmail(e.target.value))} autoComplete="username" spellCheck={false} placeholder={page ? (meta?.password_by_phone ? "手机号或邮箱" : "请输入邮箱") : undefined} />
-          </label>
+          {/* 第四轮（独立评审 R3-4）：重新登录同一个账号时上面已显示是谁，邮箱不再重复成一个输入框（保留为隐藏的用户名字段，密码管理器照常认） */}
+          {subtle && initialEmail && email === initialEmail ? (
+            <input type="text" className="sr-only" value={email} readOnly autoComplete="username" aria-hidden="true" tabIndex={-1} />
+          ) : (
+            <label className="field">
+              <span>邮箱</span>
+              <input className="auth-input" type={meta?.password_by_phone ? "text" : "email"} value={email} onChange={(e) => (lm.lock(), setEmail(e.target.value))} autoComplete="username" spellCheck={false} placeholder={page ? (meta?.password_by_phone ? "手机号或邮箱" : "请输入邮箱") : undefined} />
+            </label>
+          )}
           <PasswordField label="密码" value={pw} onChange={(v) => (lm.lock(), setPw(v))} autoFocus={!!initialEmail} {...(page ? { placeholder: "请输入密码" } : {})} />
         </>
       )}
