@@ -23,9 +23,9 @@ on:
         description: "release.json 的 sha256（核对后才构建）"
         required: true
       entry:
-        description: "第 63 批：怎么进入——register＝注册新账号（下面的邀请码 / 手机号按云端策略）；login-sms＝已有账号在这台新电脑上用手机号验证码登录（账号新电脑入组：要给 firm_code，管理员在自己电脑上核对入组核对码后批准）"
+        description: "第 63 批：怎么进入——register＝注册新账号（下面的邀请码 / 手机号按云端策略）；login-sms＝已有账号在这台新电脑上用手机号验证码登录（账号新电脑入组：要给 firm_code，管理员在自己电脑上核对入组核对码后批准）；第 69 批 install-only＝不登录：构建、安装、启动、核对登录 / 注册页按线上策略出现并截图、断网、卸载、回传 EXE（不需要手机号）"
         type: choice
-        options: [register, login-sms]
+        options: [register, login-sms, install-only]
         default: register
       relogin_sms:
         description: "第 63 批：检测连接与问答之后退出登录，再用手机号验证码就地登录（要给 phone；第二条验证码作为预发布附件 sms-<运行编号>-relogin.txt 上传）"
@@ -187,7 +187,11 @@ jobs:
           Start-Process $env:KWL_APP -ArgumentList "--remote-debugging-port=$env:KWL_CDP_PORT"
           node scripts/e2e/ui.mjs ready
           node scripts/e2e/ui.mjs shot 00-首次启动
+      - name: 登录与注册页（install-only：不登录，核对线上策略下的登录方式与注册第一步）
+        if: inputs.entry == 'install-only'
+        run: node scripts/e2e/ui.mjs auth-pages
       - name: 注册或验证码登录（开放注册 / 注册邀请码 / 成员邀请码 / 已有账号用手机号验证码登录；云端要求时验证手机号）
+        if: inputs.entry != 'install-only'
         env:
           KWL_CODE: ${{ inputs.invite_code }}
           KWL_NAME: ${{ inputs.member_name }}
@@ -235,11 +239,13 @@ jobs:
           path: C:\kwl-e2e\out
           retention-days: 14
       - name: 检测连接
+        if: inputs.entry != 'install-only'
         run: node scripts/e2e/ui.mjs diagnose expect-ok
       - name: 问答（真实模型）
+        if: inputs.entry != 'install-only'
         run: node scripts/e2e/ui.mjs qa "买卖合同约定的逾期交货违约金按每日万分之五计算、上限为合同价款的20%，卖方逾期40日，买方能否在主张违约金的同时解除合同？请给出法律依据。"
       - name: 退出登录后用手机号验证码就地登录（第 63 批）
-        if: inputs.relogin_sms && inputs.phone != ''
+        if: (inputs.relogin_sms && inputs.phone != '') && inputs.entry != 'install-only'
         env:
           KWL_PHONE: ${{ inputs.phone }}
           KWL_SMS_RELAY_LOGIN: gh-release:${{ github.repository }}:${{ inputs.release_tag }}:sms-${{ github.run_id }}-relogin.txt
@@ -249,25 +255,25 @@ jobs:
           node scripts/e2e/ui.mjs login-sms
           node scripts/e2e/ui.mjs diagnose expect-ok
       - name: 真实任务（真实模型；卡片见输入 task_card）
-        if: inputs.run_task
+        if: (inputs.run_task) && inputs.entry != 'install-only'
         timeout-minutes: 90
         env:
           TASK_CARD: ${{ inputs.task_card }}
         run: node scripts/e2e/ui.mjs task "scripts/e2e/cards/$TASK_CARD"
       # 第 62 批：Word/Excel 即时预览必须真的出图（按框架区域截图数深色像素；第 0.2.0 版安装包预览空白的回归核对）
       - name: 成果即时预览与版本切换（出图核对）
-        if: inputs.run_task
+        if: (inputs.run_task) && inputs.entry != 'install-only'
         timeout-minutes: 15
         run: node scripts/e2e/ui.mjs preview
       - name: 经系统“另存为”对话框导出成果
-        if: inputs.run_task
+        if: (inputs.run_task) && inputs.entry != 'install-only'
         run: node scripts/e2e/ui.mjs export
       - name: 套餐与用量
-        if: always() && env.KWL_APP != ''
+        if: (always() && env.KWL_APP != '') && inputs.entry != 'install-only'
         timeout-minutes: 5
         run: node scripts/e2e/ui.mjs usage || true
       - name: 断网演练（防火墙封住云端地址）
-        if: always() && env.KWL_APP != ''
+        if: (always() && env.KWL_APP != '') && inputs.entry != 'install-only'
         timeout-minutes: 15
         shell: pwsh
         run: |

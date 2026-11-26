@@ -433,7 +433,7 @@ export function App() {
         {update && !updateDismissed && route.page !== "run" && route.page !== "review" && <UpdateBanner status={update} onDismiss={() => setUpdateDismissed(true)} />}
         {revokedPersonal && (
           <div className="banner banner-orange" role="status">
-            这台电脑已被律所停用。你在这台电脑上还有{[revokedPersonal.writing_prefs ? "写作偏好" : "", revokedPersonal.qa_conversations > 0 ? `${revokedPersonal.qa_conversations} 个问答` : ""].filter(Boolean).join("和")}，要清除吗？事项材料与成果按律所制度处理，这里不删。{" "}
+            这台电脑已从账号移除。你在这台电脑上还有{[revokedPersonal.writing_prefs ? "写作偏好" : "", revokedPersonal.qa_conversations > 0 ? `${revokedPersonal.qa_conversations} 个问答` : ""].filter(Boolean).join("和")}，要清除吗？事项材料与成果按律所制度处理，这里不删。{" "}
             <button className="btn-link" onClick={() => void clearRevokedPersonal()}>
               清除我的个人数据
             </button>

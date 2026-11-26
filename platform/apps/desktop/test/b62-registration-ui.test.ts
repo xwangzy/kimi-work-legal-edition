@@ -14,8 +14,9 @@ const src = ["../src/pages/Activate.tsx", "../src/components/SmsCodeFields.tsx"]
 
 test("旧云端或取不到策略：照旧流程（不显示手机号、码用勾选框）", () => {
   for (const m of [null, undefined, { legacy: true }, { legacy: true, mode: "code" as const }]) assert.deepEqual(registrationFields(m), { legacy: true, phone: "hidden", code: "checkbox", codeLength: 6, resendSeconds: 60, phoneReset: false });
-  // 旧流程的文案原样保留
-  for (const s of ["我有开通码或邀请码", "开通码 20 位，邀请码 36 位", "凭码注册时，律所以码对应的为准。", "不填码即自助注册：为你开通一个试用的个人工作室，之后可以邀请同事加入。"]) assert.ok(src.includes(s), s);
+  // 第 69 批（V43）：注册改两步；没有手机号一步（旧云端）时直接到“设置账号”，码收在“律所名称 / 邀请码”里（不再是勾选框 + 两段说明）
+  for (const s of ["律所名称 / 邀请码", "邀请码或开通码（可不填）", 'useState<1 | 2>(phoneStep ? 1 : 2)']) assert.ok(src.includes(s), s);
+  for (const s of ["不填码即自助注册：为你开通一个试用的个人工作室，之后可以邀请同事加入。", "凭码注册时，律所以码对应的为准。"]) assert.ok(!src.includes(s), `已删去：${s}`);
   assert.equal(codeLengthOk("ABCD-EFGH-JKMN"), false, "直接输入码（兑换）仍只认 20 / 36 位");
 });
 

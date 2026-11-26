@@ -42,7 +42,8 @@ test("云端有无验证码登录：没有（旧云端、legacy、缺这一项�
   // 界面：只有云端开了才渲染“验证码登录 | 密码登录”；密码登录的原文案保留（旧云端与第 62 批完全相同）
   // 第 64 批：两种方式都有时页签就是卡片标题行；只有密码登录时换成一个标题（不再空着）
   assert.match(activate, /\{lm\.methods\.phone \? <LoginMethodTabs value=\{lm\.method\} onChange=\{switchTo\} \/> : <h1 className="auth-method-single">账号密码登录<\/h1>\}/);
-  assert.match(panel, /\{lm\.methods\.phone \? <LoginMethodTabs value=\{lm\.method\} onChange=\{switchTo\} \/> : page \?/);
+  // 第 69 批：重新登录页（subtle）标题已在外层，只有密码登录时不再重复“账号密码登录”
+  assert.match(panel, /\{lm\.methods\.phone \? <LoginMethodTabs value=\{lm\.method\} onChange=\{switchTo\} \/> : page && !subtle \?/);
   // 第 64 批：登录卡片不再放一行说明（参照 Kimi 登录框），“第一次使用请先注册”由表单下方“还没有账号？注册”承担
   assert.ok(activate.includes("还没有账号？"));
   assert.match(sms, /const method: LoginMethod = methods\.phone \? \(chosen \?\? initialLoginMethod\(methods, remembered\)\) : "password";/);
@@ -81,7 +82,8 @@ test("手机号没注册：开通页给“用这个手机号注册”与“改�
   assert.match(activate, /setUnreg\(byPhone && phoneNotRegistered\(e\)\)/);
   assert.match(activate, /notRegisteredActions\("activate"\)/);
   assert.ok(activate.includes("用这个手机号注册") && activate.includes("改用密码登录"));
-  assert.match(activate, /onRegisterWithPhone=\{\(\) => \{\s*go\("register"\);/);
+  // 第 69 批：注册第一步就是手机号（开通页持有同一个 phone），带过去即预填，不再另加一段“已带上手机号……”的说明
+  assert.match(activate, /onRegisterWithPhone=\{\(\) => go\("register"\)\}/);
   assert.match(activate, /<RegisterForm meta=\{meta\} email=\{email\} setEmail=\{setEmail\} phone=\{phone\} setPhone=\{setPhone\}/);
   assert.match(activate, /const \{ phone, setPhone \} = p;/);
   // 已激活电脑：只能登这台电脑已登记的成员，不在这里注册
@@ -146,6 +148,8 @@ test("律师层用语：短信相关可见文字不出现“令牌、HMAC、dry-
     assert.deepEqual(texts.filter((t) => /令牌|HMAC|dry-run|dry_run|purpose|用途/i.test(t)), [], name);
   }
   for (const f of [phoneBindForm(null, true), phoneBindForm("138****8000", true)]) assert.doesNotMatch(Object.values(f).join(" "), /令牌|HMAC|dry-run|purpose/);
-  assert.ok(activate.includes("登录与开通只把邮箱或手机号、密码或短信验证码、开通码或邀请码发给 Kimi Work 服务核对；你的案卷不会上传。"));
+  // 第 69 批（V43）：页脚收成一句（所有登录类卡片同一句，AuthShell.AuthPrivacy）——律师要确认的是“案卷不会上传”；发给云端核对的就是表单里看得到的几项
+  assert.ok(readFileSync(fileURLToPath(new URL("../src/components/AuthShell.tsx", import.meta.url)), "utf8").includes("登录只核对账号信息，你的案卷不会上传"));
+  assert.match(activate, /<AuthPrivacy>/);
   assert.ok(sms.includes("测试环境：验证码是"), "测试环境照第 62 批写明");
 });

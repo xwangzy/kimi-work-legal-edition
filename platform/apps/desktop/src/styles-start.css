@@ -236,3 +236,7 @@
 .ss-ctx-mat svg { width: 13px; height: 13px; }
 /* 第 67 批第三轮：事实提醒——还有待确认的用橙点（与论点卡“待你确认”同色），全部确认过才是绿点 */
 .ss-facts-dot.due { background: var(--status-warning-solid); }
+
+/* 第 69 批第三轮（独立评审 R2-1）：开始面板里的选项胶囊（多选、单选）选中后黑底白字——原来只是浅灰底，深色下几乎看不出选了哪个 */
+.ss-multi .chip.active { background: var(--btn-primary); border-color: var(--btn-primary); color: var(--btn-primary-text); font-weight: 500; }
+.ss-multi .chip.active:hover { background: var(--btn-primary-hover); border-color: var(--btn-primary-hover); }

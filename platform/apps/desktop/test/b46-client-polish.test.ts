@@ -9,7 +9,6 @@ import { startHintActionLabel, startHintOf, startHintTarget } from "../src/lib/s
 import { CHECKLIST, checklistAction, checklistCounter, checklistItems, checklistKey, checklistState, checklistVisibility, setChecklistState, type GuideProgress } from "../src/lib/guide-checklist.ts";
 import { GUIDE_STEPS, guideSeenKey } from "../src/lib/guide-steps.ts";
 import { userCardText } from "../src/lib/user-card.ts";
-import { quotaLawyerLine } from "../src/lib/firm-usage.ts";
 
 const SRC = join(import.meta.dirname, "..", "src");
 const src = (p: string) => readFileSync(join(SRC, p), "utf8");
@@ -110,7 +109,6 @@ test("上手清单：首页渲染卡片；按“自己建的”判断（内核 g
 test("试用版：账号、用量、用户卡、关于不写“开发形态”", () => {
   assert.equal(userCardText({ name: "试用律师", firm: null, edition: "trial" }, { title: "本机运行", note: "" }).firm, "试用版");
   assert.equal(userCardText({ name: "我", firm: null }, { title: "本机运行", note: "" }).firm, "开发形态", "真正的开发形态照旧");
-  assert.equal(quotaLawyerLine({ mode: "local_dev", edition: "trial" } as never), "试用版：不统计你的用量");
   assert.match(src("components/AccountPanel.tsx"), /st\.edition === "trial" \? "试用版：不需要登录账号。"/);
   assert.match(src("pages/Connections.tsx"), /st\?\.edition === "trial" \? "试用版"/);
   assert.match(readFileSync(join(import.meta.dirname, "../electron/trial-mode.cjs"), "utf8"), /ZR_TRIAL_BUILD: "1"/);

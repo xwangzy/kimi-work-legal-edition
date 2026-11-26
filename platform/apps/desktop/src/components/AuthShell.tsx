@@ -8,6 +8,7 @@
  */
 import type { ReactNode } from "react";
 import { BrandLockup } from "./Brand.tsx";
+import { Icon } from "./Icons.tsx";
 import type { MetaState } from "./SmsCodeFields.tsx";
 import type { RegistrationMeta } from "../lib/account.ts";
 import "../styles-auth.css";
@@ -18,6 +19,27 @@ export function AuthPage({ kind, children, busy = false }: { kind: "activate" | 
     <div className="auth-page activate" data-auth-page={kind} aria-busy={busy || undefined}>
       {children}
     </div>
+  );
+}
+
+/**
+ * 登录类卡片共用的页脚（第 69 批，V43）：一句常驻的隐私说明——律师在这一页真正需要确认的只有“案卷不会上传”；
+ * 发给云端核对的就是表单里看得到的几项，不再逐项罗列（原来两行半）。children = 只在特定情况下才出现的补充说明（各一行）。
+ */
+export function AuthPrivacy({ children }: { children?: ReactNode }) {
+  const extra = (Array.isArray(children) ? children : [children]).filter((c) => c !== null && c !== undefined && c !== false && c !== "");
+  return (
+    <>
+      <span className="auth-privacy">
+        <Icon.lock />
+        登录只核对账号信息，你的案卷不会上传
+      </span>
+      {extra.map((c, i) => (
+        <span key={i} className="auth-foot-note" role="note">
+          {c}
+        </span>
+      ))}
+    </>
   );
 }
 

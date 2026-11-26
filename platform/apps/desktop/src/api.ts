@@ -821,7 +821,7 @@ export interface QuotaStatus {
   edition?: "trial" | "release" | "dev";
   note?: string;
   /** 第 66 批（V40）：note / period / burst / models（可用模型显示名，与模型目录同源）是追加字段，旧控制面没有。 */
-  plan?: { id: string; label: string; note?: string | null; period?: "month" | "week"; burst?: { hours: number; pct: number } | null; models?: string[] | null };
+  plan?: { id: string; label: string; note?: string | null; period?: "month" | "week"; burst?: { hours: number; pct: number } | null; models?: string[] | null; /** 第 69 批：有效期至（试用为试用结束；旧云端没有）。 */ valid_until?: string | null };
   unit?: "tokens" | "cny";
   unit_label?: string;
   period?: { kind: "month" | "week"; key: string; start: string; resets_at: string };
@@ -855,11 +855,24 @@ export interface QuotaStatus {
    * 第 66 批（V40）：个人口径——真正卡住“我”的那一项（额度、律所上限、5 小时窗口、个人上限四者最小）。界面的“已用 / 剩余”优先用它；
    * limited_by = 正在卡住的那项（null = 都没卡）。旧控制面没有，回退到 own。
    */
-  personal?: { used_ratio: number; remaining_ratio: number; limited_by: "allowance" | "cap" | "burst" | "seat" | null; /** 暂停原因（null = 没暂停）。 */ paused: "allowance" | "cap" | "burst" | "seat" | null; /** 第 68 批：本人进行中的任务预留（同一分母；旧云端没有）。 */ in_flight_ratio?: number };
+  personal?: {
+    used_ratio: number;
+    remaining_ratio: number;
+    limited_by: "allowance" | "cap" | "burst" | "seat" | null;
+    /** 暂停原因（null = 没暂停）。 */
+    paused: "allowance" | "cap" | "burst" | "seat" | null;
+    /** 第 68 批：本人进行中的任务预留（同一分母；旧云端没有）。 */
+    in_flight_ratio?: number;
+    /** 第 69 批（V43）：本期按天（北京日期 YYYY-MM-DD 升序，只含有调用的日子；ratio 与 used_ratio 同一分母，各日之和 = used_ratio）。旧云端没有。 */
+    daily?: { day: string; ratio: number; requests: number; qa_requests: number }[];
+    /** 第 69 批（V43）：本期按用途（任务 + 问答 = used_ratio）。旧云端没有。 */
+    by_kind?: { task: { ratio: number; requests: number }; qa: { ratio: number; requests: number } };
+  };
   /** 第 68 批：明细与大数字同一分母（"personal"）；旧云端没有，客户端按比值折算。 */
   ratio_basis?: "personal";
   /** 第 66 批：本人本期按模型（份额按 token，不含金额）。 */
-  own_models?: { alias: string; label: string; share: number; requests: number }[];
+  /** 第 69 批：used_ratio = 计入本人额度的比例（与 personal.used_ratio 同一分母，各模型之和 = used_ratio）；旧云端没有。 */
+  own_models?: { alias: string; label: string; share: number; requests: number; used_ratio?: number }[];
 }
 
 /** 第 66 批（V40）：本人用量明细的一行（quota.usage_page；与 own_recent 同口径，不含金额与请求内容）。in_period = 属于本期。 */

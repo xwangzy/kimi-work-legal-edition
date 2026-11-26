@@ -3,40 +3,12 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { auditDetailLabel, diagSectionLabels, auditActionLabel, auditActorLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, fmtPct, periodLabel, quotaLawyerLine, resetLabel, usageTone } from "../src/lib/firm-usage.ts";
+import { auditDetailLabel, diagSectionLabels, auditActionLabel, auditActorLabel, auditFetchErrorText, auditResultLabel, auditTargetLabel, fmtPct, periodLabel, resetLabel, usageTone } from "../src/lib/firm-usage.ts";
 import { SAVE_METHODS } from "../electron/file-dialogs.cjs";
 
 const JARGON = /租约|lease|序号|seq|签名|哈希|hash|席位|控制面|token/i;
 
-test("律师一句话（第 44 批 v2）：本人占分母（个人上限 / 每人额度）、本所占本期额度与上限、重置时刻；到上限 80% 提示即将用完，到上限或 100% 写明暂停；不出现点数与工程用语", () => {
-  const firm = { used_ratio: 0.4, remaining_ratio: 0.6, in_flight_ratio: 0, paused: null, cap_pct: null, boost_pct: 0, legacy_used_ratio: null, used: null, total: null, seats: 3 };
-  const own = { used_ratio: 0.3, denominator: "seat_quota" as const, enforced: false, used: 300, total: 1000, requests: 3, tokens: 300, value_cny: null, estimated_rows: 0 };
-  const base = { mode: "control_plane" as const, unit: "tokens" as const, unit_label: "tokens", period: { kind: "month" as const, key: "2026-10", start: "2026-09-30T16:00:00.000Z", resets_at: "2026-10-31T16:00:00.000Z" }, firm, own, history: [] };
-  const lines = [
-    quotaLawyerLine({ ...base }),
-    quotaLawyerLine({ ...base, firm: { ...firm, cap_pct: 90 } }),
-    quotaLawyerLine({ ...base, firm: { ...firm, cap_pct: 45 } }),
-    quotaLawyerLine({ ...base, firm: { ...firm, cap_pct: 40 } }),
-    quotaLawyerLine({ ...base, own: null }),
-    quotaLawyerLine({ mode: "local_dev" }),
-    quotaLawyerLine(null),
-  ];
-  for (const l of lines) assert.doesNotMatch(l, JARGON, l);
-  for (const l of lines) assert.doesNotMatch(l, /点|积分/, `不出现点数：${l}`);
-  // 第 66 批（V40）：个人口径——“你已用 / 剩余”，不再出现“本所已用”；旧控制面（没有 personal）回退到 own 与本所剩余
-  assert.equal(lines[0], "你本期已用 30%，剩余 60%；将于 11 月 1 日 0:00 重置");
-  for (const l of lines) assert.doesNotMatch(l, /本所/, l);
-  assert.match(lines[3]!, /已到设定的用量上限，AI 处理暂停/);
-  assert.match(lines[4]!, /还没有用量/);
-  // 有 personal 时按它（真正卡住你的那一项）：剩余 5% → 即将用完；暂停按 limited_by 说原因
-  assert.equal(quotaLawyerLine({ ...base, personal: { used_ratio: 0.5, remaining_ratio: 0.05, limited_by: "burst", paused: null } }), "你本期已用 50%，剩余 5%；将于 11 月 1 日 0:00 重置；你的额度即将用完");
-  assert.match(quotaLawyerLine({ ...base, personal: { used_ratio: 0.5, remaining_ratio: 0, limited_by: "burst", paused: "burst" } }), /最近 5 小时用得太快/);
-  // 本期额度用完（100%）同样写明暂停（复核 S9A-13）
-  const full = quotaLawyerLine({ ...base, firm: { ...firm, used_ratio: 1, paused: "allowance" } });
-  assert.match(full, /AI 额度已用完，AI 处理暂停/);
-  assert.doesNotMatch(full, JARGON);
-});
-
+// 第 69 批（V43，融合审查 F-04）：“律师一句话” quotaLawyerLine 在产品代码里已无调用方，且与 personalView 是两套“本人已用比例”口径——函数与本条用例一并删去
 test("百分比文字与水位：<0.1% 不写 0；10% 以下一位小数；上限按百分比折算水位；重置时刻与月份写成中文", () => {
   assert.equal(fmtPct(0), "0%");
   assert.equal(fmtPct(0.0004), "<0.1%");

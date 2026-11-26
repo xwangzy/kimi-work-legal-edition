@@ -129,8 +129,11 @@ test("切换账号的界面辅助：档案标记、切换答复识别、按档�
   assert.equal(scopedKey("kwl.home.lastMatter"), "kwl.home.lastMatter");
   assert.match(switchingText({ switched: true, account: { name: "乙律师" } } as any), /「乙律师」的工作空间/);
   assert.match(switchingText({ switched: true, enrolling: true, account: { email: "b@x.cn" } } as any), /登记这台电脑/);
-  assert.match(reloginView("session_required").lead, /换一个账号登录/);
+  // 第 69 批（V43）：主动退出时不再在标题下解释；“换一个账号”是标题行右侧的入口，隔离说明在进入换账号时才出现在页脚
+  assert.equal(reloginView("session_required").title, "你已退出登录");
+  assert.equal(reloginView("session_required").lead, "");
   const src = readFileSync(join(import.meta.dirname, "../src/pages/Relogin.tsx"), "utf8");
   assert.doesNotMatch(src, /只有这台电脑登记的成员可以在这里登录/);
-  assert.match(src, /各账号的事项、材料和成果互不可见/);
+  assert.match(src, /换个账号/);
+  assert.match(src, /各账号的事项、材料和成果分开保存，互不可见/);
 });

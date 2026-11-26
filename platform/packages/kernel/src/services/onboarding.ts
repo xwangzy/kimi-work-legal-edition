@@ -136,7 +136,7 @@ async function cpPost(
   body: unknown,
   method: "POST" | "GET" = "POST",
   headers: Record<string, string> = {},
-): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string; retry_after_s?: number; hold?: { reason: string; sms_available: boolean; phone_masked: string | null }; devices?: unknown[] }> {
+): Promise<{ ok: true; json: Record<string, any> } | { ok: false; code: string; message?: string; min_version?: string; retry_after_s?: number; hold?: { reason: string; sms_available: boolean; phone_masked: string | null }; devices?: unknown[]; device_limit?: number }> {
   const r = await relay({ method, path, headers, body: method === "GET" ? "" : JSON.stringify(body) });
   // 证书类、安装包配置类的代码原样保留（cp_tls_*、cp_upstream_*），其余通道错误并成 cp_unreachable
   if (!r.ok) return { ok: false, code: r.reason.startsWith("cp_") && !cloudFailureText(r.reason) ? "cp_unreachable" : r.reason };
@@ -162,6 +162,7 @@ async function cpPost(
         : {}),
       // 第 68 批（V42，D-295）：登记新电脑时电脑数已满，云端给出已登记的电脑
       ...(json?.error?.code === "device_limit" && Array.isArray(json.error.devices) ? { devices: (json.error.devices as unknown[]).slice(0, 20) } : {}),
+      ...(json?.error?.code === "device_limit" && Number.isSafeInteger(json.error.device_limit) && json.error.device_limit > 0 && json.error.device_limit <= 99 ? { device_limit: json.error.device_limit as number } : {}),
     };
   return { ok: true, json };
 }
@@ -567,7 +568,9 @@ export class OnboardingService {
       this.limitSession = { token: j.session_token, at: Date.now() };
       canUnbind = (await this.registrationMeta().catch(() => null))?.device_unbind_on_login === true;
     }
-    return { ...view, next: "blocked", reason: state, message: onboardingStateText(state, { admin: role === "admin" }), devices: Array.isArray(onb.devices) ? onb.devices : [], ...(canUnbind ? { can_unbind: true } : {}) };
+    // 第 69 批（D-297）：带上云端设定的电脑数上限（界面写“最多同时在 N 台电脑上使用”；客户端不另设上限）
+    const limitN = Number.isSafeInteger(onb.device_limit) && (onb.device_limit as number) > 0 && (onb.device_limit as number) <= 99 ? (onb.device_limit as number) : null;
+    return { ...view, next: "blocked", reason: state, message: onboardingStateText(state, { admin: role === "admin" }), devices: Array.isArray(onb.devices) ? onb.devices : [], ...(limitN ? { device_limit: limitN } : {}), ...(canUnbind ? { can_unbind: true } : {}) };
   }
 
   /** 第 68 批：电脑数已满时这次登录的会话（只在内存里；就地移除一台后用它继续登记这台电脑）。 */
@@ -646,7 +649,7 @@ export class OnboardingService {
         this.limitSession = { token: a.token, at: Date.now() };
         this.autoPending = null;
         const canUnbind = (await this.registrationMeta().catch(() => null))?.device_unbind_on_login === true;
-        return { kind: "member", next: "blocked", reason: "device_limit", message: onboardingStateText("device_limit"), devices: r.devices ?? [], ...(canUnbind && (r.devices ?? []).length > 0 ? { can_unbind: true } : {}) };
+        return { kind: "member", next: "blocked", reason: "device_limit", message: onboardingStateText("device_limit"), devices: r.devices ?? [], ...(r.device_limit ? { device_limit: r.device_limit } : {}), ...(canUnbind && (r.devices ?? []).length > 0 ? { can_unbind: true } : {}) };
       }
       if (r.hold)
         return {
@@ -1206,6 +1209,8 @@ export function registrationMetaOf(json: Record<string, unknown> | null): Record
     // 第 68 批（V42）：云端支持同一台电脑换账号（带签名登录别的账号不再被拒）、电脑数已满时用刚完成的登录就地移除一台
     account_switch: features.includes("account_switch"),
     device_unbind_on_login: features.includes("device_limit_unbind"),
+    // 第 69 批：密码登录可填手机号
+    password_by_phone: pol.password_by_phone === true,
     sms: { code_length: int(sms.code_length, 4, 8, 6), resend_seconds: int(sms.resend_seconds, 30, 600, 60), ttl_minutes: int(sms.ttl_minutes, 1, 30, 10) },
   };
 }

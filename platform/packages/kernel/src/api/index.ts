@@ -3370,7 +3370,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         // 第 44 批：账号登录状态（不含令牌）
         account: (() => {
           const s = deps.account?.session() ?? null;
-          const problem = deps.account?.problem() ?? null;
+          const raw = deps.account?.problem() ?? null;
+          // 第 69 批（V43）：这台电脑在云端已被移除（本人在别的电脑上移除，或管理员移除）时，要重新登录的原因如实写 device_revoked——
+          // 原来按会话失效报“登录已过期”，律师照常重登却被拒，看到的是“被律所停用”
+          const problem = raw && deps.governance?.exitMode()?.code === "device_revoked" ? "device_revoked" : raw;
           // 第 64 批：退出登录后会话已删，last_email 给重新登录页预填（不含令牌）
           return deps.account ? { logged_in: !!s && !problem, email: s?.email ?? null, name: s?.name ?? null, login_required: !!problem, reason: problem, last_email: deps.account.last?.()?.email ?? null } : null;
         })(),
@@ -4063,7 +4066,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // ─── 账号（第 44 批，主文 §2）：我方自有账号；登录带设备签名，会话直接绑这台电脑；密码只经闸门的控制面通道发给中软，本机不保存 ───
     "account.status": () => {
       const s = deps.account?.session() ?? null;
-      const problem = deps.account?.problem() ?? null;
+      const rawProblem = deps.account?.problem() ?? null;
+      // 第 69 批：同上，这台电脑已被移除时原因写 device_revoked
+      const problem = rawProblem && deps.governance?.exitMode()?.code === "device_revoked" ? "device_revoked" : rawProblem;
       const last = deps.account?.last?.() ?? null;
       return { mode: deps.controlPlane ? "control_plane" : "local_dev", edition, logged_in: !!s && !problem, account: s ? { email: s.email, name: s.name, role: s.role } : null, last_account: last, login_required: !!problem, reason: problem, message: problem ? accountErrorText(problem) : null };
     },

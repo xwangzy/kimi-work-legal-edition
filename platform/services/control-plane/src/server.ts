@@ -23,7 +23,7 @@ import { createAuditLog, type AuditEntry, type AuditLog } from "./audit-log.ts";
 import { availability, boostPct as quotaBoost, chargeLease, closeLease, emptyQuota, ensurePeriod, forecastExhaust, leaseQuota, memberLimitOf, migrateQuota, outstanding, pausedOf, QuotaError, quotaView, ratio, setCap as quotaSetCap, sweepLeases, totalsOf, usedOf, type QuotaCtx, type QuotaState, revokeLeases } from "./quota.ts";
 import { B62_CNY_PER_MTOK, catalogFromConfig, microToCny, migrateCatalog, periodBill, periodBounds, planOf, PlanError, seatQuotaUnits, tokensToCny, tokensToMicro, unitOut, validatePlan, validateSettings, type B62MigrationRecord, type Catalog, type PlanSpec } from "./billing.ts";
 import { amountOf, billedOf, bootstrapRouting, currentPrices, deleteModel, deleteProvider, migratePricingToModels, migrateRouting, modelCatalogBody, moneyOf, priceTableOf, pricingView, recordHealth, requestProbe, reserveRates, resolvePrice, routingFeedBody, RoutingError, routingView, setPrices, setPricing, upsertModel, upsertProvider, type RoutingState, unpricedAliasesIn, validatePrices, type PriceTable } from "./routing.ts";
-import { addAgg, dayOf, emptyAgg, rowAgg, UsageBook, usedIn, type Agg, type UsageRow, type UsageTokens } from "./usage-ledger.ts";
+import { addAgg, dayOf, emptyAgg, rowAgg, splitRatios, UsageBook, usedIn, type Agg, type UsageRow, type UsageTokens } from "./usage-ledger.ts";
 import {
   accountDeviceId,
   accountDeviceIndex,
@@ -1609,6 +1609,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 第 63 批：手机号验证码登录、登录后绑定手机号（dry-run 下不回码的用途视为不可用）
       phone_login: loginUsable(),
       phone_bind: smsPurposeUsable("bind"),
+      // 第 69 批：密码登录可填手机号（客户端据此把“邮箱”一栏写成“手机号或邮箱”；旧云端没有这一项）
+      password_by_phone: true,
       sms: { code_length: sms.code_length, resend_seconds: sms.resend_seconds, ttl_minutes: sms.ttl_minutes },
     };
   };
@@ -1691,6 +1693,30 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   const accountDevices = (a: AccountRecord): DeviceRecord[] => [...(tenants.get(a.tid)?.devices.values() ?? [])].filter((d) => d.cert.memberId === uidOfAccount(a));
   const liveSessionsOf = (aid: string) => [...sessions.values()].filter((x) => x.aid === aid && sessionLive(x, now()));
+  /**
+   * 第 69 批（V43，D-297）：电脑数已满时给律师选“移除哪一台”的那份列表——只靠“第 n 台、某日登记”认不出是哪台电脑。
+   * 每台补上：平台（取这个账号在那台电脑上最近一次会话报的 platform）、最近使用的时刻（会话 last_seen_at，比只到日的 client_seen_on 细）、
+   * 是否正在登录（有有效会话：移除会让那台电脑立即退出）。按最近使用从新到旧排；不含 IP、网段等定位信息。
+   */
+  const deviceSummaries = (a: AccountRecord, devs: DeviceRecord[]) => {
+    const t0 = now();
+    const mine = [...sessions.values()].filter((x) => x.aid === a.aid && x.device_id);
+    return devs
+      .map((d) => {
+        const ss = mine.filter((x) => x.device_id === d.cert.deviceId).sort((x, y) => y.last_seen_at.localeCompare(x.last_seen_at));
+        const last = ss[0];
+        return {
+          device_id: d.cert.deviceId,
+          registered_at: d.registered_at,
+          client_version: d.client_version ?? null,
+          last_seen_on: d.client_seen_on ?? null,
+          platform: last?.client.platform ?? null,
+          last_seen_at: last?.last_seen_at ?? null,
+          session: ss.some((x) => sessionLive(x, t0)) ? ("active" as const) : ("none" as const),
+        };
+      })
+      .sort((x, y) => (y.last_seen_at ?? y.last_seen_on ?? y.registered_at ?? "").localeCompare(x.last_seen_at ?? x.last_seen_on ?? x.registered_at ?? ""));
+  };
   /** 暂停的设备：要求账号登录的律所里，设备所属成员没有账号、账号停用，或这台设备上没有有效的桌面会话。 */
   const suspendedDevices = (): { tid: string; device_id: string }[] => {
     const out: { tid: string; device_id: string }[] = [];
@@ -1820,13 +1846,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const base = { tid: t.tid, firm, member, devices_used: live.length, device_limit: limit };
     // 第 68 批（V42，D-294）：签名的设备是这个账号的 → ready；是同一台电脑上别的账号的档案 → 不再回 device_mismatch，按这个账号自己的设备策略给出
     if (dev && dev.cert.memberId === uidOfAccount(a) && dev.cert.deviceId.length > 0) return { state: "ready", ...base, device_id: dev.cert.deviceId };
-    const liveList = () => live.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null }));
+    const liveList = () => deviceSummaries(a, live);
     if (!t.root_public_key_pem) {
       if (a.role !== "admin") return { state: "waiting_founder", ...base };
       if (!issueClaim) return { state: "needs_founder_setup", ...base };
       return { state: "needs_founder_setup", ...base, claim: { kind: "founder", tid: t.tid, firm, member, ...accountClaim(t, a, "founder") } };
     }
-    // 第 66 批（V40，D-292）：个人账号——不等另一台电脑批准、不按套餐台数挡：由控制面用账号设备签发钥直接签（POST /v1/auth/devices/enroll）
+    // 第 66 批（V40，D-292）：个人账号——不等另一台电脑批准：由控制面用账号设备签发钥直接签（POST /v1/auth/devices/enroll）；台数按云端配置的上限（D-295）
     if (autoEnrollReady(t)) {
       // 第 68 批（D-295）：个人账号同样按云端配置的电脑数上限（满了给出已登记的电脑，律师移除一台后再登录）
       if (live.length >= limit) return { state: "device_limit", ...base, devices: liveList() };
@@ -1835,13 +1861,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return { state: "needs_device_auto", ...base, personal: true, ...(issueClaim ? { device_id: nextId } : {}) };
     }
     if (live.length >= limit) return { state: "device_limit", ...base, devices: liveList() };
-    // 下一台的编号：1..9 里第一个从未用过的（吊销过的编号不再复用）
-    const used = new Set([...devs.map((d) => accountDeviceIndex(t.tid.slice(4), a.member_slug, d.cert.deviceId)), ...[...t.preRevoked.keys()].map((id) => accountDeviceIndex(t.tid.slice(4), a.member_slug, id))]);
-    for (const jr of t.joinRequests.values()) if (jr.member_slug === a.member_slug && (jr.status === "pending" || jr.status === "approved")) used.add(accountDeviceIndex(t.tid.slice(4), a.member_slug, jr.device_id));
-    let n = 1;
-    while (used.has(n) && n <= MAX_DEVICES_PER_ACCOUNT) n += 1;
-    if (n > MAX_DEVICES_PER_ACCOUNT) return { state: "device_limit", ...base, devices: [] };
-    const deviceId = accountDeviceId(t.tid.slice(4), a.member_slug, n);
+    // 下一台的编号：第一个从未用过的（吊销过的编号不再复用）。第 69 批（V43，D-297）：团队成员的编号原来只在 1～9 里取——
+    // 先后换过 9 台电脑（含已移除的）之后，即使在用的远不到上限也回“电脑数已满”且列表为空，律师无处可移除（与云端配置的上限无关的隐性上限）。
+    // 改为与个人账号同一编号空间（_D999，内核 config.ts / onboarding.ts 的编号校验本就接受）；同时在用几台仍只由 deviceLimitOf 管
+    const deviceId = nextDeviceId(t, a, PERSONAL_DEVICE_NUMBER_MAX);
+    if (!deviceId) return { state: "device_limit", ...base, devices: liveList() };
     if (!issueClaim) return { state: "needs_device_join", ...base };
     return { state: "needs_device_join", ...base, device_id: deviceId, claim: { kind: "member", tid: t.tid, firm, member, ...accountClaim(t, a, "member", deviceId) } };
   };
@@ -3766,7 +3790,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const email = normalizeEmail(b.email);
         const stf = email ? staff.get(staffByEmail.get(email) ?? "") : undefined;
         if (stf) return staffLogin(res, stf, b, src);
-        const ea = email ? accounts.get(accountByEmail.get(email) ?? "") : undefined;
+        // 第 69 批（V43）：密码登录也认验证过的手机号（律师多数用手机号注册，记得的是手机号）——“邮箱”一栏填的是 11 位手机号时按手机号找账号；
+        // 锁定、失败计数、来源限流与邮箱完全相同，找不到与密码错同样回答（不泄露手机号是否注册）。平台人员只认邮箱
+        const phoneId = !email && typeof b.email === "string" && !b.email.includes("@") ? normalizePhone(b.email) : null;
+        const ea = email ? accounts.get(accountByEmail.get(email) ?? "") : phoneId ? accounts.get(accountByPhone.get(phoneMacOf(phoneId)) ?? "") : undefined;
         if (ea) {
           const lk = locked(ea, now());
           if (lk) throw new CpError(423, "account_locked", `密码错误次数过多，请 ${Math.ceil(lk / 60)} 分钟后再试，或找回密码`, { retry_after_s: lk });
@@ -3777,7 +3804,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
             noteFailure(ea, now());
             persistNow();
           }
-          throw new CpError(401, "auth_invalid", ea && !ea.pw ? "这个账号还没有设置密码：请用管理员给你的设置码设置密码" : "邮箱或密码不正确");
+          throw new CpError(401, "auth_invalid", ea && !ea.pw ? "这个账号还没有设置密码：请用管理员给你的设置码设置密码" : phoneId ? "手机号或密码不正确" : "邮箱或密码不正确");
         }
         a = ea;
       }
@@ -3914,6 +3941,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (method === "GET" && p === "/v1/auth/me") {
       const t = tenantOf(a.tid);
       const devs = accountDevices(a);
+      const sumById = new Map(deviceSummaries(a, devs).map((x) => [x.device_id, x]));
       const dev = s.device_id ? (t.devices.get(s.device_id) ?? null) : null;
       return sendRaw(res, 200, {
         ok: true,
@@ -3922,7 +3950,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         account: { ...accountView(a, { org: orgOf(a.tid) }), device_limit: deviceLimitOf(a) },
         session: sessionView(s, s.sid),
         onboarding: dev && !dev.revoked_at ? { state: "ready", tid: t.tid, device_id: dev.cert.deviceId } : null,
-        devices: devs.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, revoked_at: d.revoked_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, current: d.cert.deviceId === s.device_id, issuer: certIssuerOf(d.cert), session: liveSessionsOf(a.aid).some((x) => x.device_id === d.cert.deviceId) ? "active" : "none" })),
+        // 第 69 批（D-297）：每台另给平台与最近使用时刻（deviceSummaries，与电脑数已满时的列表同一口径）
+        devices: devs.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, revoked_at: d.revoked_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, platform: sumById.get(d.cert.deviceId)?.platform ?? null, last_seen_at: sumById.get(d.cert.deviceId)?.last_seen_at ?? null, current: d.cert.deviceId === s.device_id, issuer: certIssuerOf(d.cert), session: liveSessionsOf(a.aid).some((x) => x.device_id === d.cert.deviceId) ? "active" : "none" })),
         sessions: liveSessionsOf(a.aid).map((x) => sessionView(x, s.sid)),
         // 第 66 批（V40）：个人账号（新电脑直接登录；第 68 批起台数按云端配置）与最近 5 次登录（时刻、类型、设备编号、平台、粗粒度网段）
         personal: autoEnrollReady(t),
@@ -4040,7 +4069,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const live = accountDevices(a).filter((d) => !d.revoked_at);
       const rotated: string[] = [];
       if (live.length >= deviceLimitOf(a))
-        throw new CpError(409, "device_limit", `这个账号的电脑数已达上限（${deviceLimitOf(a)} 台）：请先移除一台不再使用的电脑`, { device_limit: deviceLimitOf(a), devices: live.map((d) => ({ device_id: d.cert.deviceId, registered_at: d.registered_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null })) });
+        throw new CpError(409, "device_limit", `这个账号的电脑数已达上限（${deviceLimitOf(a)} 台）：请先移除一台不再使用的电脑`, { device_limit: deviceLimitOf(a), devices: deviceSummaries(a, live) });
       const ca = accountCa()!;
       const at = now();
       let cert: DeviceCertificate;
@@ -4499,8 +4528,18 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const pDenom = personalDenom(q, ctx, dev.cert.memberId);
       const mySid = t.seatsByUser.get(dev.cert.memberId)?.sid ?? "";
       const av = availability(q, ctx, mySid, dev.cert.memberId);
+      // 第 69 批（V43）：本期按天、按用途（任务 / 问答）——与 used_ratio 同一分母（pDenom）、同一计费口径（usedIn，账本同一批行）；
+      // splitRatios 逐份累加后取差，各日之和、任务 + 问答都恰好等于 used_ratio（迁移前的已用 legacy 不分到天，作为起点偏移）。只含有调用的日子
+      const qUnit = plan.quota_unit;
+      const legacyMine = q.legacy && q.legacy.period_key === q.period_key ? (q.legacy.members?.[dev.cert.memberId] ?? 0) : 0;
+      const myDays = book.memberDaily(t.tid, dev.cert.memberId, q.period_from, q.period_to);
+      const dayRatios = splitRatios(myDays.map((d) => usedIn(qUnit, d.task) + usedIn(qUnit, d.qa)), pDenom, legacyMine);
+      const kindTot = myDays.reduce((s, d) => (addAgg(s.task, d.task), addAgg(s.qa, d.qa), s), { task: emptyAgg(), qa: emptyAgg() });
+      const [taskRatio, qaRatio] = splitRatios([usedIn(qUnit, kindTot.task), usedIn(qUnit, kindTot.qa)], pDenom, legacyMine);
       const personal = {
         used_ratio: ratio(usedOf(q, ctx, dev.cert.memberId), pDenom),
+        daily: myDays.map((d, i) => ({ day: d.day, ratio: dayRatios[i]!, requests: d.task.requests + d.qa.requests, qa_requests: d.qa.requests })),
+        by_kind: { task: { ratio: taskRatio!, requests: kindTot.task.requests }, qa: { ratio: qaRatio!, requests: kindTot.qa.requests } },
         // 第 68 批（V42）：本人进行中的任务预留（只算本人席位的在途租约；原来客户端只能拿全所的 in_flight_ratio）
         in_flight_ratio: mySid ? ratio(outstanding(q, mySid), pDenom) : 0,
         remaining_ratio: Math.min(1, Math.max(0, ratio(av.avail, pDenom))),
@@ -4511,7 +4550,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 本人按模型（份额按 token，不含金额；与 /v1/me/usage 的 by_model 同一口径）
       const mine = [...book.memberModels(t.tid, dev.cert.memberId, q.period_from, q.period_to)];
       const mineTok = mine.reduce((n, [, x]) => n + x.tokens_in + x.tokens_out, 0);
-      const ownModels = mine.map(([alias, x]) => ({ alias, label: routing.models.find((m) => m.alias === alias)?.label ?? alias, share: ratio(x.tokens_in + x.tokens_out, mineTok), requests: x.requests })).sort((x, y) => y.share - x.share);
+      // 第 69 批（V43）：每个模型另带 used_ratio（计入本人额度的比例，与 personal.used_ratio 同一分母与口径，各模型之和 = used_ratio）
+      const modelRatios = splitRatios(mine.map(([, x]) => usedIn(qUnit, x)), pDenom, legacyMine);
+      const ownModels = mine.map(([alias, x], i) => ({ alias, label: routing.models.find((m) => m.alias === alias)?.label ?? alias, share: ratio(x.tokens_in + x.tokens_out, mineTok), requests: x.requests, used_ratio: modelRatios[i]! })).sort((x, y) => y.share - x.share);
       // 套餐权益：说明、周期、频率窗口、可用模型（显示名，与模型目录同源；目录取不到用路由登记的显示名）——不下发金额与单价
       let planModels: string[];
       try {
@@ -4519,7 +4560,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       } catch {
         planModels = (plan.models ?? routing.models.filter((m) => m.enabled).map((m) => m.alias)).map((alias) => routing.models.find((m) => m.alias === alias)?.label ?? alias);
       }
-      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), plan: { id: plan.id, label: plan.label, note: plan.note, period: plan.period, burst: plan.burst, models: planModels }, account: me ? { aid: me.aid, email: me.email, name: me.name } : null, accounts_required: t.accounts_required === true, ...view, models, own_recent: ownRecent, personal, own_models: ownModels, ratio_basis: "personal" }));
+      return send(res, 200, await seal("kwl-quota-view", { tid: t.tid, issued_at: iso(), plan: { id: plan.id, label: plan.label, note: plan.note, period: plan.period, burst: plan.burst, models: planModels, valid_until: t.subscription_until ?? null }, account: me ? { aid: me.aid, email: me.email, name: me.name } : null, accounts_required: t.accounts_required === true, ...view, models, own_recent: ownRecent, personal, own_models: ownModels, ratio_basis: "personal" }));
     }
     // ─── 第 66 批（V40）：本人用量明细翻页（设备签名，同 /v1/quota；签名信封 kwl-usage-page）：before = 只要这一时刻之前的行，至多 100 条；
     // 只给本人的行（uid = 证书成员），字段同 own_recent（不含请求内容）；往前最多 180 天（账本保留期内）

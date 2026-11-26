@@ -123,8 +123,12 @@ test("整窗重新登录：标题按原因、可见“你已退出登录”；�
   // 第 68 批（V42，D-294）：不再有“只能用这台电脑登记的成员登录”
   assert.equal(reloginView("session_member_mismatch").title, "请重新登录");
   for (const r of [null, "session_expired", "session_required", "account_disabled", "session_member_mismatch"]) assert.doesNotMatch(reloginView(r).lead, /另一位成员|那位成员/);
-  assert.equal(reloginView("session_expired").title, "登录已失效");
-  for (const r of [null, "session_expired", "session_required", "account_disabled", "session_member_mismatch"]) assert.match(reloginView(r).lead, /事项、材料和成果都还在/);
+  // 第 69 批（V43）：主动退出不再解释；会话过期、账号停用仍说一句“本机的事项与成果都还在”；这台电脑已从账号移除时如实说不能再用
+  assert.equal(reloginView("session_expired").title, "登录已过期");
+  assert.equal(reloginView("session_required").lead, "");
+  for (const r of [null, "session_expired", "account_disabled"]) assert.match(reloginView(r).lead, /本机的事项与成果都还在/);
+  assert.equal(reloginView("device_revoked").title, "这台电脑已从账号移除");
+  assert.doesNotMatch(reloginView("device_revoked").lead, /重新登录即可/);
   const app = src("src/App.tsx");
   assert.match(app, /if \(login\)\s*return \(\s*<>\s*<ReloginPage/, "要重新登录时整页换成重新登录页");
   assert.ok(app.indexOf("<ReloginPage") < app.indexOf('<div className="shell">'), "在工作区之前返回");
@@ -133,6 +137,7 @@ test("整窗重新登录：标题按原因、可见“你已退出登录”；�
   assert.match(app, /onboardingRef\.current = boot === null \|\| !!boot\.onboarding \|\| !!login;/, "登录页期间快捷键、搜索、指南不响应");
   const relogin = src("src/pages/Relogin.tsx");
   assert.match(relogin, /<AuthPage kind="relogin">/);
-  assert.match(relogin, /<LoginBox page email=\{p\.email\} onDone=\{p\.onDone\} \/>/);
+  // 第 69 批：缺省预填上次账号的邮箱；“换个账号”或这台电脑已从账号移除时清空预填（登录框按 key 重新挂载）
+  assert.match(relogin, /<LoginBox key=\{other \|\| revoked \? "other" : "me"\} page subtle email=\{other \|\| revoked \? "" : p\.email\} onDone=\{p\.onDone\} \/>/);
   assert.doesNotMatch(relogin.replace(/\/\*[\s\S]*?\*\//g, ""), /register|注册/i, "重新登录页不能注册新账号");
 });

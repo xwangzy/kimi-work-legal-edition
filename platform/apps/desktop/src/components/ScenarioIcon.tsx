@@ -6,6 +6,8 @@ import type { ScenarioCard } from "../lib/scenarios.ts";
 export function scenarioIcon(c: Pick<ScenarioCard, "title">): ReactNode {
   const t = c.title;
   if (/函|催告/.test(t)) return Icon.mail();
+  // 第 69 批：诉讼成本与回收测算与金额测算原来同一个计算器图标（独立评审）——成本 / 回收是情景对比，用图表
+  if (/成本|回收/.test(t)) return Icon.chart();
   if (/测算|计算/.test(t)) return Icon.calc();
   if (/审|核|比对|体检/.test(t)) return Icon.fileCheck();
   if (/起草|申请|决议|董事会|代理词|对外版|文件/.test(t)) return Icon.pen();

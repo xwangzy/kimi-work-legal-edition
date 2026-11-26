@@ -385,3 +385,26 @@ test("安全审查：开着验证码登录时验证码强度不能调弱；dry-r
     await new Promise<void>((r) => dev.server.close(() => r()));
   }
 });
+
+// 第 69 批（V43）：密码登录也认验证过的手机号——“邮箱”一栏填 11 位手机号时按手机号找账号；锁定、失败计数与邮箱相同；
+// 找不到与密码错同样回答（不泄露手机号是否注册）；/v1/meta 公布 password_by_phone
+test("第 69 批：手机号 + 密码登录；找不到与密码错同一回答；与邮箱共用锁定计数", async () => {
+  await smsPut({ enabled: true, app_id: "100063", app_key: APP_KEY, sign_name: "测试签名", projects: { register: "ProjReg63" } });
+  nextHour();
+  await registerWithPhone("pwphone69@example.cn", "13900139269");
+  const m = (await pub("GET", "/v1/meta")).json;
+  assert.equal(m.registration_policy.password_by_phone, true);
+  tick();
+  const ok = await loginPw("13900139269");
+  assert.equal(ok.status, 200, ok.text);
+  assert.equal(ok.json.account.email, "pwphone69@example.cn");
+  tick();
+  const bad = await loginPw("13900139269", "wrong-password-1");
+  assert.deepEqual([bad.status, bad.json.error.code, bad.json.error.message], [401, "auth_invalid", "手机号或密码不正确"]);
+  tick();
+  const none = await loginPw("13900139999", PW);
+  assert.deepEqual([none.status, none.json.error.code, none.json.error.message], [401, "auth_invalid", "手机号或密码不正确"], "没注册的手机号与密码错同样回答");
+  tick();
+  const junk = await loginPw("not-a-phone", PW);
+  assert.equal(junk.status, 401, "既不是邮箱也不是手机号：同样回答，不报格式");
+});

@@ -163,6 +163,25 @@ export function usedIn(unit: "tokens" | "cny", a: Agg): number {
   return unit === "tokens" ? a.tokens_in + a.tokens_out : a.value_micro;
 }
 
+/**
+ * 第 69 批（V43）：把若干份用量（内部单位）折成占分母的比例（4 位小数，同 quota.ts ratio），且各份之和恰好等于“总量折出的比例”：
+ * 逐份累加后取相邻两次舍入的差，舍入误差不随份数累积。offset = 已计入总量、但不属于这些份的量（例如迁移前的已用），
+ * 此时各份之和 = ratio(offset + Σ) − ratio(offset)。
+ */
+export function splitRatios(parts: number[], denom: number, offset = 0): number[] {
+  const r4 = (n: number) => Math.round(n * 10_000) / 10_000;
+  const at = (n: number) => (denom <= 0 ? (n > 0 ? 1 : 0) : r4(n / denom));
+  let cum = offset;
+  let prev = at(offset);
+  return parts.map((u) => {
+    cum += u;
+    const r = at(cum);
+    const d = r4(r - prev);
+    prev = r;
+    return d;
+  });
+}
+
 export const BJ_MS = 8 * 3600_000;
 export function dayOf(t: number): string {
   return new Date(t + BJ_MS).toISOString().slice(0, 10);
@@ -207,6 +226,8 @@ export class UsageBook {
   private readonly byMemberModelDay = new Map<string, DayMap>();
   /** 第 62 批：按实际服务的上游型号（键：租户 \0 上游型号）——成本按真实型号对账。 */
   private readonly byUpstreamDay = new Map<string, DayMap>();
+  /** 第 69 批（V43）：成员 × 用途（键：租户 \0 成员 \0 qa|task）——“套餐与用量”每日柱与“用在哪”。 */
+  private readonly byMemberKindDay = new Map<string, DayMap>();
   /** 小时桶：tid → 小时序号 → {tokens, value}；成员同理（滚动窗口用，保留 8 天）。 */
   private readonly hourT = new Map<string, Map<number, { tokens: number; value: number }>>();
   private readonly hourM = new Map<string, Map<number, { tokens: number; value: number }>>();
@@ -274,6 +295,7 @@ export class UsageBook {
     bump(this.byModelDay, `${r.tid}\u0000${r.alias ?? ""}`, r.day, a);
     bump(this.byMemberModelDay, `${r.tid}\u0000${r.uid ?? ""}\u0000${r.alias ?? ""}`, r.day, a);
     bump(this.byUpstreamDay, `${r.tid}\u0000${r.upstream_model ?? ""}`, r.day, a);
+    bump(this.byMemberKindDay, `${r.tid}\u0000${r.uid ?? ""}\u0000${r.qa ? "qa" : "task"}`, r.day, a);
     const h = hourIndex(Date.parse(r.at));
     const tok = a.tokens_in + a.tokens_out;
     for (const [m, k] of [[this.hourT, r.tid], [this.hourM, `${r.tid}\u0000${r.uid ?? ""}`]] as const) {
@@ -350,6 +372,24 @@ export class UsageBook {
       if (s.requests > 0) out.set(k.slice(prefix.length), s);
     }
     return out;
+  }
+
+  /**
+   * 第 69 批（V43）：某成员在日期范围内按天、按用途（任务 / 问答）的汇总（日期升序，只含有调用的日子）。
+   * 与 member() 同源（同一批行、同一 rowAgg），所以按 usedIn 折出的各日之和等于 member() 的已用。
+   */
+  memberDaily(tid: string, uid: string, from: string, to: string): { day: string; task: Agg; qa: Agg }[] {
+    const out = new Map<string, { day: string; task: Agg; qa: Agg }>();
+    for (const kind of ["task", "qa"] as const) {
+      const d = this.byMemberKindDay.get(`${tid}\u0000${uid}\u0000${kind}`);
+      if (!d) continue;
+      for (const [day, a] of d) {
+        if (day < from || day > to || a.requests <= 0) continue;
+        const e = out.get(day) ?? (out.set(day, { day, task: emptyAgg(), qa: emptyAgg() }), out.get(day)!);
+        addAgg(e[kind], a);
+      }
+    }
+    return [...out.values()].sort((x, y) => (x.day < y.day ? -1 : x.day > y.day ? 1 : 0));
   }
 
   /** 逐行查询（新的在前）；游标是“已载入行的序号”或“月份:行号”。 */

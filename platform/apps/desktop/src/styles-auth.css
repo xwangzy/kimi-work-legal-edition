@@ -1,52 +1,69 @@
 /*
- * 登录类页面（第 64 批，参照 Kimi 客户端登录框重做）：整窗页面 + 居中卡片（品牌条带细点纹、正文、页脚说明）。
- * 无边框窗口：卡片以外的页面区域可拖动窗口（-webkit-app-region），卡片里的一切照常点按。
- * 输入框为浅底填充、无描边（聚焦时描边 + 光晕），手机号带“+86”前缀，验证码框内嵌“获取验证码”，主按钮整宽黑底（不可点时浅灰）。
- * 颜色、字号、圆角都只用令牌（样式门禁 style-tokens.test.ts）。
+ * 登录类页面（第 64 批参照 Kimi 客户端登录框起；第 69 批 V43 统一重做）：登录、注册（两步）、找回密码、重新登录 / 换账号、
+ * 电脑数已满、等待批准、凭码开通、从备份恢复——同一张卡、同一套节奏：
+ *   卡片   宽 420、圆角 r-lg、顶部 64 高品牌条（右侧细点纹）、正文最小高度一致（切换页面时卡片不跳）
+ *   标题   一级：16 / 600（登录方式页签与单个标题同一级），下接 14 的一句说明（有才出现）
+ *   输入   46 高、浅底无描边、聚焦描边 + 光晕；间距 12
+ *   主按钮 46 高、整宽、黑底；不可点时实心中灰白字
+ *   链接   表单下一行（左：切换注册 / 登录，右：忘记密码 / 跳过）；其他方式沉在正文底部、细线隔开
+ *   页脚   一句隐私说明（锁形图标）；特定情况下的补充各一行
+ * 无边框窗口：卡片以外的页面区域可拖动窗口。颜色、字号、圆角只用令牌（style-tokens.test.ts）。
  */
-.auth-page { position: relative; min-height: 100vh; box-sizing: border-box; display: grid; place-items: center; padding: 56px 16px 32px; background: var(--bg-sidebar); -webkit-app-region: drag; }
+.auth-page { position: relative; min-height: 100vh; box-sizing: border-box; display: grid; place-items: start center; padding: max(40px, calc(50vh - 330px)) 16px 32px; background: var(--bg-sidebar); -webkit-app-region: drag; }
 .auth-page .auth-card { -webkit-app-region: no-drag; }
 
-.auth-card { width: min(440px, 100%); padding: 0; overflow: hidden; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
-.auth-card.wide { width: min(520px, 100%); }
-.auth-card-head { position: relative; display: flex; align-items: center; height: 76px; padding: 0 32px; background: var(--bg-subtle); border-bottom: 1px solid var(--border-subtle); }
-.auth-card-head.brand { height: 76px; padding: 0 32px; }
+/* ── 卡片 ── */
+.auth-card { display: flex; flex-direction: column; min-height: 520px; box-sizing: border-box; width: min(420px, 100%); padding: 0; overflow: hidden; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); box-shadow: var(--shadow-composer); }
+.auth-card.wide { width: min(420px, 100%); }
+.auth-card-head, .auth-card-head.brand { position: relative; display: flex; align-items: center; height: 64px; padding: 0 32px; background: var(--bg-subtle); border-bottom: 1px solid var(--border-subtle); }
 /* 品牌条右侧的细点纹（Kimi 登录框同样的处理），向左渐隐 */
 .auth-card-head::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 58%; pointer-events: none; background-image: radial-gradient(var(--border-default) 0.9px, transparent 1.2px); background-size: 8px 8px; -webkit-mask-image: linear-gradient(to left, var(--text-primary), transparent); mask-image: linear-gradient(to left, var(--text-primary), transparent); }
 .auth-card-head .brand-lockup { position: relative; z-index: 1; }
-.auth-card-body { padding: 28px 32px 4px; }
-.auth-card-foot { padding: 16px 32px 22px; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-secondary); text-align: center; }
+/* 第 69 批第二轮（独立评审 R1-3）：卡片整体最小高度一致（660），正文撑满、页脚固定在卡底——登录、注册两步、找回、重新登录、换账号、电脑数已满同一高度 */
+.auth-card-body { display: flex; flex: 1 1 auto; flex-direction: column; box-sizing: border-box; padding: 28px 32px 22px; }
+.auth-card-body > form, .auth-card-body > .login-box, .auth-card-body > .auth-devlimit { flex: 1 1 auto; }
+.auth-card-foot { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 32px 20px; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-secondary); text-align: center; text-wrap: balance; }
+.auth-privacy { display: inline-flex; align-items: center; gap: 6px; }
+.auth-privacy svg { width: 12px; height: 12px; flex: none; color: var(--text-label); }
+.auth-foot-note { display: block; color: var(--text-secondary); }
 
-/* 标题与说明 */
-.auth-card .activate-title { font-size: var(--fs-xl); font-weight: 600; line-height: 1.35; margin: 0 0 6px; }
-.auth-card .activate-lead { font-size: var(--fs-body); line-height: 1.65; color: var(--text-secondary); margin: 0 0 18px; }
+/* ── 标题与说明（一级标题、登录方式页签同一级） ── */
+.auth-card .auth-title, .auth-card .activate-title, .auth-card .auth-method-single { margin: 0 0 20px; font-size: var(--fs-lg); font-weight: 600; line-height: 24px; color: var(--text-primary); }
+.auth-card .auth-lead, .auth-card .activate-lead { margin: -12px 0 18px; font-size: var(--fs-body); line-height: 1.65; color: var(--text-secondary); }
+.auth-card .auth-lead:empty { display: none; }
+.auth-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 20px; }
+.auth-title-row .auth-title, .auth-title-row .activate-title { margin: 0; }
+.auth-title-row .btn-link { padding: 0; font-size: var(--fs-caption); font-weight: 500; color: var(--text-secondary); white-space: nowrap; text-decoration: none; }
+.auth-title-row .btn-link:hover, .auth-title-row .btn-link:focus-visible { color: var(--text-primary); text-decoration: none; }
 .auth-card .activate-foot { font-size: var(--fs-meta); }
-.auth-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 18px; }
-.auth-title-row .activate-title { margin: 0; }
-.auth-title-row .btn-link { font-size: var(--fs-caption); white-space: nowrap; }
-.auth-greet { margin: 0 0 4px; font-size: var(--fs-xl); font-weight: 600; line-height: 1.35; }
-.auth-greet-sub { margin: 0 0 20px; font-size: var(--fs-body); line-height: 1.65; color: var(--text-secondary); }
-.auth-greet-sub b { font-weight: 600; color: var(--text-primary); }
 
-/* 登录方式页签：卡片里作为标题行（比外部设置页里的同一组件大一档） */
-.auth-card .auth-method { gap: 28px; margin: 0 0 18px; border-bottom: 0; }
-.auth-card .auth-method button { padding: 0 0 6px; font-size: var(--fs-lg); color: var(--text-secondary); border-bottom-width: 2px; }
+/* 登录方式页签（卡片的标题行） */
+.auth-card .auth-method { gap: 24px; min-height: 24px; margin: 0 0 20px; border-bottom: 0; }
+.auth-card .auth-method button { padding: 0 0 6px; font-size: var(--fs-lg); line-height: 18px; color: var(--text-secondary); border-bottom-width: 2px; }
 .auth-card .auth-method button.on { font-weight: 600; color: var(--text-primary); }
-.auth-card .auth-method-single { margin: 0 0 18px; font-size: var(--fs-lg); font-weight: 600; }
+/* 重新登录页：标题之下的页签降一档（标题已经是“你已退出登录”） */
+.auth-card .login-box.subtle .auth-method, .auth-card .auth-method.subtle { gap: 20px; margin: 0 0 14px; }
+.auth-card .login-box.subtle .auth-method button, .auth-card .auth-method.subtle button { font-size: var(--fs-body); }
 
-/* 表单 */
-.auth-card .auth-form, .auth-card .login-box { display: flex; flex-direction: column; gap: 12px; }
+/* ── 表单 ── */
+.auth-card .auth-form, .auth-card .login-box { display: flex; flex-direction: column; gap: 12px; max-width: none; }
 .auth-card .field { gap: 6px; }
 .auth-card .field > span, .auth-card .field > label > span { font-size: var(--fs-caption); color: var(--text-label); }
-/* 登录表单只有两三个框：照 Kimi 只留占位文字，标题对读屏软件保留 */
-.auth-card .auth-form.quiet .field > span:first-child, .auth-card .auth-form.quiet .field > label > span, .auth-card form.login-box .field > span:first-child, .auth-card form.login-box .field > label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.auth-card .auth-input, .auth-card .activate-code { box-sizing: border-box; width: 100%; height: 48px; padding: 0 16px; border: 1px solid transparent; border-radius: var(--r-md); background: var(--bg-muted); color: var(--text-primary); font-size: var(--fs-md); box-shadow: none; transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+/* 输入框只留占位文字（Kimi 同款），标题对读屏软件保留 */
+.auth-card .auth-form.quiet .field > span:first-child, .auth-card .auth-form.quiet .field > label > span, .auth-card .login-box .field > span:first-child, .auth-card .login-box .field > label > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.auth-card .auth-input, .auth-card .activate-code { box-sizing: border-box; width: 100%; height: 46px; padding: 0 16px; border: 1px solid transparent; border-radius: var(--r-md); background: var(--bg-muted); color: var(--text-primary); font-size: var(--fs-md); box-shadow: none; transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+.auth-card .activate-code { font-family: var(--font-mono); letter-spacing: 0.04em; }
 .auth-card textarea.activate-code { height: auto; padding: 12px 16px; }
 .auth-card .auth-input:hover, .auth-card .activate-code:hover { border-color: var(--border-default); }
 .auth-card .auth-input:focus, .auth-card .activate-code:focus { outline: none; background: var(--bg-surface); border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); }
 .auth-card .pw-wrap .auth-input { padding-right: 64px; }
-.auth-card .pw-toggle { right: 14px; font-size: var(--fs-caption); }
-.auth-card .field-warn, .auth-card .pw-rules { font-size: var(--fs-meta); }
+.auth-card .pw-toggle { right: 14px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.auth-card .pw-toggle:hover, .auth-card .pw-toggle:focus-visible { color: var(--text-primary); text-decoration: none; }
+.auth-card .field-warn { font-size: var(--fs-meta); }
+/* 密码规则：只在输入时出现（PasswordField），一行 */
+.auth-card .pw-rules { min-height: 18px; margin: 0; padding: 0 4px; gap: 2px 12px; font-size: var(--fs-meta); }
+/* 规则行的位置常驻（输入时才显示文字）：输入密码时卡片不长高、下方不跳 */
+.auth-card .pw-rules.idle { visibility: hidden; }
 
 /* 手机号：“+86”前缀与输入框是一个整体 */
 .auth-input-group { display: flex; align-items: center; min-width: 0; border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-main); }
@@ -54,52 +71,65 @@
 .auth-input-group .auth-prefix { flex: none; padding: 0 10px 0 12px; color: var(--text-primary); font-size: var(--fs-base); border-right: 1px solid var(--border-subtle); line-height: 1; }
 .auth-input-group .auth-input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; box-shadow: none; }
 .auth-input-group .auth-input:focus { outline: none; box-shadow: none; }
-.auth-card .auth-input-group { height: 48px; border-color: transparent; background: var(--bg-muted); transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+.auth-card .auth-input-group { height: 46px; border-color: transparent; background: var(--bg-muted); transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
 .auth-card .auth-input-group:hover { border-color: var(--border-default); }
 .auth-card .auth-input-group:focus-within { background: var(--bg-surface); border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); }
 .auth-card .auth-input-group .auth-prefix { padding: 0 12px 0 16px; font-size: var(--fs-md); }
-.auth-card .auth-input-group .auth-input, .auth-card .auth-input-group .auth-input:focus, .auth-card .auth-input-group .auth-input:hover { height: 46px; border: 0; background: transparent; box-shadow: none; }
+.auth-card .auth-input-group .auth-input, .auth-card .auth-input-group .auth-input:focus, .auth-card .auth-input-group .auth-input:hover { height: 44px; border: 0; background: transparent; box-shadow: none; }
 
 /* 验证码：输入框内嵌“获取验证码”（竖线隔开的文字按钮） */
-.auth-card .sms-row { display: flex; align-items: center; gap: 0; height: 48px; border: 1px solid transparent; border-radius: var(--r-md); background: var(--bg-muted); transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+.auth-card .sms-row { display: flex; align-items: center; gap: 0; height: 46px; border: 1px solid transparent; border-radius: var(--r-md); background: var(--bg-muted); transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
 .auth-card .sms-row:hover { border-color: var(--border-default); }
 .auth-card .sms-row:focus-within { background: var(--bg-surface); border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); }
-.auth-card .sms-row .auth-input, .auth-card .sms-row .auth-input:focus, .auth-card .sms-row .auth-input:hover { height: 46px; border: 0; background: transparent; box-shadow: none; }
-.auth-card .sms-row .sms-send { position: relative; flex: none; height: 46px; padding: 0 16px; border: 0; border-radius: 0 var(--r-md) var(--r-md) 0; background: transparent; color: var(--text-primary); font-size: var(--fs-base); font-weight: 500; white-space: nowrap; }
-.auth-card .sms-row .sms-send::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; border-left: 1px solid var(--border-default); }
+.auth-card .sms-row .auth-input, .auth-card .sms-row .auth-input:focus, .auth-card .sms-row .auth-input:hover { height: 44px; border: 0; background: transparent; box-shadow: none; }
+.auth-card .sms-row .sms-send { position: relative; flex: none; height: 44px; padding: 0 16px; border: 0; border-radius: 0 var(--r-md) var(--r-md) 0; background: transparent; color: var(--text-primary); font-size: var(--fs-base); font-weight: 500; white-space: nowrap; }
+.auth-card .sms-row .sms-send::before { content: ""; position: absolute; left: 0; top: 13px; bottom: 13px; border-left: 1px solid var(--border-default); }
 .auth-card .sms-row .sms-send:hover:not(:disabled) { background: var(--bg-hover-soft); }
 .auth-card .sms-row .sms-send:disabled { color: var(--text-secondary); cursor: default; }
-.auth-card .sms-hint { font-size: var(--fs-meta); color: var(--text-secondary); }
+.auth-card .sms-hint { padding: 0 4px; font-size: var(--fs-meta); color: var(--text-secondary); }
 
-/* 主按钮：整宽、黑底；不可点时浅灰（Kimi 同款），不是半透明 */
-.auth-card .activate-submit, .auth-card .auth-btn { width: 100%; height: 48px; margin-top: 6px; padding: 0 16px; border-radius: var(--r-md); font-size: var(--fs-md); font-weight: 500; }
-.auth-card .activate-submit:disabled, .auth-card .auth-btn:disabled { background: var(--bg-muted); border-color: transparent; color: var(--text-secondary); opacity: 1; cursor: default; }
+/* ── 按钮 ── */
+.auth-card .activate-submit, .auth-card .auth-btn { width: 100%; height: 46px; margin-top: 4px; padding: 0 16px; border-radius: var(--r-md); font-size: var(--fs-md); font-weight: 500; }
+/* 不可点：实心中灰白字（不用半透明：部分合成层上出现竖向接缝），既不像输入框，也不像可点的黑按钮 */
+.auth-card .activate-submit:disabled, .auth-card .auth-btn:disabled { background: var(--border-hover); border-color: transparent; color: var(--text-on-solid); opacity: 1; cursor: default; }
 .auth-card .activate-actions { gap: 10px; margin-top: 16px; }
 .auth-card .activate-actions .btn-primary, .auth-card .activate-actions .btn-ghost { height: 44px; padding: 0 18px; border-radius: var(--r-md); font-size: var(--fs-body); }
 .auth-card .activate-actions .btn-primary { flex: 1 1 auto; }
+.auth-card .login-box-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
+.auth-card .login-box-actions .btn-primary, .auth-card .login-box-actions .btn-ghost { height: 44px; padding: 0 18px; border-radius: var(--r-md); font-size: var(--fs-body); }
+.auth-card .login-box-actions .btn-primary { flex: 1 1 auto; }
 
-/* 错误与提示 */
+/* ── 错误、提示与小字 ── */
 .auth-card .activate-error { margin: 0; padding: 9px 12px; border-radius: var(--r-sm); background: var(--status-danger-bg); color: var(--status-danger-text); font-size: var(--fs-caption); line-height: 1.6; }
 .auth-card .activate-notice { margin: 0 0 14px; font-size: var(--fs-caption); }
 .auth-card .auth-unreg { gap: 8px; }
+.auth-card .auth-fine { margin: 0; padding: 0 4px; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-secondary); }
+.auth-links .auth-more { font-weight: 400; color: var(--text-secondary); }
+.auth-links .auth-more:hover { color: var(--text-primary); text-decoration: none; }
 
-/* 表单下方的链接行与其他方式 */
-.auth-links { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+/* ── 表单下方的链接行；其他方式沉到正文底部 ── */
+.auth-links { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
 .auth-links .btn-link { padding: 0; font-size: var(--fs-caption); color: var(--text-primary); font-weight: 500; }
 .auth-links .btn-link:hover { text-decoration: underline; }
-.auth-title-row .btn-link { color: var(--text-primary); font-weight: 500; }
 .auth-links-end { margin-left: auto; }
-.auth-alt { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 16px; margin: 22px 0 6px; padding-top: 18px; border-top: 1px solid var(--border-subtle); }
+.auth-links-note { margin-left: auto; font-size: var(--fs-meta); color: var(--text-label); }
+.auth-alt { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 28px; margin: auto 0 0; padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+.auth-card-body > form + .auth-alt, .auth-card-body > .login-box + .auth-alt { margin-top: 22px; }
 .auth-alt .btn-link { padding: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
 .auth-alt .btn-link:hover { color: var(--text-primary); }
 
-/* 取登录方式期间的骨架与“取不到” */
+/* ── 进度（正在打开、正在切换） ── */
+.auth-progress, .auth-switching { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px 0; text-align: center; }
+.auth-progress .auth-title, .auth-switching .auth-switching-title { margin: 6px 0 0; font-size: var(--fs-lg); font-weight: 600; color: var(--text-primary); }
+.auth-progress .auth-lead, .auth-switching .muted { margin: 0; font-size: var(--fs-body); color: var(--text-secondary); }
+
+/* ── 取登录方式期间的骨架与“取不到” ── */
 .auth-skeleton { display: flex; flex-direction: column; gap: 12px; }
-.auth-skel-tabs { display: flex; gap: 28px; margin: 0 0 6px; }
+.auth-skel-tabs { display: flex; gap: 24px; margin: 0 0 8px; }
 .auth-skel-bar { display: block; border-radius: var(--r-md); background: linear-gradient(90deg, var(--bg-muted) 0%, var(--bg-subtle) 50%, var(--bg-muted) 100%); background-size: 200% 100%; animation: auth-shimmer 1.4s var(--ease-standard) infinite; }
-.auth-skel-bar.w-tab { width: 76px; height: 22px; border-radius: var(--r-xs); }
-.auth-skel-bar.w-input { height: 48px; }
-.auth-skel-bar.w-btn { height: 48px; margin-top: 6px; }
+.auth-skel-bar.w-tab { width: 76px; height: 20px; border-radius: var(--r-xs); }
+.auth-skel-bar.w-input { height: 46px; }
+.auth-skel-bar.w-btn { height: 46px; margin-top: 4px; }
 .auth-skel-label { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 6px 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
 .auth-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: auth-dot 1.2s var(--ease-standard) infinite; }
 @keyframes auth-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
@@ -111,51 +141,54 @@
 .auth-unavailable-actions { display: flex; align-items: center; gap: 12px; }
 .auth-unavailable-actions .auth-btn { width: auto; min-width: 96px; height: 40px; margin: 0; }
 
-/* 等待批准、核对码、设备列表等在卡片里的间距 */
+/* 等待批准、核对码等在卡片里的间距 */
 .auth-card .activate-checkcode { margin: 6px 0 14px; border-radius: var(--r-md); }
-.auth-card .auth-devices li { border-radius: var(--r-md); }
 .auth-card .section-title { margin: 18px 0 8px; font-size: var(--fs-body); }
 
-@media (max-width: 520px) {
-  .auth-card-body { padding: 24px 20px 4px; }
-  .auth-card-head, .auth-card-head.brand { padding: 0 20px; }
-  .auth-card-foot { padding: 14px 20px 20px; }
-}
-.auth-foot-note { display: block; margin-top: 8px; }
-.auth-card .login-box-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
-.auth-card .login-box-actions .btn-primary, .auth-card .login-box-actions .btn-ghost { height: 44px; padding: 0 18px; border-radius: var(--r-md); font-size: var(--fs-body); }
-.auth-card .login-box-actions .btn-primary { flex: 1 1 auto; }
-.auth-reloginwho { display: flex; align-items: center; gap: 10px; margin: 0 0 20px; padding: 10px 12px; border-radius: var(--r-md); background: var(--bg-subtle); }
-.auth-reloginwho .user-avatar { flex: none; width: 32px; height: 32px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); font-weight: 600; font-size: var(--fs-body); }
+/* ── 重新登录：上次登录的账号（头像 + 姓名 + 邮箱） ── */
+.auth-reloginwho { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; padding: 12px 14px; border-radius: var(--r-md); background: var(--bg-subtle); border: 1px solid var(--border-subtle); }
+.auth-reloginwho .user-avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); font-weight: 600; font-size: var(--fs-body); }
 .auth-reloginwho-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-body); }
-.auth-reloginwho-text b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auth-reloginwho-text b { font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .auth-reloginwho-text small { font-size: var(--fs-meta); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── 第 67 批（V41 工作线 F）登录与注册一致：卡片固定在同一高度起排（切换时品牌条不跳）；两页同一级标题、同一行切换入口 ── */
-.auth-page { place-items: start center; padding-top: max(40px, calc(50vh - 360px)); }
-.auth-card { box-shadow: var(--shadow-composer); }
-.auth-card .auth-method-single { font-size: var(--fs-lg); line-height: 1.4; }
-.auth-card .auth-method { min-height: 28px; }
+/* ── 电脑数已满：选一台移除（单选卡片列表） ── */
+/* 重新登录页里登录框换成“选一台移除”时，外层的标题行与上次账号让位（一张卡只有一个标题） */
+.auth-card-body:has([data-auth-step="device-limit"]) > .auth-title-row, .auth-card-body:has([data-auth-step="device-limit"]) > .auth-reloginwho, .auth-card-body:has([data-auth-step="device-limit"]) > .auth-lead, .auth-card-body:has(.auth-switching) > .auth-title-row, .auth-card-body:has(.auth-switching) > .auth-reloginwho { display: none; }
+.auth-devlimit { display: flex; flex-direction: column; gap: 12px; }
+.auth-devlimit .auth-title-row { margin-bottom: 8px; }
+.auth-devlimit .auth-lead { margin: 0 0 6px; }
+.auth-devlimit .auth-lead b { font-weight: 500; color: var(--text-primary); }
+.auth-device-tag { padding: 1px 6px; border-radius: var(--r-xs); background: var(--bg-muted); color: var(--text-secondary); font-size: var(--fs-meta); font-weight: 500; }
+.auth-devices { display: flex; flex-direction: column; gap: 8px; }
+.auth-device-row { display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); color: var(--text-primary); text-align: left; font: inherit; transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
+button.auth-device-row { cursor: pointer; }
+button.auth-device-row:hover:not(:disabled) { border-color: var(--border-hover); background: var(--bg-subtle); }
+button.auth-device-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.auth-device-row.on { border-color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--text-primary); }
+.auth-device-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--r-sm); background: var(--bg-muted); color: var(--text-label); }
+.auth-device-icon svg { width: 18px; height: 18px; }
+.auth-device-text { display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; min-width: 0; }
+.auth-device-text b { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-body); font-weight: 600; color: var(--text-primary); }
+.auth-device-text > span { font-size: var(--fs-caption); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auth-device-live { padding: 1px 6px; border-radius: var(--r-xs); background: var(--status-success-bg); color: var(--status-success-text); font-size: var(--fs-meta); font-weight: 500; }
+.auth-device-radio { flex: none; width: 18px; height: 18px; box-sizing: border-box; border: 1.5px solid var(--border-hover); border-radius: 50%; }
+.auth-device-row.on .auth-device-radio { border: 5px solid var(--text-primary); }
+
+/* 旧类名的兼容（设置页里的就地登录框沿用） */
 .auth-card .auth-sub { margin: -10px 0 4px; font-size: var(--fs-caption); line-height: 1.6; color: var(--text-secondary); }
 .auth-card .auth-check { margin: 2px 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
-.auth-card .pw-rules { margin-top: -2px; }
-.auth-links-note { margin-left: auto; font-size: var(--fs-meta); color: var(--text-label); }
-.auth-foot-lead { display: block; margin-bottom: 4px; }
-/* 第 67 批第二轮（独立评审 R1-11）：主按钮可点时黑底白字，不可点时同色降到 30%（原来浅灰与输入框同色，像一个输入框）；复选框下的一句说明 */
-/* 第三轮：不用半透明（半透明在部分合成层上出现竖向接缝），改为实心中灰白字——既不像输入框，也不像可点的黑按钮 */
-.auth-card .activate-submit:disabled, .auth-card .auth-btn:disabled { background: var(--border-hover); color: var(--text-on-solid); opacity: 1; }
 .auth-card .auth-check-note { margin: -6px 0 0 22px; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-secondary); }
-/* 第三轮（独立评审 R2-13）：页脚披露按句均衡折行，不把“核对”拆成两行 */
-.auth-card-foot { text-wrap: balance; }
+.auth-foot-lead { display: block; margin-bottom: 4px; }
 
-/* 第 68 批（V42，D-295）：电脑数已满时的已登记电脑列表——一行：左侧名称与登记信息（两行），右侧“移除”小按钮 */
-.auth-devlimit { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
-.auth-devlimit .section-title { margin: 0; }
-.auth-card .auth-devices li.auth-device-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
-.auth-device-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.auth-device-text b { font-weight: 500; color: var(--text-strong); }
-.auth-device-text .muted { font-size: var(--fs-caption); }
-.auth-device-row > button, .auth-device-row .confirm-inline { flex: none; width: auto; }
-.auth-devlimit-hint { margin: 0; font-size: var(--fs-caption); }
-.auth-switching { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; }
-.auth-switching-title { margin: 0; font-size: var(--fs-md); font-weight: 500; color: var(--text-strong); }
+@media (max-width: 520px) {
+  .auth-card-body { padding: 24px 20px 20px; }
+  .auth-card-head, .auth-card-head.brand { padding: 0 20px; }
+  .auth-card-foot { padding: 0 20px 18px; }
+}
+.auth-card .auth-seg { margin: 0 0 4px; }
+
+/* 第 69 批第三轮（独立评审 R2-4）：深色下输入框比卡片亮一档、禁用主按钮压暗（原来输入框与卡片几乎同色，禁用按钮反而最亮） */
+:root[data-theme="dark"] .auth-card .auth-input, :root[data-theme="dark"] .auth-card .activate-code, :root[data-theme="dark"] .auth-card .auth-input-group, :root[data-theme="dark"] .auth-card .sms-row { background: var(--bg-elevated); }
+:root[data-theme="dark"] .auth-card .auth-input-group .auth-input, :root[data-theme="dark"] .auth-card .sms-row .auth-input { background: transparent; }
+:root[data-theme="dark"] .auth-card .activate-submit:disabled, :root[data-theme="dark"] .auth-card .auth-btn:disabled { background: var(--bg-elevated); color: var(--text-secondary); }

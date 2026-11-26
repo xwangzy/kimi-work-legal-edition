@@ -128,7 +128,8 @@ test("赛邮云签名：固定输入与独立算出的 md5 一致（sign_version
 test("/v1/meta 能力字段：缺省开放注册、短信未开、不要求手机号；旧字段 registration 保留", async () => {
   const m = (await pub("GET", "/v1/meta")).json;
   assert.equal(m.registration, "open");
-  assert.deepEqual(m.registration_policy, { mode: "open", invite_required: false, require_phone: false, sms_available: false, phone_reset: false, phone_login: false, phone_bind: false, sms: { code_length: 6, resend_seconds: 60, ttl_minutes: 10 } });
+  // 第 69 批：密码登录可填手机号（password_by_phone）
+  assert.deepEqual(m.registration_policy, { mode: "open", invite_required: false, require_phone: false, sms_available: false, phone_reset: false, phone_login: false, phone_bind: false, password_by_phone: true, sms: { code_length: 6, resend_seconds: 60, ttl_minutes: 10 } });
   assert.equal(m.sms_available, false);
   assert.ok(m.features.includes("sms_send") && m.features.includes("registration_invites"));
   // 短信没开：发码给人话与可排查代码

@@ -76,7 +76,7 @@ export function backupPlan(st: BackupSt | null, now = Date.now()): {
       summary: autoOk ? `每天自动备份 · 上次 ${lastOk}` : st.configured ? (st.last_error === "location_changed" ? "备份盘不是原来那块" : st.last_ok_at ? `上次成功是 ${lastOk}` : "还没有成功过") : "",
     },
   ];
-  if (st.revoked) return { tone: "bad", headline: "这台电脑已被律所停用", consequence: "不能再备份或生成恢复包。", action: null, steps };
+  if (st.revoked) return { tone: "bad", headline: "这台电脑已从账号移除", consequence: "不能再备份或生成恢复包。", action: null, steps };
   if (!created) return { tone: "warn", headline: "还没有备份", consequence: "电脑坏了或丢了，案卷将无法找回。", action: { kind: "create", label: "生成恢复包" }, steps };
   if (autoFailing)
     return {

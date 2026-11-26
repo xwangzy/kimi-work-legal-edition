@@ -66,6 +66,7 @@
  *   "usage_dir": "/srv/kwl-shared/usage",                                 // 可选：用量账本目录（缺省 <data_dir>/control-plane/usage）；一主多备时须放共享存储
  *   "sms": { "allow_dry_run": true },                                     // 控制面可选（第 62 批）：只给测试 / 联调部署——允许运营在控制台打开短信 dry-run（验证码随应答返回、不发短信）；
  *                                                                         //   缺省 false；ops.deployment 以 prod 开头时配 true 即拒绝启动。短信通道本身（赛邮云 AppID、AppKey、签名、模板）在控制台“注册管理”里配
+ *                                                                         //   "dry_run_reveal_all_loopback": true 只许本机回环联调栈（insecure_loopback_for_test）：登录 / 找回 / 绑定的 dry-run 验证码也随应答返回
  *   // 找回全部系统管理员：有服务器 shell 的人写 <data_dir>/control-plane/admin-recovery.request（内容：系统管理员邮箱），30 秒内处理
  *   // 控制面可选（第 44 批）：套餐目录与注册设置的初始值（首次启动导入状态；之后运营在控制台改）。额度单位 cny（第 62 批起缺省：价目表售价 × 实际 usage，按上游型号计价）或 tokens
  *   "billing": { "plans": [ { "id": "standard", "label": "标准", "quota_unit": "cny", "seat_quota": 210, "period": "month", "seat_price_cny": 399,
@@ -546,11 +547,16 @@ if (cfg.role === "cp-signer") {
     sms: (() => {
       const s = cfg.sms ?? {};
       if (typeof s !== "object" || s === null || Array.isArray(s)) fail("sms 须为对象");
-      for (const k of Object.keys(s)) if (k !== "allow_dry_run") fail(`sms.${k} 不认识（短信通道在控制台“注册管理”里配）`);
+      for (const k of Object.keys(s)) if (k !== "allow_dry_run" && k !== "dry_run_reveal_all_loopback") fail(`sms.${k} 不认识（短信通道在控制台“注册管理”里配）`);
       if (s.allow_dry_run !== undefined && typeof s.allow_dry_run !== "boolean") fail("sms.allow_dry_run 须为 true 或 false");
       if (s.allow_dry_run === true && /^prod/i.test(String(cfg.ops?.deployment ?? ""))) fail("生产部署（ops.deployment 以 prod 开头）不能允许短信 dry-run：请删掉 sms.allow_dry_run");
       if (s.allow_dry_run === true) console.error("[cloud-serve] 告警：已允许短信 dry-run（验证码随应答返回、不发短信）——只用于测试与联调部署");
-      return { allowDryRun: s.allow_dry_run === true };
+      // 第 69 批：本机回环联调专用——dry-run 时登录 / 找回 / 绑定的验证码也随应答返回，验证码登录与换账号才能在本机端到端走通。
+      // 只许与 insecure_loopback_for_test（只监听 127.0.0.1、无 TLS）同时出现；任何对外部署（有 TLS）一律拒绝启动
+      if (s.dry_run_reveal_all_loopback !== undefined && typeof s.dry_run_reveal_all_loopback !== "boolean") fail("sms.dry_run_reveal_all_loopback 须为 true 或 false");
+      if (s.dry_run_reveal_all_loopback === true && (!insecure || s.allow_dry_run !== true)) fail("sms.dry_run_reveal_all_loopback 只许用于 insecure_loopback_for_test 的本机联调栈（且须同时 allow_dry_run）");
+      if (s.dry_run_reveal_all_loopback === true) console.error("[cloud-serve] 告警：本机联调——dry-run 时所有用途的验证码都随应答返回");
+      return { allowDryRun: s.allow_dry_run === true, ...(s.dry_run_reveal_all_loopback === true ? { dryRunRevealAll: true } : {}) };
     })(),
   });
   if (cfg.kimi_account !== undefined) fail("kimi_account 已撤下（第 44 批：Kimi 官方账号体系未开放第三方接入，改为我方自有账号），请从配置里删除");

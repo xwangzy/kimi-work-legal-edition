@@ -25,7 +25,14 @@ const REVIEW_SKILLS = new Set([
 /** 整理类：材料是主角，选项很少。 */
 const ORGANIZE_SKILLS = new Set(["casefile-organize", "intake-notes", "case-report"]);
 /** 研究分析类：先写清要回答的问题。 */
-const ANALYZE_SKILLS = new Set(["issue-evidence-matrix", "case-analysis", "amount-calc", "legal-research-memo", "client-advice", "procedure-check", "labor-dispute"]);
+// 第 69 批（V43，融合审查 F-01）：第 65 批的“诉讼成本与回收测算”（litigation-budget）原来不在这里，落到起草形态——段名“文书要点”、
+// 示例是原告口吻的“突出对方逾期付款”；它与金额测算同是测算类，先写测算口径、再给材料
+const ANALYZE_SKILLS = new Set(["issue-evidence-matrix", "case-analysis", "amount-calc", "litigation-budget", "legal-research-memo", "client-advice", "procedure-check", "labor-dispute"]);
+/** 测算类（金额测算、诉讼成本与回收测算）：要定的一段叫“测算口径”。 */
+const CALC_SKILLS = new Set(["amount-calc", "litigation-budget"]);
+export function isCalcCard(card: Pick<ScenarioCard, "skill">): boolean {
+  return CALC_SKILLS.has(card.skill ?? "");
+}
 
 export function cardForm(card: Pick<ScenarioCard, "id" | "scenario" | "skill" | "needsParties" | "fields">): CardForm {
   if (card.scenario === "s1b.draft_compare" || card.skill === "redraft-review") return "compare";
@@ -56,12 +63,12 @@ export function sectionOrder(form: CardForm): SectionKey[] {
 }
 
 /** 段名：同一段在不同业务里叫法不同（律师读到的是“这一段要我给什么”）。 */
-export function sectionTitle(form: CardForm, key: SectionKey, o: { hasBrief: boolean; hasDecide: boolean; hasQuestion?: boolean; hasSide?: boolean }): string {
+export function sectionTitle(form: CardForm, key: SectionKey, o: { hasBrief: boolean; hasDecide: boolean; hasQuestion?: boolean; hasSide?: boolean; calc?: boolean }): string {
   if (key === "parties") return "当事人";
   if (key === "decide") {
     if (!o.hasDecide) return "补充要求";
     // 研究分析类：有“问题”栏的叫“要回答的问题”，其余（测算、争点、核查）叫“分析要点”
-    if (form === "analyze") return o.hasQuestion ? "要回答的问题" : "分析要点";
+    if (form === "analyze") return o.hasQuestion ? "要回答的问题" : o.calc ? "测算口径" : "分析要点";
     // 审查类：卡上有“我方是”一栏才叫“立场与重点”；立场取自事项的（审合同）叫“审查重点”，立场写在事项一行
     if (form === "review") return o.hasSide ? "立场与重点" : "审查重点";
     return { draft: "文书要点", compare: "比对重点", organize: "整理方式" }[form];
@@ -74,9 +81,12 @@ export function sectionTitle(form: CardForm, key: SectionKey, o: { hasBrief: boo
  * 页脚一行“去向”（第 67 批）：开工按钮旁只说发给谁、哪些先换成代号；按原文发送的类别、检索、留存在“去向详情”里逐条列出。
  * bullets / kinds 来自内核 runs.estimate（与开始前确认同一份）。
  */
-export function sendLine(bullets: readonly string[] | undefined, kinds: readonly string[] | undefined): { text: string; tone: "normal" | "local" | "blocked" } | null {
+export function sendLine(bullets: readonly string[] | undefined, kinds: readonly string[] | undefined, blockKind?: string | null): { text: string; tone: "normal" | "local" | "blocked" } | null {
   if (!bullets || bullets.length === 0) return null;
   const k0 = kinds?.[0];
+  // 第 69 批（独立评审）：本事项第一次用 AI、客户授权依据还没记录（block_kind = consent）——这不是“不会发送”，下一步“开始前确认”里记下即可。
+  // 原来整行红字“不会发送：四项依据有‘待确认’（委托 / 保密授权、个人信息处理依据……”且被截断，律师以为这张卡不能用
+  if (k0 === "blocked" && blockKind === "consent") return { text: "本事项第一次用 AI：下一步记录客户授权依据", tone: "normal" };
   if (k0 === "blocked") return { text: bullets[0]!, tone: "blocked" };
   if (k0 === "local") return { text: bullets[0]!, tone: "local" };
   const route = bullets[kinds?.indexOf("route") ?? 0] ?? bullets[0]!;
@@ -137,6 +147,7 @@ const CARD_EXTRA: Record<string, string> = {
   issues: "例如：每个争点列出我方证据与缺口",
   "case-analysis": "例如：先给胜诉可能性判断，再列风险",
   amount: "例如：利息自起诉之日起算；违约金不超过损失的 130%",
+  "litigation-budget": "例如：律师费按一审、二审分别列；和解方案比较一次付清与分期",
   "research-lit": "例如：只看 2021 年以后的规定与判例",
   "research-deal": "例如：重点看外资准入与经营者集中申报",
   "case-law": "例如：只看最近三年、本省法院的判决",
@@ -148,6 +159,8 @@ const CARD_EXTRA: Record<string, string> = {
   "labor-response": "例如：先列答辩期限，再给应对要点",
   "suit-received": "例如：先算答辩期与管辖异议期",
   "contract-review": "例如：违约责任上限与交割前提条件要重点看",
+  // 第 69 批：原来借用审合同的形态示例（“交割前提条件”），与裁判文书研读无关
+  "ruling-digest": "例如：先算上诉期，再看事实认定与法律适用有无错误",
   "contract-review-inhouse": "例如：付款条件与验收标准要重点看",
   privacy: "例如：重点看跨境传输与单独同意",
   performance: "例如：列出对方已逾期的义务与证据",

@@ -15,7 +15,7 @@ import { MetaGate } from "./AuthShell.tsx";
 import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta, useRegistrationMetaState } from "./SmsCodeFields.tsx";
 import { DeviceLimitList } from "./DeviceLimitList.tsx";
 import { currentProfileMark, isSwitchResult, waitForProfileSwitch } from "../lib/account-switch.ts";
-import { switchingText, type AccountDevice } from "../lib/account.ts";
+import { maskPhone, passwordIdOk, switchingText, type AccountDevice } from "../lib/account.ts";
 
 /** 账号状态变了（登录、退出）：App 顶部横幅据此立即刷新。 */
 export const ACCOUNT_CHANGED = "kwl:account-changed";
@@ -25,7 +25,7 @@ export const notifyAccountChanged = () => window.dispatchEvent(new Event(ACCOUNT
  * 就地登录（会话失效、退出登录之后）：只登这台电脑已登记的那位成员的账号。第 63 批：云端开了验证码登录时可选两种方式，
  * 先显示上次用过的（没有记录先显示验证码登录）；手机号没有对应账号时只给“改用密码登录”（这里不能注册新账号）。
  */
-export function LoginBox({ email: initialEmail = "", onDone, compact = false, page = false }: { email?: string; onDone: () => void; compact?: boolean; page?: boolean }) {
+export function LoginBox({ email: initialEmail = "", onDone, compact = false, page = false, subtle = false }: { email?: string; onDone: () => void; compact?: boolean; page?: boolean; subtle?: boolean }) {
   const [email, setEmail] = useState(initialEmail);
   const [pw, setPw] = useState("");
   const [phone, setPhone] = useState("");
@@ -36,7 +36,7 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
   const [forgot, setForgot] = useState(false);
   // 第 68 批（V42，D-294/295）：登录的是另一个账号 → 切到那个账号的工作空间（过渡说明）；那个账号电脑数已满 → 列出它的电脑，可就地移除一台
   const [switching, setSwitching] = useState<string | null>(null);
-  const [limit, setLimit] = useState<{ devices: AccountDevice[]; canUnbind: boolean } | null>(null);
+  const [limit, setLimit] = useState<{ devices: AccountDevice[]; canUnbind: boolean; limit: number | null } | null>(null);
   const afterLogin = async (r: unknown, before: string): Promise<boolean> => {
     if (!isSwitchResult(r)) return false;
     setLimit(null);
@@ -48,16 +48,16 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
     return true;
   };
   const limitOf = (e: unknown) => {
-    const d = (e as { detail?: { reason?: unknown; devices?: unknown; can_unbind?: unknown } })?.detail;
-    return d && d.reason === "device_limit" && Array.isArray(d.devices) && d.devices.length > 0 ? { devices: d.devices as AccountDevice[], canUnbind: d.can_unbind === true } : null;
+    const d = (e as { detail?: { reason?: unknown; devices?: unknown; can_unbind?: unknown; device_limit?: unknown } })?.detail;
+    return d && d.reason === "device_limit" && Array.isArray(d.devices) && d.devices.length > 0 ? { devices: d.devices as AccountDevice[], canUnbind: d.can_unbind === true, limit: typeof d.device_limit === "number" ? d.device_limit : null } : null;
   };
   // 第 64 批：登录方式三态（取策略中 / 取不到 / 取到）——整页重新登录时取到才显示表单；设置页里的小登录框取不到时按密码登录显示
   const metaState = useRegistrationMetaState();
   const meta = metaState.status === "ready" ? metaState.meta : null;
-  const lm = useLoginMethod(meta);
+  const lm = useLoginMethod(meta, subtle && initialEmail ? "password" : undefined);
   const f = registrationFields(meta);
   const byPhone = lm.method === "phone";
-  const ready = byPhone ? phoneLooksValid(phone) && smsCodeLooksValid(smsCode, f.codeLength) : emailLooksValid(email) && pw.length > 0;
+  const ready = byPhone ? phoneLooksValid(phone) && smsCodeLooksValid(smsCode, f.codeLength) : passwordIdOk(email, meta) && pw.length > 0;
   const switchTo = (m: LoginMethod) => {
     setErr("");
     setUnreg(false);
@@ -94,16 +94,38 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
       </div>
     );
   if (forgot) return <ResetBox email={email} onBack={() => setForgot(false)} page={page} />;
+  // 第 69 批（V43，D-297）：电脑数已满——整卡“选一台移除”（默认预选最久没用的一台），代替登录表单；“返回登录”回到表单
+  if (limit)
+    return (
+      <DeviceLimitList
+        devices={limit.devices}
+        canUnbind={limit.canUnbind}
+        limit={limit.limit}
+        who={byPhone ? maskPhone(phone) : email.includes("@") ? email : maskPhone(email)}
+        onBack={() => {
+          setLimit(null);
+          setErr("");
+        }}
+        onUnbind={async (id) => {
+          const before = await currentProfileMark();
+          const r = await account.unbindForLogin(id);
+          if (!(await afterLogin(r, before))) {
+            setLimit(null);
+            setErr("");
+          }
+        }}
+      />
+    );
   if (page && metaState.status !== "ready") return <MetaGate state={metaState}>{() => null}</MetaGate>;
   return (
     <form
-      className={`login-box${compact ? " compact" : ""}${page ? " page" : ""}`}
+      className={`login-box${compact ? " compact" : ""}${page ? " page" : ""}${subtle ? " subtle" : ""}`}
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      {lm.methods.phone ? <LoginMethodTabs value={lm.method} onChange={switchTo} /> : page ? <div className="auth-method-single">账号密码登录</div> : null}
+      {lm.methods.phone ? <LoginMethodTabs value={lm.method} onChange={switchTo} /> : page && !subtle ? <div className="auth-method-single">账号密码登录</div> : null}
       {byPhone ? (
         <SmsCodeFields
           phone={phone}
@@ -126,7 +148,7 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
         <>
           <label className="field">
             <span>邮箱</span>
-            <input className="auth-input" type="email" value={email} onChange={(e) => (lm.lock(), setEmail(e.target.value))} autoComplete="username" spellCheck={false} placeholder={page ? "请输入邮箱" : undefined} />
+            <input className="auth-input" type={meta?.password_by_phone ? "text" : "email"} value={email} onChange={(e) => (lm.lock(), setEmail(e.target.value))} autoComplete="username" spellCheck={false} placeholder={page ? (meta?.password_by_phone ? "手机号或邮箱" : "请输入邮箱") : undefined} />
           </label>
           <PasswordField label="密码" value={pw} onChange={(v) => (lm.lock(), setPw(v))} autoFocus={!!initialEmail} {...(page ? { placeholder: "请输入密码" } : {})} />
         </>
@@ -135,20 +157,6 @@ export function LoginBox({ email: initialEmail = "", onDone, compact = false, pa
         <p className="activate-error" role="alert">
           {err}
         </p>
-      )}
-      {limit && (
-        <DeviceLimitList
-          devices={limit.devices}
-          canUnbind={limit.canUnbind}
-          onUnbind={async (id) => {
-            const before = await currentProfileMark();
-            const r = await account.unbindForLogin(id);
-            if (!(await afterLogin(r, before))) {
-              setLimit(null);
-              setErr("");
-            }
-          }}
-        />
       )}
       {page ? (
         <>

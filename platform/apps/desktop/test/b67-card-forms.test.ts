@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { SCENARIOS as SCENARIO_CARDS } from "../src/lib/scenarios.ts";
-import { cardForm, compareSlots, extraPlaceholder, materialsHint, provisionalSendLine, sectionOrder, sectionTitle, selectDefaultPlaceholder, sendLine } from "../src/lib/card-layout.ts";
+import { cardForm, compareSlots, extraPlaceholder, isCalcCard, materialsHint, provisionalSendLine, sectionOrder, sectionTitle, selectDefaultPlaceholder, sendLine } from "../src/lib/card-layout.ts";
 
 const src = (p: string) => readFileSync(fileURLToPath(new URL(`../src/${p}`, import.meta.url)), "utf8");
 const byId = (id: string) => SCENARIO_CARDS.find((c) => c.id === id)!;
@@ -38,6 +38,7 @@ test("53 张卡都有形态（第 65 批加了诉讼成本卡）；要写当事�
     "research-deal": "analyze",
     "compliance-qa": "analyze",
     amount: "analyze",
+    "litigation-budget": "analyze",
     issues: "analyze",
     "labor-termination": "analyze",
   };
@@ -129,14 +130,20 @@ test("套餐与用量（底线）：不出现点数、金额与购买按钮；�
   assert.doesNotMatch(code, /点数|积分|购买<\/button>|¥|元/);
 });
 
-test("登录与注册同一骨架：注册不再有标题下两行说明；同一级标题；“已有账号？登录”与“还没有账号？注册”都在表单下方同一行；卡片从同一高度起排", () => {
+test("登录与注册同一骨架（第 69 批：注册分两步，每步至多三个输入）：同一级标题；“已有账号？登录”与“还没有账号？注册”都在表单下方同一行；卡片从同一高度起排", () => {
   const a = src("pages/Activate.tsx");
   const reg = a.slice(a.indexOf("function RegisterForm"), a.indexOf("function ForgotPassword"));
   assert.match(reg, /className="auth-form quiet"/);
-  assert.match(reg, /<h1 className="auth-method-single">注册账号<\/h1>/);
-  assert.doesNotMatch(reg, /activate-lead/);
-  assert.match(reg, /<div className="auth-links">\s*<span>\s*已有账号？/);
-  assert.match(src("styles-auth.css"), /\.auth-page \{ place-items: start center; padding-top: max\(40px, calc\(50vh - 360px\)\); \}/);
+  assert.match(reg, /<h1 className="auth-title">注册<\/h1>/);
+  assert.match(reg, /<h1 className="auth-title">设置账号<\/h1>/);
+  assert.doesNotMatch(reg, /activate-lead|auth-check-note|不勾选即自助注册/);
+  assert.match(reg, /<div className="auth-links">\s*<span>\s*已有账号？/, "第①步表单下方：已有账号？登录");
+  const css = src("styles-auth.css");
+  assert.match(css, /\.auth-page \{[^}]*place-items: start center; padding: max\(40px, calc\(50vh - 330px\)\)/);
+  // 第二轮（独立评审 R1-3）：卡片整体同一最小高度、页脚固定在卡底
+  // 第三轮：最小高度 520——短状态（登录、注册两步、找回、换账号）同高且不留大块空白；电脑数已满（列表）按内容长高
+  assert.match(css, /\.auth-card \{ display: flex; flex-direction: column; min-height: 520px; box-sizing: border-box; width: min\(420px, 100%\);/);
+  assert.match(css, /\.auth-card-body \{ display: flex; flex: 1 1 auto;/);
 });
 
 test("第四轮：立场与文书方向对不上时只提醒不拦（答辩状挂在原告事项上）", async () => {
@@ -146,4 +153,22 @@ test("第四轮：立场与文书方向对不上时只提醒不拦（答辩状�
   assert.match(stanceMismatchText("pleading", "defendant")!, /我方是被告/);
   assert.equal(stanceMismatchText("contract-review", "plaintiff"), null);
   assert.match(src("components/ScenarioStart.tsx"), /stanceMismatchText\(card\.id, matter\.stance\)/);
+});
+
+// 第 69 批（V43，融合审查 F-01）：第 65 批新卡落到起草形态、借用原告口吻示例而用例全过——守卫：每张用 AI 的卡都要有自己的“补充要求”示例，
+// 示例不得在别的卡上重复出现（个别同类卡共用一句的列入白名单）；测算卡的“要定的一段”叫测算口径
+test("第 53 张卡（诉讼成本与回收测算）按测算类排段；每张 AI 卡都有自己的补充要求示例", () => {
+  const c = byId("litigation-budget");
+  assert.equal(cardForm(c), "analyze");
+  assert.ok(isCalcCard(c) && isCalcCard(byId("amount")) && !isCalcCard(byId("pleading")));
+  assert.equal(sectionTitle("analyze", "decide", { hasBrief: true, hasDecide: true, calc: true }), "测算口径");
+  assert.equal(sectionTitle("analyze", "materials", { hasBrief: true, hasDecide: true }), "案情与材料");
+  const own = extraPlaceholder(cardForm(c), true, c.id);
+  assert.match(own, /律师费|和解/);
+  assert.doesNotMatch(own, /原告|被告|对方逾期/, "不带一方立场的口吻");
+  const formDefaults = new Set((["draft", "review", "compare", "analyze", "organize"] as const).map((f) => extraPlaceholder(f, true)));
+  for (const x of SCENARIO_CARDS.filter((x) => x.scenario === "a1.agent_task")) {
+    const ph = extraPlaceholder(cardForm(x), true, x.id);
+    assert.ok(!formDefaults.has(ph) || ["pleading", "contract-review", "redraft"].includes(x.id), `${x.id} 没有自己的补充要求示例（借用了形态缺省“${ph}”）`);
+  }
 });

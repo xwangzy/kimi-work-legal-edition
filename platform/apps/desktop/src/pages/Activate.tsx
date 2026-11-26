@@ -9,11 +9,11 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { account, api, onboarding, recovery } from "../api.ts";
-import { AuthCard, AuthPage, MetaGate } from "../components/AuthShell.tsx";
+import { AuthCard, AuthPage, AuthPrivacy, MetaGate } from "../components/AuthShell.tsx";
 import { PasswordField } from "../components/PasswordField.tsx";
 import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMetaState } from "../components/SmsCodeFields.tsx";
 import { setAsideAutoOpen, setAsideNotice } from "../lib/activate-text.ts";
-import { checkPassword, codeLengthOk, dayLabel, deviceLine, emailLooksValid, nameLooksValid, notRegisteredActions, phoneLooksValid, phoneNotRegistered, registerCodeLengthOk, registrationFields, resetNextText, roleLabel, saveLoginMethod, smsCodeLooksValid, waitApprovalLead, type AccountDevice, type LoginMethod, type RegistrationMeta } from "../lib/account.ts";
+import { maskPhone, passwordIdOk, checkPassword, codeLengthOk, dayLabel, deviceLine, emailLooksValid, nameLooksValid, notRegisteredActions, phoneLooksValid, phoneNotRegistered, registerCodeLengthOk, registrationFields, resetNextText, roleLabel, saveLoginMethod, smsCodeLooksValid, waitApprovalLead, type AccountDevice, type LoginMethod, type RegistrationMeta } from "../lib/account.ts";
 import { fmtTime } from "../lib/labels.ts";
 import { DeviceLimitList } from "../components/DeviceLimitList.tsx";
 import { waitForProfileSwitch } from "../lib/account-switch.ts";
@@ -117,21 +117,21 @@ export function ActivatePage({ initial, onRefresh, notice = "" }: { initial: Sta
 
 /** 第 64 批：开通页的每一步都用同一个登录类外壳（AuthShell：整窗页面 + 品牌条卡片 + 页脚说明）。 */
 function Frame({ children, foot, wide = false }: { children: React.ReactNode; foot?: React.ReactNode; wide?: boolean }) {
+  // 第 69 批第二轮：每一步都带同一句页脚（电脑数已满、等待批准、凭码开通等原来没有页脚，卡片底部空着）
   return (
     <AuthPage kind="activate">
-      <AuthCard foot={foot} wide={wide}>
+      <AuthCard foot={foot ?? <AuthPrivacy />} wide={wide}>
         {children}
       </AuthCard>
     </AuthPage>
   );
 }
 
-/** 页脚：登录与开通发给云端的只有这些（第 63 批原文，不改）。 */
-const FOOT_TEXT = "登录与开通只把邮箱或手机号、密码或短信验证码、开通码或邀请码发给 Kimi Work 服务核对；你的案卷不会上传。";
-const FOOT_TEXT_NO_SMS = "登录与开通只把邮箱、密码、开通码或邀请码发给 Kimi Work 服务核对；你的案卷不会上传。";
+// 第 69 批（V43）：页脚原来是两行半的披露（“只把邮箱或手机号、密码或短信验证码、开通码或邀请码发给 Kimi Work 服务核对；你的案卷不会上传”）——
+// 律师真正需要确认的只有“案卷不会上传”，发给云端核对的就是表单里看得到的那几项。收成一句常驻页脚（AuthPrivacy），所有登录类卡片同一句。
 
 type View = "login" | "register" | "forgot" | "code" | "restore";
-type Blocked = { message: string; devices: AccountDevice[]; canUnbind?: boolean };
+type Blocked = { message: string; devices: AccountDevice[]; canUnbind?: boolean; limit?: number | null; who?: string | null };
 /** 第 66 批：个人账号新电脑自动登记被风控暂停（要短信验证码确认是本人；没绑手机号或短信不可用时只说明原因）。 */
 type SmsHold = { message: string; sms_available: boolean; phone_masked: string | null };
 
@@ -148,7 +148,7 @@ function authOutcome(onPending: (s: Status) => void, setDone: (t: string) => voi
     } else if (r?.next === "sms_confirm" && setHold) {
       setHold({ message: String(r.message ?? "为安全起见已暂停自动登记这台电脑：请用账号绑定的手机号接收验证码确认是本人"), sms_available: r.sms_available === true, phone_masked: typeof r.phone_masked === "string" ? r.phone_masked : null });
     } else if (r?.next === "blocked") {
-      setBlocked({ message: String(r.message ?? "这台电脑暂时不能用这个账号继续，请联系客服"), devices: Array.isArray(r.devices) ? r.devices : [], canUnbind: r.can_unbind === true });
+      setBlocked({ message: String(r.message ?? "这台电脑暂时不能用这个账号继续，请联系客服"), devices: Array.isArray(r.devices) ? r.devices : [], canUnbind: r.can_unbind === true, limit: typeof r.device_limit === "number" ? r.device_limit : null, who: typeof r.account?.email === "string" ? r.account.email : null });
     } else if (r?.next === "switch") {
       // 第 68 批（V42，D-294）：这台电脑上已有这个账号的工作空间——直接打开它（不重复登记）
       setDone(switchingText(r));
@@ -228,8 +228,11 @@ function Entry({ onPending, legacy, failed, setAside, handoff = null, otherProfi
   if (done) {
     return (
       <Frame>
-        <h1 className="activate-title">{done}</h1>
-        <p className="muted">第一次打开需要十几秒。</p>
+        <div className="auth-progress" role="status" aria-live="polite">
+          <span className="auth-dot" aria-hidden="true" />
+          <h1 className="auth-title">{done}</h1>
+          <p className="auth-lead">第一次打开需要十几秒。</p>
+        </div>
       </Frame>
     );
   }
@@ -265,35 +268,24 @@ function Entry({ onPending, legacy, failed, setAside, handoff = null, otherProfi
         notice={setAside ? setAsideNotice(setAside) : ""}
       />
     );
-  // 其他方式（Kimi 登录框“企业 SSO 登录”的位置）：凭码激活、从备份恢复
+  // 其他方式（Kimi 登录框“企业 SSO 登录”的位置）：凭码激活、从备份恢复。第 69 批：两个短链接，一行
   const alt = (
     <div className="auth-alt">
       {view !== "code" && view !== "register" && (
         <button type="button" className="btn-link" onClick={() => go("code")}>
-          有开通码或邀请码
+          使用开通码
         </button>
       )}
       <button type="button" className="btn-link" onClick={() => go("restore")}>
-        换了新电脑？从备份恢复
+        从备份恢复
       </button>
     </div>
   );
-  // 第 67 批第二轮（独立评审 R1-11）：云端没开短信时，页脚不提手机号与验证码（页面上也没有这两个入口）
-  const smsOn = metaState.status === "ready" && !!(metaState.meta as { sms_available?: boolean } | null)?.sms_available;
   const foot = (
-    <>
-      {smsOn ? FOOT_TEXT : FOOT_TEXT_NO_SMS}
-      {otherProfiles > 0 && (
-        <span className="auth-foot-note" role="note">
-          这台电脑上还有 {otherProfiles} 个账号的工作空间：用那个账号登录即可打开，各账号的资料互不可见。
-        </span>
-      )}
-      {legacy.length > 0 && (
-        <span className="auth-foot-note" role="note">
-          这台电脑上还有以前留下的数据（{legacy.join("、")}，例如旧版本试用或没有完成的入组）。激活后不会自动转入，也不会删除；如需保留或清理，请联系所内 IT。
-        </span>
-      )}
-    </>
+    <AuthPrivacy>
+      {otherProfiles > 0 && <>这台电脑上还有 {otherProfiles} 个账号，登录对应账号即可打开，彼此不可见。</>}
+      {legacy.length > 0 && <>这台电脑上有以前留下的数据（{legacy.join("、")}），不会转入也不会删除，如需处理请联系所内 IT。</>}
+    </AuthPrivacy>
   );
   return (
     <Frame foot={foot}>
@@ -316,10 +308,7 @@ function Entry({ onPending, legacy, failed, setAside, handoff = null, otherProfi
               onResult={outcome}
               onForgot={() => go("forgot")}
               onRegister={() => go("register")}
-              onRegisterWithPhone={() => {
-                go("register");
-                setNote(`已带上手机号 ${phone.trim()}。请补全邮箱、密码和姓名，再获取验证码完成注册；之后就可以用这个手机号登录。`);
-              }}
+              onRegisterWithPhone={() => go("register")}
             />
           )}
         </MetaGate>
@@ -347,7 +336,8 @@ function Entry({ onPending, legacy, failed, setAside, handoff = null, otherProfi
             setDone(t);
             void waitForActivated(stuck, "#/welcome");
           }} failed={err} onBack={() => go("login")} />}
-      {view !== "forgot" && alt}
+      {/* 第 69 批第二轮：“使用开通码 / 从备份恢复”只在登录与凭码页出现（注册、找回时用不上，也让各卡同高） */}
+      {(view === "login" || view === "code") && alt}
     </Frame>
   );
 }
@@ -377,7 +367,7 @@ function LoginForm(p: {
   const lm = useLoginMethod(p.meta);
   const f = registrationFields(p.meta);
   const byPhone = lm.method === "phone";
-  const ready = byPhone ? phoneLooksValid(p.phone) && smsCodeLooksValid(smsCode, f.codeLength) : emailLooksValid(p.email) && pw.length > 0;
+  const ready = byPhone ? phoneLooksValid(p.phone) && smsCodeLooksValid(smsCode, f.codeLength) : passwordIdOk(p.email, p.meta) && pw.length > 0;
   const switchTo = (m: LoginMethod) => {
     p.setErr("");
     setUnreg(false);
@@ -432,7 +422,7 @@ function LoginForm(p: {
         <>
           <label className="field">
             <span>邮箱</span>
-            <input className="auth-input" type="email" value={p.email} onChange={(e) => (lm.lock(), p.setEmail(e.target.value))} autoComplete="username" autoFocus spellCheck={false} placeholder="请输入邮箱" />
+            <input className="auth-input" type={p.meta?.password_by_phone ? "text" : "email"} value={p.email} onChange={(e) => (lm.lock(), p.setEmail(e.target.value))} autoComplete="username" autoFocus spellCheck={false} placeholder={p.meta?.password_by_phone ? "手机号或邮箱" : "请输入邮箱"} />
           </label>
           <PasswordField label="密码" value={pw} onChange={(v) => (lm.lock(), setPw(v))} placeholder="请输入密码" />
         </>
@@ -477,11 +467,18 @@ function LoginForm(p: {
   );
 }
 
+/**
+ * 注册（第 69 批，V43 重做为两步，每步与登录卡同一骨架：一个标题、至多三个输入、一个主按钮、一行链接）：
+ *   ① 手机号 + 短信验证码（云端要求验证手机号时；可选时可跳过；没开短信时没有这一步）→ “下一步”
+ *   ② 姓名、邮箱、设置密码 → “注册并继续”；律所名称（缺省“<姓名>的工作室”，注册后不能改）与邀请码 / 开通码收在一个可展开的链接里
+ * 验证码到第②步提交时才由云端核对：核对不过（错码、过期、次数用尽）回到第①步并把原因写在那里。
+ * 原来一屏七个输入框 + 复选框 + 三段说明小字（“不勾选即自助注册试用的个人工作室，本机为第一台电脑”“凭码注册时律所以码对应的为准”……），
+ * 在 900 高的窗口里放不下；这些说明要么显而易见、要么在用到时才有意义，按需出现或删去。
+ */
 function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmail: (v: string) => void; phone: string; setPhone: (v: string) => void; err: string; setErr: (v: string) => void; onResult: (r: any) => void; onLogin: () => void }) {
   const [pw, setPw] = useState("");
   const [name, setName] = useState("");
   const [org, setOrg] = useState("");
-  const [hasCode, setHasCode] = useState(false);
   const [code, setCode] = useState("");
   // 第 63 批：手机号由开通页持有（验证码登录发现没注册时带过来）
   const { phone, setPhone } = p;
@@ -489,13 +486,19 @@ function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmai
   const [busy, setBusy] = useState(false);
   // 第 62 批：按云端注册策略显示手机号与邀请码（旧云端照旧流程）
   const f = registrationFields(p.meta);
-  const codeOn = f.code === "required" || hasCode;
+  const phoneStep = f.phone !== "hidden";
+  const [step, setStep] = useState<1 | 2>(phoneStep ? 1 : 2);
+  const [skippedPhone, setSkippedPhone] = useState(false);
+  // 云端要求凭码注册时码框常显；否则收在“律所名称或邀请码”里
+  const [more, setMore] = useState(f.code === "required");
+  const codeOn = f.code === "required" || (more && code.trim() !== "");
   const codeLen = code.replace(/[^0-9A-Z]/g, "").length;
-  const phoneOn = f.phone === "required" || (f.phone === "optional" && phone.trim() !== "");
+  const phoneOn = !skippedPhone && (f.phone === "required" || (f.phone === "optional" && phone.trim() !== ""));
   // 旧云端只认 20 / 36 位；新云端另认 12 位注册邀请码（凭它开自己的试用律所，所以也要填律所名称）
   const codeOk = f.legacy ? codeLengthOk(code) : registerCodeLengthOk(code);
   const orgShown = !codeOn || (!f.legacy && codeLen <= 12);
-  const ready = emailLooksValid(p.email) && checkPassword(pw, p.email).ok && nameLooksValid(name) && (!codeOn || codeOk) && (!phoneOn || (phoneLooksValid(phone) && smsCodeLooksValid(smsCode, f.codeLength)));
+  const step1Ready = phoneLooksValid(phone) && smsCodeLooksValid(smsCode, f.codeLength);
+  const ready = emailLooksValid(p.email) && checkPassword(pw, p.email).ok && nameLooksValid(name) && (!codeOn || codeOk) && (!phoneOn || step1Ready);
   const submit = async () => {
     if (!ready || busy) return;
     setBusy(true);
@@ -503,71 +506,124 @@ function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmai
     try {
       p.onResult(await account.register({ email: p.email.trim(), password: pw, name: name.trim(), ...(org.trim() && orgShown ? { org_name: org.trim() } : {}), ...(codeOn ? { code } : {}), ...(phoneOn ? { phone: phone.trim(), sms_code: smsCode.trim() } : {}) }));
     } catch (e) {
+      const c = (e as { detail?: { reason?: string }; code?: string }).detail?.reason ?? "";
+      // 验证码的问题回到第①步说（那里有“重新获取”）
+      if (phoneOn && /^sms_|phone_/.test(c)) setStep(1);
       p.setErr((e as Error).message || "注册没有完成，请稍后重试");
     } finally {
       setBusy(false);
     }
   };
+  const err = p.err && (
+    <p className="activate-error" role="alert">
+      {p.err}
+    </p>
+  );
+  const toLogin = (
+    <div className="auth-links">
+      <span>
+        已有账号？
+        <button type="button" className="btn-link" onClick={p.onLogin}>
+          登录
+        </button>
+      </span>
+      {step === 1 && f.phone === "optional" && (
+        <button
+          type="button"
+          className="btn-link auth-links-end"
+          onClick={() => {
+            p.setErr("");
+            setSkippedPhone(true);
+            setStep(2);
+          }}
+        >
+          跳过
+        </button>
+      )}
+    </div>
+  );
+  if (step === 1)
+    return (
+      <form
+        className="auth-form quiet"
+        data-auth-step="register-phone"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!step1Ready) return;
+          p.setErr("");
+          setSkippedPhone(false);
+          setStep(2);
+        }}
+      >
+        <h1 className="auth-title">注册</h1>
+        <SmsCodeFields phone={phone} setPhone={setPhone} code={smsCode} setCode={setSmsCode} purpose="register" codeLength={f.codeLength} resendSeconds={f.resendSeconds} setErr={p.setErr} autoFocus />
+        {err}
+        <button type="submit" className="btn-primary activate-submit" disabled={!step1Ready}>
+          下一步
+        </button>
+        {toLogin}
+      </form>
+    );
   return (
     <form
       className="auth-form quiet"
+      data-auth-step="register-account"
       onSubmit={(e) => {
         e.preventDefault();
         void submit();
       }}
     >
-      {/* 第 67 批（V41 工作线 F）：注册与登录同一骨架——同一级标题、只留占位文字（标题给读屏软件）、表单下方同一行切换入口；
-          “这台电脑就是第一台电脑”“凭码以码为准”等说明收到复选框与卡片页脚，不再在标题下放一段两行说明 */}
-      <h1 className="auth-method-single">注册账号</h1>
-      {f.code === "required" && <p className="auth-sub">现在凭邀请码注册：律所负责人填开通码，同事填律所发的邀请码。</p>}
+      <div className="auth-title-row">
+        <h1 className="auth-title">设置账号</h1>
+        {phoneStep && (
+          <button
+            type="button"
+            className="btn-link"
+            onClick={() => {
+              p.setErr("");
+              setStep(1);
+            }}
+          >
+            {phoneOn ? `+86 ${maskPhone(phone)} · 修改` : "返回"}
+          </button>
+        )}
+      </div>
+      <label className="field">
+        <span>姓名</span>
+        <input className="auth-input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={40} autoFocus placeholder="你的姓名" />
+      </label>
       <label className="field">
         <span>邮箱</span>
-        <input className="auth-input" type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} autoComplete="username" autoFocus spellCheck={false} placeholder="请输入邮箱" />
+        <input className="auth-input" type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} autoComplete="username" spellCheck={false} placeholder="邮箱（用于登录与找回密码）" />
         {p.email && !emailLooksValid(p.email) && <span className="field-warn">邮箱格式不对</span>}
       </label>
       <PasswordField label="密码" value={pw} onChange={setPw} rules email={p.email} placeholder="设置密码" />
-      <label className="field">
-        <span>姓名</span>
-        <input className="auth-input" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" maxLength={40} placeholder="姓名（同事和客户看到的名字）" />
-        {/* 第 56 批：凭邀请码（36 位）加入的，本所里显示的是管理员写在邀请上的姓名 */}
-        {codeOn && codeLen > 20 && <span className="muted">凭邀请码加入时，在本所显示的是管理员写在邀请上的姓名。</span>}
-      </label>
-      {f.phone !== "hidden" && <SmsCodeFields phone={phone} setPhone={setPhone} code={smsCode} setCode={setSmsCode} purpose="register" codeLength={f.codeLength} resendSeconds={f.resendSeconds} optional={f.phone === "optional"} setErr={p.setErr} {...(f.phone === "optional" && p.meta?.phone_login ? { phoneLabel: "手机号（可不填；填了以后可用手机号验证码登录、找回密码）" } : {})} />}
-      {orgShown && (
-        <label className="field">
-          <span>律所或工作室名称（可不填）</span>
-          <input className="auth-input" value={org} onChange={(e) => setOrg(e.target.value)} autoComplete="organization" maxLength={60} placeholder="律所或工作室名称（可不填，不填用你的姓名）" />
-        </label>
-      )}
-      {f.code === "checkbox" && (
-        <label className="auth-check">
-          <input type="checkbox" checked={hasCode} onChange={(e) => setHasCode(e.target.checked)} /> {f.legacy ? "我有开通码或邀请码" : "我有邀请码或开通码"}
-        </label>
-      )}
-      {f.code === "checkbox" && !codeOn && <p className="auth-check-note" title="不填码即自助注册：为你开通一个试用的个人工作室，之后可以邀请同事加入。">不勾选即自助注册试用的个人工作室，本机为第一台电脑</p>}
-      {codeOn && (
-        <label className="field">
-          <span>{f.legacy ? "开通码或邀请码" : f.code === "required" ? "邀请码或开通码（必填）" : "邀请码或开通码"}</span>
-          <input className="activate-code" value={code} onChange={(e) => setCode(groupCode(e.target.value))} placeholder={f.legacy ? "开通码 20 位，邀请码 36 位" : "注册邀请码 12 位，开通码 20 位，同事邀请码 36 位"} spellCheck={false} autoComplete="off" />
-          <span className="muted">{f.legacy ? "凭码注册时，律所以码对应的为准。" : "凭开通码或同事邀请码注册时，律所以码对应的为准。"}</span>
-        </label>
-      )}
-      {p.err && (
-        <p className="activate-error" role="alert">
-          {p.err}
-        </p>
-      )}
+      {more ? (
+        <>
+          {orgShown && (
+            <label className="field">
+              <span>律所或工作室名称</span>
+              <input className="auth-input" value={org} onChange={(e) => setOrg(e.target.value)} autoComplete="organization" maxLength={60} placeholder={name.trim() ? `律所或工作室名称（不填为“${name.trim()}的工作室”）` : "律所或工作室名称（可不填）"} />
+            </label>
+          )}
+          <label className="field">
+            <span>{f.code === "required" ? "邀请码或开通码" : "邀请码或开通码（可不填）"}</span>
+            <input className="activate-code auth-input" value={code} onChange={(e) => setCode(groupCode(e.target.value))} placeholder={f.code === "required" ? "邀请码或开通码" : "邀请码或开通码（可不填）"} spellCheck={false} autoComplete="off" />
+          </label>
+        </>
+      ) : null}
+      {err}
       <button type="submit" className="btn-primary activate-submit" disabled={!ready || busy}>
         {busy ? "正在注册…" : "注册并继续"}
       </button>
-      <div className="auth-links">
-        <span>
-          已有账号？
-          <button type="button" className="btn-link" onClick={p.onLogin}>
-            登录
+      {/* 第三轮（独立评审 R2-5）：第②步不再放“已有账号？登录”（第①步已有；走到这一步的是要注册的人） */}
+      {!more && (
+        <div className="auth-links">
+          <button type="button" className="btn-link auth-more" onClick={() => setMore(true)}>
+            律所名称 / 邀请码
           </button>
-        </span>
-      </div>
+        </div>
+      )}
     </form>
   );
 }
@@ -581,7 +637,8 @@ function ForgotPassword(p: { meta: RegistrationMeta | null; email: string; setEm
   const [hint, setHint] = useState("");
   // 第 62 批：云端短信可用时可改用手机号找回（旧云端没有这个选项）
   const f = registrationFields(p.meta);
-  const [by, setBy] = useState<"email" | "phone">("email");
+  // 第 69 批：云端开了手机号找回时先显示手机号（多数律师注册时验证过手机号；邮件通道不一定开通）
+  const [by, setBy] = useState<"email" | "phone">(() => (f.phoneReset ? "phone" : "email"));
   const [phone, setPhone] = useState("");
   const [smsCode, setSmsCode] = useState("");
   const send = async () => {
@@ -625,49 +682,53 @@ function ForgotPassword(p: { meta: RegistrationMeta | null; email: string; setEm
     }
   };
   const usePhone = f.phoneReset && by === "phone";
+  // 第 69 批（V43）：与登录、注册同一骨架——标题行右侧“返回登录”、只留占位文字、整宽主按钮；说明只在用得上的那一步出现一句
+  const finalStep = usePhone || step === "set";
   return (
     <form
-      className="auth-form"
+      className="auth-form quiet"
+      data-auth-step="forgot"
       onSubmit={(e) => {
         e.preventDefault();
         void (usePhone ? confirmByPhone() : step === "ask" ? send() : confirm());
       }}
     >
-      <h1 className="activate-title">找回密码</h1>
+      <div className="auth-title-row">
+        <h1 className="auth-title">找回密码</h1>
+        <button type="button" className="btn-link" onClick={p.onBack}>
+          返回
+        </button>
+      </div>
       {f.phoneReset && (
-        <div className="auth-seg" role="tablist" aria-label="用邮箱或手机号找回">
-          <button type="button" role="tab" aria-selected={by === "email"} className={by === "email" ? "on" : ""} onClick={() => (setBy("email"), setErr(""))}>
-            用邮箱
-          </button>
+        <div className="auth-method subtle" role="tablist" aria-label="用手机号或邮箱找回">
           <button type="button" role="tab" aria-selected={by === "phone"} className={by === "phone" ? "on" : ""} onClick={() => (setBy("phone"), setErr(""))}>
             用手机号
+          </button>
+          <button type="button" role="tab" aria-selected={by === "email"} className={by === "email" ? "on" : ""} onClick={() => (setBy("email"), setErr(""))}>
+            用邮箱
           </button>
         </div>
       )}
       {usePhone ? (
         <>
-          <p className="activate-lead">填写注册时验证过的手机号，获取短信验证码后设置新密码。</p>
           <SmsCodeFields phone={phone} setPhone={setPhone} code={smsCode} setCode={setSmsCode} purpose="reset" codeLength={f.codeLength} resendSeconds={f.resendSeconds} setErr={setErr} autoFocus />
-          <PasswordField label="新密码" value={pw} onChange={setPw} rules />
+          <PasswordField label="新密码" value={pw} onChange={setPw} rules placeholder="设置新密码" />
         </>
       ) : step === "ask" ? (
-        <>
-          <p className="activate-lead">填写注册时的邮箱。开通了邮件的会把验证码发到邮箱；没有邮件的，请向律所管理员或客服要一个重置码。</p>
-          <label className="field">
-            <span>邮箱</span>
-            <input className="auth-input" type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} autoComplete="username" autoFocus spellCheck={false} />
-          </label>
-        </>
+        <label className="field">
+          <span>邮箱</span>
+          <input className="auth-input" type="email" value={p.email} onChange={(e) => p.setEmail(e.target.value)} autoComplete="username" autoFocus spellCheck={false} placeholder="注册时的邮箱" />
+        </label>
       ) : (
         <>
-          <p className="activate-notice" role="status">
+          <p className="auth-fine" role="status">
             {hint}
           </p>
           <label className="field">
             <span>验证码、重置码或设置码</span>
-            <input className="activate-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\s+/g, ""))} autoFocus spellCheck={false} autoComplete="one-time-code" />
+            <input className="activate-code auth-input" value={code} onChange={(e) => setCode(e.target.value.replace(/\s+/g, ""))} autoFocus spellCheck={false} autoComplete="one-time-code" placeholder="验证码、重置码或设置码" />
           </label>
-          <PasswordField label="新密码" value={pw} onChange={setPw} rules email={p.email} />
+          <PasswordField label="新密码" value={pw} onChange={setPw} rules email={p.email} placeholder="设置新密码" />
         </>
       )}
       {err && (
@@ -675,30 +736,31 @@ function ForgotPassword(p: { meta: RegistrationMeta | null; email: string; setEm
           {err}
         </p>
       )}
-      <div className="activate-actions">
-        {usePhone ? (
-          <button type="submit" className="btn-primary" disabled={!phoneReady || busy}>
-            {busy ? "正在重设…" : "重设密码"}
-          </button>
-        ) : step === "ask" ? (
-          <button type="submit" className="btn-primary" disabled={!emailLooksValid(p.email) || busy}>
-            {busy ? "正在发送…" : "下一步"}
-          </button>
-        ) : (
-          <button type="submit" className="btn-primary" disabled={!code.trim() || !checkPassword(pw, p.email).ok || busy}>
-            {busy ? "正在重设…" : "重设密码"}
-          </button>
-        )}
-        {!usePhone && step === "set" && (
-          <button type="button" className="btn-ghost" disabled={busy} onClick={() => void send()}>
+      {usePhone ? (
+        <button type="submit" className="btn-primary activate-submit" disabled={!phoneReady || busy}>
+          {busy ? "正在重设…" : "重设密码"}
+        </button>
+      ) : step === "ask" ? (
+        <button type="submit" className="btn-primary activate-submit" disabled={!emailLooksValid(p.email) || busy}>
+          {busy ? "正在发送…" : "下一步"}
+        </button>
+      ) : (
+        <button type="submit" className="btn-primary activate-submit" disabled={!code.trim() || !checkPassword(pw, p.email).ok || busy}>
+          {busy ? "正在重设…" : "重设密码"}
+        </button>
+      )}
+      {finalStep ? (
+        <p className="auth-fine">重设后，所有电脑上的登录都会退出。</p>
+      ) : (
+        <p className="auth-fine">没有开通邮件的，请向律所管理员或客服要重置码。</p>
+      )}
+      {!usePhone && step === "set" && (
+        <div className="auth-links">
+          <button type="button" className="btn-link auth-links-end" disabled={busy} onClick={() => void send()}>
             重新发送
           </button>
-        )}
-        <button type="button" className="btn-ghost" onClick={p.onBack}>
-          返回登录
-        </button>
-      </div>
-      <p className="muted activate-foot">重设后，这个账号在所有电脑上的登录都会退出，需要用新密码重新登录。</p>
+        </div>
+      )}
     </form>
   );
 }
@@ -752,19 +814,20 @@ function AutoEnrollConfirm({ hold, onBack, onResult }: { hold: SmsHold; onBack: 
 }
 
 function BlockedView({ b, onBack, onUnbind }: { b: Blocked; onBack: () => void; onUnbind: (deviceId: string) => Promise<void> }) {
+  // 第 69 批（V43，D-297）：电脑数已满——整卡“选一台移除”（默认预选最久没用的一台）；其他原因（律所未开通、这台电脑属于别人等）照旧说明
+  if (b.devices.length > 0)
+    return (
+      <Frame>
+        <DeviceLimitList devices={b.devices} canUnbind={b.canUnbind === true} limit={b.limit ?? null} who={b.who ?? null} onUnbind={onUnbind} onBack={onBack} />
+      </Frame>
+    );
   return (
     <Frame>
-      <h1 className="activate-title">这台电脑暂时不能继续</h1>
-      <p className="activate-error" role="alert">
-        {b.message}
-      </p>
-      {/* 第 68 批（V42，D-295）：电脑数已满——列出这个账号已登记的电脑，云端支持时可就地移除一台后自动继续 */}
-      <DeviceLimitList devices={b.devices} canUnbind={b.canUnbind === true} onUnbind={onUnbind} />
-      <div className="activate-actions">
-        <button className="btn-primary" onClick={onBack}>
-          返回登录
-        </button>
-      </div>
+      <h1 className="auth-title">这台电脑暂时不能继续</h1>
+      <p className="auth-lead">{b.message}</p>
+      <button type="button" className="btn-primary activate-submit" onClick={onBack}>
+        返回登录
+      </button>
     </Frame>
   );
 }

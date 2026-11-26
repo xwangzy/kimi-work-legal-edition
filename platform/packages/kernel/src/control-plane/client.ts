@@ -115,7 +115,7 @@ export interface QuotaView {
   tid: string;
   issued_at: string;
   /** 第 66 批（V40）：note / period / burst / models（可用模型显示名，与模型目录同源）是追加字段，旧控制面没有。 */
-  plan: { id: string; label: string; note?: string | null; period?: "month" | "week"; burst?: { hours: number; pct: number } | null; models?: string[] };
+  plan: { id: string; label: string; note?: string | null; period?: "month" | "week"; burst?: { hours: number; pct: number } | null; models?: string[]; valid_until?: string | null };
   account: { aid: string; email: string; name: string } | null;
   accounts_required: boolean;
   unit: "tokens" | "cny";
@@ -133,10 +133,20 @@ export interface QuotaView {
    * 第 66 批（V40）：个人口径——真正卡住“我”的那一项（额度、律所上限、频率窗口、个人上限四者最小）。limited_by = 正在卡住的那项（null = 都没卡）；
    * 旧控制面没有这一段（界面回退到 own）。
    */
-  personal?: { used_ratio: number; remaining_ratio: number; limited_by: "allowance" | "cap" | "burst" | "seat" | null; paused: "allowance" | "cap" | "burst" | "seat" | null; in_flight_ratio?: number };
+  personal?: {
+    used_ratio: number;
+    remaining_ratio: number;
+    limited_by: "allowance" | "cap" | "burst" | "seat" | null;
+    paused: "allowance" | "cap" | "burst" | "seat" | null;
+    in_flight_ratio?: number;
+    /** 第 69 批（V43）：本期按天（北京日期升序、只含有调用的日子；ratio 与 used_ratio 同一分母，各日之和 = used_ratio）。旧控制面没有。 */
+    daily?: { day: string; ratio: number; requests: number; qa_requests: number }[];
+    /** 第 69 批（V43）：本期按用途（任务 + 问答 = used_ratio）。旧控制面没有。 */
+    by_kind?: { task: { ratio: number; requests: number }; qa: { ratio: number; requests: number } };
+  };
   ratio_basis?: "personal";
-  /** 第 66 批：本人本期按模型（份额按 token，不含金额）。 */
-  own_models?: { alias: string; label: string; share: number; requests: number }[];
+  /** 第 66 批：本人本期按模型（份额按 token，不含金额）；第 69 批追加 used_ratio（计入本人额度的比例，各模型之和 = personal.used_ratio）。 */
+  own_models?: { alias: string; label: string; share: number; requests: number; used_ratio?: number }[];
 }
 
 /** 第 66 批（V40）：本人用量明细的一行（与 /v1/quota 的 own_recent 同口径，不含金额与请求内容）。 */

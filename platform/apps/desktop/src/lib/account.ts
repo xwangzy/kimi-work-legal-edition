@@ -77,6 +77,19 @@ export interface RegistrationMeta {
   phone_login?: boolean;
   /** 第 63 批：已登录的账号可以绑定 / 更换手机号（旧云端没有这一项，按 false）。 */
   phone_bind?: boolean;
+  /** 第 69 批：密码登录可填手机号（旧云端没有这一项，只认邮箱）。 */
+  password_by_phone?: boolean;
+}
+
+/** 手机号中间四位遮住（“139 **** 1004”）：界面上回显律师刚输的号码时用。不是 11 位手机号原样返回。纯函数。 */
+export function maskPhone(v: string): string {
+  const d = v.replace(/\D/g, "");
+  return /^1\d{10}$/.test(d) ? `${d.slice(0, 3)} **** ${d.slice(7)}` : v;
+}
+
+/** 密码登录的账号一栏（第 69 批）：云端支持时手机号或邮箱都行。纯函数。 */
+export function passwordIdOk(v: string, meta: RegistrationMeta | null | undefined): boolean {
+  return emailLooksValid(v) || (meta?.password_by_phone === true && !v.includes("@") && phoneLooksValid(v));
 }
 
 /**
@@ -205,7 +218,8 @@ export function platformLabel(p: string | null | undefined): string {
 
 /** 设备编号的简写（第 n 台）：dev_<律所>_<成员> 为第 1 台，…_D<n> 为第 n 台。 */
 export function deviceOrdinal(deviceId: string): number {
-  const m = /_D(\d)$/.exec(deviceId);
+  // 第 69 批：编号可到 _D999（个人账号自第 66 批、团队成员自第 69 批），原来只认一位数，第 10 台起显示成“第 1 台”
+  const m = /_D(\d{1,3})$/.exec(deviceId);
   return m ? Number(m[1]) : 1;
 }
 
@@ -217,12 +231,64 @@ export interface AccountDevice {
   last_seen_on: string | null;
   current?: boolean;
   session?: "active" | "none";
+  /** 第 69 批（D-297）：云端补的平台（这个账号在那台电脑上最近一次会话报的）与最近使用时刻（会话级，比只到日的 last_seen_on 细）。旧云端没有。 */
+  platform?: string | null;
+  last_seen_at?: string | null;
+}
+
+/** 相对时间：刚刚 / N 分钟前 / 今天 14:20 / 昨天 / 11 月 3 日（北京时间）。纯函数。 */
+export function agoLabel(v: string | null | undefined, now = Date.now()): string {
+  if (!v) return "";
+  const t = /^\d{4}-\d{2}-\d{2}$/.test(v) ? null : Date.parse(v);
+  if (t === null) {
+    const today = new Date(now + 8 * 3600_000).toISOString().slice(0, 10);
+    const yest = new Date(now + 8 * 3600_000 - 86400_000).toISOString().slice(0, 10);
+    return v === today ? "今天" : v === yest ? "昨天" : dayLabel(v, now);
+  }
+  if (!Number.isFinite(t)) return "";
+  const min = Math.floor((now - t) / 60_000);
+  if (min < 2) return "刚刚";
+  if (min < 60) return `${min} 分钟前`;
+  const day = (x: number) => new Date(x + 8 * 3600_000).toISOString().slice(0, 10);
+  const hm = new Date(t + 8 * 3600_000).toISOString().slice(11, 16);
+  if (day(t) === day(now)) return `今天 ${hm}`;
+  if (day(t) === day(now - 86400_000)) return `昨天 ${hm}`;
+  return dayLabel(v, now);
+}
+
+/**
+ * 电脑数已满时“选一台移除”的一行（第 69 批，D-297）：标题是电脑类型（Mac / Windows，云端没给平台时写“第 n 台电脑”），
+ * 说明是“最近使用 … · 版本 …”，正在登录的另标“登录中”（移除会让那台电脑立即退出）。纯函数。
+ */
+export function deviceChoiceLine(d: AccountDevice, now = Date.now()): { title: string; meta: string; active: boolean } {
+  const n = deviceOrdinal(d.device_id);
+  // 第三轮（独立评审 R2-2）：同型号的几台都叫“Mac 电脑”时靠编号区分（第几台登记的）
+  const kind = d.platform ? `${platformLabel(d.platform)} · 第 ${n} 台` : `第 ${n} 台电脑`;
+  const seen = agoLabel(d.last_seen_at ?? d.last_seen_on, now);
+  const version = d.client_version && d.client_version !== "legacy" ? d.client_version : null;
+  // 第二轮（独立评审）：另写登记日期——两台同型号电脑时，靠“哪天登记的”认出是哪一台
+  const reg = d.registered_at ? agoLabel(d.registered_at, now) : "";
+  const meta = [seen ? `最近使用 ${seen}` : "", reg ? `${reg}${/\d$/.test(reg) ? " " : ""}登记` : "", version ? `版本 ${version}` : ""].filter(Boolean).join(" · ");
+  return { title: kind, meta, active: d.session === "active" };
+}
+
+/**
+ * 默认预选哪一台（第 69 批，D-297）：最久没用的那台——律师多半就是要换掉它，一次点击即可；但仍由律师确认、可改选，
+ * 不替律师自动移除（自动替换会在不知情时让正在用的电脑掉线，也会让盗用者悄悄挤掉真主人的电脑）。纯函数。
+ */
+export function defaultRemovalPick(devices: readonly AccountDevice[]): string | null {
+  if (devices.length === 0) return null;
+  const at = (d: AccountDevice) => d.last_seen_at ?? d.last_seen_on ?? d.registered_at ?? "";
+  // 先挑不在登录中的；都在登录中时挑最久没用的
+  const pool = devices.some((d) => d.session !== "active") ? devices.filter((d) => d.session !== "active") : [...devices];
+  return [...pool].sort((x, y) => at(x).localeCompare(at(y)))[0]!.device_id;
 }
 
 /** “我的设备”一行：第几台、本机标记、登记日、最近使用、版本、是否登录中。 */
 export function deviceLine(d: AccountDevice, now = Date.now()): { title: string; meta: string; state: { text: string; tone: "ok" | "gray" | "bad" } } {
   const n = deviceOrdinal(d.device_id);
-  const title = `${d.current ? "这台电脑" : `第 ${n} 台电脑`}`;
+  // 第 69 批（D-297）：云端给了平台时写电脑类型（“Mac 电脑”），与电脑数已满时的选择列表同一说法；旧云端仍写第几台
+  const title = d.current ? "这台电脑" : d.platform ? platformLabel(d.platform) : `第 ${n} 台电脑`;
   // 第 55 批（真实控制面复评）：①“最近使用”是服务器按 UTC 记的日子，北京时间 0～8 点登记的电脑会显示成“登记 22 日 · 最近使用 21 日”——
   // 不早于登记日（按北京时间的日子比）；②没有上报版本的客户端，服务器记占位值 legacy，不显示给律师看。
   const regDay = d.registered_at && Number.isFinite(Date.parse(d.registered_at)) ? new Date(Date.parse(d.registered_at) + 8 * 3600_000).toISOString().slice(0, 10) : null;
@@ -273,10 +339,14 @@ export function loginRequiredText(reason: string | null | undefined): string {
  */
 export function reloginView(reason: string | null | undefined): { title: string; lead: string } {
   const keep = "这台电脑上的事项、材料和成果都还在；登录后 AI 恢复可用。";
-  if (reason === "account_disabled") return { title: "账号已停用", lead: `请联系律所管理员或客服启用账号，启用后在这里重新登录。${keep}` };
-  if (reason === "session_member_mismatch") return { title: "请重新登录", lead: `登录状态与这台电脑上打开的账号不一致。${keep}` };
-  if (reason === "session_required") return { title: "你已退出登录", lead: `请重新登录，或换一个账号登录。${keep}` };
-  return { title: "登录已失效", lead: `为了账号安全，请重新登录。${keep}` };
+  // 第 69 批（V43）：主动退出时不再解释——律师刚点了退出，标题已说明一切；其余原因各一句，只说律师需要知道的
+  void keep;
+  if (reason === "account_disabled") return { title: "账号已停用", lead: "请联系律所管理员或客服启用后再登录。本机的事项与成果都还在。" };
+  if (reason === "session_member_mismatch") return { title: "请重新登录", lead: "登录状态与这台电脑上打开的账号不一致。" };
+  if (reason === "session_required") return { title: "你已退出登录", lead: "" };
+  // 第 69 批真实验收：被移除的电脑上同一账号不能再登录（云端吊销是终局的）——不写“重新登录即可”，给出还能做的事
+  if (reason === "device_revoked") return { title: "这台电脑已从账号移除", lead: "这个账号不能再在这台电脑上使用，本机资料仍加密保存在这里。可以登录其他账号。" };
+  return { title: "登录已过期", lead: "为了账号安全，请重新登录。本机的事项与成果都还在。" };
 }
 
 /** 第 68 批：换账号登录后的过渡说明（切换到那个账号自己的工作空间；新账号按云端设备策略登记）。纯函数。 */

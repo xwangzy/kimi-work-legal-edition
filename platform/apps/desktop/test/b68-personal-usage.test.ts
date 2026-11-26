@@ -132,7 +132,7 @@ test("菜单小字与页面同一个数；本地开发、试用版不显示", ()
   assert.equal(quotaNotice(q()), null);
 });
 
-test("源码门禁：客户端不再展示团队用量；页面只讲本人、不出现金额点数与“本所”；与设置页同一种设置行", () => {
+test("源码门禁：客户端不再展示团队用量；页面只讲本人、不出现金额点数与“本所”；套餐收成一块（第 69 批起不再用设置行）", () => {
   const conn = src("pages/Connections.tsx");
   assert.match(conn, /\{tab === "usage" && <PersonalUsage admin=\{isAdmin\} \/>\}/);
   assert.doesNotMatch(strip(conn), /UsagePanel|用量与上限/, "管理里不再有“用量与上限”");
@@ -142,10 +142,10 @@ test("源码门禁：客户端不再展示团队用量；页面只讲本人、�
   const code = strip(page);
   assert.doesNotMatch(code, /本所|by_member|cap_pct|q\.firm\.used_ratio|value_cny|点数|积分|¥|元/);
   assert.match(code, /团队用量与上限/, "管理员看到的那一句");
-  assert.match(code, /\{admin && <SettingRow label="团队用量与上限">/);
-  assert.match(code, /<SettingRow label="当前套餐">/);
+  assert.match(code, /\{admin && !v\.solo && <p className="pu-plan-admin">团队用量与上限请在云端控制台管理/);
+  assert.match(code, /id="pu-plan-h"[\s\S]*需要更多额度：请联系客户经理或客服/, "套餐块：套餐名、可用模型、更多额度（不做购买入口）");
   assert.match(code, /api\.quotaUsagePage\(/, "更早的明细来自云端账本翻页");
-  assert.match(code, /className="pu-today"/, "进度条上有“今天”刻度");
+  assert.match(code, /<DailyBars/, "第 69 批：每日柱（今天高亮）代替进度条上的“今天”刻度");
   assert.doesNotMatch(code, /setTimeout|Math\.random|mock/i, "不做伪数据与伪交互");
   assert.match(page, /id="sec-usage"/);
 });

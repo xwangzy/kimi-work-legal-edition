@@ -483,7 +483,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       const reason = /^[a-z_]{1,40}$/.test(state) ? state : "unknown";
       const devices = Array.isArray(onb.devices) ? onb.devices.slice(0, 20) : [];
       if (state === "device_limit" && devices.length > 0) limitSession = { token: j.session_token, at: Date.now() };
-      throw new DomainError("conflict", onboardingStateText(state, { admin: acc.role === "admin" }), 409, { reason, devices, ...(state === "device_limit" && devices.length > 0 && cloudSwitch?.unbind ? { can_unbind: true } : {}) });
+      const limitN = Number.isSafeInteger(onb.device_limit) && (onb.device_limit as number) > 0 && (onb.device_limit as number) <= 99 ? (onb.device_limit as number) : null;
+      throw new DomainError("conflict", onboardingStateText(state, { admin: acc.role === "admin" }), 409, { reason, devices, ...(limitN ? { device_limit: limitN } : {}), ...(state === "device_limit" && devices.length > 0 && cloudSwitch?.unbind ? { can_unbind: true } : {}) });
     },
     unbindForLogin: async (deviceId: string): Promise<Record<string, unknown>> => {
       const ls = limitSession;

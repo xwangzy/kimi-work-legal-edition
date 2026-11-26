@@ -187,7 +187,7 @@ export function RecoveryBackup({ onChanged }: { onChanged?: () => void } = {}) {
   return (
     <div className="recovery" id="recovery-backup">
       {/* v9.4：三步走（生成恢复包 → 试一下 → 每天自动备份），每步一句话说明，做完打勾；长说明收成一句提示 */}
-      {st?.revoked && <div className="banner banner-red">这台电脑已被律所停用：不能再备份或生成恢复包。</div>}
+      {st?.revoked && <div className="banner banner-red">这台电脑已从账号移除：不能再备份或生成恢复包。</div>}
       <ol className="steps3">
         <li className={step1 ? "done" : ""}>
           <div className="steps3-head">

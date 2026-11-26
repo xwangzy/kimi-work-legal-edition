@@ -50,7 +50,7 @@ test("执行位置徽标：由事实生成——排队、恢复、预算暂停�
   // 退出模式：排队与恢复中的任务暂停（阶段 6 复核 S6-C12）；等待律师的照旧
   assert.deepEqual(labels({ status: "queued", exitMode: "license_expired" }), ["暂停（退出模式：恢复许可后自动继续）"]);
   assert.deepEqual(labels({ status: "recovering", exitMode: "license_missing" }), ["暂停（退出模式：恢复许可后自动继续）"]);
-  assert.deepEqual(labels({ status: "queued", exitMode: "device_revoked" }), ["已暂停（这台电脑已被律所停用，不会继续）"], "复核 S6-C18");
+  assert.deepEqual(labels({ status: "queued", exitMode: "device_revoked" }), ["已暂停（这台电脑已从账号移除，不会继续）"], "复核 S6-C18");
   assert.deepEqual(labels({ status: "queued", exitMode: "control_plane_unconfigured" }), ["暂停（还没连上律所的服务，请联系管理员）"]);
   assert.deepEqual(labels({ status: "waiting_approval", exitMode: "license_expired" }), ["等待你确认"]);
   assert.deepEqual(labels({ status: "queued", exitMode: null }), ["排队中"]);

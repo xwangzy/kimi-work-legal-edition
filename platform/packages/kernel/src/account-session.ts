@@ -366,7 +366,8 @@ export function controlPlaneErrorText(code: string, o: { min_version?: string | 
     case "firm_role_required":
       return "这项操作需要律所管理员在自己的电脑上完成";
     case "device_revoked":
-      return "这台电脑已被律所停用，不能再使用中软服务";
+      // 第 69 批（V43）：移除可能是本人在账号的另一台电脑上做的（个人账号），不一定是“律所停用”；如实说结果与还能做什么
+      return "这台电脑已从这个账号移除，不能再用这个账号登录；可以登录其他账号";
     case "license_expired":
       return "律所订阅已到期，请联系中软续订";
     case "client_outdated":

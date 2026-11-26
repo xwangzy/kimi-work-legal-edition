@@ -20,7 +20,7 @@ import type { ScenarioCard } from "../lib/scenarios.ts";
 import type { ScenarioField } from "../lib/scenarios.ts";
 import { briefFilename, briefGoalLine, buildGoal, canStartPartial, caseGap, materialScopeText, preselectDocs, docArgsFor, fieldRedirect, getsPlain, guessContractType, LINE_LABELS, lineMismatchText, missingMaterialsText, primaryOutputOf, sideOptionFor, skillArgsOf, splitIssues, startPanelBrief, startPanelInitial, wordDocGap } from "../lib/scenarios.ts";
 import { localDay } from "../lib/recovery-reminder.ts";
-import { cardForm, compareSlots, extraPlaceholder, helpOnlyRestatesDefault, materialsHint, provisionalSendLine, sectionOrder, sectionTitle, selectDefaultPlaceholder, sendLine, stanceMismatchText } from "../lib/card-layout.ts";
+import { cardForm, compareSlots, extraPlaceholder, helpOnlyRestatesDefault, isCalcCard, materialsHint, provisionalSendLine, sectionOrder, sectionTitle, selectDefaultPlaceholder, sendLine, stanceMismatchText } from "../lib/card-layout.ts";
 import { agentLabelFor, agentsLine, PARTIES_PREFIX, partiesDigest, withPartiesDoc } from "../lib/parties.ts";
 import { PartiesDialog, usePartiesInfo } from "./PartiesInfo.tsx";
 import { Icon } from "./Icons.tsx";
@@ -332,7 +332,19 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
         {f.required ? <span className="ss-req" aria-label="必填">*</span> : null}
       </span>
       <span className="ss-control">
-        {f.kind === "select" ? (
+        {f.kind === "select" && f.chips ? (
+          // 第 69 批（V43）：短单选摆成一排单选按钮（再点一次取消）
+          <span className="ss-multi ss-chips-single" role="radiogroup" aria-label={f.label}>
+            {f.options!.map((o) => {
+              const on = values[f.key] === o;
+              return (
+                <button key={o} type="button" role="radio" aria-checked={on} className={`chip${on ? " active" : ""}`} onClick={() => setField(f.key, on ? "" : o)}>
+                  {o}
+                </button>
+              );
+            })}
+          </span>
+        ) : f.kind === "select" ? (
           <span className="ss-select">
             <Select aria-label={f.label} value={String(values[f.key] ?? "")} onChange={(v) => setField(f.key, v)} options={f.options!.map((o) => ({ value: o, label: o }))} placeholder={selectDefaultPlaceholder(f.help) ?? (f.required ? "请选择" : "请选择（可不选）")} />
             {guessed && f === typeField && values[f.key] === guessed && <span className="ss-guess muted">按文件名预选，可改</span>}
@@ -389,7 +401,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
         ) : (
           <input aria-label={f.label} type={f.kind === "date" ? "date" : "text"} placeholder={f.placeholder ?? ""} value={String(values[f.key] ?? "")} onChange={(e) => setField(f.key, e.target.value)} />
         )}
-        {f.help && !(f.kind === "select" && helpOnlyRestatesDefault(f.help)) && <span className="ss-field-help muted">{f.help}</span>}
+        {f.help && !(f.kind === "select" && !f.chips && helpOnlyRestatesDefault(f.help)) && !(f.chips && helpOnlyRestatesDefault(f.help) && values[f.key]) && <span className="ss-field-help muted">{f.help}</span>}
       </span>
     </div>
   );
@@ -418,7 +430,7 @@ export function ScenarioStart({ card, matter, matters, onMatterChange, onNewMatt
   const hasParties = !!matter && !!card.needsParties && docsReady;
   // 第 67 批（V41 工作线 B）：段的顺序与段名随业务形态（起草 / 审查 / 比对 / 研究 / 整理），见 lib/card-layout.ts
   const form = cardForm(card);
-  const decideTitle = sectionTitle(form, "decide", { hasBrief: !!card.brief, hasDecide, hasQuestion: card.fields.some((f) => f.key === "question"), hasSide: card.fields.some((f) => f.key === "side") });
+  const decideTitle = sectionTitle(form, "decide", { hasBrief: !!card.brief, hasDecide, hasQuestion: card.fields.some((f) => f.key === "question"), hasSide: card.fields.some((f) => f.key === "side"), calc: isCalcCard(card) });
   const materialsTitle = sectionTitle(form, "materials", { hasBrief: !!card.brief, hasDecide });
   const sectionKeys = sectionOrder(form).filter((k) => k !== "parties" || hasParties);
   const shownDocs = docsOpen || documents.length <= 4 ? documents : documents.filter((d, i) => i < 3 || docIds.includes(d.document_version_id));
@@ -900,7 +912,7 @@ function SendLine({ estimate, matterId, docIds, goal, onReviewed }: { estimate: 
   const [open, setOpen] = useState(false);
   const ref = useDismiss<HTMLDivElement>(open, () => setOpen(false));
   const dw = estimate.estimate.data_where;
-  const line = sendLine(dw?.bullets, dw?.bullet_kinds);
+  const line = sendLine(dw?.bullets, dw?.bullet_kinds, dw?.block_kind);
   const suspects = dw?.send_summary?.suspects.unreviewed ?? 0;
   if (!line) return null;
   return (

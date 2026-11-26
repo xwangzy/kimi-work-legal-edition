@@ -49,7 +49,7 @@ function modelScope(endpoint: string | null, fullPseudonym: boolean): string {
 
 /** 退出模式下暂停的任务：按原因写明会不会自动继续（复核 S6-C18）。 */
 function pausedLabel(code: string): string {
-  if (code === "device_revoked") return "已暂停（这台电脑已被律所停用，不会继续）";
+  if (code === "device_revoked") return "已暂停（这台电脑已从账号移除，不会继续）";
   if (code === "control_plane_unconfigured") return "暂停（还没连上律所的服务，请联系管理员）";
   return "暂停（退出模式：恢复许可后自动继续）";
 }

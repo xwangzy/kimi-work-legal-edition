@@ -21,9 +21,19 @@ export type MetaState =
   | { status: "error"; error: string; retry: () => void; nextRetryS: number | null; attempt: number };
 
 const META_BACKOFF_S = [5, 10, 20, 40, 60];
+/**
+ * 第 69 批（V43）：最近一次取到的策略在本窗口内存里留 60 秒——登录 / 注册 / 找回之间切换、重新登录页“换个账号”重新挂载登录框时
+ * 直接用它，不再每次闪一下“正在取得登录方式…”的骨架；过期了照旧重新取。
+ */
+const META_FRESH_MS = 60_000;
+let metaCache: { at: number; meta: RegistrationMeta } | null = null;
+const freshMeta = (): RegistrationMeta | null => (metaCache && Date.now() - metaCache.at < META_FRESH_MS ? metaCache.meta : null);
 
 export function useRegistrationMetaState({ autoRetry = true }: { autoRetry?: boolean } = {}): MetaState {
-  const [st, setSt] = useState<{ status: "loading" | "ready" | "error"; meta?: RegistrationMeta; error?: string; attempt: number; retryAt: number | null }>({ status: "loading", attempt: 0, retryAt: null });
+  const [st, setSt] = useState<{ status: "loading" | "ready" | "error"; meta?: RegistrationMeta; error?: string; attempt: number; retryAt: number | null }>(() => {
+    const m = freshMeta();
+    return m ? { status: "ready", meta: m, attempt: 0, retryAt: null } : { status: "loading", attempt: 0, retryAt: null };
+  });
   const [, tick] = useState(0);
   const live = useRef(true);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -33,7 +43,11 @@ export function useRegistrationMetaState({ autoRetry = true }: { autoRetry?: boo
     setSt({ status: "loading", attempt, retryAt: null });
     account
       .registrationMeta()
-      .then((m) => live.current && setSt({ status: "ready", meta: m && typeof m === "object" ? m : { legacy: true }, attempt, retryAt: null }))
+      .then((m) => {
+        const meta: RegistrationMeta = m && typeof m === "object" ? m : { legacy: true };
+        metaCache = { at: Date.now(), meta };
+        if (live.current) setSt({ status: "ready", meta, attempt, retryAt: null });
+      })
       .catch((e) => {
         if (!live.current) return;
         const wait = META_BACKOFF_S[Math.min(attempt, META_BACKOFF_S.length - 1)]!;
@@ -44,7 +58,7 @@ export function useRegistrationMetaState({ autoRetry = true }: { autoRetry?: boo
   };
   useEffect(() => {
     live.current = true;
-    load(0);
+    if (!freshMeta()) load(0);
     return () => {
       live.current = false;
       if (timer.current) clearTimeout(timer.current);
@@ -73,9 +87,10 @@ export function useRegistrationMeta(): RegistrationMeta | null {
  * 登录方式（第 63 批）：云端开了验证码登录才有两种，先显示上次用过的（没有记录先显示验证码登录）；否则只有密码登录。
  * 策略还没取到时先按密码登录显示；律师在这期间已经开始填邮箱或密码（lock），取到后也不再切走。
  */
-export function useLoginMethod(meta: RegistrationMeta | null) {
+export function useLoginMethod(meta: RegistrationMeta | null, prefer?: LoginMethod) {
   const methods = loginMethods(meta);
-  const [remembered] = useState(() => rememberedLoginMethod());
+  // 第 69 批第二轮（独立评审 R1-1）：重新登录同一个账号时邮箱已预填——缺省用密码登录，只需再输一项；律师可切回验证码登录
+  const [remembered] = useState(() => prefer ?? rememberedLoginMethod());
   const [chosen, setChosen] = useState<LoginMethod | null>(null);
   const method: LoginMethod = methods.phone ? (chosen ?? initialLoginMethod(methods, remembered)) : "password";
   return {

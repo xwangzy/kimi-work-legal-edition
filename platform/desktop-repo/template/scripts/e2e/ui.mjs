@@ -6,6 +6,7 @@
  * 用法：node scripts/e2e/ui.mjs <阶段> [参数]
  *   环境：KWL_CDP_PORT（缺省 9222）、KWL_E2E_OUT（证据目录，缺省 ./e2e-out）、PW_CORE（playwright-core 所在目录，可选）
  *   ready                              等主窗口加载，打印当前页面
+ *   auth-pages                         第 69 批：不登录——核对登录方式、找回密码、注册第一步按线上策略出现并截图（不发短信、不建账号）
  *   register                           注册（KWL_EMAIL / KWL_PASSWORD / KWL_NAME，凭码时加 KWL_CODE；云端要求手机验证时加 KWL_PHONE 与 KWL_SMS_RELAY）；
  *                                      凭成员邀请码的会停在“等待批准”，打印入组核对码
  *   login                              登录（KWL_EMAIL / KWL_PASSWORD）；云端开了验证码登录时先切到“密码登录”
@@ -247,22 +248,13 @@ async function register() {
   await ready();
   // 第 64 批：注册从外层页签改为登录卡片下方的“还没有账号？注册”（旧版本仍是页签，两种都认）；表单要等登录方式取到才出现
   await openRegister();
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').first().fill(pw);
-  // 第 67 批：注册表单只留占位文字（“姓名（同事和客户看到的名字）”），改按 autocomplete 找姓名框；旧版本的占位同样认
-  await page.locator('input[autocomplete="name"], input[placeholder="同事和客户看到的名字"]').first().fill(name);
-  // “我有开通码或邀请码”：凭码注册才勾；开放注册不带码时保持不勾（第 59 批）。第 62 批：云端要求邀请码时没有这个勾选框、码框直接显示
-  const cb = page.locator("label.auth-check input[type=checkbox]");
-  if (await cb.count()) {
-    if (Boolean(code) !== (await cb.isChecked())) await cb.setChecked(Boolean(code));
-  }
-  if (code) await page.locator("input.activate-code").fill(code);
+  // 第 69 批：注册分两步——①手机号 + 短信验证码 →“下一步”；②姓名、邮箱、密码（律所名称与邀请码收在“律所名称 / 邀请码”里）→“注册并继续”。
+  // 第 68 批及以前是一页（邮箱、密码、姓名、手机号、验证码、律所名称、“我有邀请码”复选框）：两种都认
+  const twoStep = await page.locator('[data-auth-step="register-phone"]').waitFor({ state: "visible", timeout: 8000 }).then(() => true, () => false);
+  const phoneInput = page.locator('input[type="tel"]');
   // 第 62 批：手机号 + 短信验证码（云端要求时界面才有这一栏）。验证码由收到短信的人转交：
   // KWL_SMS_RELAY=file:<路径>（本机：人把验证码写进这个文件）或 gh-release:<owner/repo>:<tag>:<文件名>（CI：人把验证码作为预发布附件上传，凭 GITHUB_TOKEN 读取）
-  const phoneInput = page.locator('input[type="tel"]');
-  // 注册策略由云端 /v1/meta 异步取回后才决定是否显示手机号一栏：给了手机号就等它出现（旧云端或策略没开时 8 秒后照旧流程）
-  if (process.env.KWL_PHONE) await phoneInput.first().waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
-  if (await phoneInput.count()) {
+  const fillPhone = async () => {
     const phone = process.env.KWL_PHONE;
     if (!phone) throw new Error("云端要求手机号验证：请给 KWL_PHONE 与 KWL_SMS_RELAY");
     await phoneInput.fill(phone);
@@ -270,15 +262,41 @@ async function register() {
     await page.locator("button").filter({ hasText: /^\s*获取验证码\s*$/ }).first().click();
     const hint = await until(async () => {
       const t = await text();
-      const m = t.match(/验证码已发送到\s*\S+|测试环境：验证码是\s*\d+|验证码没有发出[^\n]*|发送太频繁[^\n]*/);
+      const m = t.match(/验证码已发送到\s*\S+|测试环境：验证码是\s*\d+|验证码没有发出[^\n]*|发送太频繁[^\n]*|秒后再重新获取[^\n]*/);
       return m ? m[0] : null;
     }, 30000, 500, "短信发送结果");
     log("短信：", hint.replace(/\d{4,}/g, "<码>"));
-    if (/没有发出|太频繁/.test(hint)) throw new Error(`短信没有发出：${hint}`);
+    if (/没有发出|太频繁|秒后再重新获取/.test(hint)) throw new Error(`短信没有发出：${hint}`);
     let sms = (hint.match(/测试环境：验证码是\s*(\d+)/) ?? [])[1] ?? "";
     if (!sms) sms = await waitSmsCode(sendAt);
     await page.locator('input[autocomplete="one-time-code"]').fill(sms);
     log("已填入转交的短信验证码");
+  };
+  if (twoStep) {
+    await fillPhone();
+    await shot("01-注册第一步");
+    await btnExact("下一步").click();
+    await page.locator('[data-auth-step="register-account"]').waitFor({ state: "visible", timeout: 10000 });
+  }
+  await page.locator('input[autocomplete="name"], input[placeholder="同事和客户看到的名字"]').first().fill(name);
+  await page.locator('input[type="email"]').fill(email);
+  await page.locator('input[type="password"]').first().fill(pw);
+  if (twoStep) {
+    if (code) {
+      await page.locator("button.auth-more").first().click();
+      await page.locator("input.activate-code").fill(code);
+    }
+  } else {
+    // 第 67 批：注册表单只留占位文字（“姓名（同事和客户看到的名字）”），按 autocomplete 找姓名框（上面已填）。
+    // “我有开通码或邀请码”：凭码注册才勾；开放注册不带码时保持不勾（第 59 批）。第 62 批：云端要求邀请码时没有这个勾选框、码框直接显示
+    const cb = page.locator("label.auth-check input[type=checkbox]");
+    if (await cb.count()) {
+      if (Boolean(code) !== (await cb.isChecked())) await cb.setChecked(Boolean(code));
+    }
+    if (code) await page.locator("input.activate-code").fill(code);
+    // 注册策略由云端 /v1/meta 异步取回后才决定是否显示手机号一栏：给了手机号就等它出现（旧云端或策略没开时 8 秒后照旧流程）
+    if (process.env.KWL_PHONE) await phoneInput.first().waitFor({ state: "visible", timeout: 8000 }).catch(() => {});
+    if (await phoneInput.count()) await fillPhone();
   }
   await shot("01-注册表单");
   await btnExact("注册并继续").click();
@@ -315,6 +333,8 @@ async function register() {
 /** 开通页上切到注册（第 64 批是表单下方的链接按钮，第 63 批及以前是页签）。 */
 async function openRegister() {
   await authFormReady();
+  // 第 69 批：已经在注册卡上（例如上一阶段停在注册第一步）就不再找“注册”入口
+  if (await page.locator('[data-auth-step="register-phone"], [data-auth-step="register-account"]').count()) return;
   const tab = page.getByRole("tab", { name: "注册", exact: true });
   if (await tab.count()) return tab.click();
   await page.locator('[data-auth-page="activate"] button.btn-link').filter({ hasText: /^\s*注册\s*$/ }).first().click();
@@ -620,7 +640,7 @@ async function qa(question) {
 }
 
 // 开始面板字段（取自 eval/driver.js 的同一份界面约定）
-const VERB = { "contract-review": "开始审查", pleading: "开始起草", "doc-revise": "开始修改", "demand-lit": "开始起草", "research-lit": "开始研究", "legal-opinion": "开始起草" };
+const VERB = { "contract-review": "开始审查", pleading: "开始起草", "doc-revise": "开始修改", "demand-lit": "开始起草", "research-lit": "开始研究", "legal-opinion": "开始起草", amount: "开始测算", "litigation-budget": "开始测算" };
 async function task(cardFile) {
   const card = JSON.parse(readFileSync(cardFile, "utf8"));
   const base = card.base ? resolve(card.base) : resolve(cardFile, "..");
@@ -980,7 +1000,44 @@ async function usage() {
 }
 
 const [phase, ...args] = process.argv.slice(2);
-const phases = { ready, register, login, "login-sms": loginSms, logout, "approve-join": approveJoin, "await-approval": awaitApproval, diagnose, qa, task, export: exportAll, preview, usage, shot: (n) => shot(n ?? "shot") };
+/**
+ * 第 69 批：不登录也能核对的登录类页面（windows-e2e entry=install-only）——不发短信、不建账号：
+ * 按线上 /v1/meta 出现的登录方式逐个截图（验证码登录、密码登录、找回密码、注册第一步），并核对卡片统一的骨架与页脚隐私说明。
+ */
+async function authPages() {
+  await ready();
+  await authFormReady();
+  const t = await text();
+  if (!/登录只核对账号信息，你的案卷不会上传/.test(t)) throw new Error("登录卡片页脚没有隐私说明（新版应有）");
+  const sms = page.getByRole("tab", { name: "验证码登录" });
+  const pw = page.getByRole("tab", { name: "密码登录" });
+  log("登录方式：", (await sms.count()) ? "验证码 + 密码" : "只有密码");
+  if (await sms.count()) {
+    await sms.click();
+    await sleep(300);
+    await shot("01-登录-验证码");
+  }
+  if (await pw.count()) await pw.click();
+  await sleep(300);
+  await shot("02-登录-密码");
+  const forgot = page.locator("button:visible").filter({ hasText: /^\s*忘记密码？\s*$/ });
+  if (await forgot.count()) {
+    await forgot.first().click();
+    await sleep(400);
+    await shot("03-找回密码");
+    await page.locator("button:visible").filter({ hasText: /^\s*返回登录\s*$/ }).first().click();
+    await sleep(400);
+  }
+  await openRegister();
+  const step1 = await page.locator('[data-auth-step="register-phone"]').waitFor({ state: "visible", timeout: 8000 }).then(() => true, () => false);
+  await shot("04-注册第一步");
+  log("注册：", step1 ? "两步（先手机号）" : "一页");
+  // 卡片宽度一致（登录、注册同一张卡）
+  const w = await page.locator(".auth-card").first().evaluate((el) => Math.round(el.getBoundingClientRect().width));
+  log("卡片宽度：", w);
+}
+
+const phases = { ready, "auth-pages": authPages, register, login, "login-sms": loginSms, logout, "approve-join": approveJoin, "await-approval": awaitApproval, diagnose, qa, task, export: exportAll, preview, usage, shot: (n) => shot(n ?? "shot") };
 if (!phases[phase]) {
   console.error(`未知阶段：${phase}`);
   process.exit(2);

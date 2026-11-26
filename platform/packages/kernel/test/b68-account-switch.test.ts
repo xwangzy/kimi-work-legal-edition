@@ -179,7 +179,8 @@ test("安全复核 U-1：这台电脑在云端已被移除时，同一账号重�
   const t = cloud!.cp.ops.tenant(st.tenant_id)!;
   const dev = [...t.devices.values()].find((d) => !d.revoked_at)!;
   cloud!.cp.ops.revokeDevice(st.tenant_id, dev.cert.deviceId, { by: "test" });
-  await assert.rejects(k.invoke("account.login", { email: "rv-b68@example.cn", password: PW }), /停用/);
+  // 第 69 批（V43）：说法改为“已从这个账号移除”（个人账号是本人在别处移除，不是“律所停用”），并指出可以登录其他账号
+  await assert.rejects(k.invoke("account.login", { email: "rv-b68@example.cn", password: PW }), /已从这个账号移除，不能再用这个账号登录；可以登录其他账号/);
   assert.equal(((await k.invoke("account.status")) as any).logged_in, false, "没有算登录成功");
   // 换成别的账号：照常（不签名重登 → 为新账号开通）
   const regX = await fetch(`${cloud!.base}/v1/auth/register`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: "rv2-b68@example.cn", password: PW, name: "己律师", client: { platform: "web" } }) });

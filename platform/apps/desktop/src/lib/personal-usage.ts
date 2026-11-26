@@ -195,11 +195,155 @@ export function dayGroups<T extends { at: string; in_period?: boolean }>(rows: T
   return out;
 }
 
-/** 本人本期按模型（新云端 own_models；旧云端只有单席位时 models 才是本人的）。份额从大到小，去掉 0。 */
-export function ownModels(q: QuotaStatus, v: Pick<PersonalView, "solo">): { alias: string; label: string; share: number; requests: number }[] {
-  const src = q.own_models ?? (v.solo ? (q.models ?? []) : []);
+/**
+ * 本人本期按模型（新云端 own_models；旧云端只有单席位时 models 才是本人的）。份额从大到小，去掉 0。
+ * 第 69 批：ratio = 计入本人额度的比例（云端 own_models.used_ratio，与大数字同一分母、各模型之和 = 已用）；旧云端没有为 null（界面改按处理量份额说）。
+ */
+export function ownModels(q: QuotaStatus, v: Pick<PersonalView, "solo">): { alias: string; label: string; share: number; requests: number; ratio: number | null }[] {
+  const src: { alias: string; label?: string; share: number; requests: number; used_ratio?: number }[] = q.own_models ?? (v.solo ? (q.models ?? []) : []);
   return src
-    .filter((m) => m.share > 0)
-    .map((m) => ({ alias: m.alias, label: m.label ?? modelLabel(m.alias), share: m.share, requests: m.requests }))
-    .sort((a, b) => b.share - a.share);
+    .filter((m) => m.share > 0 || (m.used_ratio ?? 0) > 0)
+    .map((m) => ({ alias: m.alias, label: m.label ?? modelLabel(m.alias), share: m.share, requests: m.requests, ratio: typeof m.used_ratio === "number" && Number.isFinite(m.used_ratio) ? Math.max(0, m.used_ratio) : null }))
+    .sort((a, b) => (b.ratio ?? b.share) - (a.ratio ?? a.share) || b.share - a.share);
+}
+
+// ─── 第 69 批（V43）：每日用量、节奏、用途 ───
+
+/** 北京日期键 YYYY-MM-DD。 */
+export function bjDayKey(ms: number): string {
+  return new Date(ms + 8 * 3600_000).toISOString().slice(0, 10);
+}
+/** 北京“M 月 D 日”（按日期键）。 */
+export function dayLabel(key: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  return m ? `${Number(m[2])} 月 ${Number(m[3])} 日` : key;
+}
+
+export interface DayBar {
+  day: string;
+  /** 本期第几天（1 起）。 */
+  n: number;
+  /** 计入额度占本人分母的比例（未来的日子为 0）。 */
+  ratio: number;
+  requests: number;
+  qa: number;
+  today: boolean;
+  future: boolean;
+}
+
+/**
+ * 本期每天一格（第 69 批）：云端 personal.daily（只含有调用的日子）铺到本期每一天上；没有用量的日子 ratio = 0，今天之后的日子标 future。
+ * even = 每天用多少恰好在本期末用完（1 ÷ 本期天数，同一分母）；top = 纵轴上沿（最高的一天与 even 取大）。旧云端没有 daily 时为 null——不拿最近 20 条明细去拼。
+ */
+export function dailySeries(q: QuotaStatus, nowMs: number): { bars: DayBar[]; even: number; top: number; active: number } | null {
+  const daily = q.personal?.daily;
+  const s = q.period?.start ? Date.parse(q.period.start) : NaN;
+  const e = q.period?.resets_at ? Date.parse(q.period.resets_at) : NaN;
+  if (!Array.isArray(daily) || !Number.isFinite(s) || !Number.isFinite(e) || e <= s) return null;
+  const by = new Map(daily.map((d) => [d.day, d]));
+  const today = bjDayKey(nowMs);
+  const bars: DayBar[] = [];
+  // 每天取北京中午，避开跨日边界；周期起止都是北京零点
+  for (let t = s + 12 * 3600_000, n = 1; t < e && n <= 62; t += DAY, n++) {
+    const day = bjDayKey(t);
+    const d = by.get(day);
+    bars.push({ day, n, ratio: Math.max(0, d?.ratio ?? 0), requests: d?.requests ?? 0, qa: d?.qa_requests ?? 0, today: day === today, future: day > today });
+  }
+  if (bars.length === 0) return null;
+  const even = 1 / bars.length;
+  const peak = bars.reduce((m, b) => Math.max(m, b.ratio), 0);
+  return { bars, even, top: Math.max(peak, even) * 1.12, active: bars.filter((b) => b.requests > 0).length };
+}
+
+/** 一天的读数：“11 月 24 日 · 4.2% · 38 次调用（任务 35 · 问答 3）”拆成几段，界面自己排。 */
+export function dayReadout(b: Pick<DayBar, "day" | "ratio" | "requests" | "qa" | "today">): { when: string; pct: string; calls: string } {
+  const task = b.requests - b.qa;
+  const parts = b.requests === 0 ? "没有调用" : b.qa > 0 && task > 0 ? `${b.requests} 次调用（任务 ${task} · 问答 ${b.qa}）` : `${b.requests} 次${b.qa > 0 ? "问答" : "任务"}调用`;
+  return { when: b.today ? `今天 · ${dayLabel(b.day)}` : dayLabel(b.day), pct: b.requests === 0 ? "0%" : fmtPct(b.ratio), calls: parts };
+}
+
+export interface Pace {
+  tone: "ok" | "tight" | "fast" | "out" | "idle";
+  /** 两个字的判断：宽裕 / 偏紧 / 偏快 / 已用完 / 还没用。 */
+  label: string;
+  /** 一句依据。 */
+  text: string;
+  /** 本期时间已过（0–1）。 */
+  elapsed: number;
+}
+
+/**
+ * 节奏（第 69 批）：本期时间过了多少 vs 额度用了多少，按日均推到期末。日均 = 已用 ÷ 已用的天数——从本期开始或第一次用的那天算起（取晚者；
+ * 月中才注册的人不被整月摊薄），至少按 1 天算。推到期末 ≤ 85% 宽裕、≤ 100% 偏紧、超过则偏快并给出约哪天用完。都是云端真实计量算出的估计，不是额度承诺。
+ */
+export function paceView(q: QuotaStatus, v: Pick<PersonalView, "used" | "capped">, nowMs: number): Pace | null {
+  const elapsed = periodElapsed(q.period, nowMs);
+  const s = q.period?.start ? Date.parse(q.period.start) : NaN;
+  const e = q.period?.resets_at ? Date.parse(q.period.resets_at) : NaN;
+  if (elapsed === null || !Number.isFinite(s) || !Number.isFinite(e)) return null;
+  const per = q.period?.kind === "week" ? "本周" : "本月";
+  const share = v.capped ? "额度" : "个人份额";
+  // 用完时上面的状态句已经说了何时恢复，这里只补“时间走到哪”，不重复
+  if (v.capped && v.used >= 1) return { tone: "out", label: "已用完", text: `${per}时间已过 ${fmtPct(elapsed)}，重置前新任务暂不能发起`, elapsed };
+  if (v.used <= 0) return { tone: "idle", label: "还没用", text: `${per}还没有计入${share}的调用`, elapsed };
+  const end = q.period?.kind === "week" ? "周末" : "月底";
+  const daily = q.personal?.daily;
+  // 旧云端没有按日聚合：不推算期末，只把“时间走到哪”和“额度用到哪”并排说（第三轮，独立评审 R2-2：原来这里按本期开始推算，与新云端口径不一）
+  if (!Array.isArray(daily)) {
+    const tone = v.used <= elapsed * 0.85 ? "ok" : v.used <= elapsed ? "tight" : "fast";
+    return { tone, label: tone === "ok" ? "宽裕" : tone === "tight" ? "偏紧" : "偏快", text: `${per}时间已过 ${fmtPct(elapsed)}，额度已用 ${fmtPct(v.used)}`, elapsed };
+  }
+  // 第三轮：期末推算用“近 7 天日均”（不足 7 天按实际用过的天数），并且第一次用起不满 3 天不推算——只用过一天就外推到月底会夸大
+  const dayMs = (k: string) => Date.parse(`${k}T00:00:00+08:00`);
+  const today = bjDayKey(nowMs);
+  const first = daily.find((d) => d.requests > 0)?.day ?? null;
+  const activeDays = first ? Math.round((dayMs(today) - dayMs(first)) / DAY) + 1 : 0;
+  if (activeDays < 3) {
+    if (v.used >= 0.8) return { tone: "tight", label: "偏紧", text: `已用 ${fmtPct(v.used)}，余量不多`, elapsed };
+    return { tone: "idle", label: "刚开始", text: `用满 3 天后，按近 7 天日均预估${end}用量`, elapsed };
+  }
+  const span = Math.min(7, activeDays);
+  const from = dayMs(today) - (span - 1) * DAY;
+  const recent = daily.filter((d) => dayMs(d.day) >= from).reduce((n, d) => n + Math.max(0, d.ratio), 0);
+  const rate = recent / span;
+  const remainDays = Math.max(0, (e - nowMs) / DAY);
+  const projected = v.used + rate * remainDays;
+  const avg = `按近 ${span} 天日均${rate < 0.001 ? "不到 0.1%" : ` ${fmtPct(rate)}`} 估算`;
+  if (projected <= 0.85) return { tone: "ok", label: "宽裕", text: `${avg}，到${end}约用 ${fmtPct(projected)}`, elapsed };
+  if (projected <= 1) return { tone: "tight", label: "偏紧", text: `${avg}，到${end}约用 ${fmtPct(projected)}`, elapsed };
+  const out = rate > 0 ? nowMs + ((1 - Math.min(1, v.used)) / rate) * DAY : e;
+  return { tone: "fast", label: "偏快", text: `${avg}，约 ${dayLabel(bjDayKey(out))}${v.capped ? "用完" : "用满个人份额"}`, elapsed };
+}
+
+/** 用途（第 69 批）：任务与问答各计入多少（与大数字同一分母，两者之和 = 已用）；旧云端没有为 null。 */
+export function kindSplit(q: QuotaStatus): { task: { ratio: number; requests: number }; qa: { ratio: number; requests: number } } | null {
+  const k = q.personal?.by_kind;
+  if (!k || typeof k.task?.ratio !== "number" || typeof k.qa?.ratio !== "number") return null;
+  return { task: { ratio: Math.max(0, k.task.ratio), requests: k.task.requests ?? 0 }, qa: { ratio: Math.max(0, k.qa.ratio), requests: k.qa.requests ?? 0 } };
+}
+
+/** 距重置的大字（第 69 批）：{ n: "4", unit: "天后" }；不到 1 天按小时，不到 1 小时写“1 小时内”；已过或没有时刻为 null。 */
+export function resetIn(resetsAt: string | null | undefined, nowMs: number): { n: string; unit: string } | null {
+  const t = resetsAt ? Date.parse(resetsAt) : NaN;
+  if (!Number.isFinite(t) || t <= nowMs) return null;
+  const ms = t - nowMs;
+  if (ms >= DAY) return { n: String(Math.floor(ms / DAY)), unit: "天后" };
+  if (ms >= 3600_000) return { n: String(Math.floor(ms / 3600_000)), unit: "小时后" };
+  return { n: "1", unit: "小时内" };
+}
+
+/**
+ * 最近记录里连续的“未计入”行并成一行（第 69 批）：上游临时出错时网关会自动重试，同一分钟里常连着好几条“未计入 · 未成功”，
+ * 逐条列出只是噪声。只合并相邻、用途与模型相同、同为未计入且原因相同的行；计入额度的行一律逐条列。
+ */
+export function collapseFree<T extends UsageRow>(rows: T[], scale: number): { at: string; in_period?: boolean; row: T; n: number; charge: { counted: boolean; text: string } }[] {
+  const out: { at: string; in_period?: boolean; row: T; n: number; charge: { counted: boolean; text: string } }[] = [];
+  const day = (at: string) => (Number.isFinite(Date.parse(at)) ? bjDayKey(Date.parse(at)) : at);
+  for (const r of rows) {
+    const c = rowCharge(r, scale);
+    const last = out[out.length - 1];
+    if (last && !c.counted && !last.charge.counted && last.charge.text === c.text && last.row.kind === r.kind && (last.row.label ?? last.row.alias) === (r.label ?? r.alias) && day(last.at) === day(r.at)) last.n += 1;
+    else out.push({ at: r.at, ...(r.in_period !== undefined ? { in_period: r.in_period } : {}), row: r, n: 1, charge: c });
+  }
+  return out;
 }

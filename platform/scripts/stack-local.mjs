@@ -123,7 +123,8 @@ const cfgs = {
     // 平台运营接口（/v1/ops/*）按平台人员账号会话 + 角色鉴权、不限来源（D-218 取消运维网段），回环与 --tls 两种形态都开；ops 段只给“系统”页的部署标识
     ops: { deployment: "dev" },
     // 第 62 批：本机栈允许短信 dry-run（运营在控制台打开后验证码随应答返回、不发短信）；生产入口缺省不允许
-    sms: { allow_dry_run: true },
+    // 第 69 批：回环形态（无 TLS）另让登录 / 找回 / 绑定的 dry-run 验证码也随应答返回——验证码登录与换账号可在本机端到端走通
+    sms: { allow_dry_run: true, ...(useTls ? {} : { dry_run_reveal_all_loopback: true }) },
     console: { origins: [consoleOrigin], bootstrap_admin: ADMIN },
     routing: { bootstrap: { provider: { id: "maas", label: "中软 MaaS", vendor: "csi-maas", base_url: upstream }, models: { "legal/k3": model, "legal/k2.6": model } }, public_key_file: pub("routing-public.txt") },
   },
