@@ -44,8 +44,11 @@ if [ -f /etc/kwl/tls-ip.env ] && [ -f /etc/kwl/tls/cp.crt ] && openssl x509 -in 
   echo "⚠ 本机是域名部署却留着纯 IP 部署的续期配置：已停用 kwl-cert-renew.timer；请把 /etc/kwl/tls-ip.env 移走（运维手册“排障”）"
 fi
 # 第 66 批（v1.3.0，D-292）：签名服务补“账号设备签发钥”（个人账号换电脑直接登录用）；已有则不动，幂等
+# 第 71 批（v1.6.0）：线上 1.5.0 实测 /v1/meta 没有 device_auto_enroll——补钥失败原来只打一句、照常继续，个人账号换电脑于是退化成“等另一台电脑批准”，
+# 试用 1 台的账号移除旧电脑后无人可批（死路）。改为：补钥失败记下，升级末尾核对 /v1/meta，没有开通就醒目报错并以退出码 3 结束（服务已照常运行，按提示补上后重跑核对即可）
+CA_FAILED=0
 if [ -f /etc/kwl/cp-signer.json ]; then
-  node scripts/add-account-device-ca.mjs --config /etc/kwl/cp-signer.json --secrets /etc/kwl/secrets || { echo "补账号设备签发钥失败（个人账号换电脑仍走批准流程，其余照常）"; }
+  node scripts/add-account-device-ca.mjs --config /etc/kwl/cp-signer.json --secrets /etc/kwl/secrets || { CA_FAILED=1; echo "✖ 补账号设备签发钥失败（见上一行原因）：升级末尾会再核对一次"; }
   [ -f /etc/kwl/secrets/account-device-ca.pem ] && { chgrp kwl /etc/kwl/secrets/account-device-ca.pem; chmod 0440 /etc/kwl/secrets/account-device-ca.pem; }
 fi
 systemctl daemon-reload
@@ -68,3 +71,9 @@ for role in cp-signer control-plane gateway search dist support notify relay; do
 done
 bash deploy/scripts/healthcheck.sh || { echo "健康检查没过。回滚：sudo bash $APP/deploy/scripts/rollback.sh"; exit 1; }
 echo "升级完成：$(git describe --tags --always)。上一版本 ${PREV:0:12} 记在 /var/lib/kwl-upgrade/previous"
+bash deploy/scripts/verify-capabilities.sh || {
+  echo "✖✖ 升级已完成、服务正常运行，但“个人账号新电脑直接登录”没有开通（/v1/meta 缺 device_auto_enroll）：个人账号换电脑会退化成等批准。"
+  echo "   处理：按运维手册“补账号设备签发钥”一节执行 node scripts/add-account-device-ca.mjs，再 sudo systemctl restart kwl@cp-signer kwl@control-plane，最后 sudo bash deploy/scripts/verify-capabilities.sh"
+  [ "$CA_FAILED" = 1 ] && echo "   （本次补钥步骤就已失败，原因见上文）"
+  exit 3
+}

@@ -74,7 +74,7 @@ test("电脑数已满：列表每台带平台、最近使用时刻、是否登�
   assert.equal(d[0].platform, "win32", "取这个账号在那台电脑上最近一次会话报的平台");
   assert.ok(Number.isFinite(Date.parse(d[0].last_seen_at)), "会话级的最近使用时刻");
   assert.equal(d[0].session, "active");
-  assert.deepEqual(Object.keys(d[0]).sort(), ["client_version", "device_id", "last_seen_at", "last_seen_on", "name", "platform", "registered_at", "session"], "不含 IP、网段等定位信息（第 70 批：追加律师自填的电脑名称 name）");
+  assert.deepEqual(Object.keys(d[0]).sort(), ["client_version", "device_id", "last_seen_at", "last_seen_on", "name", "platform", "registered_at", "session", "signed_out_at", "state"], "不含 IP、网段等定位信息（第 70 批：追加律师自填的电脑名称 name；第 71 批：state 与被让出的时刻）");
   // /v1/auth/me 的设备列表同一口径
   const meView = await fetch(`${base}/v1/auth/me`, { headers: { authorization: `Bearer ${r.json.session_token}` } }).then((x) => x.json() as Promise<any>);
   assert.equal(meView.devices[0].platform, "win32");
@@ -106,6 +106,9 @@ test("团队成员换过 9 台电脑（含已移除）之后仍能登记新电�
   }
   for (const jr of t.joinRequests.values()) if (jr.member_slug === "bing") jr.status = "revoked" as any;
   const full = await post("/v1/auth/login", { email: "bing-b69@example.cn", password: PW, client: { version: "0.9.0", platform: "win32" }, account_switch: true });
-  assert.equal(full.json.onboarding.state, "device_limit");
-  assert.equal(full.json.onboarding.devices.length, 2);
+  // 第 71 批（D-298）：上限的口径改为“同时登录的电脑”——这两台登记着但没有有效会话（已退出登录），不占名额，新电脑照常申请；
+  // 同时登录已满的判定见 b71-device-signout.test.ts
+  assert.equal(full.json.onboarding.state, "needs_device_join");
+  assert.equal(full.json.onboarding.devices_registered, 2);
+  assert.equal(full.json.onboarding.devices_used, 0);
 });

@@ -301,7 +301,7 @@ test("页面纯函数：密码预检、人员角色组合、安全提示", async
   const { securityTips } = await mod("apps/console/pages/me-overview.js");
   const old = new Date(Date.now() - 40 * 86_400_000).toISOString();
   const tips = securityTips({ account: {}, sessions: [{ current: true }, { current: false }], devices: [{ last_seen_on: old }] });
-  assert.deepEqual(tips.map((t: string[]) => t[1]), ["另有 1 处登录", "1 台电脑超过 30 天未报到"]);
+  assert.deepEqual(tips.map((t: string[]) => t[1]), ["网页登录 1 处（不占电脑名额）", "1 台电脑超过 30 天没在线"]);
   assert.deepEqual(securityTips({ account: {}, sessions: [{ current: true }], devices: [] }), []);
 });
 

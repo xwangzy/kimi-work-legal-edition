@@ -19,6 +19,7 @@
  *        各服务只接受 HTTPS；client.env 另给 NODE_EXTRA_CA_CERTS 与各服务的 SPKI 钉住值（与 release.json 同一口径）。
  * 输出：<目录>/client.env（交给桌面端开发桥的变量）、<目录>/console-login.txt（0600：控制台地址、系统管理员邮箱与密码；
  *       改过密码后这里的就失效了）、日志 <目录>/logs/*.log（遮盖密钥）。最后一行打印 `[stack] 控制台账号：<文件>` 供 demo-launch 读取。
+ * --no-account-ca：签名服务不带账号设备签发钥（模拟线上 1.5.0 的配置缺口：个人账号新电脑退化为等批准；第 71 批复现用）。
  * 停：Ctrl-C（或 SIGTERM 本进程；子进程一并停）。
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -109,7 +110,8 @@ const cfgs = {
     listen: loop(P.signer),
     ...(useTls ? { tls: { cert_file: join(tlsDir, "signer.crt"), key_file: join(tlsDir, "signer.key"), client_ca_file: join(tlsDir, "ca.crt") }, allowed_callers: ["spiffe://kwl/test/cp-api"] } : { insecure_loopback_for_test: true }),
     data_dir: join(dir, "data", "signer"),
-    keys: JSON.parse(readFileSync(pub("signer-keys.json"), "utf8")),
+    // 第 71 批：--no-account-ca 模拟线上 1.5.0（签名服务没有账号设备签发钥：个人账号新电脑退化为等批准），复现与回归用
+    keys: (({ account_device_ca, ...rest }) => (process.argv.includes("--no-account-ca") ? rest : { ...rest, account_device_ca }))(JSON.parse(readFileSync(pub("signer-keys.json"), "utf8"))),
   },
   cp: {
     role: "control-plane",
