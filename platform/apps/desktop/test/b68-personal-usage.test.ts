@@ -70,7 +70,8 @@ test("被停与受限：额度用完、管理员上限、个人额度（seat）�
   assert.equal(usageTone(personalView(seat)), "full");
   assert.deepEqual([quotaNotice(seat)!.tone, quotaNotice(seat)!.text], ["stop", "你的个人额度已用完，新任务暂不能发起，将于 12-01 重置"], "首页提示条认得 seat");
   const all = q({ personal: { used_ratio: 1, remaining_ratio: 0, limited_by: "allowance", paused: "allowance" } });
-  assert.match(usageStatus(all, personalView(all), at, "")!.text, /^本月额度已用完，新任务暂不能发起；12 月 1 日 00:00 重置后恢复。$/);
+  // 第 69 批（独立评审 R6-2）：用完时状态句末尾直接说去哪要更多额度（原来要滚到页面下方的套餐卡才看得到）
+  assert.match(usageStatus(all, personalView(all), at, "")!.text, /^本月额度已用完，新任务暂不能发起；12 月 1 日 00:00 重置后恢复。需要更多额度，请联系客户经理或客服。$/);
   const cap = q({ personal: { used_ratio: 0.5, remaining_ratio: 0.3, limited_by: "cap", paused: null } });
   const vc = personalView(cap);
   assert.ok(Math.abs(vc.left - 0.3) < 1e-9, "上限压低了此刻能用的");
@@ -143,7 +144,8 @@ test("源码门禁：客户端不再展示团队用量；页面只讲本人、�
   assert.doesNotMatch(code, /本所|by_member|cap_pct|q\.firm\.used_ratio|value_cny|点数|积分|¥|元/);
   assert.match(code, /团队用量与上限/, "管理员看到的那一句");
   assert.match(code, /\{admin && !v\.solo && <p className="pu-plan-admin">团队用量与上限请在云端控制台管理/);
-  assert.match(code, /id="pu-plan-h"[\s\S]*需要更多额度：请联系客户经理或客服/, "套餐块：套餐名、可用模型、更多额度（不做购买入口）");
+  // 第 69 批第六轮：“需要更多额度”改为小标题 + 值两行
+  assert.match(code, /id="pu-plan-h"[\s\S]*<span className="pu-k">需要更多额度<\/span>\s*<span>请联系客户经理或客服<\/span>/, "套餐块：套餐名、可用模型、更多额度（不做购买入口）");
   assert.match(code, /api\.quotaUsagePage\(/, "更早的明细来自云端账本翻页");
   assert.match(code, /<DailyBars/, "第 69 批：每日柱（今天高亮）代替进度条上的“今天”刻度");
   assert.doesNotMatch(code, /setTimeout|Math\.random|mock/i, "不做伪数据与伪交互");

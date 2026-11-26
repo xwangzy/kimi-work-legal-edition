@@ -243,3 +243,21 @@
 .pu-split.single .pu-plan .pu-plan-more { grid-area: more; margin: 0; text-align: right; }
 .pu-split.single .pu-plan .pu-plan-admin { grid-area: admin; }
 @media (max-width: 900px) { .pu-split.single .pu-plan { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "name" "models" "more" "admin"; } .pu-split.single .pu-plan .pu-plan-more { text-align: left; } }
+
+/* 第六轮（独立评审 R5-1）：横排套餐卡三栏统一“灰色小标题 + 值”、顶对齐，去掉竖排时的分隔线与卡头，卡高约 100 */
+.pu-plan-k { display: none; }
+.pu-plan-more .pu-k { display: block; margin-bottom: 2px; }
+.pu-split.single .pu-plan { grid-template-areas: "name models more" "admin admin admin"; align-items: start; padding-top: 20px; padding-bottom: 20px; }
+.pu-split.single .pu-plan .pu-sec-head { display: none; }
+.pu-split.single .pu-plan-k { display: block; margin-bottom: 4px; }
+.pu-split.single .pu-plan .pu-plan-name b { font-size: var(--fs-lg); }
+.pu-split.single .pu-plan .pu-plan-name span:not(.pu-k) { margin-top: 4px; }
+.pu-split.single .pu-plan .pu-plan-models { margin: 0; }
+.pu-split.single .pu-plan .pu-plan-models ul { margin-top: 4px; flex-wrap: nowrap; }
+.pu-split.single .pu-plan .pu-plan-more { margin: 0; padding-top: 0; border-top: 0; text-align: left; }
+@media (max-width: 900px) { .pu-split.single .pu-plan { grid-template-areas: "name" "models" "more" "admin"; } }
+.pu-split.single .pu-plan { row-gap: 0; }
+.pu-split.single .pu-plan .pu-plan-admin { margin-top: 12px; }
+/* 第六轮评审后（R6-1）：横排套餐卡三等分、上下内边距相同 */
+.pu-split.single .pu-plan { grid-template-columns: repeat(3, minmax(0, 1fr)); padding-top: 24px; padding-bottom: 24px; }
+.pu-split.single .pu-plan > * { align-self: start; }

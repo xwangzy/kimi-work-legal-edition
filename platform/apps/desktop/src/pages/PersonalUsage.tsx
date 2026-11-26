@@ -317,10 +317,12 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
             </h2>
           </header>
           <div className="pu-plan-name">
+            <span className="pu-k pu-plan-k">当前套餐</span>
             <b>{plan?.label ?? "—"}</b>
             {/* 第三轮（独立评审 R2）：试用到期日——云端 plan.valid_until（律所订阅有效期；试用即试用结束），旧云端没有就不写 */}
             {validUntil && <span className="pu-plan-until">{plan?.id === "trial" ? "试用至" : "有效期至"} {validUntil}</span>}
-            {planNote && <span>{planNote}</span>}
+            {/* 第六轮：试用已写“试用至 X 月 X 日”时，不再重复“自助注册试用 14 天……”这句说明 */}
+            {planNote && !(validUntil && plan?.id === "trial") && <span>{planNote}</span>}
           </div>
           {plan?.models && plan.models.length > 0 && (
             <div className="pu-plan-models">
@@ -332,7 +334,10 @@ export function PersonalUsage({ admin = false }: { admin?: boolean }) {
               </ul>
             </div>
           )}
-          <p className="pu-plan-more">需要更多额度：请联系客户经理或客服。</p>
+          <p className="pu-plan-more">
+            <span className="pu-k">需要更多额度</span>
+            <span>请联系客户经理或客服</span>
+          </p>
           {/* 一人工作室的管理员就是本人：没有团队可管，不再提示 */}
           {admin && !v.solo && <p className="pu-plan-admin">团队用量与上限请在云端控制台管理（按成员用量、律所上限、个人额度）。</p>}
         </section>

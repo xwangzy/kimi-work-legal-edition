@@ -76,7 +76,7 @@ export function usageTone(v: Pick<PersonalView, "used" | "left" | "paused" | "ca
 export function usageStatus(q: QuotaStatus, v: PersonalView, resetText: string, burstBack: string): { tone: "stop" | "warn"; text: string } | null {
   const per = q.period?.kind === "week" ? "本周" : "本月";
   const after = resetText ? `${resetText} 重置后恢复` : "下期重置后恢复";
-  if (v.paused === "allowance" || (v.paused === null && v.capped && v.used >= 1)) return { tone: "stop", text: `${per}额度已用完，新任务暂不能发起；${after}。` };
+  if (v.paused === "allowance" || (v.paused === null && v.capped && v.used >= 1)) return { tone: "stop", text: `${per}额度已用完，新任务暂不能发起；${after}。需要更多额度，请联系客户经理或客服。` };
   if (v.paused === "cap") return { tone: "stop", text: `已到管理员设定的${per}上限，新任务暂不能发起；${after}。` };
   if (v.paused === "seat") return { tone: "stop", text: `你的个人额度已用完，新任务暂不能发起；${after}。` };
   if (v.paused === "burst") return { tone: "warn", text: `最近 ${q.burst?.hours ?? 5} 小时用量较多，AI 处理暂时放缓${burstBack ? `，${burstBack} 起恢复` : "，稍后自动恢复"}。` };
