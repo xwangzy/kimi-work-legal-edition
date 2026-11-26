@@ -285,7 +285,8 @@ test("用量账本：按席位领租约；逐请求回报按请求编号去重�
     ],
     "最近的在前",
   );
-  assert.deepEqual(Object.keys(qv.own_recent[0]).sort(), ["alias", "at", "charge", "charge_ratio", "estimated", "kind", "label", "outcome", "partial", "pending", "tokens_cached", "tokens_in", "tokens_out", "unit", "value_cny"]);
+  // 第 70 批：追加 client_request_id（出站闸门生成的编号，律师端在本机对回事项）与 this_device——都不是请求内容
+  assert.deepEqual(Object.keys(qv.own_recent[0]).sort(), ["alias", "at", "charge", "charge_ratio", "client_request_id", "estimated", "kind", "label", "outcome", "partial", "pending", "this_device", "tokens_cached", "tokens_in", "tokens_out", "unit", "value_cny"]);
   // 落盘：账本文件有 2 行；新实例读回后同一请求编号仍去重
   const month = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 7);
   const lines = readFileSync(join(dir, "usage", `${month}.jsonl`), "utf8").trim().split("\n").filter((x) => x.includes(f.tid));

@@ -74,7 +74,7 @@ test("电脑数已满：列表每台带平台、最近使用时刻、是否登�
   assert.equal(d[0].platform, "win32", "取这个账号在那台电脑上最近一次会话报的平台");
   assert.ok(Number.isFinite(Date.parse(d[0].last_seen_at)), "会话级的最近使用时刻");
   assert.equal(d[0].session, "active");
-  assert.deepEqual(Object.keys(d[0]).sort(), ["client_version", "device_id", "last_seen_at", "last_seen_on", "platform", "registered_at", "session"], "不含 IP、网段等定位信息");
+  assert.deepEqual(Object.keys(d[0]).sort(), ["client_version", "device_id", "last_seen_at", "last_seen_on", "name", "platform", "registered_at", "session"], "不含 IP、网段等定位信息（第 70 批：追加律师自填的电脑名称 name）");
   // /v1/auth/me 的设备列表同一口径
   const meView = await fetch(`${base}/v1/auth/me`, { headers: { authorization: `Bearer ${r.json.session_token}` } }).then((x) => x.json() as Promise<any>);
   assert.equal(meView.devices[0].platform, "win32");
