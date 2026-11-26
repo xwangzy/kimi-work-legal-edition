@@ -17,6 +17,9 @@ import { checkArtifactCitations } from "./artifact-citations.ts";
 import { termIssues } from "./term-check.ts";
 import { REPEAT_FIX, repeatIssues } from "./repeat-check.ts";
 import { CASE_NOT_IN_MATERIALS_FIX, CASE_PLACEHOLDER_FIX, CASE_QUOTE_FIX, COURT_QUOTE_FIX, QUOTE_COLUMN_FIX, caseProvenance, caseQuoteIssues, courtQuoteIssues, placeholderCaseRefs, quoteColumnIssues, type CaseIndex } from "./case-provenance.ts";
+import { topicArticleIssues } from "./topic-article.ts";
+import { claimsConsistencyIssues } from "./claims-consistency.ts";
+import { preservationAmountIssues } from "./preservation-check.ts";
 
 export interface DeliverableSection {
   heading?: string;
@@ -26,7 +29,7 @@ export interface DeliverableSection {
   table?: { columns?: unknown[]; rows?: unknown[][] } | null;
 }
 
-export type DeliverableIssueKind = "internal_term" | "foreign_word" | "markdown" | "numbering" | "cross_ref" | "amount_words" | "citation" | "table_sum" | "note_to_lawyer" | "equation" | "term" | "prediction" | "repeat";
+export type DeliverableIssueKind = "internal_term" | "foreign_word" | "markdown" | "numbering" | "cross_ref" | "amount_words" | "citation" | "table_sum" | "note_to_lawyer" | "equation" | "term" | "prediction" | "repeat" | "claims";
 
 export interface DeliverableIssue {
   kind: DeliverableIssueKind;
@@ -98,7 +101,7 @@ const INTERNAL_PATTERNS: { re: RegExp; fix: string }[] = [
   // 来源是方法自己的输出规格，已改；这里兜底。只认界面专名与“界面名 + 界面动作”的组合：合同条文里单独的“工作台”（“乙方提供运维工作台”）、
   // 文件名《事实时间线》不报
   { re: UI_TERM_RE, fix: "改用律师的说法（问题序号、事实清单）：文件里不写产品界面上的名称；修订稿怎么生成、下一步在哪里处理，写在给律师的答复里，不写进文件" },
-  { re: /(?:称呼|全名|姓名|自然人|当事人|住所|地址|信用代码|证件号?|身份证号?|账号|电话|手机号?|联系方式)(?:与全名|和全名)?代号|代号(?:说明|一致|不一致|对应|形态|原样)|原样保留代号|按任务说明|(?:律师|本次|原)任务说明|任务说明(?:中|里|所载|所述|所列|要求|[；;，,。]|$)|本机(?:离线)?法规库|开工前已知|任务信息|任务金额|任务口径|解析文本|已按(?:独立)?复核(?:意见)?(?:调整|修改|改正)/g, fix: "删去这句关于代号、任务说明的话本身（导出时系统还原真名，不需要解释）：正文直接写当事人的名称或称呼；确有依据的写材料名称；律师没有说过的，不得写成“律师指示”“律师确认”“律师的说明载明”。两个称呼是否同一人、材料里没有写明的，不下结论，在最终答复里请律师核实" },
+  { re: /(?:称呼|全名|姓名|自然人|当事人|住所|地址|信用代码|证件号?|身份证号?|账号|电话|手机号?|联系方式)(?:与全名|和全名)?代号|代号(?:说明|一致|不一致|对应|形态|原样)|原样保留代号|(?:买方|卖方|甲方|乙方|人员|员工|签字人|签字栏)[^。；，,]{0,4}代号|代号照(?:材料|原样)|照材料保留代号|其余代号|不另作代号|按任务说明|(?:律师|本次|原)任务说明|任务说明(?:中|里|所载|载明|所述|所列|所给|提供|指定|写明|列明|要求|[；;，,。:：]|$)|本机(?:离线)?法规库|开工前已知|任务信息|任务金额|任务口径|解析文本|已按(?:独立)?复核(?:意见)?(?:调整|修改|改正)/g, fix: "删去这句关于代号、任务说明的话本身（导出时系统还原真名，不需要解释）：正文直接写当事人的名称或称呼；确有依据的写材料名称；律师没有说过的，不得写成“律师指示”“律师确认”“律师的说明载明”。两个称呼是否同一人、材料里没有写明的，不下结论，在最终答复里请律师核实" },
 ];
 
 /**
@@ -406,6 +409,22 @@ export function checkDeliverable(title: string, sections: readonly DeliverableSe
       const u = UPLOAD_NAME_RE.exec(p.text);
       if (u) push({ kind: "note_to_lawyer", where: p.where, text: snippet(p.text, u.index, u[0].length), fix: "对外文书里不写上传文件的文件名（编号前缀“02-”、扩展名“.docx”）：改成证据名称与证据编号（如“证据2《送货单》”），对方证据用对方证据目录里的编号" });
     }
+  }
+  // 断句残留（第 65 批真实验收 v39-m25-r4：修改轮用短语作锚点替换，对外答辩书留下“……不能成立。。”“……依据。，以……”）：
+  // 句末标点连写或句号后紧跟逗号、分号，是改写拼接的残留，正文里正常写法不会出现（省略号“……”、破折号不在此列）
+  for (const p of paras) {
+    const m = /。[。，,；;]|[，,；;]。|，，|；；/.exec(p.text);
+    if (m) push({ kind: "internal_term", where: p.where, text: snippet(p.text, m.index, m[0].length), fix: "这里有改写拼接留下的断句（标点连写）：读通整句，删去多余的半句或标点，前后文意要连得上" });
+  }
+  // 条号与主题对照（第 65 批，D-283）：“民事诉讼法第一百条 + 保全”这类照抄司法解释里的母法旧条号、改号法律凭记忆写旧号——引用核验只核条号存在，这里核“讲的是不是这件事”
+  for (const p of paras) for (const t of topicArticleIssues(p.text)) push({ kind: "citation", where: p.where, text: t.text, fix: t.fix });
+  // 诉讼请求并用 / 择一（第 65 批，D-286）：定金与违约金、2N 与 N、解除与继续履行……只看请求类文书的请求部分
+  try {
+    for (const c of claimsConsistencyIssues(title, paras)) push(c);
+    // 保全数额的构成（第 65 批，D-289）
+    for (const c of preservationAmountIssues(title, paras)) push(c);
+  } catch {
+    // 检查本身出错不影响其他检查
   }
   // 案号溯源（第 61 批，D-258）：案号须能在本事项材料、任务说明或律师作答里找到；占位案号与归到判决名下却对不上原文的引文一并报回
   for (const p of paras) {

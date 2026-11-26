@@ -69,7 +69,7 @@ test("写了 type 又写与目录不同的 period 拒绝；不写 type 的通用
 });
 
 test("目录条文与法规库一致：每一条现行法规的依据都能取到原文，且原文含目录写的期间", () => {
-  const PERIOD_WORD: Record<number, string> = { 7: "七日", 10: "十日", 15: "十五日", 30: "三十日", 1: "一年", 2: "二年", 3: "三年", 6: "六个月" };
+  const PERIOD_WORD: Record<number, string> = { 5: "五日", 7: "七日", 10: "十日", 15: "十五日", 30: "三十日", 1: "一年", 2: "二年", 3: "三年", 6: "六个月" };
   for (const t of PROCEDURAL_PERIOD_TYPES) {
     const spec = proceduralPeriod(t, { start: "2026-11-24", asset: "movable" })!;
     const b = spec.basis[0]!;

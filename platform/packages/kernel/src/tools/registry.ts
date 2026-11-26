@@ -7,6 +7,7 @@
 import { calcAnnualLeave, calcLabor } from "./tools/labor.ts";
 import { calcOvertime } from "./tools/labor-overtime.ts";
 import { calcCourtFee } from "./tools/court-fee.ts";
+import { calcLitigationBudgetTool } from "./tools/litigation-budget.ts";
 import type { CapabilityClaims } from "@zr-legal/service-auth";
 import { DomainError } from "@zr-legal/domain";
 import { ManifestRegistry, type SideEffect, type ToolManifest, type ToolResource } from "@zr-legal/host-policy";
@@ -350,10 +351,10 @@ export const TOOLS: readonly ToolDef[] = [
     name: "calc.deadline",
     title: "期间计算（法定期间与工作日）",
     description:
-      "确定性计算期间届满日并给出逐步过程、所用法条与节假日数据来源。start 为起算事实发生日（YYYY-MM-DD；只知道月份时写 YYYY-MM，只返回区间、deadline 为 null）。rule=civil：民法典第二百至二百零四条（开始当日不计入；按月、年以到期月对应日为末日，无对应日取月末；末日为周末或法定节假日顺延，调休上班日不顺延），period.unit 用 day / month / year；rule=workday：法律明确规定按工作日计算的期间（如行政处罚法第八十五条），period.unit 用 workday。不处理中止、中断与在途时间；warnings 非空时须原样告知律师。 诉讼程序期间（第 61 批）写 type、不写 period 与 rule：期间长度、起算事实与依据条号由程序期间目录给出——appeal_judgment 判决上诉期 / appeal_ruling 裁定上诉期 / defense_first_instance 一审答辩期 / defense_appeal 二审答辩期（以上境内没有住所的加 foreign_domicile: true 按三十日）/ labor_arbitration_defense 劳动仲裁答辩期 / labor_award_suit 不服劳动仲裁裁决起诉 / labor_award_setaside_employer 用人单位申请撤销终局裁决 / arbitration_award_setaside 申请撤销仲裁裁决（按收到日适用新旧仲裁法）/ pre_action_preservation_suit 诉前保全后起诉 / enforcement_application 申请执行期间 / retrial_application 申请再审 / preservation_expiry 保全期限与续行截止（须写 asset）/ preservation_renewal 按法院告知的届满日算续行截止 / civil_limitation 诉讼时效 / labor_arbitration_limitation 劳动仲裁时效；start 写目录说明的起算事实日期（返回 procedural.start_means）。",
+      "确定性计算期间届满日并给出逐步过程、所用法条与节假日数据来源。start 为起算事实发生日（YYYY-MM-DD；只知道月份时写 YYYY-MM，只返回区间、deadline 为 null）。rule=civil：民法典第二百至二百零四条（开始当日不计入；按月、年以到期月对应日为末日，无对应日取月末；末日为周末或法定节假日顺延，调休上班日不顺延），period.unit 用 day / month / year；rule=workday：法律明确规定按工作日计算的期间（如行政处罚法第八十五条），period.unit 用 workday。不处理中止、中断与在途时间；warnings 非空时须原样告知律师。 诉讼程序期间（第 61 批）写 type、不写 period 与 rule：期间长度、起算事实与依据条号由程序期间目录给出——appeal_judgment 判决上诉期 / appeal_ruling 裁定上诉期 / defense_first_instance 一审答辩期 / defense_appeal 二审答辩期（以上境内没有住所的加 foreign_domicile: true 按三十日）/ labor_arbitration_defense 劳动仲裁答辩期 / labor_award_suit 不服劳动仲裁裁决起诉 / labor_award_setaside_employer 用人单位申请撤销终局裁决 / arbitration_award_setaside 申请撤销仲裁裁决（按收到日适用新旧仲裁法）/ pre_action_preservation_suit 诉前保全后起诉 / enforcement_application 申请执行期间 / retrial_application 申请再审 / preservation_expiry 保全期限与续行截止（须写 asset）/ preservation_renewal 按法院告知的届满日算续行截止 / civil_limitation 诉讼时效 / labor_arbitration_limitation 劳动仲裁时效；start 写目录说明的起算事实日期（返回 procedural.start_means）。；第 65 批新增：preservation_reconsideration 保全或先予执行裁定申请复议（五日，保全裁定不能上诉）/ enforcement_objection_review 执行异议裁定申请复议（十日）/ third_party_objection_suit 案外人异议裁定后起诉（十五日）/ payment_order_objection 支付令异议（十五日）/ third_party_revocation_suit 第三人撤销之诉（六个月）",
     sideEffect: "read",
     resource: "pure",
-    version: "2",
+    version: "3",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -485,6 +486,44 @@ export const TOOLS: readonly ToolDef[] = [
       },
     },
     invoke: (p) => calcCourtFee(p),
+  },
+  // 第 65 批（V39，D-279）：诉讼成本与回收测算——情景并列、不给概率（外部技能 billing-and-litigation-budget 的诉讼经济性分析改造）
+  {
+    name: "calc.litigation_budget",
+    title: "诉讼成本与回收测算",
+    description:
+      "把一审受理费（简易程序减半）、保全申请费、二审受理费（我方就不利部分上诉）、被告被强制执行时的申请执行费按《诉讼费用交纳办法》算出，连同律师给的律师费、鉴定费、担保费，" +
+      "按情景并列算出原告的判决应收、预计收回与净回收（或被告的总支出），并算出“和解金额达到多少时与各情景持平”、拟比较的和解金额比各情景多得或少付多少。" +
+      "side 写 plaintiff（我方原告、申请人）或 defendant（我方被告、被申请人）；claims 逐项写金钱请求（名称与金额，被告视角写对方的请求）；scenarios 每个写 label 与 support（统一支持比例 0～1）或 items（按请求项目名逐项比例，没列的按 0），缺省“全部支持”“全部驳回”；" +
+      "collection 是执行回收比例情景（0～1，原告用，缺省全部收回）；costs 是我方自付的其他成本（stage：first_instance / appeal / enforcement；incurred=true 表示已发生、和解也省不下）；preservation 写保全财产数额与担保费报价；filed 表示已立案；settlement_offers 写拟比较的和解金额。履行期尚未届满的请求（如未到期的质保金）照样写进 claims 并标 not_yet_due: true（可写 due_on）：它不进本次诉讼的请求、受理费与情景，和解一并了结它的（缺省），比较时按“现在起诉 + 到期后另行主张”算（到期后能收回多少随情景的认定：情景 items 里写了它的比例按所写，统一 support 的按同一比例）；和解不含它的写 settlement_covers_not_due: false。" +
+      "情景是“如果法院支持这些”的测算，不是胜诉概率，不加权求期望；律师费、担保费、仲裁费本工具不估，律师没给的按 0 计并在 warnings 提示。给 title 时由系统直接写成 Excel（情景测算、请求与支持比例、费用明细、和解持平点、口径与假设）并登记为成果。",
+    sideEffect: "read",
+    resource: "pure",
+    version: "1",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["side", "claims"],
+      properties: {
+        title: { type: "string" },
+        side: { type: "string", enum: ["plaintiff", "defendant"] },
+        forum: { type: "string", enum: ["court", "arbitration"] },
+        claims: { type: "array", minItems: 1, maxItems: 20, items: { type: "object", additionalProperties: false, required: ["label", "amount_yuan"], properties: { label: { type: "string" }, amount_yuan: { type: "number", minimum: 0 }, not_yet_due: { type: "boolean" }, due_on: { type: "string" } } } },
+        simple_procedure: { type: "boolean" },
+        filed: { type: "boolean" },
+        preservation: { type: "object", additionalProperties: false, required: ["amount_yuan"], properties: { amount_yuan: { type: "number", minimum: 0 }, guarantee_fee_yuan: { type: "number", minimum: 0 }, fee_in_claims: { type: "boolean" } } },
+        appeal: { type: "boolean" },
+        forced_enforcement: { type: "boolean" },
+        costs: { type: "array", maxItems: 20, items: { type: "object", additionalProperties: false, required: ["label", "amount_yuan"], properties: { label: { type: "string" }, amount_yuan: { type: "number", minimum: 0 }, stage: { type: "string", enum: ["first_instance", "appeal", "enforcement"] }, incurred: { type: "boolean" } } } },
+        contingency_rate: { type: "number", minimum: 0 },
+        scenarios: { type: "array", maxItems: 6, items: { type: "object", additionalProperties: false, required: ["label"], properties: { label: { type: "string" }, support: { type: "number", minimum: 0 }, items: { type: "object" } } } },
+        collection: { type: "array", maxItems: 3, items: { type: "number", minimum: 0 } },
+        settlement_offers: { type: "array", maxItems: 6, items: { type: "number", minimum: 0 } },
+        settlement_covers_not_due: { type: "boolean" },
+        arbitration_fee_yuan: { type: "number", minimum: 0 },
+      },
+    },
+    invoke: (p, ctx) => calcLitigationBudgetTool(ctx, p),
   },
   {
     name: "redact.scan",
@@ -1312,7 +1351,7 @@ export async function invokeTool(name: string, params: unknown, ctx: InvokeCtx):
  * 文书里引用它们算出的数被当成“找不到出处”（V31 案情分析一单 6 个正确金额被标必须改）。工具结果按任务记在本进程内存里，
  * 勾稽时并入出处；只记数字结构，进程重启后丢失（只影响误报，不影响漏报）。
  */
-const CALC_RESULT_TOOLS = new Set(["calc.court_fee", "calc.interest", "calc.labor", "calc.ledger"]);
+const CALC_RESULT_TOOLS = new Set(["calc.court_fee", "calc.interest", "calc.labor", "calc.ledger", "calc.litigation_budget"]);
 const CALC_RESULTS = new Map<string, string[]>();
 function rememberCalcResult(name: string, ctx: InvokeCtx, out: unknown): void {
   const rid = typeof ctx.claims?.rid === "string" ? ctx.claims.rid : null;

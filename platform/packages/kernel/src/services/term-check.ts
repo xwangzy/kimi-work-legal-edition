@@ -9,7 +9,10 @@
  * - T5 分公司、合伙企业、律师事务所的首部写“法定代表人”（应为负责人、执行事务合伙人）；
  * - T6 已废止的法律、司法解释只写法名不写条号、又没写明是行为时法（引用核验只认带条号的）；
  * - T7 会议纪要（九民纪要）在递交法院的文书里作为请求或裁判依据援引；
- * - P1 胜诉率、败诉概率、“大概率支持”、“N% 的可能”（工作准则第 7 条：不预测裁判结果）。
+ * - T10 只写“效力性 / 管理性强制性规定”二分、不用合同编通则解释第十六条（第 65 批）；T11 “此致”后的受文机构与文书类型不符（第 65 批）；
+ * - T9 “劳动关系存续期间不受时效限制”没有限定拖欠劳动报酬（劳动争议调解仲裁法第二十七条第四款；第 65 批）；
+ * - 撤销或不予执行仲裁裁决申请书写“判令”“裁决被申请人”（法院以裁定作出；第 65 批）；
+ * - P1 胜诉率、败诉概率、“大概率支持”、“N% 的可能”、期望收益、胜率、按概率加权（工作准则第 7 条：不预测裁判结果）。
  * 引号、书名号里的原话不报（转引对方文书、证据标题时照原文）。需要语境判断的（甲方乙方、解除与终止、定金与订金单独出现）不做规则，交独立复核。纯函数。
  */
 import { repealedInfo } from "../tools/tools/law-names.ts";
@@ -38,9 +41,11 @@ function snip(text: string, at: number, len: number): string {
   return text.slice(Math.max(0, at - 6), Math.min(text.length, at + len + 6));
 }
 
-type DocType = "complaint" | "appeal" | "arbitration" | "labor_arbitration" | "enforcement" | null;
+type DocType = "complaint" | "appeal" | "arbitration" | "labor_arbitration" | "enforcement" | "setaside" | null;
 export function docTypeOf(title: string): DocType {
   const t = title.replace(/\s+/g, "");
+  // 第 65 批（外部评估 R1）：向法院申请撤销或不予执行仲裁裁决的申请书原先按仲裁文书检查，“判令”被要求改成“裁决”——法院对此作的是裁定
+  if (/(?:撤销|不予执行)[^。]{0,8}仲裁裁决/.test(t) && /申请书/.test(t)) return "setaside";
   if (/劳动(?:人事)?(?:争议)?仲裁/.test(t) && /(申请书|答辩书)/.test(t)) return "labor_arbitration";
   if (/仲裁/.test(t) && /(申请书|答辩书|反请求)/.test(t)) return "arbitration";
   if (/上诉状/.test(t)) return "appeal";
@@ -62,9 +67,11 @@ function headerParas(paras: readonly TermPara[]): TermPara[] {
 
 const LABEL_RE = /^\s*(原告|被告|第三人|申请人|被申请人|上诉人|被上诉人|申请执行人|被执行人)\s*(?:[（(][^）)]{0,12}[）)])?\s*[:：]/;
 
-const PREDICTION_RE = /胜诉率|胜诉(?:的)?(?:概率|几率|可能性)\s*(?:约|为|在|达|有)?\s*\d|败诉(?:的)?(?:概率|几率)|大概率(?:支持|胜诉|败诉|获得支持|被支持|被驳回|改判)|(?:法院|仲裁庭)大概率|\d{1,3}(?:\.\d+)?\s*[%％](?:的)?(?:可能|概率|几率|把握)|(?:可能|概率|几率|把握)(?:约|为|在|达|有)?\s*\d{1,3}(?:\.\d+)?\s*[%％]|[七八九]成(?:以上)?(?:的)?(?:把握|胜算|可能)/;
+// 第 65 批（V39，外部评估 R4 实测漏拦）：补“期望收益 = 金额 × 70%”“评估胜率”“很可能（70%）”“按概率加权”“盖然性 80%”的写法；
+// 诉讼成本测算卡的“支持比例”“回收比例”是情景参数，不含这些词，不报
+const PREDICTION_RE = /期望(?:收益|值|回收|损益)|胜率|胜算\s*(?:约|为|在|有)?\s*\d|(?:按|以)(?:胜诉)?概率加权|概率加权|盖然性\s*(?:约|为|达|在)?\s*\d{1,3}\s*[%％]|(?:可能|概率|几率|把握)\s*[（(]\s*\d{1,3}(?:\.\d+)?\s*[%％]|胜诉率|胜诉(?:的)?(?:概率|几率|可能性)\s*(?:约|为|在|达|有)?\s*\d|败诉(?:的)?(?:概率|几率)|大概率(?:支持|胜诉|败诉|获得支持|被支持|被驳回|改判)|(?:法院|仲裁庭)大概率|\d{1,3}(?:\.\d+)?\s*[%％](?:的)?(?:可能|概率|几率|把握)|(?:可能|概率|几率|把握)(?:约|为|在|达|有)?\s*\d{1,3}(?:\.\d+)?\s*[%％]|[七八九]成(?:以上)?(?:的)?(?:把握|胜算|可能)/;
 
-const NON_LEGAL_PERSON_RE = /(分公司|分行|支行|分店|营业部|办事处|（普通合伙）|（有限合伙）|\(普通合伙\)|\(有限合伙\)|合伙企业|律师事务所|个体工商户)/;
+const NON_LEGAL_PERSON_RE = /(分公司|分行|支行|分店|营业部|办事处|（普通合伙）|（有限合伙）|（特殊普通合伙）|\(普通合伙\)|\(有限合伙\)|\(特殊普通合伙\)|合伙企业|律师事务所|个体工商户|个人独资企业)/;
 
 export function termIssues(title: string, paras: readonly TermPara[], opts: { asOf?: string } = {}): TermIssue[] {
   const out: TermIssue[] = [];
@@ -85,6 +92,16 @@ export function termIssues(title: string, paras: readonly TermPara[], opts: { as
       const at = t.indexOf("判令");
       out.push({ kind: "term", where: p.where, text: snip(p.text, at, 2), fix: "仲裁请求写“请求裁决被申请人……”，仲裁庭作出的是裁决，不是判决：把“判令”改为“裁决”" });
     }
+    if (type === "setaside" && /判令|裁决被申请人/.test(t)) {
+      const at = t.search(/判令|裁决被申请人/);
+      out.push({ kind: "term", where: p.where, text: snip(p.text, at, 4), fix: "申请撤销（或不予执行）仲裁裁决由人民法院审查并以裁定作出：请求写“请求撤销××仲裁委员会（××××）×裁字第×号裁决”，不写“判令”“裁决被申请人”" });
+    }
+    // T9（第 65 批，外部评估 R1）：“劳动关系存续期间不受仲裁时效限制”只适用于拖欠劳动报酬（劳动争议调解仲裁法第二十七条第四款），
+    // 写成一切劳动争议都不受限的，加班费以外的经济补偿、赔偿金、年休假工资等会被错误认为没有时效问题
+    const lt = /存续期间[^。；\n]{0,24}不受[^。；\n]{0,8}时效[^。；\n]{0,6}限制/.exec(t);
+    if (lt && !/劳动报酬|工资|加班费/.test(t.slice(Math.max(0, lt.index - 40), lt.index + lt[0].length + 20))) {
+      out.push({ kind: "term", where: p.where, text: snip(p.text, lt.index, lt[0].length), fix: "劳动关系存续期间不受一年仲裁时效限制的只有“因拖欠劳动报酬发生的争议”，且劳动关系终止的应自终止之日起一年内提出（劳动争议调解仲裁法第二十七条第四款）：写明限于劳动报酬，其他请求按一年仲裁时效判断" });
+    }
     if ((type === "complaint" || type === "appeal") && /裁决(?:被告|被上诉人|对方)/.test(t)) {
       const at = t.search(/裁决(?:被告|被上诉人|对方)/);
       out.push({ kind: "term", where: p.where, text: snip(p.text, at, 4), fix: "向法院提出的请求写“判令”，不写“裁决”" });
@@ -102,6 +119,10 @@ export function termIssues(title: string, paras: readonly TermPara[], opts: { as
       const at = p.text.search(/全国法院民商事审判工作会议纪要|九民纪要/);
       out.push({ kind: "term", where: p.where, text: snip(p.text, at, 8), fix: "会议纪要不是司法解释，不能作为裁判依据援引：请求与法律依据写其所依据的法律、司法解释条文，纪要的观点放在说理部分作参考（“参照……的精神”）" });
     }
+    // T10（第 65 批，外部评估 R4）：“效力性 / 管理性强制性规定”二分已被合同编通则解释第十六条的考量因素取代（违反强制性规定不当然无效，看规范目的与是否必然导致违法），
+    // 只写二分、不写第十六条的，报回改用现行框架
+    const dich = /(?:效力性|管理性)(?:强制性)?规定/.exec(t);
+    if (dich && !/第十六条|合同编通则/.test(p.text)) out.push({ kind: "term", where: p.where, text: snip(p.text, dich.index, dich[0].length), fix: "“效力性 / 管理性强制性规定”的二分已不是现行判断方法：合同违反强制性规定是否无效，按民法典第一百五十三条第一款并结合合同编通则解释第十六条（规范目的、违法情节、是否必然导致违法等）论证，不以“属于管理性规定”一句定结论" });
     // T6
     if (opts.asOf) {
       for (const m of p.text.matchAll(/《([^》]{2,60})》(?!\s*(?:第[一二三四五六七八九十百千零〇\d]+条|[（(]))/g)) {
@@ -114,6 +135,20 @@ export function termIssues(title: string, paras: readonly TermPara[], opts: { as
     }
   }
 
+  // T11（第 65 批，外部评估 R4）：“此致”后的受文机构与文书类型不符（起诉状致仲裁委、劳动仲裁申请书致法院）
+  if (type) {
+    const at = body.findIndex((p) => /^\s*此致\s*$/.test(p.text));
+    const to = at >= 0 ? body.slice(at + 1).find((p) => p.text.trim().length > 0) : undefined;
+    if (to) {
+      const x = to.text.replace(/\s+/g, "");
+      const ok =
+        type === "labor_arbitration" ? /劳动(?:人事)?争议仲裁委员会/.test(x) : type === "arbitration" ? /仲裁委员会|仲裁院|仲裁中心/.test(x) && !/劳动(?:人事)?争议仲裁/.test(x) : /人民法院/.test(x);
+      if (!ok && x.length <= 40 && !/【待填】|待填/.test(x)) {
+        const want = type === "labor_arbitration" ? "劳动人事争议仲裁委员会" : type === "arbitration" ? "约定的仲裁机构" : "受诉人民法院";
+        out.push({ kind: "term", where: to.where, text: to.text.trim().slice(0, 30), fix: `“此致”后应写${want}：与文书类型不符的改正（名称不确定的写“【待填】”）` });
+      }
+    }
+  }
   // T2、T5：只看首部当事人段
   if (type) {
     const head = headerParas(body);

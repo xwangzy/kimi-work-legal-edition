@@ -77,7 +77,8 @@ for (const id of ids) {
   if (/\.docx$/i.test(primary) && !req.some((t) => t === "docx.render_report" || t === "docx.revise")) throw new Error(`${file}：主交付物是 Word（${primary}），tools_required 须含 docx.render_report 或 docx.revise`);
   // 主交付物是 Excel（第 31 批，审查 B-12）：内核同样核对有没有交出表，出表工具须是必需（金额测算、引用核验原先只列为可选）
   // 第 57 批：calc.ledger 给 title 时直接成表，也是能交出 Excel 的工具
-  if (/\.xlsx$/i.test(primary) && !req.includes("xlsx.render_table") && !req.includes("calc.ledger")) throw new Error(`${file}：主交付物是 Excel（${primary}），tools_required 须含 xlsx.render_table 或 calc.ledger`);
+  // 第 65 批：calc.litigation_budget 给 title 时同样直接成表
+  if (/\.xlsx$/i.test(primary) && !req.includes("xlsx.render_table") && !req.includes("calc.ledger") && !req.includes("calc.litigation_budget")) throw new Error(`${file}：主交付物是 Excel（${primary}），tools_required 须含 xlsx.render_table、calc.ledger 或 calc.litigation_budget`);
   // 全部交付物（第 29 批）：同一方法的不同场景卡可以指定其中一项为主交付物（尽调“清单”与“发现与报告”共用一个方法；卡上指定的 Word 主交付物由桌面端用例核对必需工具）
   const outputs = Array.isArray(fm.kwl.outputs) ? fm.kwl.outputs.map(String).slice(0, 12) : [];
   skills.push({ id, version: fm.kwl.version ?? "0.0.0", tier: fm.kwl.tier ?? "beta", lines: fm.kwl.lines ?? [], tools_required: req, ...(fm.kwl.requires_outline === "true" ? { requires_outline: true } : {}), ...(primary ? { primary_output: primary } : {}), ...(outputs.length > 0 ? { outputs } : {}), title: (/^# (.+)$/m.exec(text) ?? [])[1] ?? id, description: fm.description });

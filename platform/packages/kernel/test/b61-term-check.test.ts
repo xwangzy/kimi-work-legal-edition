@@ -84,3 +84,40 @@ test("T8 中文日期前导零；内部用语“任务说明所述”“本机�
   const r = checkDeliverable("研究备忘录-检验期", [{ heading: "范围", paragraphs: ["按任务说明所述的时点研究。", "资料范围为本机离线法规库。"] }]);
   assert.ok(r.issues.filter((i) => i.kind === "internal_term").length >= 2, JSON.stringify(r.issues));
 });
+
+test("第 65 批：期望收益、胜率、概率加权、盖然性百分比、“很可能（70%）”都拦；成本测算的支持比例、回收比例不拦", async () => {
+  const { termIssues } = await import("../src/services/term-check.ts");
+  const hit = (t: string) => termIssues("测算说明", [{ where: "第 1 段", text: t }]).filter((i) => i.kind === "prediction").length;
+  assert.equal(hit("期望收益 = 500,000 × 70% − 152,600 = 197,400 元。"), 1);
+  assert.equal(hit("经评估胜率较高。"), 1);
+  assert.equal(hit("按概率加权后的回收约 30 万元。"), 1);
+  assert.equal(hit("法院支持的盖然性约 80%。"), 1);
+  assert.equal(hit("法院很可能（70%）支持本金。"), 1);
+  assert.equal(hit("如只支持本金（支持比例 69.66%）、回收比例 50%，净回收 120,000 元。"), 0);
+  assert.equal(hit("本测算不给胜率或期望值。"), 0);
+});
+
+test("第 65 批：撤销仲裁裁决申请书写“判令”按法院裁定改；劳动关系存续期间不受时效限制须限定劳动报酬；特殊普通合伙不写法定代表人", async () => {
+  const { termIssues } = await import("../src/services/term-check.ts");
+  const a = termIssues("撤销仲裁裁决申请书", [{ where: "第 3 段", text: "请求判令撤销上海仲裁委员会（2026）沪仲案字第88号裁决。" }]);
+  assert.ok(a.some((i) => /裁定/.test(i.fix) && !/改为“裁决”/.test(i.fix)));
+  const b = termIssues("劳动争议研究备忘录", [{ where: "第 2 段", text: "劳动关系存续期间发生的争议，劳动者申请仲裁不受仲裁时效期间的限制。" }]);
+  assert.equal(b.filter((i) => /第二十七条第四款/.test(i.fix)).length, 1);
+  const c = termIssues("劳动争议研究备忘录", [{ where: "第 2 段", text: "劳动关系存续期间因拖欠劳动报酬发生争议的，不受一年仲裁时效期间的限制。" }]);
+  assert.equal(c.filter((i) => /第二十七条第四款/.test(i.fix)).length, 0);
+  const d = termIssues("民事起诉状", [{ where: "第 1 段", text: "原告：上海某某律师事务所（特殊普通合伙），住所地上海市。" }, { where: "第 2 段", text: "法定代表人：张三，主任。" }, { where: "第 3 段", text: "诉讼请求：" }]);
+  assert.ok(d.some((i) => /执行事务合伙人|负责人/.test(i.fix)));
+});
+
+test("第 65 批：效力性 / 管理性二分不配第十六条报回；此致后的机构与文书类型不符报回", async () => {
+  const { termIssues } = await import("../src/services/term-check.ts");
+  const a = termIssues("研究备忘录", [{ where: "第 1 段", text: "该规定属于管理性强制性规定，违反不导致合同无效。" }]);
+  assert.equal(a.filter((i) => /第十六条/.test(i.fix)).length, 1);
+  assert.equal(termIssues("研究备忘录", [{ where: "第 1 段", text: "按合同编通则解释第十六条，该规定属于管理性规定的传统分类已不再单独决定效力。" }]).filter((i) => /第十六条/.test(i.fix)).length, 0);
+  const paras = (to: string) => [{ where: "第 1 段", text: "请求事项" }, { where: "第 9 段", text: "此致" }, { where: "第 10 段", text: to }];
+  assert.equal(termIssues("劳动仲裁申请书", paras("上海市浦东新区人民法院")).filter((i) => /此致/.test(i.fix)).length, 1);
+  assert.equal(termIssues("劳动仲裁申请书", paras("上海市浦东新区劳动人事争议仲裁委员会")).filter((i) => /此致/.test(i.fix)).length, 0);
+  assert.equal(termIssues("民事起诉状", paras("苏州市虎丘区人民法院")).filter((i) => /此致/.test(i.fix)).length, 0);
+  assert.equal(termIssues("民事起诉状", paras("苏州仲裁委员会")).filter((i) => /此致/.test(i.fix)).length, 1);
+  assert.equal(termIssues("仲裁申请书", paras("宁波仲裁委员会")).filter((i) => /此致/.test(i.fix)).length, 0);
+});

@@ -1123,6 +1123,8 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
   const known = deps.tokens ? new Set(deps.tokens.table(scope.matterId).map((e) => e.token)) : null;
   const rejected: { index: number; reason: string; tokens: string[] }[] = [];
   const corrected: { index: number; fact_id: string }[] = [];
+  // 第 65 批（V39，外部第二轮评估 R2 legal-element-extraction）：日期写法告警，只回给助手、不拦截
+  const dateWarnings: { index: number; warning: string }[] = [];
   let inserted = 0;
   deps.db.tx(() => {
     facts.forEach((f: any, i: number) => {
@@ -1134,6 +1136,8 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
       const amount = typeof f?.amount_yuan === "number" && Number.isFinite(f.amount_yuan) ? f.amount_yuan : null;
       const docId = optStr(f?.document_version_id, 80);
       const quote = optStr(f?.quote, FACT_LIMITS.field);
+      const dw = factDateWarning(statement, occurredOn);
+      if (dw) dateWarnings.push({ index: i, warning: dw });
       if (known) {
         const bad = [...new Set([...findTokens(statement), ...(quote ? findTokens(quote) : [])])].filter((t) => !known.has(t));
         if (bad.length > 0) {
@@ -1198,9 +1202,30 @@ export function submitFacts(deps: ReviewDeps, scope: ToolScope, input: { facts?:
     facts: out.map(withRef),
     ...(duplicates.length > 0 ? { duplicates: duplicates.map((d) => (nos.has(d.duplicate_of) ? { ...d, duplicate_ref: `事实 ${nos.get(d.duplicate_of)}` } : d)) } : {}),
     ...(rejected.length > 0 ? { rejected } : {}),
+    ...(dateWarnings.length > 0 ? { date_warnings: dateWarnings, date_warnings_note: "这几条事实的日期写法要核对（见 date_warnings）：一条事实只写一件事、发生日期写进 occurred_on；要改的用 fact_id 更正" } : {}),
     ...(corrected.length > 0 ? { corrected, corrected_note: "已更正这几条事实；引用了它们的表格里系统附的“事实对照”要用 xlsx.edit_cells 写 refresh_facts: true 重新生成，Word 文书里的事实对照在下一次 docx.edit_draft 时随引用更新" } : {}),
     note: `${rejected.length > 0 ? `${rejected.length} 条没有入库：含有本事项不存在的代号（见 rejected），照抄材料里的代号后只重交这几条。` : ""}${unanchored > 0 ? `${unanchored} 条事实没有在材料中定位到逐字引文：律师确认前不会被文书与汇报引用` : "已提交，律师确认后才可被文书与汇报引用"}${dupNote}`,
   };
+}
+
+/**
+ * 事实的日期写法告警（第 65 批）：陈述里写了完整日期（年月日）却没填发生日期；只写了一个日期而与发生日期不一致；
+ * 写了几个不同的日期（多半是几件事写在一条里，时效中断点、期限起算会因此丢失——另一个日期是约定期限、截止日的除外）。纯函数，只提示不拦截。
+ */
+export function factDateWarning(statement: string, occurredOn: string | null): string | null {
+  const days = new Set<string>();
+  for (const m of statement.matchAll(/(\d{4})\s*(?:年|[-./])\s*(\d{1,2})\s*(?:月|[-./])\s*(\d{1,2})\s*日?/g)) {
+    const [y, mo, d] = [m[1]!, Number(m[2]), Number(m[3])];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) days.add(`${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+  }
+  if (days.size === 0) return null;
+  if (!occurredOn) return `陈述里写了日期（${[...days].slice(0, 2).join("、")}），occurred_on 却没填：事实时间线按 occurred_on 排序，没填的排不进去`;
+  if (days.size === 1 && occurredOn.length === 10 && !days.has(occurredOn)) return `陈述里的日期是 ${[...days][0]}，occurred_on 写的是 ${occurredOn}：核对哪个对`;
+  if (days.size >= 2) {
+    const deadlineLike = /前|之前|以前|届满|期限|截止|到期|为止|至|起算|约定/.test(statement);
+    if (!deadlineLike) return `一条事实里写了 ${days.size} 个不同的日期（${[...days].slice(0, 3).join("、")}）：如是几件事，拆成几条、各写发生日期（时效中断、期限起算要逐件看）`;
+  }
+  return null;
 }
 
 /**

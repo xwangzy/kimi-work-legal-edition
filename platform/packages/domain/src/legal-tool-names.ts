@@ -44,6 +44,8 @@ export const LEGAL_MCP_TOOLS = [
   "calc.ledger",
   // 2026-11-24 第 61 批（D-264）：证据形式规则核对（按证据属性给民事证据规定的法定后果与条号；确定性，只读）
   "evidence.rules_check",
+  // 2026-11-25 第 65 批（D-279）：诉讼成本与回收测算（情景并列、不给概率；确定性，可直接成表）
+  "calc.litigation_budget",
 ] as const;
 
 export type LegalMcpToolName = (typeof LEGAL_MCP_TOOLS)[number];

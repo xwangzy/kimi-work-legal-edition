@@ -185,3 +185,13 @@ test("整理审查要点：复核读本任务存下的审查要点草稿；修�
     cloud.model.script = null;
   }
 });
+
+test("第 65 批（D-288）：每个方法都登记了复核清单（表格审阅除外）——新方法漏登记时这里先失败（真实验收 v39-B2 首单没有复核）", async () => {
+  const { readdirSync, existsSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const root = fileURLToPath(new URL("../../../content/skills/", import.meta.url));
+  const ids = readdirSync(root).filter((d) => existsSync(`${root}${d}/SKILL.md`));
+  const missing = ids.filter((i) => !REVIEW_KIND_OF_SKILL[i] && i !== "tabular-review");
+  assert.deepEqual(missing, []);
+  assert.equal(REVIEW_KIND_OF_SKILL["litigation-budget"], "opinion");
+});

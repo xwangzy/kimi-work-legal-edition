@@ -3,6 +3,7 @@
  * 名称归一、条号存在性、按适用时点取版本、效力状态、条号迁移表）。
  * 数据源为签名法规库包（@zr-legal/lawdb）；注册库没有就明说，故障不伪造法源（§4.1 W3）。
  */
+import { embeddedRefNote } from "../../services/topic-article.ts";
 import { DomainError } from "@zr-legal/domain";
 import { versionAt, type Lawdb, type LawVersionRow } from "@zr-legal/lawdb";
 import { cnToInt } from "./cn-numerals.ts";
@@ -219,6 +220,9 @@ export function lawGetArticle(lawdb: Lawdb, params: LawGetArticleParams): LawArt
   }
   const base = {
     law_name: v.law_name,
+    // 第 65 批（V39，外部第二轮评估 R1 conflict-resolution / legal-norm-validity-check）：位阶（法律 / 行政法规 / 司法解释 / 部门规章 / 司法指导性文件），
+    // 法规库一直有这个字段却没交出去——“上位法优于下位法”“违反规章不当然导致合同无效”“会议纪要不作裁判依据”都要先知道位阶
+    ...(v.law_level ? { level: v.law_level } : {}),
     lsv_id: v.lsv_id,
     effective: v.effective,
     superseded: v.superseded,
@@ -262,6 +266,11 @@ export function lawGetArticle(lawdb: Lawdb, params: LawGetArticleParams): LawArt
     ...((): { referral?: string[]; referral_note?: string } => {
       const r = referralCues(text);
       return r.length > 0 ? { referral: r, referral_note: REFERRAL_NOTE } : {};
+    })(),
+    // 第 65 批（D-283）：司法解释正文里嵌着母法修正前的旧条号——照抄进文书前先换成现行条号
+    ...((): { embedded_ref_note?: string } => {
+      const n = embeddedRefNote(v.law_id, articleNo);
+      return n ? { embedded_ref_note: `${n}：引用本条内容时，母法条号写现行条号，不照抄本条里的旧号` } : {};
     })(),
     note:
       reliability === "demo_seed"

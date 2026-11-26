@@ -257,7 +257,10 @@ export function reasoningChecks(items: readonly OutlineItem[], docKind: string):
       }
       if (b.mode === "referral" && !x.basis.some(isReferralBasis)) out.push(`${where}：写的是参照适用，但这条论点没有引转介条款（如民法典第四百六十七条、第六百四十六条，或原文写明“参照适用”的条文）——补上转介条款，否则按扩张解释或类推写明风险`);
       if (b.mode === "analogy" && /行政处罚|罚款|没收|税|刑事|犯罪/.test(`${x.claim} ${b.note ?? ""} ${docKind}`)) out.push(`${where}：行政处罚、税收、刑事问题受法定原则限制，不能以类推加重当事人义务或责任——改用直接依据，或在论点里写明这一限制与风险`);
-      if (b.article_text && referralCues(b.article_text).length > 0 && !b.exceptions && bi === 0) out.push(`${where}：条文有转介或但书（${referralCues(b.article_text).join("；")}），没写怎么处理（exceptions）——写明查了哪些特别规定、但书是否排除本案`);
+      // 第 65 批（V39，外部第二轮评估 R3）：论点或说明写了“参照 / 类推 / 类比”，依据却没写适用方式（缺省当直接适用）——确认页会显示成“直接适用”
+      if (bi === 0 && (!b.mode || b.mode === "direct") && /参照|类推|类比|比照/.test(`${x.claim} ${b.note ?? ""}`)) out.push(`${where}：论点写的是参照、类推或类比，这条依据却按直接适用提交——在 mode 写明是依转介条款参照适用（referral）、扩张解释（extensive）还是类推（analogy），确认页据此显示风险`);
+      // 写了但书或转介条文、主要依据以外的其他依据同样查（原先只查第一条依据）
+      if (b.article_text && referralCues(b.article_text).length > 0 && !b.exceptions && bi < 3) out.push(`${where}：条文有转介或但书（${referralCues(b.article_text).join("；")}），没写怎么处理（exceptions）——写明查了哪些特别规定、但书是否排除本案`);
     });
     const main = x.basis[0];
     if (main && main.article !== null && !(main.elements && main.elements.length > 0)) noElements += 1;

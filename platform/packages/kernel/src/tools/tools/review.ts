@@ -316,10 +316,23 @@ export function outlineGet(ctx: InvokeCtx) {
     status: "confirmed",
     outline_id: o.outline_id,
     doc_kind: o.doc_kind,
-    confirmed_arguments: confirmedView(o).map((a) => ({ ...a, basis: a.basis.map((b) => ({ law: b.law, article: b.article, note: b.note, check: b.check })) })),
+    // 第 65 批（V39，D-281）：律师在确认卡上逐项看到的适用方式、要件对照与但书处理原先在这里被压掉（只留 law/article/note/check），
+    // 起草轮拿不到“哪一环待证”，文书照样写成确定的结论（外部评估 R3：服务层 confirmedView 有用例，工具出口没有）
+    confirmed_arguments: confirmedView(o).map((a) => ({
+      ...a,
+      basis: a.basis.map((b) => ({
+        law: b.law,
+        article: b.article,
+        note: b.note,
+        check: b.check,
+        ...(b.mode ? { mode: b.mode } : {}),
+        ...(Array.isArray(b.elements) && b.elements.length > 0 ? { elements: b.elements } : {}),
+        ...(b.exceptions ? { exceptions: b.exceptions } : {}),
+      })),
+    })),
     dropped: (o.decisions ?? []).filter((d) => !d.keep).map((d) => d.arg_id),
     lawyer_note: o.lawyer_note,
-    note: "只按 confirmed_arguments 起草；dropped 里的论点不写；事实中 confirmed=false 的，要递交法院或发给对方的文书正文不标“待律师确认”，用附条件或保守表述，待确认事项写进给律师的核对附件和最终答复（内部分析类文书可以标“待律师确认”）。",
+    note: "只按 confirmed_arguments 起草；dropped 里的论点不写；依据带 elements 的，标“待证”“对方举证”的要件不写成已成立：要递交的文书写成附条件或保守表述，补证事项列进核对清单；mode 不是直接适用的（参照、扩张、类推），文书里写明适用方式；事实中 confirmed=false 的，要递交法院或发给对方的文书正文不标“待律师确认”，用附条件或保守表述，待确认事项写进给律师的核对附件和最终答复（内部分析类文书可以标“待律师确认”）。",
   };
 }
 
@@ -460,7 +473,7 @@ function computedSheets(v: unknown): SheetSpec[] {
  * 写出表格并登记为本任务的草稿成果（xlsx.render_table 与 xlsx.edit_cells 共用）：存文件、登记成果、版本缩水检查、交付前检查。
  * 同一任务里同名的表格串成同一份文件的各个版本。
  */
-export function finishTable(ctx: InvokeCtx, title: string, specs0: SheetSpec[], tool: "xlsx.render_table" | "xlsx.edit_cells" | "calc.ledger", extraManifest: Record<string, unknown> = {}) {
+export function finishTable(ctx: InvokeCtx, title: string, specs0: SheetSpec[], tool: "xlsx.render_table" | "xlsx.edit_cells" | "calc.ledger" | "calc.litigation_budget", extraManifest: Record<string, unknown> = {}) {
   // 事实对照（V16 第 41 批）：单元格里写了“事实 N”的，自动追加一张“事实对照”，只列被引用到的序号
   // 质量说明（第 42 批）：表格里独立成格的“通用辅助 · 未经本所质量验收”“草稿 · 待律师复核”由内核直接删掉（只剩行名的整行去掉）；表头行不删
   let cleaned = 0;

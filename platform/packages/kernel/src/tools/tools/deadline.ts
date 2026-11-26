@@ -63,7 +63,13 @@ export type ProceduralPeriodType =
   | "preservation_expiry"
   | "preservation_renewal"
   | "civil_limitation"
-  | "labor_arbitration_limitation";
+  | "labor_arbitration_limitation"
+  // 第 65 批（V39，D-284；外部第二轮评估 R2、R4）：保全裁定不能上诉、只能五日内复议——原先只有“裁定上诉期十日”，会把保全裁定算成十日上诉
+  | "preservation_reconsideration"
+  | "enforcement_objection_review"
+  | "third_party_objection_suit"
+  | "payment_order_objection"
+  | "third_party_revocation_suit";
 
 const MS = "中华人民共和国民事诉讼法";
 const MSJ = "最高人民法院关于适用《中华人民共和国民事诉讼法》的解释";
@@ -82,7 +88,16 @@ export function proceduralPeriod(type: ProceduralPeriodType, v: { start?: string
     case "appeal_ruling":
       return foreign
         ? { label: "上诉期（裁定，当事人在境内没有住所）", start_means: "裁定书送达之日", period: { unit: "day", n: 30 }, basis: [FOREIGN_APPEAL] }
-        : { label: "上诉期（裁定）", start_means: "裁定书送达之日", period: { unit: "day", n: 10 }, basis: [{ law: MS, article: "第一百七十一条第二款", point: "不服地方人民法院第一审裁定的，在裁定书送达之日起十日内上诉" }] };
+        : {
+            label: "上诉期（裁定）",
+            start_means: "裁定书送达之日",
+            period: { unit: "day", n: 10 },
+            basis: [
+              { law: MS, article: "第一百七十一条第二款", point: "不服地方人民法院第一审裁定的，在裁定书送达之日起十日内上诉" },
+              { law: MS, article: "第一百五十七条第二款", point: "可以上诉的裁定只有不予受理、对管辖权有异议的、驳回起诉三种" },
+            ],
+            notes: ["保全、先予执行裁定不能上诉，只能自收到裁定书之日起五日内申请复议（type 用 preservation_reconsideration）；执行异议裁定用 enforcement_objection_review；其他裁定先核对能否上诉"],
+          };
     case "defense_first_instance":
       return foreign
         ? { label: "答辩期（一审，被告在境内没有住所）", start_means: "收到起诉状副本之日", period: { unit: "day", n: 30 }, basis: [{ law: MS, article: "第二百八十五条", point: "被告在中华人民共和国领域内没有住所的，收到起诉状副本后三十日内提出答辩状" }] }
@@ -192,6 +207,35 @@ export function proceduralPeriod(type: ProceduralPeriodType, v: { start?: string
         basis: [{ law: "中华人民共和国民法典", article: "第一百八十八条", point: "诉讼时效期间为三年，自知道或者应当知道权利受到损害以及义务人之日起计算；自权利受到损害之日起超过二十年的不予保护" }],
         notes: ["中止、中断（催告、对方同意履行、起诉等）由律师给出新的起算事实后重算；起算事实有争议的按各口径分别计算，取最早届满日准备"],
       };
+    case "preservation_reconsideration":
+      return {
+        label: "保全或先予执行裁定申请复议期限",
+        start_means: "收到裁定书之日",
+        period: { unit: "day", n: 5 },
+        basis: [
+          { law: MSJ, article: "第一百七十一条", point: "当事人对保全或者先予执行裁定不服的，可以自收到裁定书之日起五日内向作出裁定的人民法院申请复议" },
+          { law: MS, article: "第一百一十一条", point: "当事人对保全或者先予执行的裁定不服的，可以申请复议一次；复议期间不停止裁定的执行" },
+        ],
+        notes: ["保全裁定不能上诉（民事诉讼法第一百五十七条第二款）；复议期间不停止执行"],
+      };
+    case "enforcement_objection_review":
+      return { label: "不服执行行为异议裁定申请复议期限", start_means: "异议裁定送达之日", period: { unit: "day", n: 10 }, basis: [{ law: MS, article: "第二百三十六条", point: "当事人、利害关系人对执行异议裁定不服的，可以自裁定送达之日起十日内向上一级人民法院申请复议" }] };
+    case "third_party_objection_suit":
+      return {
+        label: "案外人异议裁定后起诉期限",
+        start_means: "案外人异议裁定送达之日",
+        period: { unit: "day", n: 15 },
+        basis: [{ law: MS, article: "第二百三十八条", point: "案外人、当事人对裁定不服，与原判决、裁定无关的，可以自裁定送达之日起十五日内向人民法院提起诉讼；认为原判决、裁定错误的，依照审判监督程序办理" }],
+      };
+    case "payment_order_objection":
+      return { label: "支付令异议期限", start_means: "债务人收到支付令之日", period: { unit: "day", n: 15 }, basis: [{ law: MS, article: "第二百二十七条第二款", point: "债务人应当自收到支付令之日起十五日内清偿债务，或者向人民法院提出书面异议" }] };
+    case "third_party_revocation_suit":
+      return {
+        label: "第三人撤销之诉起诉期限",
+        start_means: "知道或者应当知道其民事权益受到损害之日",
+        period: { unit: "month", n: 6 },
+        basis: [{ law: MS, article: "第五十九条第三款", point: "因不能归责于本人的事由未参加诉讼的第三人，可以自知道或者应当知道其民事权益受到损害之日起六个月内，向作出该判决、裁定、调解书的人民法院提起诉讼" }],
+      };
     case "labor_arbitration_limitation":
       return {
         label: "劳动仲裁时效（一年）",
@@ -207,6 +251,7 @@ export const PROCEDURAL_PERIOD_TYPES: readonly ProceduralPeriodType[] = [
   "appeal_judgment", "appeal_ruling", "defense_first_instance", "defense_appeal", "labor_arbitration_defense", "labor_award_suit", "labor_award_setaside_employer",
   "arbitration_award_setaside", "pre_action_preservation_suit", "enforcement_application", "retrial_application", "preservation_expiry", "preservation_renewal",
   "civil_limitation", "labor_arbitration_limitation",
+  "preservation_reconsideration", "enforcement_objection_review", "third_party_objection_suit", "payment_order_objection", "third_party_revocation_suit",
 ];
 
 export interface DeadlineRuleRef {

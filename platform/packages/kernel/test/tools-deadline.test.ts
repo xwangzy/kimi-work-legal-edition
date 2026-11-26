@@ -182,7 +182,7 @@ test("calc.deadline 在对 Agent 开放的工具清单内", () => {
   const t = findTool("calc.deadline")!;
   assert.equal(t.sideEffect, "read");
   assert.equal(t.resource, "pure");
-  assert.equal(t.version, "2"); // 第 61 批：加程序期间目录（type、foreign_domicile、asset）
+  assert.equal(t.version, "3"); // 第 61 批：加程序期间目录（type、foreign_domicile、asset）；第 65 批：加保全复议等五类期间
 });
 
 test("v9.4 复核 Q1-01/02：未收录年份按放假办法的固定日期假日处理；届满日是调休上班的周末时给警告", () => {

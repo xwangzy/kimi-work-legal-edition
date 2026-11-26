@@ -325,6 +325,30 @@ export const SCENARIOS: ScenarioCard[] = [
     steps: ["从合同中找出计息约定（找不到会先问你）", "按本金变动分段，每段由计算工具算出", "列出抵扣、互斥项与调整风险", "生成可复算的计算明细表"],
     intents: [["利息"], ["违约金", "计算"], ["违约金", "算"], ["测算"], ["欠款", "多少"]],
   },
+  // 第 65 批（V39，D-279）：诉讼成本与回收测算——客户问“打下来能拿回多少、值不值得打、给多少可以和解”（外部 billing-and-litigation-budget 的诉讼经济性分析，改为情景并列、不给概率）
+  {
+    id: "litigation-budget",
+    line: "litigation",
+    title: "诉讼成本与回收测算",
+    gives: "起诉状或请求清单（或直接告诉我请求金额），委托合同、保全材料、和解提议有的一并勾选",
+    gets: ["测算说明.docx（给客户或管理层，结论在前）", "诉讼成本与回收测算.xlsx（情景测算、费用明细、和解持平点）"],
+    scenario: "a1.agent_task",
+    skill: "litigation-budget",
+    verb: "开始测算",
+    goal: "请做诉讼成本与回收测算。我方是{side}；案件阶段：{stage}；律师费安排：{fee_arrangement}；拟比较的和解金额：{offer}；执行回收：{recovery}。按本案决定金额的争点设几个情景（法院支持哪几项、各支持多少），算出各情景的净回收或总支出、和解持平点与和解方案比较；不给胜诉率或期望值，和不和解由客户决定。",
+    fields: [
+      { key: "side", label: "我方是", kind: "select", options: ["原告 / 申请人", "被告 / 被申请人"], required: true },
+      { key: "stage", label: "案件阶段", kind: "select", options: ["尚未起诉", "已立案，一审中", "一审判决后（考虑上诉）"], required: true },
+      { key: "fee_arrangement", label: "我方律师费", kind: "text", placeholder: "例如：一审 3 万元、二审 2 万元；或基础费 1 万元 + 收回金额的 8%", help: "按委托合同写；不填的不估，测算里不计律师费并会提示。" },
+      { key: "offer", label: "和解金额", kind: "text", placeholder: "例如：对方提出一次性付 28 万元", help: "对方提议或客户拟提的金额，可写几个；没有的只算持平点。" },
+      { key: "recovery", label: "执行回收", kind: "select", options: ["已保全足额或对方明显有能力履行", "不确定（并列全部与一半）", "对方财产状况不好（并列全部、一半与收不回）"], goalText: { 已保全足额或对方明显有能力履行: "按全部收回测算", "不确定（并列全部与一半）": "并列全部收回与收回一半", "对方财产状况不好（并列全部、一半与收不回）": "并列全部收回、收回一半与收不回" }, more: true },
+    ],
+    minMaterials: 0,
+    brief: CASE_BRIEF,
+    steps: ["读请求、合同里的律师费与违约金约定、委托合同和保全材料", "按决定金额的争点设几个情景：法院支持哪几项、各支持多少", "诉讼费、保全费由工具按《诉讼费用交纳办法》算出，连同律师费算出各情景净额与和解持平点", "写测算说明：结论在前，写明假设与还缺的数，不给胜诉率"],
+    intents: [["值不值得", "打"], ["诉讼", "成本"], ["能拿回", "多少"], ["和解", "底线"], ["要不要", "和解"], ["和解", "多少"], ["打官司", "花"], ["诉讼", "预算"], ["回收", "测算"]],
+    notFor: ["工时", "账单", "律师费发票"],
+  },
   {
     id: "pleading",
     line: "litigation",
@@ -1358,7 +1382,7 @@ export function splitIssues(text: string): string[] {
  */
 export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   casefile: ["issues", "case-analysis", "amount"],
-  "case-analysis": ["issues", "pleading", "defense"],
+  "case-analysis": ["issues", "pleading", "defense", "litigation-budget"],
   issues: ["pleading", "defense", "amount"],
   defense: ["cross-exam", "hearing-outline", "agency"],
   "cross-exam": ["hearing-outline", "agency"],
@@ -1378,7 +1402,7 @@ export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.fr
   "labor-arb-application": ["amount", "citation-audit"],
   "intake-lit": ["casefile", "procedure"],
   procedure: ["amount", "pleading"],
-  "suit-received": ["case-analysis", "defense"],
+  "suit-received": ["case-analysis", "defense", "litigation-budget"],
   "contract-draft": ["contract-review", "audience-pack"],
   "dd-list": ["dd-findings"],
   "dd-findings": ["contract-draft", "closing-checklist", "research-deal"],
@@ -1397,7 +1421,9 @@ export const NEXT_STEPS: Readonly<Record<string, readonly string[]>> = Object.fr
   "compliance-qa": ["demand-inhouse"],
   "legal-opinion": ["audience-pack"],
   // 第 61 批：研读裁判文书之后上诉、执行或汇报；类案比对之后写上诉状、代理词
-  "ruling-digest": ["appeal", "enforcement", "case-report-lit"],
+  "ruling-digest": ["appeal", "litigation-budget", "enforcement"],
+  // 第 65 批：测算之后起诉、汇报或发函
+  "litigation-budget": ["pleading", "case-report-lit", "demand-lit"],
   "case-law": ["appeal", "agency", "research-lit"],
   performance: ["demand-inhouse", "procedure", "amount"],
   privacy: ["compliance-qa", "contract-review-inhouse"],
