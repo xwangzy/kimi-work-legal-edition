@@ -657,11 +657,14 @@ async function startKernel() {
     }
     // 问答回答生成中的部分内容：只转发流编号与文字（界面按发起时生成的流编号认领）
     if (msg && msg.type === "chat.delta" && typeof msg.stream_id === "string" && typeof msg.text === "string") {
-      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "chat.delta", stream_id: msg.stream_id, text: msg.text });
+      // 第 71 批第三轮：另带会话编号（格式受限），新问答在生成中就能在侧栏选中
+      const conv = typeof msg.conversation_id === "string" && /^[A-Za-z0-9_-]{4,80}$/.test(msg.conversation_id) ? { conversation_id: msg.conversation_id } : {};
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "chat.delta", stream_id: msg.stream_id, text: msg.text, ...conv });
     }
     // 问答的回答进度（第 48 批）：只转发流编号、阶段（思考中 / 撰写中）与已收到的思考字数，界面据此显示等待状态；不转发思考内容
     if (msg && msg.type === "chat.progress" && typeof msg.stream_id === "string" && (msg.phase === "thinking" || msg.phase === "writing") && Number.isSafeInteger(msg.thought_chars) && msg.thought_chars >= 0) {
-      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "chat.progress", stream_id: msg.stream_id, phase: msg.phase, thought_chars: msg.thought_chars });
+      const conv = typeof msg.conversation_id === "string" && /^[A-Za-z0-9_-]{4,80}$/.test(msg.conversation_id) ? { conversation_id: msg.conversation_id } : {};
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kwl:event", { type: "chat.progress", stream_id: msg.stream_id, phase: msg.phase, thought_chars: msg.thought_chars, ...conv });
     }
     // 登录已失效（第 44 批）：只转发原因代码（会话过期、账号停用等），界面据此出“请重新登录”
     if (msg && msg.type === "account.login_required" && typeof msg.reason === "string" && /^[a-z_]{1,40}$/.test(msg.reason)) {

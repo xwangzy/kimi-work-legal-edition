@@ -650,6 +650,8 @@ export interface ChatMessage {
    */
   route?: string | null;
   route_label?: string | null;
+  /** 第 71 批第三轮：律师在生成中途停止，只保存了停止前的部分（界面标“已停止”）。旧内核不带。 */
+  stopped?: boolean;
 }
 
 /** 问答可选的模型（第 47 批；chat.models 与 kernel.status 的 model_choices）：只列本机模型路由配置了的。 */
@@ -1420,6 +1422,8 @@ export const api = {
   chatList: () => invoke<{ conversations: { conversation_id: string; title: string; updated_at: string }[] }>("chat.list"),
   chatGet: (conversationId: string) => invoke<{ conversation_id: string; messages: ChatMessage[] }>("chat.get", { conversation_id: conversationId }),
   chatDelete: (conversationId: string) => invoke<{ ok: true }>("chat.delete", { conversation_id: conversationId }),
+  /** 第 71 批第三轮：停止正在生成的回答（只停本人发起的、还在进行的；已经答完或不存在时 ok 为 false）。chat.send 随即返回，已生成的部分标“已停止”。 */
+  chatStop: (streamId: string) => invoke<{ ok: boolean }>("chat.stop", { stream_id: streamId }),
   /** stream_id：本次发送的一次性编号，回答生成中的部分内容以 chat.delta 广播推送（onKernelEvent）。 */
   chatSend: (body: { conversation_id?: string; text: string; stream_id?: string }) =>
     invoke<{ conversation_id: string; messages: ChatMessage[]; blocked?: { reason: string; message: string; matters?: { matter_id: string; title: string }[] } }>("chat.send", body),

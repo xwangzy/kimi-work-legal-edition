@@ -58,7 +58,7 @@ import { aiAuthorizedOf, dataLevelOf, GATE_KNOWN_ONLY_SCOPE } from "./egress/gat
 import { EgressApprovalStore } from "./services/egress-approvals.ts";
 import { screenSearchQuery } from "@zr-legal/egress-gate";
 import { createGateProvider, mockProvider, thinkingParams, thinkingControlOf } from "@zr-legal/model-broker";
-import { collectStreamText, QaChatService } from "./services/qa-chat.ts";
+import { abortableChunks, collectStreamText, QaChatService } from "./services/qa-chat.ts";
 import { isModelRejection, ModelCatalogService } from "./services/model-catalog.ts";
 import { selectedModelOf } from "./services/model-prefs.ts";
 import { ReminderService } from "./services/reminders.ts";
@@ -805,13 +805,14 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       // 深度思考开关 → 上游参数（第 49 批按官方参数表改）：K3 系列用 reasoning_effort（深度 max / 快速 low，K3 不支持 thinking 参数），
       // K2.6 用 thinking.type（enabled / disabled）；温度不发。映射在 model-broker thinkingParams，出口由 gateBody 再按路由能力过滤一遍
       const req = { model: route.alias, messages: input.messages, stream: true, ...thinkingParams(route, input.deep) };
-      if (route.provider === "mock") return collectStreamText((await mockProvider.chatStream(route, req)).chunks, input.onDelta, input.onReasoning);
+      // 第 71 批第三轮：律师点“停止”时不再产出，并关闭上游连接（abortableChunks 调用源迭代器 return()）
+      if (route.provider === "mock") return collectStreamText(abortableChunks((await mockProvider.chatStream(route, req)).chunks, input.signal), input.onDelta, input.onReasoning);
       const meta = { nonce: randomUUID(), clientIdempotencyId: `qa_${randomUUID()}`, task: { tid: input.tenantId, uid: input.userId, mid: "qa", rid: input.conversationId }, routePrefix: `/q/${encodeURIComponent(input.conversationId)}` };
-      return collectStreamText((await qaGate.chatStream(route, req, meta)).chunks, input.onDelta, input.onReasoning);
+      return collectStreamText(abortableChunks((await qaGate.chatStream(route, req, meta)).chunks, input.signal), input.onDelta, input.onReasoning);
     },
-    onPartial: (streamId, text) => broadcastRef.current?.({ type: "chat.delta", stream_id: streamId, text }),
+    onPartial: (streamId, text, conversationId) => broadcastRef.current?.({ type: "chat.delta", stream_id: streamId, text, ...(conversationId ? { conversation_id: conversationId } : {}) }),
     // 回答进度（第 48 批）：思考中 / 撰写中，界面显示等待状态用；只含阶段与字数
-    onProgress: (streamId, p) => broadcastRef.current?.({ type: "chat.progress", stream_id: streamId, phase: p.phase, thought_chars: p.thought_chars }),
+    onProgress: (streamId, p, conversationId) => broadcastRef.current?.({ type: "chat.progress", stream_id: streamId, phase: p.phase, thought_chars: p.thought_chars, ...(conversationId ? { conversation_id: conversationId } : {}) }),
     // 不选时用不用深度思考：缺省快速回答；ZR_QA_THINKING=on 恢复为深度思考
     defaultDeep: env.ZR_QA_THINKING === "on",
   });

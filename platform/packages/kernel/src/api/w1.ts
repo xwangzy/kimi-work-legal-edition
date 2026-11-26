@@ -4,7 +4,7 @@
  *   runs.approve        律师的审批决定（批准人 = 调用来源的本机用户；跨边界动作签发设备签名的出站批准凭据）
  *   runs.answer         律师回答 Agent 的提问（自由文本先令牌化：Agent 与模型上下文只见代号）
  *   egress.summary      数据去向卡
- *   chat.list / chat.get / chat.send   无事项问答（历史只在本机）
+ *   chat.list / chat.get / chat.send   无事项问答（历史只在本机）；chat.stop 停止正在生成的回答（第 71 批第三轮）
  *   chat.models                        问答可选的模型（第 47 批：K3 / K2.6，只列本机模型路由配置了的）
  *   kernel.capabilities 设备页（执行域如实标注、唯一出口强度、能力账本）
  */
@@ -203,6 +203,13 @@ export function createW1Api(d: W1Deps): Record<string, Handler> {
       }
       d.audit(id, "qa.conversation_deleted", "qa_conversation", cid, "");
       return { ok: true };
+    },
+    // 第 71 批第三轮：停止正在生成的回答——只能停本人发起的、还在进行的；没有这样的流返回 ok:false（不报错：可能刚好已经答完）
+    "chat.stop": (p, id) => {
+      if (!d.qa) return { ok: false };
+      const streamId = typeof p?.stream_id === "string" && /^[A-Za-z0-9_-]{8,64}$/.test(p.stream_id) ? p.stream_id : null;
+      if (!streamId) throw invalid("stream_id 格式不对");
+      return { ok: d.qa.stop(streamId, id.tenantId, id.userId) };
     },
     "chat.send": async (p, id) => {
       // D-225：问答不绑定事项、不查客户授权，只收一段文字——任何带材料或事项的请求一律拒收（不忽略），

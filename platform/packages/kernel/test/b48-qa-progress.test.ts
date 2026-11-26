@@ -107,7 +107,8 @@ test("内核：chat.models 给出 default_deep（缺省 false）；chat.send 的
   const sent = (await k.inv("chat.send", { text: "合同全面履行原则的依据？", stream_id: "qs_kernel_prog1", deep: "yes" })) as any;
   assert.ok(sent.messages.some((m: any) => m.role === "assistant"), "deep 不是布尔：忽略它，按缺省照常回答");
   for (const m of prog) {
-    assert.deepEqual(Object.keys(m).sort(), ["phase", "stream_id", "thought_chars", "type"]);
+    // 第 71 批第三轮：另带会话编号（新问答在生成中就能在侧栏选中），仍不带思考内容
+    assert.deepEqual(Object.keys(m).sort(), ["conversation_id", "phase", "stream_id", "thought_chars", "type"]);
     assert.equal(m.stream_id, "qs_kernel_prog1");
     assert.ok(m.phase === "thinking" || m.phase === "writing");
     assert.ok(Number.isSafeInteger(m.thought_chars) && (m.thought_chars as number) >= 0);

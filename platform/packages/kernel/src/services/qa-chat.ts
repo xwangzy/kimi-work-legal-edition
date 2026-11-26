@@ -34,6 +34,8 @@ export interface QaMessageView {
    */
   route: string | null;
   route_label: string | null;
+  /** 律师在生成中途点了“停止”（第 71 批第三轮）：只保存了停止前生成的部分；界面在气泡下标“已停止”。 */
+  stopped?: boolean;
 }
 
 /** 问答可选的模型（第 47 批）：label 是律师看的名字；note 一句话说适合什么；default = 不选时用它。 */
@@ -131,6 +133,8 @@ export interface QaAskInput {
   onReasoning?: (chars: number) => void;
   /** 本次用的模型别名（第 47 批：律师选的，或缺省 ZR_QA_ROUTE ?? legal/k3）。 */
   route: string;
+  /** 律师点“停止”（第 71 批第三轮）：中止后提供方不再产出，并关闭上游连接（abortableChunks）。 */
+  signal?: AbortSignal;
   /**
    * 深度思考（第 48 批；第 49 批按模型族映射）：K3 为推理强度 max / low（K3 始终思考），K2.6 为开 / 关思考。
    * 提供方用 model-broker thinkingParams 换成上游参数。
@@ -145,12 +149,12 @@ export interface QaDeps {
   /** 本机法规库：回答里的引用与签发门禁同一口径离线核对（只在本机，不出站）。 */
   lawdb?: Lawdb;
   /** 回答生成中的部分内容（已还原，到目前为止的全文）推给发起问题的界面；streamId 由界面给出。 */
-  onPartial?: (streamId: string, text: string) => void;
+  onPartial?: (streamId: string, text: string, conversationId?: string) => void;
   /**
    * 回答进度（第 48 批）：模型在“思考”（thinking，附已收到的思考字数）还是已经在“撰写”（writing）。推给发起问题的界面显示等待状态；
    * 只含阶段与字数，不含思考内容。
    */
-  onProgress?: (streamId: string, p: QaProgress) => void;
+  onProgress?: (streamId: string, p: QaProgress, conversationId?: string) => void;
   /** 律师没选时用不用深度思考（缺省 false：快速回答；ZR_QA_THINKING=on 改为深度思考）。 */
   defaultDeep?: boolean;
   /** 模型路由实际配置了的别名（broker.routeAliases()；第 47 批）：律师选的模型须在其中。不给时只认缺省别名。 */
@@ -202,6 +206,51 @@ export function qaFailureText(message: string, route?: string | null, names?: { 
   if (plain && /[\u4e00-\u9fff]/.test(plain) && !/[A-Za-z]{4,}|\b\d{3}\b/.test(plain)) return plain;
   return "AI 服务暂时不可用，这次没有取得回答：请稍后再问";
 }
+
+/** 律师点了“停止”（第 71 批第三轮）：不是失败，不重试；已生成的部分照存。 */
+export class QaStoppedError extends Error {
+  constructor() {
+    super("已停止生成");
+    this.name = "QaStoppedError";
+  }
+}
+
+/**
+ * 把上游的流包一层“收到中止就不再产出”（第 71 批第三轮）：中止时立刻结束等待（不等下一段到来），并调用源迭代器的 return()
+ * 让提供方关闭连接（网关流、mock 提供方同样适用）。没有 signal 时原样转交。
+ */
+export async function* abortableChunks<T>(src: AsyncIterable<T>, signal?: AbortSignal): AsyncGenerator<T> {
+  if (!signal) {
+    yield* src;
+    return;
+  }
+  const it = src[Symbol.asyncIterator]();
+  let onAbort: (() => void) | null = null;
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(new QaStoppedError());
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  });
+  aborted.catch(() => {});
+  let done = false;
+  try {
+    while (true) {
+      const r = await Promise.race([it.next(), aborted]);
+      if (r.done) {
+        done = true;
+        return;
+      }
+      yield r.value;
+    }
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+    // 中止或下游提前结束：关闭源（不等它，免得卡在一个还没到的分段上）
+    if (!done) void Promise.resolve(it.return?.()).catch(() => {});
+  }
+}
+
+/** 停止后保存的回答末尾的标注（存储用；显示与送回模型的历史里都去掉，改成 stopped 标志）。 */
+export const QA_STOPPED_MARK = "\n\n【系统：律师停止了生成，以上为停止前的部分】";
 
 export async function collectStreamText(chunks: AsyncIterable<string>, onDelta?: (piece: string) => void, onReasoning?: (chars: number) => void): Promise<string> {
   let text = "";
@@ -261,6 +310,16 @@ export class QaChatService {
   private readonly d: QaDeps;
   /** 正在回答的会话（复核 Q5-01）：同一会话一次只答一问——并发两问时两次回答抢同一个序号，先到的那条会丢。 */
   private readonly answering = new Set<string>();
+  /** 正在生成的回答（第 71 批第三轮）：streamId → 中止器与发起人；律师点“停止”按它中止。 */
+  private readonly streams = new Map<string, { ac: AbortController; tenantId: string; userId: string }>();
+
+  /** 停止一次正在生成的回答（只能停本人发起的、还在进行的）；没有这样的流返回 false，不报错。 */
+  stop(streamId: string, tenantId: string, userId: string): boolean {
+    const s = this.streams.get(streamId);
+    if (!s || s.tenantId !== tenantId || s.userId !== userId || s.ac.signal.aborted) return false;
+    s.ac.abort();
+    return true;
+  }
 
   constructor(d: QaDeps) {
     this.d = d;
@@ -340,10 +399,11 @@ export class QaChatService {
     return this.d.db
       .all<Omit<QaMessageView, "route_label">>(`SELECT message_id, role, text, created_at, route FROM qa_messages WHERE conversation_id = ? ORDER BY seq`, [conversationId])
       .map((m) => {
-        const text = restoreTokens(m.text, table).text;
+        const stopped = m.role === "assistant" && m.text.endsWith(QA_STOPPED_MARK);
+        const text = restoreTokens(stopped ? m.text.slice(0, -QA_STOPPED_MARK.length) : m.text, table).text;
         const citations = m.role === "assistant" ? this.citations(text) : null;
         const route = m.role === "user" ? null : (m.route ?? null);
-        const base = { ...m, text, route, route_label: qaRouteLabel(route, this.catalog()) };
+        const base = { ...m, text, route, route_label: qaRouteLabel(route, this.catalog()), ...(stopped ? { stopped: true } : {}) };
         return citations ? { ...base, citations } : base;
       });
   }
@@ -427,7 +487,7 @@ export class QaChatService {
       const base = raw.slice(0, Math.max(0, raw.length - TAIL_HOLD));
       const open = base.lastIndexOf("〔");
       const shown = open >= 0 && base.indexOf("〕", open) < 0 && base.length - open < OPEN_TOKEN_HOLD ? base.slice(0, open) : base;
-      if (shown) publish(streamId, restoreTokens(shown, table).text);
+      if (shown) publish(streamId, restoreTokens(shown, table).text, conversationId);
     };
     return {
       push: (piece) => {
@@ -446,7 +506,7 @@ export class QaChatService {
       finish: () => {
         if (timer) clearTimeout(timer);
         timer = null;
-        if (!stopped && raw) publish(streamId, restoreTokens(raw, table).text);
+        if (!stopped && raw) publish(streamId, restoreTokens(raw, table).text, conversationId);
         stopped = true;
       },
     };
@@ -456,7 +516,7 @@ export class QaChatService {
    * 回答进度的推送（第 48 批）：思考阶段每秒至多一次（附已收到的思考字数），第一段正文到来时推一次“撰写中”；
    * 没有 streamId 或没有推送通道时为 null。只含阶段与字数。
    */
-  private progressPublisher(streamId: string | undefined): { reasoning: (chars: number) => void; writing: () => void } | null {
+  private progressPublisher(streamId: string | undefined, conversationId?: string): { reasoning: (chars: number) => void; writing: () => void } | null {
     const publish = this.d.onProgress;
     if (!publish || !streamId) return null;
     let thoughtChars = 0;
@@ -469,12 +529,12 @@ export class QaChatService {
         const now = Date.now();
         if (last !== 0 && now - last < PROGRESS_INTERVAL_MS) return;
         last = now;
-        publish(streamId, { phase: "thinking", thought_chars: thoughtChars });
+        publish(streamId, { phase: "thinking", thought_chars: thoughtChars }, conversationId);
       },
       writing: () => {
         if (writing) return;
         writing = true;
-        publish(streamId, { phase: "writing", thought_chars: thoughtChars });
+        publish(streamId, { phase: "writing", thought_chars: thoughtChars }, conversationId);
       },
     };
   }
@@ -560,33 +620,47 @@ export class QaChatService {
         `SELECT role, text FROM qa_messages WHERE conversation_id = ? AND role IN ('user','assistant') ORDER BY seq DESC LIMIT ?`,
         [c.conversation_id, HISTORY_LIMIT],
       )
-      .reverse();
+      .reverse()
+      .map((m) => (m.role === "assistant" && m.text.endsWith(QA_STOPPED_MARK) ? { ...m, text: m.text.slice(0, -QA_STOPPED_MARK.length) } : m));
     const partial = this.partialPublisher(streamId, c.conversation_id);
-    const progress = this.progressPublisher(streamId);
+    // 推送带上会话编号（第 71 批第三轮）：新问答在回答生成中就能在侧栏选中当前会话
+    const progress = this.progressPublisher(streamId, c.conversation_id);
     let answer: string;
+    // 停止（第 71 批第三轮）：有 streamId 的回答登记中止器；停止前收到的部分（令牌形态）照存
+    const ac = streamId ? new AbortController() : null;
+    if (ac && streamId) this.streams.set(streamId, { ac, tenantId, userId });
+    let soFar = "";
     try {
       answer = await this.d.ask({
         conversationId: c.conversation_id,
         tenantId,
         userId,
         messages: [{ role: "system", content: QA_SYSTEM_PROMPT }, ...history.map((m) => ({ role: m.role, content: m.text }))],
-        ...(partial || progress
-          ? {
-              onDelta: (piece: string) => {
-                progress?.writing();
-                partial?.push(piece);
-              },
-            }
-          : {}),
+        onDelta: (piece: string) => {
+          soFar += piece;
+          progress?.writing();
+          partial?.push(piece);
+        },
         ...(progress ? { onReasoning: progress.reasoning } : {}),
+        ...(ac ? { signal: ac.signal } : {}),
         route,
         deep,
       });
     } catch (e) {
+      if (ac?.signal.aborted) {
+        // 律师停止：不当作失败、不重试；已生成的部分按回答保存并标“已停止”，还没有内容的记一条说明
+        if (streamId) this.streams.delete(streamId);
+        partial?.finish();
+        if (soFar.trim()) this.addMessage(c.conversation_id, "assistant", `${soFar}${QA_STOPPED_MARK}`, route);
+        else this.addMessage(c.conversation_id, "notice", "已停止生成：还没有生成内容", route);
+        return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
+      }
+      if (streamId) this.streams.delete(streamId);
       partial?.stop();
       this.addMessage(c.conversation_id, "notice", `未能取得回答：${qaFailureText(qaErrorMessage(e), route, { labelOf: (a) => qaRouteLabel(a, this.catalog()), defaultAlias: this.defaultRoute() })}`, route);
       return { conversation_id: c.conversation_id, messages: this.get(c.conversation_id, tenantId, userId) };
     }
+    if (streamId) this.streams.delete(streamId);
     // 模型回答原样保存（令牌形态；显示时还原）；写不进去的记“未能取得回答”，不让回答悄悄丢掉
     try {
       this.addMessage(c.conversation_id, "assistant", answer, route);

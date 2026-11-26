@@ -46,6 +46,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   /** 正在回答的问题与到目前为止的回答（流式）；conv 是发问时所在的会话（新问答为 undefined）。 */
   const [pending, setPending] = useState<{ question: string; draft: string; conv: string | undefined; startedAt: number; deep: boolean; control?: ThinkingControl | undefined; phase: ChatPhase; thoughtChars: number } | null>(null);
   const streamRef = useRef<string | null>(null);
+  // 第 71 批第三轮：新问答在回答生成中就切到它的会话（侧栏选中）；每次发送只切一次
+  const adoptedRef = useRef<string | null>(null);
   // 深度思考开关（第 48 批）：关＝快速回答（通常十几秒），开＝先充分思考再答（常要 1～3 分钟）；记在本机偏好，没记过按内核缺省
   const [deep, setDeep] = useState<boolean>(() => {
     try {
@@ -119,6 +121,17 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   useEffect(
     () =>
       onKernelEvent((m) => {
+        // 第 71 批第三轮：推送带会话编号——新问答在生成中就进入自己的会话（侧栏选中、问题气泡写“刚刚”），回答到了照常接上
+        const sid = streamRef.current;
+        if ((m?.type === "chat.delta" || m?.type === "chat.progress") && sid && m.stream_id === sid && typeof m.conversation_id === "string" && adoptedRef.current !== sid) {
+          adoptedRef.current = sid;
+          const cid: string = m.conversation_id;
+          setPending((p) => (p && !p.conv ? { ...p, conv: cid } : p));
+          if (!convRef.current) {
+            nav(`/chat/${cid}`);
+            void loadList();
+          }
+        }
         if (m?.type === "chat.delta" && m.stream_id === streamRef.current && typeof m.text === "string") setPending((p) => (p ? { ...p, draft: m.text, phase: "writing" } : p));
         // 回答进度（第 48 批）：思考中（带思考字数）/ 撰写中
         if (m?.type === "chat.progress" && m.stream_id === streamRef.current && (m.phase === "thinking" || m.phase === "writing")) {
@@ -215,6 +228,20 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
     }
   };
   const answeringHere = !!pending && pending.conv === conversationId;
+  /** 停止生成（第 71 批第三轮）：内核中止上游并保存已生成的部分（标“已停止”），chat.send 随即返回。 */
+  const stop = () => {
+    const id = streamRef.current;
+    if (id) void api.chatStop(id).catch(() => {});
+  };
+  // 生成中按 Esc 停止（输入框外也行）
+  useEffect(() => {
+    if (!busy) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.isComposing) stop();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy]);
 
   // 当前所选（或缺省）模型：深度思考开关的说明与显示取决于它（第 49 批）
   const selectedModel = models.find((c) => c.alias === route) ?? models.find((c) => c.default) ?? null;
@@ -276,6 +303,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
                     {m.role === "assistant" && m.route_label ? `${m.route_label} · ` : ""}
                     {fmtWhen(m.created_at)}
                   </span>
+                  {m.stopped && <span className="msg-stopped">已停止</span>}
                   {m.role === "assistant" && (
                     <span className="msg-actions">
                       <button
@@ -307,12 +335,12 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
               {(opening || messages.at(-1)?.role !== "user") && (
                 <div className="msg msg-user">
                   <div className="msg-text">{pending.question}</div>
+                  <div className="msg-meta">刚刚</div>
                 </div>
               )}
-              <div className="msg msg-assistant" aria-live="polite" aria-busy="true">
+              {/* 逐字出现时最后一个字后面一根闪动的光标（第 71 批第三轮：跟在字后，不另起一行；样式表 .is-streaming） */}
+              <div className={`msg msg-assistant${pending.draft ? " is-streaming" : ""}`} aria-live="polite" aria-busy="true">
                 {pending.draft && <Markdown text={pending.draft} />}
-                {/* 第 71 批第二轮（区域 2）：逐字出现时正文末尾一根闪动的光标，看得出还在写（没有“停止回答”：内核问答接口没有中止方法） */}
-                {pending.draft && <span className="stream-caret" aria-hidden="true" />}
                 <ChatWait pending={pending} now={now} />
               </div>
             </>
@@ -369,7 +397,15 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
             />
             {/* 问答页回车发送，与任务输入框（Ctrl / ⌘ + 回车）不同：写明（余项续复核 RC-B-15） */}
             <span className="send-hint muted" aria-hidden="true">回车发送 · Shift + 回车换行</span>
-            <button className="send" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送" title="发送（回车）"><Icon.send /></button>
+            {/* 第 71 批第三轮：生成中发送键换成“停止”（同一位置），Esc 也能停 */}
+            {busy ? (
+              <button className="send-stop" onClick={stop} aria-label="停止生成" title="停止生成（Esc）">
+                <span className="send-stop-sq" aria-hidden="true" />
+                停止
+              </button>
+            ) : (
+              <button className="send" disabled={!text.trim()} onClick={() => void send()} aria-label="发送" title="发送（回车）"><Icon.send /></button>
+            )}
           </div>
           {/* D-225：问答不绑定事项、不查客户授权——常驻说明适用范围，案件材料与当事人请在事项里发起 */}
           {/* 第 71 批（区域 2）：原先顶部还有一条提示条，与这条说的是同一件事，只留这一条；“了解更多”随它 */}

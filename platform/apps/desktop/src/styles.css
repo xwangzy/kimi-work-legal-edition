@@ -632,9 +632,16 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .chat-del-confirm { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-body); color: var(--text-primary); }
 .btn-danger-text { color: var(--status-danger-text); }
 .msg.msg-assistant { max-width: 100%; width: 100%; }
-.stream-caret { display: inline-block; width: 2px; height: 1.1em; margin: 2px 0 0 2px; background: var(--text-primary); vertical-align: text-bottom; animation: stream-caret-blink 1s steps(1) infinite; }
+/* 第 71 批第三轮：光标跟在最后一个字后面（段落、标题、引用或列表最后一项的末尾），不另起一行 */
+.is-streaming .md > :is(p, h3, h4, h5, blockquote):last-child::after,
+.is-streaming .md > :is(ol, ul):last-child > li:last-child::after { content: ""; display: inline-block; width: 2px; height: 1.1em; margin-left: 2px; background: var(--text-primary); vertical-align: text-bottom; animation: stream-caret-blink 1s steps(1) infinite; }
 @keyframes stream-caret-blink { 50% { visibility: hidden; } }
-@media (prefers-reduced-motion: reduce) { .stream-caret { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .is-streaming .md > :last-child::after, .is-streaming .md li::after { animation: none; } }
+/* 生成中的“停止”：与发送键同一位置、同一高度 */
+.send-stop { height: 36px; flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; border-radius: var(--r-full); border: 0; background: var(--btn-primary); color: var(--btn-primary-text); font-size: var(--fs-caption); cursor: pointer; }
+.send-stop:hover { background: var(--btn-primary-hover); }
+.send-stop-sq { width: 9px; height: 9px; background: currentColor; }
+.msg-stopped { font-size: var(--fs-xs); color: var(--status-warning-text); background: var(--status-warning-bg-soft); border-radius: var(--r-xs); padding: 0 6px; }
 .msg-meta { display: flex; align-items: center; gap: 12px; }
 .msg-actions { display: inline-flex; gap: 2px; }
 .msg-act { border: 0; background: none; padding: 1px 6px; border-radius: var(--r-xs); font-size: var(--fs-xs); color: var(--text-secondary); cursor: pointer; }

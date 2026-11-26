@@ -280,3 +280,22 @@ test("第二轮 区域 8：运行中不能提交复核；摘要第一行给含�
   assert.match(css, /\.claim-tone \{[^}]*white-space: nowrap;/);
   assert.match(css, /\.review-checks \.claim-cols \{ grid-template-columns: 1fr; \}/);
 });
+
+test("第三轮 区域 2：生成中发送键换成“停止”（同一位置）、Esc 也能停；停止后气泡下标“已停止”、可重新回答；光标跟在字后；新问答生成中就进入自己的会话", () => {
+  const chat = src("pages/Chat.tsx");
+  // 按钮切换：busy 时是停止，否则是发送
+  assert.match(chat, /\{busy \? \(\s*<button className="send-stop" onClick=\{stop\} aria-label="停止生成" title="停止生成（Esc）">/);
+  assert.match(chat, /\) : \(\s*<button className="send" disabled=\{!text\.trim\(\)\} onClick=\{\(\) => void send\(\)\} aria-label="发送"/);
+  assert.match(chat, /if \(id\) void api\.chatStop\(id\)/);
+  // Esc：只在生成中挂监听
+  assert.match(chat, /if \(!busy\) return;\s*const onKey = \(e: KeyboardEvent\) => \{\s*if \(e\.key === "Escape" && !e\.isComposing\) stop\(\);/);
+  assert.match(chat, /\{m\.stopped && <span className="msg-stopped">已停止<\/span>\}/);
+  assert.match(chat, /\{isLast && prevQ && \(/, "最后一条（含已停止的）回答下有“重新回答”");
+  assert.doesNotMatch(chat, /className="stream-caret"/, "不再单独起一行放光标");
+  assert.match(chat, /msg msg-assistant\$\{pending\.draft \? " is-streaming" : ""\}/);
+  assert.match(chat, /<div className="msg-meta">刚刚<\/div>/);
+  assert.match(chat, /typeof m\.conversation_id === "string" && adoptedRef\.current !== sid/);
+  const css = src("styles.css");
+  assert.match(css, /\.is-streaming \.md > :is\(ol, ul\):last-child > li:last-child::after/);
+  assert.match(src("api.ts"), /chatStop: \(streamId: string\) => invoke<\{ ok: boolean \}>\("chat\.stop", \{ stream_id: streamId \}\)/);
+});

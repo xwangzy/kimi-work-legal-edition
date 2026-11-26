@@ -27,13 +27,16 @@ const eventClients = new Set<import("node:http").ServerResponse>();
 const watchIdentity = (k: typeof kernel) =>
   k.onBroadcast((m) => {
     if (m.type === "chat.delta" && typeof m.stream_id === "string" && typeof m.text === "string") {
-      const line = `${JSON.stringify({ type: "chat.delta", stream_id: m.stream_id, text: m.text })}\n`;
+      // 第 71 批第三轮：另带会话编号（格式受限），新问答在生成中就能在侧栏选中
+      const conv = typeof m.conversation_id === "string" && /^[A-Za-z0-9_-]{4,80}$/.test(m.conversation_id) ? { conversation_id: m.conversation_id } : {};
+      const line = `${JSON.stringify({ type: "chat.delta", stream_id: m.stream_id, text: m.text, ...conv })}\n`;
       for (const c of eventClients) c.write(line);
       return;
     }
     // 回答进度（第 48 批）：与主进程同一形状，只带流编号、阶段与思考字数
     if (m.type === "chat.progress" && typeof m.stream_id === "string" && (m.phase === "thinking" || m.phase === "writing") && Number.isSafeInteger(m.thought_chars) && (m.thought_chars as number) >= 0) {
-      const line = `${JSON.stringify({ type: "chat.progress", stream_id: m.stream_id, phase: m.phase, thought_chars: m.thought_chars })}\n`;
+      const conv = typeof m.conversation_id === "string" && /^[A-Za-z0-9_-]{4,80}$/.test(m.conversation_id) ? { conversation_id: m.conversation_id } : {};
+      const line = `${JSON.stringify({ type: "chat.progress", stream_id: m.stream_id, phase: m.phase, thought_chars: m.thought_chars, ...conv })}\n`;
       for (const c of eventClients) c.write(line);
       return;
     }
