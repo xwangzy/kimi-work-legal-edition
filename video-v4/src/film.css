@@ -1,0 +1,5 @@
+/* 片场全局：抗锯齿与底色。产品界面用快照里产品自己的字体栈，这里不覆盖。 */
+html, body { background: #07080a; margin: 0; }
+body { -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+/* 快照每帧重建 DOM：产品自己的入场动画会从第 0 帧重新开始（元素半透明），一律关掉，状态由场景按帧写 */
+.kw *, .kw *::before, .kw *::after { animation: none !important; transition: none !important; }

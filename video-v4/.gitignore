@@ -1,0 +1,5 @@
+node_modules/
+out/
+.DS_Store
+# 生成物：配乐由 npm run music 生成
+public/audio/*.wav
