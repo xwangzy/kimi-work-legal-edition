@@ -33,6 +33,14 @@ import { createHash } from "node:crypto";
 import { inflateRawSync, inflateSync } from "node:zlib";
 import { basename, join, resolve } from "node:path";
 
+/**
+ * 第 71 批：读一个“可能不存在”的元素的文字——先数一下，没有就立即回 null。原来直接 .textContent() 在元素不存在时会等满 30 秒默认超时，
+ * 轮询里每一轮都白等 30 秒：第 70 批 Windows 联调“注册 41 秒”大半就是这个测量误差（实际进入约 1～2 秒）。
+ */
+async function optText(loc) {
+  return (await loc.count()) ? await loc.first().textContent({ timeout: 2000 }).catch(() => null) : null;
+}
+
 const require = createRequire(import.meta.url);
 const pwDir = process.env.PW_CORE;
 const { chromium } = require(pwDir ? join(pwDir, "node_modules", "playwright-core") : "playwright-core");
@@ -306,7 +314,7 @@ async function register() {
     async () => {
       const t = await text();
       if (/等待管理员批准|等待批准这台电脑/.test(t)) return "pending";
-      const err = await page.locator(".activate-error").first().textContent().catch(() => null);
+      const err = await optText(page.locator(".activate-error"));
       if (err) return `error:${err}`;
       if (/#\/(welcome|home)?$/.test(new URL(page.url()).hash) && !/注册并继续/.test(t) && /事项|问答|首页/.test(t)) return "in";
       return null;
@@ -388,7 +396,7 @@ async function login() {
   const r = await until(async () => {
     const t = await text();
     if (/等待管理员批准|等待批准这台电脑/.test(t)) return "pending";
-    const err = await page.locator(".activate-error").first().textContent().catch(() => null);
+    const err = await optText(page.locator(".activate-error"));
     if (err) return `error:${err}`;
     if (!/忘记密码/.test(t) && /事项|问答/.test(t)) return "in";
     return null;
@@ -418,13 +426,15 @@ async function loginSms() {
   await smsTab.first().waitFor({ state: "visible", timeout: 15000 }).catch(() => {});
   if (!(await smsTab.count())) throw new Error("界面上没有“验证码登录”：云端没有开放验证码登录，或这台电脑还登录着");
   await smsTab.first().click();
-  const tel = page.locator('input[type="tel"]:visible').first();
-  await tel.fill(phone);
+  // 第 71 批：这台已登记电脑的重新登录页，手机号一行只读显示打码号（验证码发到账号绑定的手机）——没有可编辑的手机号框就不填
+  const tel = page.locator('input[type="tel"]:visible:not([readonly])');
+  if (await tel.count()) await tel.first().fill(phone);
+  else log("手机号已由这台电脑的账号带出（只读打码），只填验证码");
   const sendAt = Date.now();
   await page.locator("button:visible").filter({ hasText: /^\s*获取验证码\s*$/ }).first().click();
   const hint = await until(async () => {
     const t = await text();
-    const m = t.match(/验证码已发送到\s*\S+|测试环境：验证码是\s*\d+|这个手机号还没有注册账号[^\n]*|手机号验证码登录暂未开放[^\n]*|短信服务暂时不可用[^\n]*|连不上中软服务[^\n]*|获取验证码过于频繁[^\n]*|验证码已发送，请 \d+ 秒后[^\n]*/);
+    const m = t.match(/验证码已发送到\s*\S+|测试环境：验证码是\s*\d+|这个手机号还没有注册账号[^\n]*|手机号验证码登录暂未开放[^\n]*|短信服务暂时不可用[^\n]*|连不上中软服务[^\n]*|获取验证码过于频繁[^\n]*|验证码已发送，请 \d+ 秒后[^\n]*|刚发过验证码，请 \d+ 秒后[^\n]*/);
     return m ? m[0] : null;
   }, 30000, 500, "短信发送结果");
   log("短信：", hint.replace(/\d{4,}/g, "<码>"));
@@ -440,12 +450,12 @@ async function loginSms() {
     async () => {
       const t = await text();
       if (/等待管理员批准|等待批准这台电脑/.test(t)) return "pending";
-      if (/这台电脑暂时不能继续/.test(t)) return `blocked:${(await page.locator(".activate-error").first().textContent().catch(() => "")) ?? ""}`;
+      if (/这台电脑暂时不能继续/.test(t)) return `blocked:${(await optText(page.locator(".activate-error"))) ?? ""}`;
       // 先数再取（没有错误行时 textContent 会等满默认超时 20 秒）
       const al = page.locator('.activate-error[role="alert"]');
       const err = (await al.count()) ? await al.last().textContent().catch(() => null) : null;
       if (err && !/你已退出登录/.test(err)) return `error:${err}`;
-      if (onActivate ? !/获取验证码/.test(t) && /事项|问答|开通的最后一步/.test(t) : !(await page.getByRole("tab", { name: "验证码登录" }).count()) && /已登录/.test(t)) return "in";
+      if (onActivate ? !/获取验证码/.test(t) && /事项|问答|开通的最后一步/.test(t) : !(await page.getByRole("tab", { name: "验证码登录" }).count()) && /已登录|登录中/.test(t)) return "in"; // 第 71 批：状态词统一为“登录中”
       return null;
     },
     180000,
