@@ -37,7 +37,8 @@
     "apps/console/dist",
     "apps/console/config.json",
     "packages/firm-trust/test/p256-device.test.ts",
-    "packages/keys/test/signer-surface.test.ts"
+    "packages/keys/test/signer-surface.test.ts",
+    "services/control-plane/test/b66-personal-devices.test.ts"
   ],
   "shared_contract_packages": {
     "$comment": "两端共用、以 monorepo 为单一来源的契约包：客户端（packages/kernel）与云端都 import；改动须两端同时过用例。",
