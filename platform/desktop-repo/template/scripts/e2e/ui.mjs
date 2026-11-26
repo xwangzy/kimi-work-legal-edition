@@ -262,10 +262,12 @@ async function register() {
     await page.locator("button").filter({ hasText: /^\s*获取验证码\s*$/ }).first().click();
     const hint = await until(async () => {
       const t = await text();
-      const m = t.match(/验证码已发送到\s*\S+|测试环境：验证码是\s*\d+|验证码没有发出[^\n]*|发送太频繁[^\n]*|秒后再重新获取[^\n]*/);
+      // 第 70 批：手机号已注册时云端在发码前就拒绝（不发短信，phone_taken）——原来认不出这句，要等满 30 秒才报“等待超时”
+      const m = t.match(/验证码已发送到\s*\S+|测试环境：验证码是\s*\d+|验证码没有发出[^\n]*|发送太频繁[^\n]*|秒后再重新获取[^\n]*|这个手机号已注册[^\n]*/);
       return m ? m[0] : null;
     }, 30000, 500, "短信发送结果");
     log("短信：", hint.replace(/\d{4,}/g, "<码>"));
+    if (/已注册/.test(hint)) throw new Error(`这个手机号在线上已注册（云端没有发码）：注册要换一个没注册过的号码，或改用 entry=login-sms。${hint}`);
     if (/没有发出|太频繁|秒后再重新获取/.test(hint)) throw new Error(`短信没有发出：${hint}`);
     let sms = (hint.match(/测试环境：验证码是\s*(\d+)/) ?? [])[1] ?? "";
     if (!sms) sms = await waitSmsCode(sendAt);
