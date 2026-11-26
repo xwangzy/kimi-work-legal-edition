@@ -1026,7 +1026,8 @@ async function authPages() {
     await forgot.first().click();
     await sleep(400);
     await shot("03-找回密码");
-    await page.locator("button:visible").filter({ hasText: /^\s*返回登录\s*$/ }).first().click();
+    // 第 69 批第四轮起找回密码的返回写“返回”（标题行右侧）；旧版是“返回登录”——两种都认
+    await page.locator("button:visible").filter({ hasText: /^\s*返回(登录)?\s*$/ }).first().click();
     await sleep(400);
   }
   await openRegister();
