@@ -115,7 +115,12 @@ test("成表：情景测算主表带公式，另有请求与支持比例、费�
   const p = { side: "plaintiff" as const, claims, costs: [{ label: "律师费", amount_yuan: 30_000 }], contingency_rate: 0.1, settlement_offers: [380_000], collection: [1, 0.5] };
   const r = calcLitigationBudget(p);
   const wb = litigationBudgetWorkbook(p, r);
-  assert.deepEqual(wb.map((s) => s.name), ["情景测算", "请求与支持比例", "费用明细", "和解持平点", "和解方案比较", "口径与假设"]);
+  // 第 71 批第二轮：计算过程挪到“情景计算过程”表，主表比例按百分比显示
+  assert.deepEqual(wb.map((s) => s.name), ["情景测算", "情景计算过程", "请求与支持比例", "费用明细", "和解持平点", "和解方案比较", "口径与假设"]);
+  assert.ok(!wb[0]!.rows[0]!.includes("计算过程"), "主表不再放长文字列");
+  assert.deepEqual(wb[0]!.percents?.slice(0, 2), ["C2", "D2"]);
+  assert.equal(wb[1]!.rows.length, wb[0]!.rows.length, "每个情景一行计算过程");
+  assert.ok(wb[2]!.percents!.includes("C2"));
   const main = wb[0]!;
   assert.equal(main.formulas!["I2"], "ROUND(F2-G2-H2,2)");
   assert.equal(main.formulas!["H2"], "ROUND(B2*D2*0.1,2)");
@@ -162,7 +167,7 @@ test("未届满的请求（v39-B1 真实验收）：不进本次诉讼的受理�
   const r2 = calcLitigationBudget({ ...p, settlement_covers_not_due: false });
   assert.equal(r2.settlement[0]!.versus.find((v) => v.scenario === "全部支持")!.diff_yuan, 0);
   const wb = litigationBudgetWorkbook(p, r);
-  assert.ok(wb[1]!.rows.some((row) => /质保金（履行期未届满，2026-12-14 到期/.test(String(row[0]))));
+  assert.ok(wb.find((s) => s.name === "请求与支持比例")!.rows.some((row) => /质保金（履行期未届满，2026-12-14 到期/.test(String(row[0]))));
   assert.throws(() => calcLitigationBudget({ ...p, claims: [{ label: "质保金", amount_yuan: 1, not_yet_due: true }] }), /全部是未届满/);
 });
 

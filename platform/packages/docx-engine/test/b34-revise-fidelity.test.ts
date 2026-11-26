@@ -231,8 +231,8 @@ test("交付的 Excel 不是“裸表”：首行表头加粗冻结、正文换�
   assert.match(sheet, /<c r="D2" s="2" t="inlineStr">/, "正文文字换行有边框");
   assert.match(sheet, /<col min="4" max="4" width="60" customWidth="1"\/>/, "长文字列封顶 60，靠换行");
   assert.match(sheet, /<col min="1" max="1" width="6" customWidth="1"\/>/, "短列不小于 6");
-  assert.match(styles, /<cellXfs count="7">/);
-  assert.equal((styles.match(/<xf numFmtId=/g) ?? []).length, 8, "cellStyleXfs 1 个 + cellXfs 7 个（第 58 批加日期格）");
+  assert.match(styles, /<cellXfs count="8">/);
+  assert.equal((styles.match(/<xf numFmtId=/g) ?? []).length, 9, "cellStyleXfs 1 个 + cellXfs 8 个（第 58 批加日期格、第 71 批加百分比格）");
   assert.doesNotMatch(files.get("xl/worksheets/sheet2.xml")!.toString("utf8"), /<cols>|<sheetViews>/, "空表不写列宽、不冻结");
 });
 
@@ -263,4 +263,14 @@ test("修订稿打开 Word 的“修订”开关，清洁稿关掉（第 35 批 
   assert.doesNotMatch(readZipEntries(clean).get("word/settings.xml")!.toString("utf8"), /trackRevisions/);
   const again = revise(rev, [{ a: "验收合格", n: "最终验收合格" }]);
   assert.equal((readZipEntries(again).get("word/settings.xml")!.toString("utf8").match(/<w:trackRevisions\/>/g) ?? []).length, 1, "已打开的不重复加");
+});
+
+test("第 71 批第二轮：percents 里的格子按“0.00%”显示（预览与 Excel 都显示 73.57%，不是 0.73568783）", async () => {
+  const { createXlsx } = await import("../src/xlsx.ts");
+  const { renderXlsxHtml } = await import("../src/render-html.ts");
+  const buf = createXlsx([{ name: "情景测算", rows: [["情景", "支持比例"], ["质保金不支持", 0.73568783], ["全部支持", 1]], percents: ["B2", "B3"] }]);
+  const html = renderXlsxHtml(buf).html;
+  assert.match(html, /73\.57%/);
+  assert.match(html, /100\.00%/);
+  assert.doesNotMatch(html, /0\.73568783/);
 });

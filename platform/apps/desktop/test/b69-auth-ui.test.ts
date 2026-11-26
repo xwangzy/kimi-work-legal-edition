@@ -54,8 +54,8 @@ test("选一台移除：整卡（一个标题）、单选、默认预选、主�
   assert.match(s, /role=\{actionable && !single \? "radiogroup" : "list"\}/);
   assert.match(s, /defaultRemovalPick\(removable\)/);
   assert.match(s, /移除并继续/);
-  assert.match(s, /移除「\$\{singleName\}」并继续/);
-  assert.match(s, /让「\$\{singleName\}」退出登录，在这台继续/);
+  assert.match(s, /移除「\$\{targetName\}」并继续/);
+  assert.match(s, /让「\$\{targetName\}」退出登录，在这台继续/);
   assert.match(s, /最多同时在 \{n\} 台电脑上登录/);
   assert.match(s, /最多可用 \{n\} 台电脑/);
   // 上限只来自云端（limit = 云端 device_limit；没给时按列表台数说），界面没有写死的台数

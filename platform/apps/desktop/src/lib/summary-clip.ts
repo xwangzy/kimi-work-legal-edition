@@ -28,3 +28,30 @@ export function summaryClip(line: string, soft = 80, hard = 180): string {
   }
   return `${safeCut(cs, hard)}…`;
 }
+
+/** 含金额的句子：数字（可带千分位、小数）后跟“元 / 万元”。 */
+const AMOUNT = /\d[\d,]*(?:\.\d+)?\s*万?元/u;
+
+/**
+ * 结论摘要的头一句要有关键数字（第 71 批第二轮，区域 8）：摘要是模型最终答复的前几行（不是本机拼的），常以“已完整读取 3 份材料”开头，
+ * 律师要的“净回收多少”在后面。展示时从答复正文里找第一个含金额的句子提到第一行，其余照原顺序；正文里没有金额的原样不动。
+ * 不改模型输出、不改成果文件，只改这块摘要的显示顺序。lines 是去掉 Markdown 记号后的各行（全文）。纯函数。
+ */
+export function leadWithAmount(lines: readonly string[], keep = 3): string[] {
+  const head = lines.slice(0, keep);
+  if (head.length === 0 || AMOUNT.test(head[0]!)) return head;
+  for (const l of lines) {
+    const sentences = l.split(/(?<=[。；！？])/u);
+    const hit = sentences.find((x) => AMOUNT.test(x));
+    if (!hit) continue;
+    const lead = hit.trim().replace(/[；，、]$/u, "。");
+    const rest = lines.filter((x) => x !== l || sentences.length > 1).map((x) => (x === l ? x.replace(hit, "").trim() : x)).filter((x) => x.length > 0);
+    return [lead, ...rest].slice(0, keep);
+  }
+  return head;
+}
+
+/** 数字与汉字之间加空格（“3份”→“3 份”、“514,335.00元”→“514,335.00 元”），与全库写法一致；只用于显示。纯函数。 */
+export function spaceDigitsCjk(s: string): string {
+  return s.replace(/(\d)([一-龥])/gu, "$1 $2").replace(/([一-龥])(\d)/gu, "$1 $2");
+}

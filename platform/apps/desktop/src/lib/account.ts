@@ -375,13 +375,80 @@ export function defaultRemovalPick(devices: readonly AccountDevice[]): string | 
 }
 
 /** “我的设备”一行：第几台、本机标记、登记日、最近使用、版本、是否登录中。 */
+/**
+ * 第 71 批第三轮（独立评分区域 4-4）：一台电脑在客户端各处只有一个名字——起过名字用名字，没起过写“Mac 电脑 · 第 2 台”（旧云端没有平台时“第 2 台电脑”）；
+ * “这台电脑”不再顶替名字，改为名字旁的标签（设备卡）或名字后的“ · 这台电脑”（最近登录）。纯函数。
+ */
+export function deviceDisplayName(d: Pick<AccountDevice, "device_id" | "name" | "platform">): string {
+  const named = deviceName(d);
+  if (named) return named;
+  const n = deviceOrdinal(d.device_id);
+  return d.platform ? `${platformLabel(d.platform)} · 第 ${n} 台` : `第 ${n} 台电脑`;
+}
+
+/** 第 71 批第三轮（独立评分区域 4-1）：时刻的中文写法（北京时间）：今天 20:41 / 昨天 20:41 / 11 月 26 日 20:41（跨年写年份）。纯函数。 */
+export function momentLabel(v: string | null | undefined, now = Date.now()): string {
+  const t = v ? Date.parse(v) : NaN;
+  if (!Number.isFinite(t)) return "";
+  const bj = (x: number) => new Date(x + 8 * 3600_000).toISOString();
+  const d = bj(t);
+  const hm = d.slice(11, 16);
+  if (d.slice(0, 10) === bj(now).slice(0, 10)) return `今天 ${hm}`;
+  if (d.slice(0, 10) === bj(now - 86400_000).slice(0, 10)) return `昨天 ${hm}`;
+  const [y, m, dd] = d.slice(0, 10).split("-").map(Number);
+  return `${y !== Number(bj(now).slice(0, 4)) ? `${y} 年 ` : ""}${m} 月 ${dd} 日 ${hm}`;
+}
+
+/** “最近登录”的一条（云端 recent_logins，新的在前）。 */
+export interface RecentLogin {
+  at: string;
+  kind: "login" | "enroll";
+  device_id: string | null;
+  platform: string | null;
+  version?: string | null;
+  net: string;
+}
+
+/**
+ * 第 71 批第三轮（独立评分区域 4-2/4-3）：“最近登录”各行。
+ * - 名字与设备卡同一个（deviceDisplayName），这台电脑写“名字 · 这台电脑 · 登录”（不再“名字（这台电脑） · 登录”）；时刻用 momentLabel；
+ * - 新电脑先登录、随后登记的那次登录（云端记录里还没有电脑编号）：与紧接着的“新电脑登记”（10 分钟内、同平台）合并成一行“… · 新电脑登录并登记”；
+ *   对不上的写“新电脑登录（没有完成登记）”——不再出现让人以为是陌生人的“还没登记的电脑 · 登录”。纯函数。
+ */
+export function recentLoginRows(list: readonly RecentLogin[], devices: readonly AccountDevice[], now = Date.now()): { title: string; meta: string }[] {
+  const plat = (p: string | null) => (p === "win32" ? "Windows" : p === "darwin" ? "macOS" : p === "web" ? "浏览器" : p === "linux" ? "Linux" : "");
+  const nameOf = (d: AccountDevice) => `${deviceDisplayName(d)}${d.current ? " · 这台电脑" : ""}`;
+  const out: { title: string; meta: string }[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const x = list[i]!;
+    const d = x.device_id ? devices.find((y) => y.device_id === x.device_id) : undefined;
+    let title: string;
+    if (d) title = `${nameOf(d)} · ${x.kind === "enroll" ? "新电脑登记" : "登录"}`;
+    else if (x.platform === "web") title = "网页 · 登录";
+    else if (x.device_id) title = `已不在列表里的电脑 · ${x.kind === "enroll" ? "新电脑登记" : "登录"}`;
+    else {
+      const next = i > 0 ? list[i - 1]! : null;
+      const nd = next && next.kind === "enroll" && next.device_id ? devices.find((y) => y.device_id === next.device_id) : undefined;
+      const close = !!next && Math.abs(Date.parse(next.at) - Date.parse(x.at)) <= 10 * 60_000 && (!x.platform || !next.platform || x.platform === next.platform);
+      if (nd && close && out.length > 0) {
+        out[out.length - 1] = { ...out[out.length - 1]!, title: `${nameOf(nd)} · 新电脑登录并登记` };
+        continue;
+      }
+      title = "新电脑登录（没有完成登记）";
+    }
+    out.push({ title, meta: [momentLabel(x.at, now), plat(x.platform), x.net && x.net !== "未知" ? `网段 ${x.net}` : ""].filter(Boolean).join(" · ") });
+  }
+  return out;
+}
+
 export function deviceLine(d: AccountDevice, now = Date.now()): { title: string; meta: string; state: { text: string; tone: "ok" | "gray" | "bad" } } {
   const n = deviceOrdinal(d.device_id);
   // 第 69 批（D-297）：云端给了平台时写电脑类型（“Mac 电脑”），与电脑数已满时的选择列表同一说法；旧云端仍写第几台
   // 第 70 批（V44）：起过名字的用名字，这台电脑写“名字（这台电脑）”，电脑类型挪到说明行开头
   const named = deviceName(d);
-  // 第 71 批：没起名字的别的电脑与选择卡、登录记录同一写法“Mac 电脑 · 第 2 台”（原来只写“Mac 电脑”，两台同型号时分不清）
-  const title = named ? (d.current ? `${named}（这台电脑）` : named) : d.current ? "这台电脑" : d.platform ? `${platformLabel(d.platform)} · 第 ${n} 台` : `第 ${n} 台电脑`;
+  // 第 71 批第三轮：标题就是这台电脑在各处的名字（deviceDisplayName）；“这台电脑”由界面在名字旁加标签
+  void n;
+  const title = deviceDisplayName(d);
   // 第 55 批（真实控制面复评）：①“最近使用”是服务器按 UTC 记的日子，北京时间 0～8 点登记的电脑会显示成“登记 22 日 · 最近使用 21 日”——
   // 不早于登记日（按北京时间的日子比）；②没有上报版本的客户端，服务器记占位值 legacy，不显示给律师看。
   const regDay = d.registered_at && Number.isFinite(Date.parse(d.registered_at)) ? new Date(Date.parse(d.registered_at) + 8 * 3600_000).toISOString().slice(0, 10) : null;
@@ -479,8 +546,8 @@ export function needsLogin(st: { account?: { login_required?: boolean } | null; 
  * 所以非管理员只能请管理员在其电脑上批准；管理员本人保留原说法（在自己已登录的另一台电脑上批准）。
  */
 export function waitApprovalLead(o: { firm: string; who: string; viaAccount: boolean; admin?: boolean }): string {
-  if (o.viaAccount && o.admin) return `这个账号在「${o.firm}」已有登记的电脑。请在你已登录的另一台电脑（或请律所管理员）打开“设置 → 管理 → 成员”，批准这台电脑，并核对这 12 位数字。`;
-  if (o.viaAccount) return `这个账号在「${o.firm}」已有登记的电脑。请律所管理员在其电脑上的“设置 → 管理 → 成员”里批准这台电脑，并与管理员核对这 12 位数字。`;
+  if (o.viaAccount && o.admin) return `这个账号在「${o.firm}」已有登记的电脑。请在你已登录的另一台电脑（或请律所管理员）打开「设置 → 管理 → 成员」，批准这台电脑，并核对这 12 位数字。`;
+  if (o.viaAccount) return `这个账号在「${o.firm}」已有登记的电脑。请律所管理员在其电脑上的「设置 → 管理 → 成员」里批准这台电脑，并与管理员核对这 12 位数字。`;
   return `已向「${o.firm}」申请加入${o.who ? `（${o.who}）` : ""}。请打电话或当面联系管理员，把下面的入组核对码读给他；管理员核对一致后批准，这里会自动进入。`;
 }
 

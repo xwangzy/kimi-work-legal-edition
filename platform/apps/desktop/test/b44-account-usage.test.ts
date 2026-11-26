@@ -48,7 +48,8 @@ test("我的电脑与登录记录：第几台、这台电脑、最近使用、�
   assert.equal(deviceOrdinal("dev_firm_li"), 1);
   assert.equal(deviceOrdinal("dev_firm_li_D3"), 3);
   const cur = deviceLine({ device_id: "dev_firm_li", registered_at: "2026-11-01T02:00:00.000Z", client_version: "0.2.0", last_seen_on: "2026-11-14", current: true, session: "active" }, NOW);
-  assert.equal(cur.title, "这台电脑");
+  // 第 71 批第三轮：一台电脑各处一个名字（deviceDisplayName），“这台电脑”改为名字旁的标签
+  assert.equal(cur.title, "第 1 台电脑");
   // 第 70 批：“最近使用”改为相对时间（与电脑数已满的列表同一写法），当天写“今天”
   assert.equal(cur.meta, "11 月 1 日登记 · 最近使用 今天 · 版本 0.2.0");
   // 第 71 批（V45，D-298）：电脑状态词全库统一为“登录中 / 已退出登录 / 已移除”
@@ -80,7 +81,7 @@ test("登录失效横幅：写清 AI 暂停、本机资料照常；按原因换�
 test("等待批准：账号新电脑——管理员本人写“在已登录的另一台电脑上批准”，其他成员写“请律所管理员在其电脑上批准”，都核对 12 位数字；找回密码按通道写下一步", () => {
   // 第 46 批：“设置 → 管理”只有管理员看得到、批准要用管理员电脑——非管理员只能请管理员在其电脑上批准；管理员本人保留原说法
   assert.match(waitApprovalLead({ firm: "示例所", who: "", viaAccount: true, admin: true }), /已登录的另一台电脑（或请律所管理员）.*核对这 12 位数字/);
-  assert.match(waitApprovalLead({ firm: "示例所", who: "", viaAccount: true }), /请律所管理员在其电脑上的“设置 → 管理 → 成员”里批准这台电脑.*核对这 12 位数字/);
+  assert.match(waitApprovalLead({ firm: "示例所", who: "", viaAccount: true }), /请律所管理员在其电脑上的「设置 → 管理 → 成员」里批准这台电脑.*核对这 12 位数字/);
   assert.doesNotMatch(waitApprovalLead({ firm: "示例所", who: "", viaAccount: true, admin: false }), /你已登录的另一台电脑/);
   assert.match(waitApprovalLead({ firm: "示例所", who: "李律师 · 律师", viaAccount: false }), /^已向「示例所」申请加入（李律师 · 律师）/);
   assert.match(resetNextText({ channel: "email" }), /验证码已发到邮箱/);

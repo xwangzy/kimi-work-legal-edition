@@ -632,6 +632,9 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .chat-del-confirm { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-body); color: var(--text-primary); }
 .btn-danger-text { color: var(--status-danger-text); }
 .msg.msg-assistant { max-width: 100%; width: 100%; }
+.stream-caret { display: inline-block; width: 2px; height: 1.1em; margin: 2px 0 0 2px; background: var(--text-primary); vertical-align: text-bottom; animation: stream-caret-blink 1s steps(1) infinite; }
+@keyframes stream-caret-blink { 50% { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .stream-caret { animation: none; } }
 .msg-meta { display: flex; align-items: center; gap: 12px; }
 .msg-actions { display: inline-flex; gap: 2px; }
 .msg-act { border: 0; background: none; padding: 1px 6px; border-radius: var(--r-xs); font-size: var(--fs-xs); color: var(--text-secondary); cursor: pointer; }
@@ -1210,7 +1213,11 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .welcome-steps { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 8px; }
 .welcome-steps li.done b { color: var(--status-success-text); }
 /* 开通的最后一步（第 71 批 D12）：一句为什么 → 三张卡片 → “以后再说”与说明同一行、垂直居中，与上方卡片留出间距 */
-.welcome-why { margin: 12px 0 12px; color: var(--text-primary); }
+.welcome-why { display: flex; align-items: center; gap: 10px; margin: 16px 0 14px; padding: 10px 14px; border-radius: var(--r-md); font-size: var(--fs-body); line-height: 1.6; }
+.welcome-why::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.welcome-why.is-warn { background: var(--status-warning-bg-soft); color: var(--status-warning-text); }
+.welcome-why.is-ok { background: var(--status-valid-bg); color: var(--status-success-text); }
+.welcome-wrap { max-width: 1040px; width: 100%; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; justify-content: center; padding-bottom: 6vh; }
 .settings-choice.welcome-actions { align-items: center; gap: var(--sp-3); margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-subtle); }
 /* 三张步骤卡等高、按钮贴卡底对齐（说明行 flex:1 撑开；第 71 批） */
 .steps3 li > button, .steps3 li > .settings-choice { margin-top: auto; }
@@ -1304,7 +1311,7 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .claim { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); padding: var(--sp-2) var(--sp-3); background: var(--bg-surface); }
 .claim-red { border-color: var(--status-danger-border); }
 .claim-head { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); }
-.claim-tone { font-size: var(--fs-xs); border-radius: var(--r-xs); padding: 0 5px; }
+.claim-tone { font-size: var(--fs-xs); border-radius: var(--r-xs); padding: 0 5px; white-space: nowrap; flex: none; }
 .claim-tone-red { color: var(--cite-intercepted); background: var(--risk-high-bg); }
 .claim-tone-orange { color: var(--cite-support-pending); background: var(--risk-low-bg); }
 .claim-tone-gray { color: var(--text-secondary); background: var(--bg-hover); }
@@ -1318,6 +1325,10 @@ table.data td.num, table.data th.num { text-align: right; font-variant-numeric: 
 .claim-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); flex-wrap: wrap; }
 .claim-actions .btn-ghost.on { background: var(--btn-primary); color: var(--btn-primary-text); border-color: var(--btn-primary); }
 .exec-right .claim-cols { grid-template-columns: 1fr; }
+/* 第 71 批第二轮（区域 8）：复核页右栏只有约 330 宽，“成果里这样写 / 法条原文”并排各约 150 宽、每行只剩六七个字——改为上下排列；
+   “支持待判”等状态标签不折行（上一条规则 white-space: nowrap） */
+.review-checks .claim-cols { grid-template-columns: 1fr; }
+.review-checks .claim-raw { min-width: 0; }
 .outline-article { margin: var(--sp-1) 0 0; padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--border-subtle); background: var(--bg-surface); white-space: pre-wrap; color: var(--text-secondary); }
 .outline-dropped, .outline-dropped textarea { color: var(--text-secondary); }
 .outline-dropped textarea { text-decoration: line-through; }
@@ -1871,3 +1882,6 @@ button.sidebar-empty:hover { color: var(--text-primary); }
 .sp-note .sp-reload { flex: none; font-size: var(--fs-xs); color: var(--text-secondary); }
 .sp-error { padding: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .sp-error p { margin: 0; }
+
+/* 第 71 批第二轮：运行中“提交复核”禁用时旁边的说明与按钮垂直居中 */
+.art-submit-why { align-self: center; font-size: var(--fs-caption); }

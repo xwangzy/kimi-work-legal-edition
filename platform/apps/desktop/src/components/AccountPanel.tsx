@@ -15,7 +15,7 @@ import { MetaGate } from "./AuthShell.tsx";
 import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta, useRegistrationMetaState } from "./SmsCodeFields.tsx";
 import { DeviceLimitList } from "./DeviceLimitList.tsx";
 import { currentProfileMark, isSwitchResult, waitForProfileSwitch } from "../lib/account-switch.ts";
-import { accountWho, canRenameDevices, checkDeviceName, DEVICE_NAME_MAX, deviceName, deviceState, maskPhoneTight, passwordIdOk, reloginSmsFailure, resetIdKind, switchingText, type AccountDevice } from "../lib/account.ts";
+import { accountWho, recentLoginRows, canRenameDevices, checkDeviceName, DEVICE_NAME_MAX, deviceName, deviceState, maskPhoneTight, passwordIdOk, reloginSmsFailure, resetIdKind, switchingText, type AccountDevice } from "../lib/account.ts";
 
 /** 账号状态变了（登录、退出）：App 顶部横幅据此立即刷新。 */
 export const ACCOUNT_CHANGED = "kwl:account-changed";
@@ -535,15 +535,6 @@ function DeviceNameEditor({ initial, onSave, onCancel }: { initial: string; onSa
   );
 }
 
-/** 第 66 批（V40）：“最近登录”一行——哪台电脑、登录还是新电脑登记、平台、时刻与粗粒度网段。 */
-function recentLoginLine(x: NonNullable<AccountMe["recent_logins"]>[number], devices: AccountMe["devices"]): { title: string; meta: string } {
-  const d = x.device_id ? devices.find((y) => y.device_id === x.device_id) : undefined;
-  const who = d ? deviceLine(d).title : x.device_id ? "一台新电脑" : x.platform === "web" ? "网页" : "还没登记的电脑";
-  const platform = x.platform === "win32" ? "Windows" : x.platform === "darwin" ? "macOS" : x.platform === "web" ? "浏览器" : x.platform === "linux" ? "Linux" : "";
-  const at = Number.isFinite(Date.parse(x.at)) ? new Date(Date.parse(x.at)).toLocaleString("zh-CN", { hour12: false, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
-  return { title: `${who}${x.kind === "enroll" ? " · 新电脑登记" : " · 登录"}`, meta: [at, platform, x.net && x.net !== "未知" ? `网段 ${x.net}` : ""].filter(Boolean).join(" · ") };
-}
-
 /**
  * 移除一台电脑（第 66 批 V40：原“解绑”）：须输入密码（自绘对话框，不用浏览器确认框）。= 让那台电脑的登录失效并停用它在云端的登记；
  * 那台电脑上已有的资料不删。个人账号要再用那台电脑，重新登录即可（不用别的电脑批准）；多人律所的成员仍要管理员批准。
@@ -846,6 +837,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
                   <div className="account-list-main">
                     <div className="account-device-title">
                       <b>{l.title}</b>
+                      {d.current && <span className="tag tag-this">这台电脑</span>}
                       <span className={`tag tag-${l.state.tone === "ok" ? "ok" : l.state.tone === "bad" ? "bad" : "gray"}`}>{l.state.text}</span>
                       {/* 第 71 批（V45）：操作结果就地显示在电脑名旁边，几秒后淡出，不推动布局；去掉名字可撤销 */}
                       {mine && (
@@ -933,12 +925,11 @@ export function AccountSection({ firm }: { firm: string | null }) {
       )}
       {/* 第 66 批（V40）：最近 5 次登录与新电脑登记（时刻、哪台电脑、平台、粗粒度网段）——不认识的马上移除那台电脑并改密码 */}
       {me && (me.recent_logins?.length ?? 0) > 0 && (
-        <SettingRow label="最近登录" hint="最近 5 次。位置只到网段（不精确到地址）；不认识的登录请移除对应电脑并修改密码。">
+        <SettingRow label="最近登录" hint="最近几次登录与新电脑登记。位置只到网段（不精确到地址）；不认识的请移除对应电脑并修改密码。">
           <ul className="account-list">
-            {me.recent_logins!.map((x, i) => {
-              const l = recentLoginLine(x, devices);
+            {recentLoginRows(me.recent_logins!, devices).map((l, i) => {
               return (
-                <li key={`${x.at}-${i}`}>
+                <li key={`${l.meta}-${i}`}>
                   <div className="account-list-main">
                     <b>{l.title}</b>
                     <div className="muted">{l.meta}</div>
@@ -950,7 +941,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
         </SettingRow>
       )}
       {me && (
-        <SettingRow label="登录记录" hint="仍有效的登录。不认识的登录请马上下线，并修改密码。">
+        <SettingRow label="仍有效的登录" hint="这些电脑和网页现在仍处于登录状态。不认识的请马上下线，并修改密码。">
           <ul className="account-list">
             {sessions.map((s) => {
               const l = sessionLine(s, Date.now(), devices);

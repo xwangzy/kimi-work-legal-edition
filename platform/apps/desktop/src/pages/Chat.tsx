@@ -311,6 +311,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
               )}
               <div className="msg msg-assistant" aria-live="polite" aria-busy="true">
                 {pending.draft && <Markdown text={pending.draft} />}
+                {/* 第 71 批第二轮（区域 2）：逐字出现时正文末尾一根闪动的光标，看得出还在写（没有“停止回答”：内核问答接口没有中止方法） */}
+                {pending.draft && <span className="stream-caret" aria-hidden="true" />}
                 <ChatWait pending={pending} now={now} />
               </div>
             </>

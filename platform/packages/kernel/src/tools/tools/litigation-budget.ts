@@ -391,29 +391,40 @@ export function litigationBudgetWorkbook(p: LitigationBudgetParams, r: Litigatio
   const plaintiff = r.side === "plaintiff";
   const sheets: SheetSpec[] = [];
   const multi = plaintiff && r.scenarios.some((x, i, a) => a.findIndex((y) => y.scenario === x.scenario) !== i);
-  // 情景测算（主表）：派生列带公式，律师改回收比例、我方费用，净额跟着重算
+  // 情景测算（主表）：派生列带公式，律师改回收比例、我方费用，净额跟着重算。
+  // 第 71 批第二轮：比例按百分比显示（原先 0.73568783）；每个情景的计算过程挪到紧跟的“情景计算过程”表——
+  // 长文字在主表最后一列换行，把每一行撑到五六行高，主表的数字反而看不全
+  const steps: Cell[][] = [["情景", "计算过程"]];
   if (plaintiff) {
     const rate = p.contingency_rate ?? 0;
-    const rows: Cell[][] = [["情景", "支持金额（元）", "支持比例", "回收比例", "判决应收（元）", "预计收回（元）", "我方费用（元）", "风险代理费（元）", "净回收（元）", "计算过程"]];
+    const rows: Cell[][] = [["情景", "支持金额（元）", "支持比例", "回收比例", "判决应收（元）", "预计收回（元）", "我方费用（元）", "风险代理费（元）", "净回收（元）"]];
     const formulas: Record<string, string> = {};
+    const percents: string[] = [];
     r.scenarios.forEach((s, i) => {
       const n = i + 2;
-      rows.push([multi ? `${s.scenario}（回收 ${Math.round((s.collection_ratio ?? 1) * 100)}%）` : s.scenario, s.supported_yuan, s.support_ratio, s.collection_ratio, s.judgment_yuan, s.collected_yuan, s.our_costs_yuan, s.contingency_fee_yuan, s.net_yuan, s.notes.join("；")]);
+      const name = multi ? `${s.scenario}（回收 ${Math.round((s.collection_ratio ?? 1) * 100)}%）` : s.scenario;
+      rows.push([name, s.supported_yuan, s.support_ratio, s.collection_ratio, s.judgment_yuan, s.collected_yuan, s.our_costs_yuan, s.contingency_fee_yuan, s.net_yuan]);
+      steps.push([name, s.notes.join("；")]);
+      percents.push(`C${n}`, `D${n}`);
       formulas[`F${n}`] = `ROUND(E${n}*D${n},2)`;
       if (rate > 0) formulas[`H${n}`] = `ROUND(B${n}*D${n}*${rate},2)`;
       formulas[`I${n}`] = `ROUND(F${n}-G${n}-H${n},2)`;
     });
-    sheets.push({ name: "情景测算", rows, formulas });
+    sheets.push({ name: "情景测算", rows, formulas, percents });
   } else {
-    const rows: Cell[][] = [["情景", "判决支付的请求金额（元）", "支持比例", "我方负担的受理费（元）", "判决应付合计（元）", "我方费用（元）", "总支出（元）", "计算过程"]];
+    const rows: Cell[][] = [["情景", "判决支付的请求金额（元）", "支持比例", "我方负担的受理费（元）", "判决应付合计（元）", "我方费用（元）", "总支出（元）"]];
     const formulas: Record<string, string> = {};
+    const percents: string[] = [];
     r.scenarios.forEach((s, i) => {
       const n = i + 2;
-      rows.push([s.scenario, s.supported_yuan, s.support_ratio, s.fee_borne_by_us_yuan, s.judgment_yuan, s.our_costs_yuan, -s.net_yuan, s.notes.join("；")]);
+      rows.push([s.scenario, s.supported_yuan, s.support_ratio, s.fee_borne_by_us_yuan, s.judgment_yuan, s.our_costs_yuan, -s.net_yuan]);
+      steps.push([s.scenario, s.notes.join("；")]);
+      percents.push(`C${n}`);
       formulas[`G${n}`] = `ROUND(E${n}+F${n},2)`;
     });
-    sheets.push({ name: "情景测算", rows, formulas });
+    sheets.push({ name: "情景测算", rows, formulas, percents });
   }
+  sheets.push({ name: "情景计算过程", rows: steps });
   // 请求与支持比例：每个情景各项请求支持多少
   const scen = p.scenarios && p.scenarios.length > 0 ? p.scenarios : [{ label: "全部支持", support: 1 }, { label: "全部驳回", support: 0 }];
   const head: Cell[] = ["请求项目", "请求金额（元）", ...scen.map((s, i) => `${String(s.label ?? "").trim() || `情景${i + 1}`}（支持比例）`)];
@@ -421,7 +432,9 @@ export function litigationBudgetWorkbook(p: LitigationBudgetParams, r: Litigatio
   const body: Cell[][] = due.map((c) => [String(c.label).trim(), c.amount_yuan, ...scen.map((s) => (s.support !== undefined ? s.support : (s.items?.[String(c.label).trim()] ?? 0)))]);
   body.push(["合计（本次诉讼）", r.total_claim_yuan, ...scen.map(() => null)]);
   const later: Cell[][] = r.not_due.map((x) => [`${x.label}（履行期未届满，${x.due_on ? `${x.due_on} 到期，` : ""}不进本次诉讼）`, x.amount_yuan, ...scen.map(() => null)]);
-  sheets.push({ name: "请求与支持比例", rows: [head, ...body, ...later], formulas: { [`B${body.length + 1}`]: `SUM(B2:B${body.length})` } });
+  // 第 71 批第二轮：各情景的支持比例按百分比显示
+  const ratioCells = body.slice(0, due.length).flatMap((_, bi) => scen.map((__, si) => `${String.fromCharCode(67 + si)}${bi + 2}`));
+  sheets.push({ name: "请求与支持比例", rows: [head, ...body, ...later], formulas: { [`B${body.length + 1}`]: `SUM(B2:B${body.length})` }, percents: ratioCells });
   // 费用明细
   sheets.push({ name: "费用明细", rows: [["项目", "阶段", "金额（元）", "负担", "是否已发生", "计算过程", "依据"], ...r.fees.map((f): Cell[] => [f.item, STAGE_LABEL[f.stage], f.amount_yuan, f.payer, f.incurred ? "已发生" : "未发生", f.steps.join("；"), f.basis.join("；")])] });
   // 和解：持平点与方案比较

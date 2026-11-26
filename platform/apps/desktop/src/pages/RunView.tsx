@@ -18,7 +18,7 @@ import { PreviewError, SafePreview } from "../components/SafePreview.tsx";
 import { ReviewWorkbench } from "../components/ReviewWorkbench.tsx";
 import { ARTIFACT_STATUS_LABELS, CITE_STATE_LABELS, fileListName, EFFECTIVENESS_LABELS, fmtShortTime, fmtTime, jurisdictionLabel, MODE_LABELS, RUN_STATUS_LABELS, runName, stanceLabel, stepTime, stripMarkdownInline, TERMINAL_STATUSES } from "../lib/labels.ts";
 import { cutKeepingTokens, forgetRestored, restoredPlain, restoreTokens } from "../lib/tokens.ts";
-import { summaryClip } from "../lib/summary-clip.ts";
+import { leadWithAmount, spaceDigitsCjk, summaryClip } from "../lib/summary-clip.ts";
 import { followUpMaterialsText, nextScenarios, scenarioOfRun, type BusinessLine } from "../lib/scenarios.ts";
 import { currentBadges } from "../lib/badges.ts";
 import { engineHeartbeatMs, hasProgress, mergeProgress, phaseLine, progressActivityKey, progressTexts, retryStoppable, silenceMs, stallThresholdMs, progressView, type ProgressViewModel } from "../lib/progress.ts";
@@ -65,14 +65,14 @@ function openToolsOf(events: RunEvent[]): { openTools: string[]; execOpen: boole
 
 /** 正文前三行（去掉 Markdown 标题、列表、表格与行内记号），用于中栏摘要（UIUX 增量评审 D-1；v9.4 走查：摘要里露出“**须核验**”）。 */
 function summaryLines(text: string): string[] {
-  return text
+  const all = text
     .split(/\r?\n/)
     .filter((l) => !/^\s*\|/.test(l) && !/^\s*[-:| ]{3,}\s*$/.test(l))
     .map((l) => stripMarkdownInline(l.replace(/^\s*(#+\s*|[-*+]\s+|>\s*)/, "")).trim())
-    .filter((l) => l.length > 0)
-    .slice(0, 3)
-    // 第 71 批（区域 8）：截到句末，不在“净...”这种关键数字前硬截
-    .map((l) => summaryClip(l));
+    .filter((l) => l.length > 0);
+  // 第 71 批第二轮（区域 8）：摘要是模型答复的前几行——展示时把答复里第一个含金额的句子提到第一行（不改答复本身），数字与汉字间加空格；
+  // 第 71 批：截到句末，不在“净...”这种关键数字前硬截
+  return leadWithAmount(all).map((l) => summaryClip(spaceDigitsCjk(l)));
 }
 
 /** 律师在首页选的业务线（只读本机偏好；读不到返回 null）。 */
@@ -1353,7 +1353,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                 <WaitBlock variant="inline" title="正在生成预览…" since={previewSince} longHint="文件较大时排版要多等一会儿；也可以先下载后在 Word 里打开。" />
               )}
               {/* 旧版与过程文件只给下载，不给“提交复核”（V18 A2）；提交复核对着的仍是那一个版本 */}
-              {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} restore={(t) => restoredPlain(t, tokenMap)} onError={setErr} primary={!hasRiskEntry} review={options.some((o) => o.row.artifact_version_id === selected && o.group === "file")} />}
+              {selected && <ArtifactActions artifact={artifacts.find((a) => a.artifact_version_id === selected)} restore={(t) => restoredPlain(t, tokenMap)} onError={setErr} primary={!hasRiskEntry} review={options.some((o) => o.row.artifact_version_id === selected && o.group === "file")} running={!terminal} />}
               {artifacts.length > 1 && (
                 // 原“文件历史”标签并入这里（Z3 #11）
                 <details className="pane-fold">
@@ -1419,7 +1419,7 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
 }
 
 /** primary=false：同屏已有主按钮（待处理的审查意见），这里的动作降为次按钮（复核 S7B-01）。 */
-function ArtifactActions({ artifact, restore, onError, primary = true, review = true }: { artifact: any; restore: (t: string) => string; onError: (m: string) => void; primary?: boolean; review?: boolean }) {
+function ArtifactActions({ artifact, restore, onError, primary = true, review = true, running = false }: { artifact: any; restore: (t: string) => string; onError: (m: string) => void; primary?: boolean; review?: boolean; running?: boolean }) {
   if (!artifact) return null;
   return (
     <div className="artifact-actions">
@@ -1435,7 +1435,16 @@ function ArtifactActions({ artifact, restore, onError, primary = true, review = 
       >
         {downloadLabel(String(artifact.filename ?? ""))}
       </button>
-      {review && artifact.status === "draft" && (
+      {/* 第 71 批第二轮（区域 8）：任务还在处理时先交出的文件（例如先出测算表、再写测算说明）不能提交复核——半成品送去复核会被后面的版本推翻 */}
+      {review && artifact.status === "draft" && running && (
+        <>
+          <button className={primary ? "btn-primary" : "btn-ghost"} disabled title="任务完成后才能提交复核">
+            提交复核
+          </button>
+          <span className="muted art-submit-why">完成后可提交</span>
+        </>
+      )}
+      {review && artifact.status === "draft" && !running && (
         <button
           className={primary ? "btn-primary" : "btn-ghost"}
           onClick={async () => {

@@ -32,9 +32,10 @@ const dev = (o: Partial<AccountDevice>): AccountDevice => ({ device_id: "dev_qia
 
 test("电脑名称：起过名字的用名字（这台电脑写“名字（这台电脑）”），电脑类型挪到说明行；没起过照旧；旧云端没有 name 字段不显示改名", () => {
   const now = Date.parse("2026-11-26T07:00:00Z");
-  assert.equal(deviceLine(dev({ name: "办公室 iMac", current: true }), now).title, "办公室 iMac（这台电脑）");
+  // 第 71 批第三轮：标题只写名字，“这台电脑”由设置页在名字旁加标签（与选择卡同一个反白标签）
+  assert.equal(deviceLine(dev({ name: "办公室 iMac", current: true }), now).title, "办公室 iMac");
   assert.match(deviceLine(dev({ name: "办公室 iMac", current: true }), now).meta, /^Mac 电脑 · /);
-  assert.equal(deviceLine(dev({ name: null, current: true }), now).title, "这台电脑");
+  assert.match(deviceLine(dev({ name: null, current: true }), now).title, /^Mac 电脑 · 第 \d+ 台$/);
   assert.equal(deviceLine(dev({ name: "家里的 ThinkPad", platform: "win32", device_id: "dev_qian_qian_D2" }), now).title, "家里的 ThinkPad");
   // 第 71 批：没起名字的别的电脑与选择卡、登录记录同一写法（两台同型号时靠第几台区分）
   assert.equal(deviceLine(dev({ name: null, device_id: "dev_qian_qian_D2" }), now).title, "Mac 电脑 · 第 2 台");

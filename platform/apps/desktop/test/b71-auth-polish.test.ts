@@ -11,7 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { accountWho, loginRequiredText, maskPhoneTight, reloginSmsFailure, reloginView, resetIdKind, sessionLine } from "../src/lib/account.ts";
+import { accountWho, deviceDisplayName, loginRequiredText, maskPhoneTight, momentLabel, recentLoginRows, reloginSmsFailure, reloginView, resetIdKind, sessionLine } from "../src/lib/account.ts";
 
 const src = (f: string) => readFileSync(fileURLToPath(new URL(`../src/${f}`, import.meta.url)), "utf8");
 const err = (reason: string | null, extra: Record<string, unknown> = {}) => Object.assign(new Error("x"), { code: "validation", detail: { ...(reason ? { reason } : {}), ...extra } });
@@ -86,7 +86,8 @@ test("登录类卡片：每页一个标题、页签 14 号；浮动标签；密�
   assert.match(css, /\.auth-card \.auth-method button \{[^}]*font-size: var\(--fs-body\)/);
   assert.match(css, /\.field:has\(\.auth-input:not\(:placeholder-shown\)\) > span:first-child/);
   assert.match(css, /\.auth-card \.pw-rules\.idle \{ display: none; \}/);
-  assert.match(css, /\.auth-links \.btn-link:not\(\.auth-more\)[^{]*\{[^}]*color: var\(--text-primary\); text-decoration: underline;/);
+  // 第三轮：“律所名称 / 邀请码”也是句内操作（黑色下划线），链接行里不再有灰色例外
+  assert.match(css, /\.auth-links \.btn-link, \.auth-devlimit \.btn-link\.auth-alt-link \{[^}]*color: var\(--text-primary\); text-decoration: underline;/);
   assert.match(css, /\.auth-title-row \.btn-link, \.auth-alt \.btn-link[^{]*\{[^}]*color: var\(--text-secondary\);[^}]*text-decoration: none;/);
   assert.match(css, /\.auth-card-body:has\(\[data-auth-step="forgot"\]\) > \.auth-reloginwho/, "重新登录页切到找回密码时身份卡让位");
   const a = src("pages/Activate.tsx");
@@ -117,4 +118,31 @@ test("第二轮：重新登录页用内核给的打码手机号（last_account.p
   const panel = src("components/AccountPanel.tsx");
   assert.match(panel, /const codeOnly = reloginAccount && !codeOnlyOff && knownPhone !== null;/, "内核明确没有号码时直接用可输入手机号的原流程");
   assert.match(panel, /const masked = sent \?\? \(p\.knownPhone \? maskPhoneTight\(p\.knownPhone\) : null\);/, "发码前就显示打码号");
+});
+
+test("第三轮：最近登录同一个名字、中文时刻、新电脑先登录后登记合并；分区名“最近登录 / 仍有效的登录”", () => {
+  const now = Date.parse("2026-11-26T12:50:00Z");
+  const dev = (o: Record<string, unknown>) => ({ device_id: "dev_t_t", platform: "darwin", registered_at: "2026-11-26T12:00:00Z", ...o }) as never;
+  const devices = [dev({ device_id: "dev_t_t", current: true, name: "办公室 iMac" }), dev({ device_id: "dev_t_t_D2" })];
+  const rows = recentLoginRows(
+    [
+      { at: "2026-11-26T12:41:00Z", kind: "login", device_id: "dev_t_t", platform: "darwin", net: "127.0.x.x" },
+      { at: "2026-11-26T12:40:30Z", kind: "enroll", device_id: "dev_t_t_D2", platform: "darwin", net: "127.0.x.x" },
+      { at: "2026-11-26T12:40:00Z", kind: "login", device_id: null, platform: "darwin", net: "127.0.x.x" },
+      { at: "2026-11-20T01:00:00Z", kind: "login", device_id: null, platform: "win32", net: "未知" },
+    ],
+    devices,
+    now,
+  );
+  assert.deepEqual(rows.map((r) => r.title), ["办公室 iMac · 这台电脑 · 登录", "Mac 电脑 · 第 2 台 · 新电脑登录并登记", "新电脑登录（没有完成登记）"]);
+  assert.equal(rows[0]!.meta, "今天 20:41 · macOS · 网段 127.0.x.x");
+  assert.equal(rows[2]!.meta, "11 月 20 日 09:00 · Windows");
+  assert.equal(momentLabel("2026-11-25T13:05:00Z", now), "昨天 21:05");
+  assert.equal(momentLabel("2025-03-01T01:00:00Z", now), "2025 年 3 月 1 日 09:00");
+  assert.equal(deviceDisplayName({ device_id: "dev_t_t_D2", platform: "darwin", name: null }), "Mac 电脑 · 第 2 台");
+  const panel = src("components/AccountPanel.tsx");
+  assert.match(panel, /<SettingRow label="仍有效的登录"/);
+  assert.doesNotMatch(panel, /label="登录记录"/);
+  assert.doesNotMatch(panel, /还没登记的电脑|toLocaleString/);
+  assert.match(panel, /\{d\.current && <span className="tag tag-this">这台电脑<\/span>\}/);
 });

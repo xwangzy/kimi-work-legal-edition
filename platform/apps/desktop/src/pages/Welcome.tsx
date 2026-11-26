@@ -50,17 +50,19 @@ export function WelcomePage() {
   );
   return (
     <main className="main">
-      <div className="main-wide">
+      {/* 第 71 批第二轮（区域 1）：内容区收窄并在页面里纵向居中，下半页不再大片空白 */}
+      <div className="main-wide welcome-wrap">
         {/* 第 71 批（区域 1）：原标题“开通的最后一步”与下面“还差 3 步”自相矛盾——开通已经完成，这一页只做备份三步 */}
         <h1 className="page-title">开通完成，先做好备份</h1>
         {who && (
           <p className="muted">
             已加入 {who.firm}
-            {who.name ? ` · ${who.name}` : ""}
+            {/* 个人工作室名里已经有本人姓名（“周律师的工作室”）时不再重复写一次 */}
+            {who.name && !who.firm.includes(who.name) ? ` · ${who.name}` : ""}
           </p>
         )}
         {/* 第 71 批 D12：上方只留一句为什么要做（按缺的是哪一步说后果）；三步只在下面的卡片里列一次（原先上方 1/2/3 与卡片重复） */}
-        {st ? <p className="welcome-why">{welcomeHeadline(steps).replace(/^还差 \d+ 步。/, "")}</p> : loadErr !== null ? <LoadError what="备份状态" message={loadErr} onRetry={() => void load()} /> : <ListSkeleton rows={1} label="正在载入备份状态" />}
+        {st ? <p className={`welcome-why ${allDone ? "is-ok" : "is-warn"}`} role="status">{welcomeHeadline(steps).replace(/^还差 \d+ 步。/, "")}</p> : loadErr !== null ? <LoadError what="备份状态" message={loadErr} onRetry={() => void load()} /> : <ListSkeleton rows={1} label="正在载入备份状态" />}
         {/* “以后再说”放回卡内（第 71 批，区域 1：原先在卡片外、压着卡片下边线） */}
         {!st?.revoked ? (
           <div className="device">

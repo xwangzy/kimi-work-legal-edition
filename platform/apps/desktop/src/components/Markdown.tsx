@@ -4,6 +4,7 @@
  */
 import { Fragment, type ReactNode } from "react";
 import { splitTokens } from "../lib/tokens.ts";
+import { parseBlocks, type Block } from "../lib/markdown-blocks.ts";
 import type { PreviewCite } from "../lib/safe-preview.ts";
 import { scanMarks } from "../lib/cite-scan.ts";
 
@@ -20,78 +21,6 @@ interface CiteCx {
   raws: string[];
 }
 
-type Block =
-  | { t: "h"; level: number; text: string }
-  | { t: "p"; text: string }
-  | { t: "ul" | "ol"; items: string[] }
-  | { t: "quote"; text: string }
-  | { t: "code"; text: string }
-  | { t: "table"; head: string[]; rows: string[][] }
-  | { t: "hr" };
-
-function parseBlocks(src: string): Block[] {
-  const lines = src.replace(/\r\n?/g, "\n").split("\n");
-  const out: Block[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i]!;
-    if (/^\s*```/.test(line)) {
-      const buf: string[] = [];
-      i++;
-      while (i < lines.length && !/^\s*```/.test(lines[i]!)) buf.push(lines[i++]!);
-      i++;
-      out.push({ t: "code", text: buf.join("\n") });
-      continue;
-    }
-    const h = /^(#{1,4})\s+(.*)$/.exec(line);
-    if (h) {
-      out.push({ t: "h", level: h[1]!.length, text: h[2]! });
-      i++;
-      continue;
-    }
-    if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) {
-      out.push({ t: "hr" });
-      i++;
-      continue;
-    }
-    if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1]!)) {
-      const cells = (l: string) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
-      const head = cells(line);
-      i += 2;
-      const rows: string[][] = [];
-      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i]!)) rows.push(cells(lines[i++]!));
-      out.push({ t: "table", head, rows });
-      continue;
-    }
-    if (/^\s*>\s?/.test(line)) {
-      const buf: string[] = [];
-      while (i < lines.length && /^\s*>\s?/.test(lines[i]!)) buf.push(lines[i++]!.replace(/^\s*>\s?/, ""));
-      out.push({ t: "quote", text: buf.join("\n") });
-      continue;
-    }
-    if (/^\s*[-*+]\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i]!)) items.push(lines[i++]!.replace(/^\s*[-*+]\s+/, ""));
-      out.push({ t: "ul", items });
-      continue;
-    }
-    if (/^\s*\d+[.)、]\s*/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*\d+[.)、]\s*/.test(lines[i]!)) items.push(lines[i++]!.replace(/^\s*\d+[.)、]\s*/, ""));
-      out.push({ t: "ol", items });
-      continue;
-    }
-    if (line.trim() === "") {
-      i++;
-      continue;
-    }
-    const buf: string[] = [];
-    while (i < lines.length && lines[i]!.trim() !== "" && !/^(#{1,4})\s+|^\s*```|^\s*[-*+]\s+|^\s*>\s?/.test(lines[i]!)) buf.push(lines[i++]!);
-    out.push({ t: "p", text: buf.join("\n") });
-  }
-  return out;
-}
-
 function renderBlock(b: Block, key: number, map?: Map<string, string | null>, cx?: CiteCx): ReactNode {
   switch (b.t) {
     case "h": {
@@ -103,7 +32,8 @@ function renderBlock(b: Block, key: number, map?: Map<string, string | null>, cx
     case "ul":
       return <ul key={key}>{b.items.map((it, i) => <li key={i}>{inline(it, map, cx)}</li>)}</ul>;
     case "ol":
-      return <ol key={key}>{b.items.map((it, i) => <li key={i}>{inline(it, map, cx)}</li>)}</ol>;
+      // 保留原文起始编号（第 71 批第二轮）：流式半截与被段落隔开的列表都按原文编号
+      return <ol key={key} start={b.start !== 1 ? b.start : undefined}>{b.items.map((it, i) => <li key={i}>{inline(it, map, cx)}</li>)}</ol>;
     case "quote":
       return <blockquote key={key}>{inline(b.text, map, cx)}</blockquote>;
     case "code":

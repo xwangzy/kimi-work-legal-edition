@@ -82,7 +82,7 @@ export function DeviceLimitList(p: {
     <>{whoPart}登记过的电脑已经很多了。移除一台不再使用的，就能在这台电脑上继续。</>
   ) : mode === "signout" ? (
     <>
-      {whoPart}最多同时在 {n} 台电脑上登录。{single ? "让下面这台退出登录" : "选一台让它退出登录"}，就能在这台电脑上继续。
+      {whoPart}最多同时在 {n} 台电脑上登录。{single ? "让下面这台退出登录" : "选一台让它退出登录（已预选最久没用的一台）"}，就能在这台电脑上继续。
     </>
   ) : removeOnly ? (
     <>
@@ -95,9 +95,11 @@ export function DeviceLimitList(p: {
     mode === "signout"
       ? `${chosen ? `「${deviceChoiceLine(chosen, now).title}」` : "那台电脑"}会立即退出登录、停止使用 AI；上面的事项和成果都还在，之后在那台电脑上重新登录即可。`
       : chosen?.session === "active" || (chosen && deviceState(chosen) === "signed_in")
-        ? "那台电脑正在使用，移除后立即停用这个账号，不能撤销；资料仍加密留在那台电脑上。"
-        : "移除后那台电脑不能再用这个账号，不能撤销；资料仍加密留在那台电脑上。";
-  const submitText = busy ? (mode === "signout" ? "正在让它退出…" : "正在移除…") : mode === "signout" ? (single ? `让「${singleName}」退出登录，在这台继续` : "让它退出登录，在这台继续") : single ? `移除「${singleName}」并继续` : "移除并继续";
+        ? "那台电脑正在使用：移除后，那台电脑上的这个账号立即停用，不能撤销；资料仍加密留在那台电脑上。"
+        : "移除后，那台电脑上的这个账号随即停用，不能撤销；资料仍加密留在那台电脑上。";
+  // 第三轮（独立评分区域 9）：多台时按钮也写出选中那台的名字（随选中项变）
+  const targetName = chosen ? deviceChoiceLine(chosen, now).title : singleName;
+  const submitText = busy ? (mode === "signout" ? "正在让它退出…" : "正在移除…") : mode === "signout" ? (targetName ? `让「${targetName}」退出登录，在这台继续` : "让它退出登录，在这台继续") : targetName ? `移除「${targetName}」并继续` : "移除并继续";
   // 这台电脑排在最前（标明“你在这里”），其余按云端给的顺序
   const rows = p.devices.filter((d) => deviceState(d) !== "revoked").sort((x, y) => Number(y.device_id === thisDevice) - Number(x.device_id === thisDevice));
   return (

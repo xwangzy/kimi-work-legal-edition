@@ -139,7 +139,9 @@ test("D11：问答标题按显示宽度截断、去掉末尾标点、加省略�
 test("D12：开通的最后一步——上方只留一句为什么，三步只在卡片里列一次；“以后再说”与说明同一行居中", () => {
   const page = src("pages/Welcome.tsx");
   assert.doesNotMatch(page, /className="welcome-steps"/, "上方不再重复列 1/2/3 三步");
-  assert.match(page, /className="welcome-why">\{welcomeHeadline\(steps\)\.replace\(\/\^还差/, "去掉“还差 n 步”，与标题不矛盾");
+  assert.match(page, /className=\{`welcome-why \$\{allDone \? "is-ok" : "is-warn"\}`\} role="status">\{welcomeHeadline\(steps\)\.replace\(\/\^还差/, "去掉“还差 n 步”，与标题不矛盾；提示行有状态样式");
+  assert.match(page, /who\.name && !who\.firm\.includes\(who\.name\)/, "工作室名里已有姓名时不重复");
+  assert.match(src("styles.css"), /\.welcome-wrap \{[^}]*justify-content: center;/);
   assert.doesNotMatch(page, /开通的最后一步<\/h1>/);
   assert.match(page, /<RecoveryBackup onChanged=\{\(\) => void load\(\)\} footer=\{actions\} \/>/, "“以后再说”放回卡内");
   const rb = src("components/RecoveryBackup.tsx");
@@ -236,9 +238,45 @@ test("区域 8：结论摘要截到句末（不在关键数字前截断）；事
   assert.equal(summaryClip("短句。"), "短句。");
   const noStop = "甲".repeat(200);
   assert.equal([...summaryClip(noStop)].length, 181);
-  assert.match(src("pages/RunView.tsx"), /\.map\(\(l\) => summaryClip\(l\)\)/);
+  assert.match(src("pages/RunView.tsx"), /summaryClip\(spaceDigitsCjk\(l\)\)/);
   assert.doesNotMatch(src("components/MaterialFolderBar.tsx"), /开发调试/);
   const review = src("pages/Review.tsx");
   assert.match(review, /去签发/);
   assert.match(review, /id="review-sign"/);
+});
+
+test("第二轮 区域 2：有序列表项之间隔空行仍是同一个列表；保留原文起始编号（流式半截、被段落隔开后接着写的列表）", async () => {
+  const { parseBlocks } = await import("../src/lib/markdown-blocks.ts");
+  const loose = parseBlocks("法院通常按以下规则调整：\n1. **甲**：一\n\n2. **乙**：二\n\n3. 丙\n\n以上条文请核验。");
+  assert.deepEqual(loose.map((b) => b.t), ["p", "ol", "p"]);
+  assert.deepEqual((loose[1] as { items: string[]; start: number }).items.length, 3);
+  assert.equal((loose[1] as { start: number }).start, 1);
+  // 流式时只到第 2 项：仍是一个列表，编号从 1 起
+  const half = parseBlocks("规则：\n1. 甲\n\n2. 乙");
+  assert.deepEqual(half.map((b) => b.t), ["p", "ol"]);
+  // 被段落隔开后从 3 接着写：start = 3
+  const cont = parseBlocks("1. 甲\n2. 乙\n\n另外说明一句。\n\n3. 丙");
+  assert.equal((cont[2] as { start: number }).start, 3);
+  // “3.5 万元”不是列表项；中文“1、”是
+  assert.deepEqual(parseBlocks("金额 3.5 万元").map((b) => b.t), ["p"]);
+  assert.equal(parseBlocks("1、甲\n2、乙")[0]!.t, "ol");
+  assert.match(src("components/Markdown.tsx"), /<ol key=\{key\} start=\{b\.start !== 1 \? b\.start : undefined\}>/);
+});
+
+test("第二轮 区域 8：运行中不能提交复核；摘要第一行给含金额的句子、数字与汉字间加空格；复核页右栏两栏改上下排、状态标签不折行", async () => {
+  const { leadWithAmount, spaceDigitsCjk } = await import("../src/lib/summary-clip.ts");
+  const lines = ["已完整读取本事项3份材料，无排除或无法读取的材料。已生成主文书及测算附件。", "交付成果", "全部支持并足额执行时净回收514,335.00元；全部驳回时净支出8,943.35元。"];
+  const out = leadWithAmount(lines);
+  assert.equal(out[0], "全部支持并足额执行时净回收514,335.00元。");
+  assert.equal(out[1], lines[0]);
+  assert.deepEqual(leadWithAmount(["结论：净回收 514,335.00 元。", "其他"]), ["结论：净回收 514,335.00 元。", "其他"], "第一行已有金额的不动");
+  assert.deepEqual(leadWithAmount(["没有金额的一句。", "第二句。"]), ["没有金额的一句。", "第二句。"]);
+  assert.equal(spaceDigitsCjk("本事项3份材料，合计514,335.00元"), "本事项 3 份材料，合计 514,335.00 元");
+  const run = src("pages/RunView.tsx");
+  assert.match(run, /running=\{!terminal\}/);
+  assert.match(run, /<span className="muted art-submit-why">完成后可提交<\/span>/);
+  assert.match(run, /return leadWithAmount\(all\)\.map\(\(l\) => summaryClip\(spaceDigitsCjk\(l\)\)\);/);
+  const css = src("styles.css");
+  assert.match(css, /\.claim-tone \{[^}]*white-space: nowrap;/);
+  assert.match(css, /\.review-checks \.claim-cols \{ grid-template-columns: 1fr; \}/);
 });

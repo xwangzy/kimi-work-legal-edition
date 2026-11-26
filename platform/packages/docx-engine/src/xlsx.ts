@@ -20,6 +20,11 @@ export interface SheetSpec {
    * 律师改了日期，引用它的日数、金额公式跟着重算。只用于内核自己算出的表。
    */
   dates?: string[];
+  /**
+   * 百分比格（第 71 批第二轮）：这些位置的数字是 0～1 的比例，按“0.00%”显示（0.7357 → 73.57%）。原先比例写成 8 位小数，
+   * 律师在预览与 Excel 里看到的是 0.73568783。只用于内核自己算出的表。
+   */
+  percents?: string[];
 }
 
 /** ISO 日期（YYYY-MM-DD）转 Excel 日期序号。 */
@@ -53,7 +58,7 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE7EEF7"/><bgColor indexed="64"/></patternFill></fill></fills>
 <borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFBFBFBF"/></left><right style="thin"><color rgb="FFBFBFBF"/></right><top style="thin"><color rgb="FFBFBFBF"/></top><bottom style="thin"><color rgb="FFBFBFBF"/></bottom><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="7"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf></cellXfs>
+<cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf><xf numFmtId="3" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf><xf numFmtId="10" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf></cellXfs>
 <cellStyles count="1"><cellStyle name="常规" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>`;
 
@@ -74,13 +79,13 @@ function textWidth(s: string): number {
 }
 
 /** 列宽：每列取前 500 行里最宽一行（多行文字取最长一行），加边距，限制在 6～60 之间；长文字靠换行。 */
-function colsXml(rows: SheetSpec["rows"], dates?: ReadonlySet<string>): string {
+function colsXml(rows: SheetSpec["rows"], dates?: ReadonlySet<string>, percents?: ReadonlySet<string>): string {
   const widths: number[] = [];
   for (const [ri, row] of rows.slice(0, 500).entries()) {
     row.forEach((cell, ci) => {
       if (cell === null || cell === undefined || cell === "") return;
       // 按单元格实际显示估宽：小整数不加千分位（与 numStyle 一致）；日期按“2026-11-30”的宽度
-      const text = typeof cell === "number" && dates?.has(`${colName(ci)}${ri + 1}`) ? "2026-11-30" : typeof cell === "number" ? (numStyle(cell) === 5 ? String(cell) : cell.toLocaleString("en-US", { minimumFractionDigits: numStyle(cell) === 4 ? 2 : 0, maximumFractionDigits: 2 })) : String(cell);
+      const text = typeof cell === "number" && dates?.has(`${colName(ci)}${ri + 1}`) ? "2026-11-30" : typeof cell === "number" && percents?.has(`${colName(ci)}${ri + 1}`) ? "100.00%" : typeof cell === "number" ? (numStyle(cell) === 5 ? String(cell) : cell.toLocaleString("en-US", { minimumFractionDigits: numStyle(cell) === 4 ? 2 : 0, maximumFractionDigits: 2 })) : String(cell);
       const w = Math.max(...text.split(/\r?\n/).map(textWidth));
       widths[ci] = Math.max(widths[ci] ?? 0, w);
     });
@@ -109,7 +114,7 @@ function sheetRange(spec: SheetSpec): { cols: number; rows: number } | null {
 
 /** 宽表横向打印（第 35 批，文档工程审查 E-01）：多于 5 列，或估算总列宽超过 A4 纵向可印宽度。 */
 function totalWidth(spec: SheetSpec): number {
-  return [...colsXml(spec.rows, spec.dates ? new Set(spec.dates) : undefined).matchAll(/width="([\d.]+)"/g)].reduce((n, m) => n + Number(m[1]), 0);
+  return [...colsXml(spec.rows, spec.dates ? new Set(spec.dates) : undefined, spec.percents ? new Set(spec.percents) : undefined).matchAll(/width="([\d.]+)"/g)].reduce((n, m) => n + Number(m[1]), 0);
 }
 
 function landscape(spec: SheetSpec): boolean {
@@ -129,17 +134,18 @@ export function printPagesWide(spec: SheetSpec): number {
 
 function sheetXml(spec: SheetSpec): Buffer {
   const dates = spec.dates && spec.dates.length > 0 ? new Set(spec.dates) : undefined;
+  const percents = spec.percents && spec.percents.length > 0 ? new Set(spec.percents) : undefined;
   // 首行是表头时冻结（多于一行才冻结，单行表不冻）
   const freeze = spec.rows.length > 1 ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` : "";
   // 打印（第 35 批，文档工程审查 E-01：证据目录、问题清单打出来表头不重复、宽表被拆到几页）：缩到一页宽、高度不限
   const parts: Buffer[] = [Buffer.from(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>${freeze}${colsXml(spec.rows, dates)}<sheetData>`, "utf8")];
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>${freeze}${colsXml(spec.rows, dates, percents)}<sheetData>`, "utf8")];
   spec.rows.forEach((row, ri) => {
     let cells = "";
     row.forEach((cell, ci) => {
       if (cell === null || cell === undefined || cell === "") return;
       const ref = `${colName(ci)}${ri + 1}`;
-      const s = ri === 0 ? 1 : typeof cell === "number" ? (dates?.has(ref) ? 6 : numStyle(cell)) : 2;
+      const s = ri === 0 ? 1 : typeof cell === "number" ? (dates?.has(ref) ? 6 : percents?.has(ref) ? 7 : numStyle(cell)) : 2;
       const f = typeof cell === "number" ? spec.formulas?.[ref] : undefined;
       cells += typeof cell === "number" ? `<c r="${ref}" s="${s}">${f ? `<f>${escapeXml(f)}</f>` : ""}<v>${cell}</v></c>` : `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(String(cell))}</t></is></c>`;
     });

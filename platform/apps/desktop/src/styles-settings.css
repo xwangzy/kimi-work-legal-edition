@@ -221,6 +221,8 @@
 .account-list li { min-height: 56px; box-sizing: border-box; }
 .account-device-title { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-height: 22px; }
 .account-device-title .tag { margin-left: 0; }
+/* “这台电脑”与电脑数已满选择卡同一个反白标签 */
+.account-device-title .tag-this { background: var(--text-primary); color: var(--bg-surface); }
 .account-name-hint { margin-top: 2px; font-size: var(--fs-xs); }
 .account-list li.is-editing { align-items: flex-start; background: var(--bg-subtle); }
 .account-rename { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }

@@ -633,16 +633,19 @@ function RegisterForm(p: { meta: RegistrationMeta | null; email: string; setEmai
       <div className="auth-title-row">
         <h1 className="auth-title">设置账号</h1>
         {phoneStep && (
-          <button
-            type="button"
-            className="btn-link"
-            onClick={() => {
-              p.setErr("");
-              setStep(1);
-            }}
-          >
-            {phoneOn ? `${maskPhoneTight(phone)} · 修改` : "返回"}
-          </button>
+          <span className="auth-title-side">
+            <span className="auth-step-count">第 2 步，共 2 步</span>
+            <button
+              type="button"
+              className="btn-link"
+              onClick={() => {
+                p.setErr("");
+                setStep(1);
+              }}
+            >
+              {phoneOn ? `${maskPhoneTight(phone)} · 修改` : "返回"}
+            </button>
+          </span>
         )}
       </div>
       <label className="field">
