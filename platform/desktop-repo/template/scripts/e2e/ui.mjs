@@ -434,11 +434,12 @@ async function loginSms() {
   await page.locator("button:visible").filter({ hasText: /^\s*获取验证码\s*$/ }).first().click();
   const hint = await until(async () => {
     const t = await text();
-    const m = t.match(/验证码已发送到\s*\S+|测试环境：验证码是\s*\d+|这个手机号还没有注册账号[^\n]*|手机号验证码登录暂未开放[^\n]*|短信服务暂时不可用[^\n]*|连不上中软服务[^\n]*|获取验证码过于频繁[^\n]*|验证码已发送，请 \d+ 秒后[^\n]*|刚发过验证码，请 \d+ 秒后[^\n]*/);
+    const m = t.match(/验证码已发送到\s*\S+|验证码已发送，\d+ 分钟内有效|测试环境：验证码是\s*\d+|这个手机号还没有注册账号[^\n]*|手机号验证码登录暂未开放[^\n]*|短信服务暂时不可用[^\n]*|连不上中软服务[^\n]*|获取验证码过于频繁[^\n]*|验证码已发送，请 \d+ 秒后[^\n]*|刚发过验证码，请 \d+ 秒后[^\n]*/);
     return m ? m[0] : null;
   }, 30000, 500, "短信发送结果");
   log("短信：", hint.replace(/\d{4,}/g, "<码>"));
-  if (!/验证码已发送到|测试环境/.test(hint)) throw new Error(`验证码没有发出：${hint}`);
+  // 第 71 批：这台电脑的账号重新登录（只填验证码）发到账号绑定的手机，提示是“验证码已发送，N 分钟内有效”（打码手机号已在上面一行）——Windows 运行 45840639039 因此误判超时
+  if (!/验证码已发送到|验证码已发送，\d+ 分钟内有效|测试环境/.test(hint)) throw new Error(`验证码没有发出：${hint}`);
   let sms = (hint.match(/测试环境：验证码是\s*(\d+)/) ?? [])[1] ?? "";
   if (!sms) sms = await waitSmsCode(sendAt, process.env.KWL_SMS_RELAY_LOGIN || process.env.KWL_SMS_RELAY || "");
   await page.locator('input[autocomplete="one-time-code"]:visible').first().fill(sms);
