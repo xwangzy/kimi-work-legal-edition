@@ -276,7 +276,7 @@ export const canSupport = () => can("account.manage") || can("account.support");
  */
 export function deviceTable(rows, { state, after, showTenant = true, showMember = true, empty, onRow } = {}) {
   const openRow = onRow === false ? undefined : onRow ?? ((d) => d.aid && go(`ops/accounts/${encodeURIComponent(d.aid)}?section=devices`));
-  const anyFlag = rows.some((d) => (d.flags ?? []).length);
+  const anyFlag = rows.some((d) => (d.flags ?? []).some((f) => f !== "suspended"));
   const cols = [
     { key: "name", label: "电脑", value: (d) => deviceLabel(d), render: (d) => deviceCell(d) },
     showMember ? { key: "member", label: "成员", value: (d) => d.member_name ?? d.email ?? "", render: (d) => (d.aid ? h("button", { type: "button", class: "link", title: d.email ?? undefined, onclick: () => go(`ops/accounts/${encodeURIComponent(d.aid)}`) }, d.member_name ?? d.email ?? d.aid) : h("span", { class: "muted" }, "未建账号")) } : null,
@@ -285,11 +285,24 @@ export function deviceTable(rows, { state, after, showTenant = true, showMember 
     { key: "client_version", label: "客户端", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.client_version && d.client_version !== "legacy" ? mono(d.client_version) : h("span", { class: "muted" }, versionText(d.client_version))) },
     { key: "last_seen_on", label: "最近在线", value: (d) => d.last_seen_on ?? "", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.last_active_at ? h("span", { title: fmt.full(d.last_active_at) }, fmt.ago(d.last_active_at)) : h("span", { title: fmt.full(d.last_seen_on) }, d.last_seen_on ? fmt.ago(d.last_seen_on) : "从未在线")) },
     { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)], render: (d) => deviceStateCell(d) },
-    anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => ((d.flags ?? []).length ? h("span", { class: "badges" }, d.flags.map((f) => badge(...pick(DEVICE_FLAG, f)))) : "") } : null,
+    anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => ((d.flags ?? []).filter((f) => f !== "suspended").length ? h("span", { class: "badges" }, d.flags.filter((f) => f !== "suspended").map((f) => badge(...pick(DEVICE_FLAG, f)))) : "") } : null,
     { key: "_act", label: "", sortable: false, class: "act", render: (d) => rowMenu(deviceActions(d, after), { aria: `操作：${deviceLabel(d)}` }) },
   ].filter(Boolean);
   return dataTable({ columns: cols, rows, state: state ?? { sort: "state", asc: true }, onRow: openRow, empty: empty ?? "没有电脑", rowClass: (d) => (deviceState(d) === "revoked" ? "dim" : d.pending ? "pending-row" : (d.flags ?? []).some((f) => DEVICE_FLAG[f]?.[1] === "warn") ? "flagged" : "") });
 }
+
+/**
+ * 席位提示（第六轮，按真实情况分三种）：有空席 → 第一次用 AI 时自动占用（不是问题）；席位已满且有人未占 → 这些人用不了 AI（是问题）；一致 → 不提示。
+ */
+export function seatNote(unseated, total, used) {
+  const n = Number(unseated) || 0;
+  if (!n) return null;
+  const free = Math.max(0, (Number(total) || 0) - (Number(used) || 0));
+  return free > 0
+    ? { full: false, free, tone: "neutral", text: `另有 ${n} 个账号未占席：第一次用 AI 时自动占用（还有 ${free} 个空席）` }
+    : { full: true, free: 0, tone: "warn", text: `席位已满：另有 ${n} 个账号用不了 AI，请改套餐或席位` };
+}
+export const UNSEATED_TIP = "还没占席：有空席时，第一次在电脑上用 AI 会自动占用；席位已满时用不了 AI";
 
 /** 详情页的面包屑（第 71 批，V-11）：parts = [[文字, 路径?], …] */
 export const setCrumbs = (parts) => ctx.setCrumbs?.(parts);

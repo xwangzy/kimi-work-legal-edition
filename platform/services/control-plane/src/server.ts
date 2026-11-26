@@ -1213,7 +1213,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     revokeDevice: { action: "device.revoke", target: (a) => String(a[1]) },
     revokeSeat: { action: "seat.revoke", target: (a) => seatOf(String(a[0]), a[1]) },
     boostQuota: { action: "quota.boost", detail: (a) => ({ pct: Math.floor(Number(a[1])) || 0 }) },
-    setPlan: { action: "plan.change", detail: (a) => { const x = (a[1] ?? {}) as { seats?: unknown }; return x.seats === undefined ? { plan: 1 } : { seats: Number(x.seats) || 0 }; } },
+    // 第 71 批：席位变化记下原值（审计 detail 只收数字；控制台“操作记录”据此写“席位 2 → 4”）
+    setPlan: { action: "plan.change", detail: (a) => { const x = (a[1] ?? {}) as { seats?: unknown }; const from = tenants.get(String(a[0] ?? ""))?.seats; return x.seats === undefined ? { plan: 1 } : { seats: Number(x.seats) || 0, ...(typeof from === "number" ? { seats_from: from } : {}) }; } },
     setAccountsRequired: { action: "accounts.policy", detail: (a) => ({ required: a[1] === true ? 1 : 0 }) },
     issueActivationCode: { action: "activation.issue" },
     revokeActivationCode: { action: "activation.revoke", target: (a) => String(a[1]) },
@@ -3067,7 +3068,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
               account: accountRow(a),
               uid: uidOfAccount(a),
               seat: seat ? { sid: seat.sid, revoked_at: seat.revoked_at } : null,
-              tenant: tr ? { tid: tr.tid, name: tr.name, status: tr.status, personal: tr.personal, edition: tr.edition, plan: tr.plan, paused: tr.paused, used_ratio: tr.used_ratio, cap_pct: tr.cap_pct, subscription_until: tr.subscription_until, accounts_required: tr.accounts_required } : null,
+              tenant: tr ? { tid: tr.tid, name: tr.name, status: tr.status, personal: tr.personal, edition: tr.edition, plan: tr.plan, paused: tr.paused, used_ratio: tr.used_ratio, cap_pct: tr.cap_pct, subscription_until: tr.subscription_until, accounts_required: tr.accounts_required, seats: tr.seats, seats_used: tr.seats_used } : null,
               join_requests_pending: t ? [...t.joinRequests.values()].filter((j) => j.status === "pending" && j.member_slug === a.member_slug).map((j) => ({ id: j.id, created_at: j.created_at })) : [],
               // 第 71 批（第二轮，09）：律所管理员（有效的）——诊断里写出该找谁批准新电脑；手机号只给打码
               firm_admins: t && a.role !== "admin" ? [...accounts.values()].filter((y) => y.tid === t.tid && y.role === "admin" && y.status === "active").map((y) => ({ aid: y.aid, name: y.name, email: y.email, phone: y.phone?.masked ?? null })) : [],

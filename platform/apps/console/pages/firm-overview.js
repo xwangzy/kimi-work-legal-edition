@@ -4,7 +4,7 @@
  * 接口：GET /v1/firm/overview；PUT /v1/firm/cap {monthly_cap_pct}（与客户端设备签名 PUT /v1/quota/cap 同一字段）。
  */
 import * as api from "../api.js";
-import { alertList, ctx, go, pageHead, roleText, tenantBadge } from "../domain.js";
+import { alertList, ctx, go, pageHead, roleText, seatNote, tenantBadge } from "../domain.js";
 import { btn, clear, clientOnlyList, confirmAction, facts, fmt, h, icon, load, metaLine, panel, periodBars, quotaCard, stat, toast } from "../ui.js";
 
 export const CLIENT_ONLY = [
@@ -56,7 +56,8 @@ function draw(head, box, d, reload) {
     const p = m.pending_joins ?? [];
     if (p.length) clear(joinBanner.querySelector(".spacer"), p.map((x, i) => [i ? "、" : null, h("b", {}, `${x.member_name ?? "成员"}的新电脑`), `（申请于 ${fmt.time(x.created_at)}）`]), "等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。");
     const n = (m.members ?? []).filter((x) => x.seat_used === false).length;
-    if (n) (clear(seatSub, `另有 ${n} 个账号未占席：这些成员能登录，但用不了 AI`), seatSub.classList.add("tone-text-warn"), (seatSub.title = "成员在电脑上第一次用 AI 时自动占席；席位不够时请平台改套餐或席位"));
+    const sn = seatNote(n, seats.total, seats.used);
+    if (sn) (clear(seatSub, sn.text), sn.full && seatSub.classList.add("tone-text-warn"));
     // 第四轮（23）：电脑格写“x 台登录中 · y 台待批准”
     const on = (m.members ?? []).reduce((s, x) => s + (x.devices ?? []).filter((d) => d.state === "signed_in").length, 0);
     clear(devVal, `${on} 台登录中`);

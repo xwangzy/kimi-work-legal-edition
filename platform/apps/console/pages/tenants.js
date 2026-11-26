@@ -7,7 +7,7 @@
  *       GET /v1/ops/accounts?tid（成员状态与电脑上限）、GET /v1/ops/alerts，以及各写操作（契约 §2）。
  */
 import * as api from "../api.js";
-import { accountBadge, alertList, can, canSupport, ctx, deviceState, deviceTable, go, LIMIT_SOURCE, needs, pageHead, PAUSED, pendingRow, periodText, roleText, setCrumbs, tenantBadge } from "../domain.js";
+import { accountBadge, alertList, can, canSupport, ctx, deviceState, deviceTable, go, LIMIT_SOURCE, needs, pageHead, PAUSED, pendingRow, periodText, roleText, seatNote, setCrumbs, tenantBadge, UNSEATED_TIP } from "../domain.js";
 import {
   add, badge, btn, clear, confirmAction, copyBtn, dangerZone, dataTable, emptyBlock, errorBlock, facts, fmt, h, hbars, icon, load, loadingBlock, matches, metaLine, meter, mono, note, panel,
   periodBars, rowMenu, saveCsv, searchInput, segmented, showSecret, signals, stateCell, tabBar, toast, trendChart,
@@ -64,7 +64,8 @@ const unseatedOf = (t) => Math.max(0, (Number(t.accounts) || 0) - (Number(t.seat
 function seatCell(t) {
   if (isPersonal(t)) return h("div", { class: "cell-2" }, "个人", h("small", {}, `${fmt.int(t.devices)} 台电脑`));
   const n = unseatedOf(t);
-  return h("div", { class: "cell-2", title: SEAT_NOTE }, `已用 ${fmt.int(t.seats_used)} / 共 ${fmt.int(t.seats)} 席`, n ? h("small", { class: "tone-text-warn" }, `另有 ${n} 个账号未占席`) : h("small", {}, `${fmt.int(t.accounts)} 个账号 · ${fmt.int(t.devices)} 台电脑`));
+  const sn = seatNote(n, t.seats, t.seats_used);
+  return h("div", { class: "cell-2", title: sn ? `${SEAT_NOTE}。${sn.text}` : SEAT_NOTE }, `已用 ${fmt.int(t.seats_used)} / 共 ${fmt.int(t.seats)} 席`, sn ? h("small", { class: sn.full ? "tone-text-warn" : "" }, sn.full ? `席位已满 · ${n} 个账号用不了 AI` : `${n} 个账号未占席 · 还有 ${sn.free} 个空席`) : h("small", {}, `${fmt.int(t.accounts)} 个账号 · ${fmt.int(t.devices)} 台电脑`));
 }
 
 function drawList(box, rows) {
@@ -267,7 +268,7 @@ function drawDetail(head, body, d, reload) {
         h("div", { class: ["head-stat", "stat", usedTone && `tone-${usedTone}`] }, h("span", { class: "stat-label" }, "本期用量"), h("span", { class: "stat-value num" }, fmt.pct(t.used_ratio)), h("span", { class: "stat-sub" }, [t.used !== undefined && t.total !== undefined ? `${fmt.amount(t.used, t.unit)} / ${fmt.amount(t.total, t.unit)}` : null, t.forecast_exhaust_at ? `预计 ${fmt.date(t.forecast_exhaust_at)} 用完` : fmt.resetLine(t.period?.resets_at)].filter(Boolean).join(" · "))),
         personal
           ? ((lim) => h("div", { class: ["head-stat", "stat", lim && signedIn >= lim && "tone-warn"] }, h("span", { class: "stat-label" }, "电脑"), h("span", { class: "stat-value num" }, hidden.has("accounts") ? `${fmt.int(t.devices)} 台` : lim ? `${signedIn} / ${lim} 台在线${signedIn >= lim ? " · 已满" : ""}` : `${signedIn} 台在线`), h("span", { class: "stat-sub" }, `共登记 ${fmt.int(t.devices)} 台；只有登录中的电脑占名额`)))(Number(person?.device_limit) || 0)
-          : h("div", { class: "head-stat stat", title: SEAT_NOTE }, h("span", { class: "stat-label" }, "席位"), h("span", { class: "stat-value num" }, `已用 ${fmt.int(t.seats_used)} / 共 ${fmt.int(t.seats)}`), unseated && !hidden.has("accounts") ? h("span", { class: "stat-sub tone-text-warn" }, `另有 ${unseated} 个账号未占席：这些成员能登录，但用不了 AI`) : h("span", { class: "stat-sub" }, `账号 ${fmt.int(t.accounts)} · 电脑 ${fmt.int(t.devices)}`)),
+          : h("div", { class: "head-stat stat", title: SEAT_NOTE }, h("span", { class: "stat-label" }, "席位"), h("span", { class: "stat-value num" }, `已用 ${fmt.int(t.seats_used)} / 共 ${fmt.int(t.seats)}`), unseated && !hidden.has("accounts") ? ((sn) => h("span", { class: ["stat-sub", sn.full && "tone-text-warn"] }, sn.text))(seatNote(unseated, t.seats, t.seats_used)) : h("span", { class: "stat-sub" }, `账号 ${fmt.int(t.accounts)} · 电脑 ${fmt.int(t.devices)}`)),
         h("div", { class: ["head-stat", "stat", left !== null && left <= 30 && "tone-warn"] }, h("span", { class: "stat-label" }, "订阅到期"), h("span", { class: "stat-value num" }, fmt.date(t.subscription_until)), h("span", { class: "stat-sub" }, left === null ? "—" : left < 0 ? `已过期 ${-left} 天` : `还有 ${left} 天`)),
         hidden.has("billing")
           ? h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "本期请求"), h("span", { class: "stat-value num" }, fmt.int(t.requests)), h("span", { class: "stat-sub" }, "金额只对有“查看账单”权限的人员显示"))
@@ -305,7 +306,7 @@ async function changePlan(t, reload, d) {
       { class: "stack-sm" },
       h("p", {}, `${t.name ?? t.tid} · 当前 ${t.plan?.label ?? "—"}，${fmt.int(t.seats)} 席（在用 ${fmt.int(t.seats_used)}）${fee(cur, t.seats) ? `，月费 ${fee(cur, t.seats)}` : ""}`),
       plans.length && plans.every((p) => !p.seat_price_cny) ? h("p", { class: "muted small" }, "这些套餐还没有设席位单价：试用期不计费。") : null,
-      unseated && !isPersonal(t) ? h("p", { class: "tone-text-warn" }, `另有 ${unseated} 个账号未占席：改为 ${need} 席可让所有成员使用 AI${fee(cur, need) ? `（按当前套餐月费 ${fee(cur, need)}）` : ""}。`) : null,
+      unseated && !isPersonal(t) ? ((sn) => (sn.full ? h("p", { class: "tone-text-warn" }, `${sn.text}：改为 ${need} 席可让所有成员使用 AI${fee(cur, need) ? `（按当前套餐月费 ${fee(cur, need)}）` : ""}。`) : h("p", { class: "muted" }, `${sn.text}。`)))(seatNote(unseated, t.seats, t.seats_used)) : null,
     ),
     fields: [
       plans.length
@@ -505,7 +506,7 @@ function drawPeople(box, d, accs, reload) {
                 return h("div", { class: "cell-2", title: `同时登录上限 ${fmt.int(m.acc.device_limit)} 台（${LIMIT_SOURCE[m.acc.device_limit_source] ?? "上限"}）；已登记 ${fmt.int(m.acc.devices)} 台` }, h("span", { class: full ? "tone-text-warn" : "" }, `${fmt.int(on)} / ${fmt.int(m.acc.device_limit)} 台在线${full ? " · 已满" : ""}`), m.pend ? h("small", { class: "tone-text-warn" }, `${m.pend} 台待批准`) : null);
               },
             },
-            { key: "seat", label: "席位", title: `${SEAT_NOTE}；未占席的成员能登录，但用不了 AI`, value: (m) => (m.seated ? 1 : 0), render: (m) => (m.seated ? stateCell("占用", "ok") : m.seat?.revoked_at ? stateCell(`已收回 ${fmt.date(m.seat.revoked_at)}`, "neutral", "能登录，但用不了 AI") : stateCell("未占席", "neutral", "能登录，但用不了 AI；成员在电脑上第一次用 AI 时自动占席，席位不够时改套餐或席位")) },
+            { key: "seat", label: "席位", title: `${SEAT_NOTE}；${UNSEATED_TIP}`, value: (m) => (m.seated ? 1 : 0), render: (m) => (m.seated ? stateCell("已占席", "ok") : m.seat?.revoked_at ? stateCell(`已收回 ${fmt.date(m.seat.revoked_at)}`, "neutral", UNSEATED_TIP) : stateCell("未占席", "neutral", UNSEATED_TIP)) },
             { key: "use", label: "占本期额度", num: true, title: "本期用量 ÷ 本期总额度", value: (m) => Number(m.use?.used_ratio_of_firm) || 0, render: (m) => (m.use ? fmt.pct(m.use.used_ratio_of_firm) : "0%") },
             {
               key: "_act",
@@ -726,7 +727,7 @@ function panePlan(pane, d, reload) {
             { class: "stack-sm" },
             h("div", { class: "kpis" }, stat("本期应收", fmt.cny(b.revenue_cny), `席位费 ${fmt.cny(b.seat_fee_cny)} + 加量费 ${fmt.cny(b.boost_fee_cny)}`), stat("用量价值", fmt.cny(b.value_cny)), stat("模型成本", fmt.cny(b.cost_cny)), stat("毛利", fmt.cny(b.margin_cny), undefined, { tone: Number(b.margin_cny) < 0 ? "danger" : undefined })),
             facts([
-              ["席位 × 单价", `${fmt.int(b.seats)} × ${fmt.cny(b.seat_price_cny)}`],
+              b.seat_price_cny === null || b.seat_price_cny === undefined ? ["席位费", "试用期不计费"] : ["席位 × 单价", `${fmt.int(b.seats)} × ${fmt.cny(b.seat_price_cny)}`],
               ["加量", b.boost_pct ? `+${b.boost_pct}%（${fmt.cny(b.boost_fee_cny)}）` : "无"],
               ["请求 / token", `${fmt.int(b.requests)} 次 / ${fmt.tokens(b.tokens)}`],
             ]),
@@ -812,6 +813,8 @@ function paneSubscription(pane, d, reload) {
 // ─── 操作记录（第三轮 08：全部事件中文、映射不到写原始事件码；申请人与入组申请可读可点；按动作、操作人、时间、结果筛选；加载更多；导出 CSV） ───
 const ACTION_LABEL = {
   "account.create": "代建账号",
+  "account.register": "注册账号",
+  "account.phone_bind": "绑定手机号",
   "account.disable": "停用账号",
   "account.enable": "启用 / 解锁账号",
   "account.reset_code": "生成重置码",
@@ -870,6 +873,7 @@ const RANGES = [
   ["7", "近 7 天", 7],
   ["30", "近 30 天", 30],
 ];
+const DETAIL_LABEL = { seats: "席位", seats_from: "原席位", seats_to: "新席位", pct: "加量 %", cap_pct: "上限 %", days: "续订天数" };
 const ACTOR = { ops: "平台人员", device: "律所电脑", account: "成员", claimant: "申请人", firm_admin: "律所管理员", system: "系统" };
 function paneLog(pane, d, _reload, o) {
   const t = d.tenant ?? {};
@@ -885,8 +889,8 @@ function paneLog(pane, d, _reload, o) {
   let oldest = null;
   const actionText = (a) => ACTION_LABEL[a] ?? a ?? "—";
   const failed = (x) => x.result !== "ok";
-  const who = (x) => labels[x.actor?.id] ?? `${ACTOR[x.actor?.kind] ?? "其他"}`;
-  const targetText = (x) => (x.target ? labels[x.target] ?? (String(x.target).startsWith("fp:") ? "电脑" : x.target) : "—");
+  const who = (x) => labels[x.actor?.id] ?? `${ACTOR[x.actor?.kind] ?? "系统"}`;
+  const targetText = (x) => (x.target ? labels[x.target] ?? (String(x.target).startsWith("fp:") ? "电脑" : String(x.target).startsWith("seat_") ? "席位" : String(x.target).startsWith("dev_") ? "电脑" : String(x.target).startsWith("acc_") ? "账号" : String(x.target).startsWith("act_") ? "开通码" : x.target) : "—");
   const link = (id) => {
     const k = kinds[id];
     if (k === "account" && String(id).startsWith("acc_")) return () => go(`accounts/${encodeURIComponent(id)}`);
@@ -930,7 +934,7 @@ function paneLog(pane, d, _reload, o) {
       segmented([{ id: "", label: "全部" }, { id: "failed", label: "只看失败", count: rows.filter(failed).length }], f.failed ? "failed" : "", (v) => ((f.failed = v === "failed"), drawTools(), drawRows()), "结果"),
     );
   };
-  const drawRows = () =>
+  const drawRows = () => (setTimeout(() => drawMore?.(), 0),
     clear(
       box,
       dataTable({
@@ -940,18 +944,20 @@ function paneLog(pane, d, _reload, o) {
         rowClass: (x) => (failed(x) ? "danger-row" : ""),
         columns: [
           { key: "at", label: "时间", value: (x) => x.at ?? "", render: (x) => h("span", { class: "nowrap" }, fmt.full(x.at)) },
-          { key: "action", label: "动作", value: (x) => actionText(x.action), render: (x) => (ACTION_LABEL[x.action] ? h("span", { title: x.action }, ACTION_LABEL[x.action]) : mono(x.action ?? "—")) },
+          { key: "action", label: "动作", value: (x) => actionText(x.action), render: (x) => h("div", { class: "cell-2" }, ACTION_LABEL[x.action] ? h("span", { title: x.action }, ACTION_LABEL[x.action]) : mono(x.action ?? "—"), x.detail && Object.keys(x.detail).length ? h("small", {}, Object.entries(x.detail).map(([k, v]) => `${DETAIL_LABEL[k] ?? k} ${v}`).join(" · ")) : null) },
           { key: "actor", label: "操作人", value: (x) => who(x), render: (x) => cell(x.actor?.id, who(x)) },
           { key: "target", label: "对象", value: (x) => targetText(x), render: (x) => (!x.target ? h("span", { class: "muted" }, "—") : x.target === x.actor?.id ? h("span", { class: "muted", title: nameOnly(targetText(x)).title ?? undefined }, "本人") : cell(x.target, targetText(x))) },
           { key: "result", label: "结果", value: (x) => (failed(x) ? 0 : 1), render: (x) => (failed(x) ? badge(/^rejected/.test(String(x.result)) ? "被拒绝" : "未完成", "danger", String(x.result ?? "")) : h("span", { class: "muted" }, "成功")) },
           { key: "seq", label: "序号", num: true, class: "muted-col", value: (x) => Number(x.seq) || 0 },
         ],
       }),
-    );
+    ));
   const exportCsv = () => {
     const list = filtered().sort((a, b) => (Number(b.seq) || 0) - (Number(a.seq) || 0));
     saveCsv([["时间", "动作", "事件码", "操作人", "对象", "结果", "序号"], ...list.map((x) => [fmt.full(x.at), actionText(x.action), x.action ?? "", who(x), targetText(x), failed(x) ? String(x.result ?? "") : "成功", x.seq])], `操作记录-${t.tid}-${new Date().toISOString().slice(0, 10)}.csv`);
   };
+  // 表尾计数跟筛选走：筛选一变就重画
+  const drawMore = () => clear(more, oldest && oldest > 1 ? h("div", { class: "more" }, h("span", { class: "muted small" }, `显示 ${fmt.int(filtered().length)} 条${f.noLogin ? "（不含登录）" : ""} / 已载入 ${fmt.int(rows.length)} 条　`), btn("加载更多", () => fetchMore(), { size: "sm" })) : rows.length ? h("p", { class: "muted small center" }, `共 ${fmt.int(filtered().length)} 条${f.noLogin ? "（不含登录）" : ""} / 全部 ${fmt.int(rows.length)} 条`) : null);
   const fetchMore = () => {
     clear(more, loadingBlock("正在读取操作记录…"));
     api.get(`${api.T(t.tid)}/audit`, { limit: 100, before: oldest ?? undefined }).then(
@@ -962,7 +968,7 @@ function paneLog(pane, d, _reload, o) {
         oldest = rows.length ? Math.min(...rows.map((x) => Number(x.seq) || 0)) : null;
         drawTools();
         drawRows();
-        clear(more, oldest && oldest > 1 ? h("div", { class: "more" }, btn("加载更多", () => fetchMore(), { size: "sm" })) : rows.length ? h("p", { class: "muted small center" }, `共 ${fmt.int(rows.length)} 条`) : null);
+        drawMore();
       },
       (e) => clear(more, e?.code === "not_ready" ? h("div", { class: "state state-notready" }, h("b", {}, "云端版本过旧"), h("p", {}, "这台控制面还不提供客户的操作记录；升级后这里会显示。")) : errorBlock(e, fetchMore)),
     );

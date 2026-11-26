@@ -66,7 +66,7 @@ export function render(page, r) {
           { key: "status", label: "状态", value: (a) => (a.status === "disabled" ? 2 : a.locked ? 1 : 0), render: (a) => accountState(a) },
           { key: "last_login_at", label: "最近登录", value: (a) => a.last_login_at ?? "", render: (a) => h("span", { title: fmt.full(a.last_login_at) }, a.last_login_at ? fmt.ago(a.last_login_at) : "从未登录") },
           { key: "devices", label: "电脑", value: (a) => Number(a.devices_signed_in ?? a.devices) || 0, render: (a) => devicesCell(a) },
-          { key: "seat_used", label: "席位", title: "席位 = 律所可同时使用 AI 的成员名额；个人客户不讲席位", value: (a) => (a.seat_used === null || a.seat_used === undefined ? 2 : a.seat_used ? 0 : 1), render: (a) => (a.seat_used === null || a.seat_used === undefined ? h("span", { class: "muted" }, "个人") : a.seat_used ? stateCell("已占席", "ok") : stateCell("未占席", "neutral", "能登录，但用不了 AI")) },
+          { key: "seat_used", label: "席位", title: "席位 = 律所可同时使用 AI 的成员名额；个人客户不讲席位", value: (a) => (a.seat_used === null || a.seat_used === undefined ? 2 : a.seat_used ? 0 : 1), render: (a) => (a.seat_used === null || a.seat_used === undefined ? h("span", { class: "muted" }, "个人") : a.seat_used ? stateCell("已占席", "ok") : stateCell("未占席", "neutral", "还没占席：有空席时，第一次在电脑上用 AI 会自动占用；席位已满时用不了 AI")) },
           { key: "used_ratio", label: "本期用量", num: true, value: (a) => a.used_ratio ?? null, render: (a) => (a.used_ratio === null || a.used_ratio === undefined ? h("span", { class: "muted" }, "—") : fmt.pct(a.used_ratio)) },
           { key: "_act", label: "", sortable: false, class: "act", render: (a) => rowMenu(listActions(a, () => fetchPage(false)), { aria: `操作：${a.name || a.email}` }) },
         ],
@@ -256,7 +256,7 @@ function draw(head, body, d, reload, params) {
     ? btn("解锁…", () => enable(true), { kind: "primary", disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") })
     : a.status === "disabled"
       ? btn("启用…", () => enable(false), { kind: "primary", disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") })
-      : btn(a.has_password === false ? "生成设置码…" : "生成重置码…", resetCode, { kind: full ? undefined : "primary", disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") });
+      : btn(a.has_password === false ? "生成设置码…" : "生成重置码…", resetCode, { kind: full || joins.length ? undefined : "primary", disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") });
   const actions = h(
     "div",
     { class: "btn-row" },
@@ -284,7 +284,7 @@ function draw(head, body, d, reload, params) {
         h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "最近登录"), h("span", { class: "stat-value num" }, a.last_login_at ? fmt.ago(a.last_login_at) : "从未"), h("span", { class: "stat-sub" }, fmt.full(a.last_login_at))),
         t?.personal
           ? h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "所属客户"), h("span", { class: "stat-value" }, "个人"), h("span", { class: "stat-sub" }, "一人一所，不讲席位"))
-          : h("div", { class: ["head-stat", "stat"], title: "席位 = 律所可同时使用 AI 的成员名额" }, h("span", { class: "stat-label" }, "席位"), h("span", { class: "stat-value" }, d.seat && !d.seat.revoked_at ? "已占席" : "未占席"), h("span", { class: "stat-sub" }, d.seat && !d.seat.revoked_at ? "这名成员可以用 AI" : "能登录，但用不了 AI；第一次在电脑上用 AI 时自动占席")),
+          : h("div", { class: ["head-stat", "stat"], title: "席位 = 律所可同时使用 AI 的成员名额" }, h("span", { class: "stat-label" }, "席位"), h("span", { class: "stat-value" }, d.seat && !d.seat.revoked_at ? "已占席" : "未占席"), h("span", { class: "stat-sub" }, d.seat && !d.seat.revoked_at ? "这名成员可以用 AI" : t && Number(t.seats_used) >= Number(t.seats) ? "席位已满：用不了 AI，请改套餐或席位" : "第一次在电脑上用 AI 时自动占用")),
       ),
     ),
   );
@@ -369,7 +369,8 @@ function diagnosis({ a, d, t, u, live, signedIn, limit, full, locked, enable, li
       btn("移除一台…", () => pick(live, "移除哪台电脑？", "不可逆：那台电脑不能再用这个账号").then((x) => x && revokeDevice(x, () => ctx.reload())), { size: "sm", kind: "ghost", class: "text-danger", disabled: !can("device.revoke") }),
     );
   else row("ok", `电脑：${signedIn.length} / ${limit} 台在线（${LIMIT_SOURCE[a.device_limit_source] ?? "上限"}），还能再登录 ${Math.max(0, limit - signedIn.length)} 台`);
-  if (t && !t.personal && !(d.seat && !d.seat.revoked_at)) row("warn", "未占席：这名成员能登录，但用不了 AI。第一次在电脑上用 AI 时自动占席；席位不够时改套餐或席位", btn("去客户详情", () => go(`tenants/${encodeURIComponent(t.tid)}?tab=people`), { size: "sm" }));
+  const seatFull = t && Number(t.seats) > 0 && Number(t.seats_used) >= Number(t.seats);
+  if (t && !t.personal && !(d.seat && !d.seat.revoked_at)) seatFull ? row("warn", "席位已满：这名成员用不了 AI，请改套餐或席位", btn("去客户详情", () => go(`tenants/${encodeURIComponent(t.tid)}?tab=people`), { size: "sm" })) : row("info", `未占席：第一次在电脑上用 AI 时自动占用（还有 ${Math.max(0, Number(t.seats) - Number(t.seats_used))} 个空席）`);
   if (t) {
     const left = t.subscription_until ? Math.ceil((Date.parse(t.subscription_until) - Date.now()) / 86_400_000) : null;
     if (t.status !== "active") row("bad", `客户${({ pending: "待开通", expired: "已到期", terminated: "已终止" })[t.status] ?? t.status}：${t.status === "pending" ? "创始开通还没完成" : "不签发席位令牌，AI 不可用"}`, btn("去客户详情", () => go(`tenants/${encodeURIComponent(t.tid)}?tab=subscription`), { size: "sm" }));

@@ -99,7 +99,7 @@ function devicesPanel(me) {
   return panel(
     "我的电脑",
     list.length
-      ? h("ul", { class: "mini-list" }, list.slice(0, 4).map((d) => h("li", {}, h("span", { class: "mini-icon", "aria-hidden": "true" }, icon("laptop")), h("span", { class: "cell-2" }, h("b", {}, deviceLabel({ ...d, member_name: "我" })), h("small", {}, `${d.client_version && d.client_version !== "legacy" ? `客户端 ${d.client_version} · ` : ""}最近在线 ${d.last_seen_on ? fmt.ago(d.last_seen_on) : "从未"}`)), d.current ? badge("本机", "accent") : null)))
+      ? h("ul", { class: "mini-list" }, list.slice(0, 4).map((d) => h("li", {}, h("span", { class: "mini-icon", "aria-hidden": "true" }, icon("laptop")), h("span", { class: "cell-2" }, h("b", {}, deviceLabel({ ...d, member_name: "我" })), h("small", {}, `${d.client_version && d.client_version !== "legacy" ? `客户端 ${d.client_version} · ` : ""}最近在线 ${((x) => (x ? fmt.ago(x) : "从未"))((me.sessions ?? []).filter((s) => s.device_id === d.device_id && s.last_seen_at).map((s) => s.last_seen_at).sort().at(-1) ?? d.signed_out_at ?? d.last_seen_on)}`)), d.current ? badge("本机", "accent") : null)))
       : emptyBlock("还没有登记电脑", "在客户端用本账号登录后出现在这里"),
     { sub: me.account?.device_limit ? `至多 ${me.account.device_limit} 台` : undefined, actions: h("a", { class: "btn sm", href: "#/me/devices" }, "管理") },
   );

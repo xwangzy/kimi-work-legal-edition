@@ -7,7 +7,7 @@
  * 接口：GET /v1/firm/members（members、pending_joins、seats）；POST /v1/firm/members/{aid}/disable|enable|sessions/revoke|reset-code|limits|devices/{id}/signout。
  */
 import * as api from "../api.js";
-import { CREATED_VIA, deviceCell, deviceStateCell, isMe, LIMIT_SOURCE, pageHead, pendingRow, roleText, versionText } from "../domain.js";
+import { CREATED_VIA, seatNote, UNSEATED_TIP, deviceCell, deviceStateCell, isMe, LIMIT_SOURCE, pageHead, pendingRow, roleText, versionText } from "../domain.js";
 import { readOnly } from "./firm-overview.js";
 import { btn, clear, confirmAction, dataTable, facts, fmt, h, icon, load, matches, mono, openDrawer, panel, rowMenu, searchInput, segmented, showSecret, stateCell, toast } from "../ui.js";
 
@@ -31,7 +31,7 @@ export function render(page) {
       head,
       pageHead(
         "成员",
-        h("span", { title: SEAT_NOTE }, seats ? `席位 已用 ${seats.used} / 共 ${seats.total}` : "成员与席位", unseated ? h("span", { class: "tone-text-warn" }, `；另有 ${unseated} 个账号未占席：这些成员能登录，但用不了 AI`) : null, unseated ? h("span", { class: "muted" }, "。成员在电脑上第一次用 AI 时自动占席；席位不够时请平台改套餐或席位") : null, readOnly() ? "。合伙人只读，管理操作请本所管理员完成" : null),
+        h("span", { title: SEAT_NOTE }, seats ? `席位 已用 ${seats.used} / 共 ${seats.total}` : "成员与席位", ((sn) => (sn ? h("span", { class: sn.full ? "tone-text-warn" : "muted" }, `；${sn.text}`) : null))(seats ? seatNote(unseated, seats.total, seats.used) : null), readOnly() ? "。合伙人只读，管理操作请本所管理员完成" : null),
         btn("邀请成员", invite, { kind: "primary", icon: icon("plus"), disabled: readOnly(), title: readOnly() ? "只有本所管理员能邀请" : undefined }),
       ),
     );
@@ -73,7 +73,7 @@ export function render(page) {
               return h("div", { class: "cell-2", title: `同时登录上限 ${m.device_limit ?? "—"} 台` }, h("span", { class: full ? "tone-text-warn" : "" }, `${on} / ${m.device_limit ?? "—"} 台在线${full ? " · 已满" : ""}`), pendOf(m.aid) ? h("small", { class: "tone-text-warn" }, `${pendOf(m.aid)} 台待批准`) : null);
             },
           },
-          { key: "seat_used", label: "席位", title: `${SEAT_NOTE}；未占席的成员能登录，但用不了 AI`, value: (m) => (m.seat_used ? 1 : 0), render: (m) => (m.seat_used === undefined ? "—" : m.seat_used ? stateCell("已占席", "ok") : stateCell("未占席", "neutral", "能登录，但用不了 AI")) },
+          { key: "seat_used", label: "席位", title: `${SEAT_NOTE}；${UNSEATED_TIP}`, value: (m) => (m.seat_used ? 1 : 0), render: (m) => (m.seat_used === undefined ? "—" : m.seat_used ? stateCell("已占席", "ok") : stateCell("未占席", "neutral", UNSEATED_TIP)) },
           { key: "usage", label: "占本期额度", title: "本期用量 ÷ 本所本期总额度", num: true, value: (m) => Number(m.usage?.used_ratio_of_firm) || 0, render: (m) => fmt.pct(m.usage?.used_ratio_of_firm) },
           { key: "_act", label: "", sortable: false, class: "act", render: (m) => rowMenu(memberActions(m, reload).menu, { aria: `操作：${m.name ?? m.email}` }) },
         ],
@@ -204,7 +204,7 @@ function openMember(m, pending, reload) {
           ["加入方式", CREATED_VIA[m.created_via] ?? m.created_via ?? "—"],
           ["最近登录", m.last_login_at ? fmt.full(m.last_login_at) : "从未登录"],
           ["登录锁定", Number(m.locked_s) > 0 ? `锁定中，约 ${Math.ceil(m.locked_s / 60)} 分钟后自动解除（可立即解锁）` : "无"],
-          ["席位", m.seat_used === undefined ? "—" : m.seat_used ? "已占席（可以用 AI）" : "未占席（能登录，但用不了 AI；第一次在电脑上用 AI 时自动占席）"],
+          ["席位", m.seat_used === undefined ? "—" : m.seat_used ? "已占席（可以用 AI）" : "未占席（有空席时第一次用 AI 自动占用）"],
           ["电脑数上限", m.device_limit ? `同时登录 ${m.device_limit} 台（${m.device_limit_custom === null || m.device_limit_custom === undefined ? LIMIT_SOURCE.plan : LIMIT_SOURCE.account}）` : "按套餐缺省"],
           ["个人额度上限", m.quota_limit === null || m.quota_limit === undefined ? "不设" : fmt.num(m.quota_limit)],
           ["本期用量", m.usage ? `${fmt.int(m.usage.requests)} 次请求 · 占本所本期额度 ${fmt.pct(m.usage.used_ratio_of_firm)}` : "—"],

@@ -21,7 +21,7 @@ export function render(page) {
 function draw(box, me, reload) {
   // 第五轮：“最近在线”用这台电脑上桌面登录的最近活动时刻（精确到分钟）；没有登录会话时退回按日报到
   const lastActive = (id) => (me.sessions ?? []).filter((s) => s.device_id === id && s.last_seen_at).map((s) => s.last_seen_at).sort().at(-1) ?? null;
-  const rows = (me.devices ?? []).map((d) => ({ ...d, member_name: "我", last_active_at: d.last_active_at ?? lastActive(d.device_id) }));
+  const rows = (me.devices ?? []).map((d) => ({ ...d, member_name: "我", last_active_at: d.last_active_at ?? lastActive(d.device_id) ?? d.signed_out_at ?? null }));
   const live = rows.filter((d) => deviceState(d) !== "revoked");
   const on = live.filter((d) => deviceState(d) === "signed_in");
   const limit = Number(me.account?.device_limit) || 0;

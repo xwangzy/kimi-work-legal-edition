@@ -48,7 +48,7 @@ export function render(page) {
     const ofStatus = rows.filter(sf);
     const list = ofStatus.filter((d) => (!st.flag || (d.flags ?? []).includes(st.flag)) && matches(st.q, d.device_id, d.name, d.member, d.version, d.platform));
     clear(tools, h("span", { class: "seg-label" }, "状态"), segmented(STATUS.map(([id, label, f]) => ({ id, label, count: rows.filter(f).length })), st.status, (v) => ((st.status = v), draw(reload)), "状态"));
-    clear(tools2, searchInput({ placeholder: "电脑名称、成员、版本", value: st.q, onInput: (v) => ((st.q = v), draw(reload)) }), h("span", { class: "seg-label" }, "标记"), segmented([{ id: "", label: "不限", count: ofStatus.length }, ...Object.entries(FIRM_DEVICE_FLAG).map(([f, [label]]) => ({ id: f, label, count: ofStatus.filter((d) => (d.flags ?? []).includes(f)).length }))], st.flag, (v) => ((st.flag = v), draw(reload)), "异常标记"));
+    clear(tools2, searchInput({ placeholder: "电脑名称、成员、版本", value: st.q, onInput: (v) => ((st.q = v), draw(reload)) }), h("span", { class: "seg-label" }, "标记"), segmented([{ id: "", label: "不限", count: ofStatus.length }, ...Object.entries(FIRM_DEVICE_FLAG).filter(([f]) => f !== "rejected_after_logout").map(([f, [label]]) => ({ id: f, label, count: ofStatus.filter((d) => (d.flags ?? []).includes(f)).length }))], st.flag, (v) => ((st.flag = v), draw(reload)), "异常标记"));
     const versions = {};
     for (const d of rows) if (!["revoked", "pending"].includes(deviceState(d))) versions[versionText(d.version)] = (versions[versionText(d.version)] ?? 0) + 1;
     const vs = Object.entries(versions).sort((a, b) => b[1] - a[1]);
@@ -59,7 +59,7 @@ export function render(page) {
         rows: list,
         state: st.table,
         empty: rows.length ? "没有符合条件的电脑" : "还没有登记电脑",
-        rowClass: (d) => (deviceState(d) === "revoked" ? "dim" : d.pending ? "pending-row" : (d.flags ?? []).length ? "flagged" : ""),
+        rowClass: (d) => (deviceState(d) === "revoked" ? "dim" : d.pending ? "pending-row" : ""),
         caption: "电脑",
         columns: [
           { key: "name", label: "电脑", value: (d) => d.name || d.member || "", render: (d) => deviceCell(d) },
@@ -95,7 +95,7 @@ export function render(page) {
       () => Promise.all([api.get("/v1/firm/devices"), api.get("/v1/firm/members").catch(() => ({ pending_joins: [] }))]),
       ([r, m]) => {
         const devs = Array.isArray(r) ? r : r.devices ?? [];
-        rows = [...devs.map((d) => ({ ...d, member_name: d.member, client_version: d.version })), ...(m.pending_joins ?? []).map((p) => pendingRow({ ...p, member_name: p.member_name }, { member: p.member_name }))];
+        rows = [...devs.map((d) => ({ ...d, member_name: d.member, client_version: d.version, flags: (d.flags ?? []).filter((f) => f !== "rejected_after_logout") })), ...(m.pending_joins ?? []).map((p) => pendingRow({ ...p, member_name: p.member_name }, { member: p.member_name }))];
         draw(reload);
       },
       "正在读取电脑…",
