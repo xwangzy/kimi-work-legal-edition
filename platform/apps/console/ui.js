@@ -338,7 +338,7 @@ export function meter(o) {
   const amounts = isNum(o.used) ? (isNum(o.total) ? `${fmt.amount(o.used, o.unit)} / ${fmt.amount(o.total, o.unit)}` : `${fmt.amount(o.used, o.unit)} · 不设上限`) : unit ? `单位 ${unit}` : null;
   const resets = o.resetText ? null : fmt.resets(o.resetsAt);
   const remain = r === null ? null : Math.max(0, 1 - r);
-  const pausedText = o.paused ? { cap: "已到上限", allowance: "额度用完", burst: "5 小时频率限制已满", seat: "个人额度用完" }[o.paused] ?? "已暂停" : null;
+  const pausedText = o.paused ? { cap: "已到上限", allowance: "额度用完", burst: "任意 5 小时窗口已满", seat: "个人额度用完" }[o.paused] ?? "已暂停" : null;
   if (o.compact) {
     const short = isNum(o.used) && isNum(o.total) ? `${o.unit === "cny" ? fmt.cny(o.used, 0) : fmt.tokens(o.used)} / ${o.unit === "cny" ? fmt.cny(o.total, 0) : `${fmt.tokens(o.total)} token`}` : amounts;
     const rs = validTime(o.resetsAt) === null ? null : `${fmt.date(o.resetsAt).slice(5)} 重置`;
@@ -991,7 +991,7 @@ export function quotaCard(o) {
   const r = isNum(o.ratio) ? Number(o.ratio) : isNum(o.used) && isNum(o.total) && Number(o.total) > 0 ? Number(o.used) / Number(o.total) : null;
   const remain = r === null ? null : Math.max(0, 1 - r);
   const unitText = o.unit === "cny" ? "元" : o.unit === "tokens" ? "token" : o.unit ? String(o.unit) : "—";
-  const pausedText = o.paused ? { cap: "已到本所上限", allowance: "本期额度用完", burst: "5 小时频率限制已满", seat: "个人额度用完" }[o.paused] ?? "已暂停" : null;
+  const pausedText = o.paused ? { cap: "已到本所上限", allowance: "本期额度用完", burst: "任意 5 小时窗口已满", seat: "个人额度用完" }[o.paused] ?? "已暂停" : null;
   return h(
     "div",
     { class: ["quota", o.compact && "compact"] },

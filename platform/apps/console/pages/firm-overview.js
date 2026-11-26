@@ -47,21 +47,20 @@ function draw(head, box, d, reload) {
     if (r) (toast("已保存月度上限"), reload());
   };
   const pending = Number(c.pending_joins) || 0;
-  const joinBanner = h("div", { class: "banner warn" }, icon("info"), h("span", { class: "spacer" }, `有 ${pending} 台新电脑等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。`), btn("查看成员", () => go("firm/members"), { size: "sm" }));
+  const joinBanner = h("div", { class: "banner warn soft" }, icon("info"), h("span", { class: "spacer" }, `有 ${pending} 台新电脑等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。`), btn("查看成员", () => go("firm/members"), { size: "sm" }));
   const seatSub = h("span", {}, "成员名额");
   const devVal = h("span", {}, `${fmt.int(c.devices)} 台`);
-  const devSub = h("span", {}, Number(c.pending_joins) > 0 ? `${fmt.int(c.pending_joins)} 台待批准` : "未移除");
+  const devSub = h("span", {}, "只有登录中的电脑占名额");
   // 姓名与未占席人数在成员接口里：拿到后补上（拿不到就保持上面的通用写法）
   api.get("/v1/firm/members").then((m) => {
     const p = m.pending_joins ?? [];
-    if (p.length) clear(joinBanner.querySelector(".spacer"), `${p.map((x) => `${x.member_name ?? "成员"}的新电脑（申请于 ${fmt.time(x.created_at)}）`).join("、")}等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。`);
+    if (p.length) clear(joinBanner.querySelector(".spacer"), p.map((x, i) => [i ? "、" : null, h("b", {}, `${x.member_name ?? "成员"}的新电脑`), `（申请于 ${fmt.time(x.created_at)}）`]), "等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。");
     const n = (m.members ?? []).filter((x) => x.seat_used === false).length;
     if (n) (clear(seatSub, `另有 ${n} 个账号未占席：这些成员能登录，但用不了 AI`), seatSub.classList.add("tone-text-warn"), (seatSub.title = "成员在电脑上第一次用 AI 时自动占席；席位不够时请平台改套餐或席位"));
     // 第四轮（23）：电脑格写“x 台登录中 · y 台待批准”
     const on = (m.members ?? []).reduce((s, x) => s + (x.devices ?? []).filter((d) => d.state === "signed_in").length, 0);
     clear(devVal, `${on} 台登录中`);
-    clear(devSub, [p.length ? `${p.length} 台待批准` : null, `共 ${fmt.int(c.devices)} 台未移除`].filter(Boolean).join(" · "));
-    if (p.length) devSub.classList.add("tone-text-warn");
+    clear(devSub, `共 ${fmt.int(c.devices)} 台已登记`);
   }, () => {});
   clear(
     box,
@@ -81,7 +80,7 @@ function draw(head, box, d, reload) {
           resetsAt: q.period?.resets_at ?? q.resets_at,
           capPct,
           paused: q.paused,
-          extra: h("div", { class: "btn-row" }, btn(capPct ? `月度上限 ${capPct}%` : "设月度上限", editCap, { size: "sm", disabled: readOnly(), title: readOnly() ? "只有本所管理员能改" : undefined }), q.burst ? h("span", { class: "muted small", title: `任意 ${q.burst.hours ?? 5} 小时内最多用本期额度的 ${q.burst.pct ?? "—"}%` }, `${q.burst.hours ?? 5} 小时频率限制已用 ${fmt.pct(q.burst.used_ratio)}`) : null),
+          extra: h("div", { class: "btn-row" }, btn(capPct ? `月度上限 ${capPct}%` : "设月度上限", editCap, { size: "sm", disabled: readOnly(), title: readOnly() ? "只有本所管理员能改" : undefined }), q.burst ? h("span", { class: "muted small", title: `任意 ${q.burst.hours ?? 5} 小时内最多用本期额度的 ${q.burst.pct ?? "—"}%` }, `任意 ${q.burst.hours ?? 5} 小时窗口已用 ${fmt.pct(q.burst.used_ratio)}`) : null),
         }),
         { sub: q.period ? fmt.period(q.period) : undefined },
       ),

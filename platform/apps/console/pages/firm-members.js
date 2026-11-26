@@ -47,7 +47,7 @@ export function render(page) {
     clear(box);
     if (pending.length)
       box.append(
-        h("div", { class: "banner warn" }, icon("info"), h("span", { class: "spacer" }, `${pending.map((p) => `${p.member_name ?? "成员"}的新电脑（申请于 ${fmt.time(p.created_at)}）`).join("、")}等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。`)),
+        h("div", { class: "banner warn soft" }, icon("info"), h("span", { class: "spacer" }, pending.map((p, i) => [i ? "、" : null, h("b", {}, `${p.member_name ?? "成员"}的新电脑`), `（申请于 ${fmt.time(p.created_at)}）`]), "等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。")),
       );
     const rows = members.filter((m) => f(m) && matches(st.q, m.name, m.email, m.member_slug, roleText(m.role)));
     box.append(
@@ -74,7 +74,7 @@ export function render(page) {
             },
           },
           { key: "seat_used", label: "席位", title: `${SEAT_NOTE}；未占席的成员能登录，但用不了 AI`, value: (m) => (m.seat_used ? 1 : 0), render: (m) => (m.seat_used === undefined ? "—" : m.seat_used ? stateCell("已占席", "ok") : stateCell("未占席", "neutral", "能登录，但用不了 AI")) },
-          { key: "usage", label: "本期占本所额度", title: "本期用量 ÷ 本所本期总额度", num: true, value: (m) => Number(m.usage?.used_ratio_of_firm) || 0, render: (m) => fmt.pct(m.usage?.used_ratio_of_firm) },
+          { key: "usage", label: "占本期额度", title: "本期用量 ÷ 本所本期总额度", num: true, value: (m) => Number(m.usage?.used_ratio_of_firm) || 0, render: (m) => fmt.pct(m.usage?.used_ratio_of_firm) },
           { key: "_act", label: "", sortable: false, class: "act", render: (m) => rowMenu(memberActions(m, reload).menu, { aria: `操作：${m.name ?? m.email}` }) },
         ],
       }),

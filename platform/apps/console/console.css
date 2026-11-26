@@ -918,3 +918,11 @@ dialog { color: var(--text-primary); }
 .menu-pop.floating { position: fixed; left: var(--console-x); top: var(--console-y); right: auto; z-index: 80; }
 .tbl td.act .row-menu-btn { vertical-align: middle; }
 .tone-text-danger { color: var(--status-danger-text); }
+
+/* 第五轮：操作记录里的链接平时用正文色；横幅整句正文色、只留图标与关键词橙色；深色下禁用的危险确认按钮看得见 */
+.log-panel .link { color: var(--text-primary); }
+.log-panel .link:hover { color: var(--accent-text); text-decoration: underline; }
+.banner.warn.soft { color: var(--text-primary); }
+.banner.warn.soft > .icon, .banner.warn.soft b { color: var(--status-warning-text); }
+.btn.danger-solid:disabled { opacity: 1; background: var(--bg-muted); color: var(--text-secondary); border-color: var(--border-default); }
+.row-chevron { display: none; }

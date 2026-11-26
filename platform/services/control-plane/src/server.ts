@@ -3034,12 +3034,15 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         action: "account.device_signout",
         tid: () => accounts.get(aso[1]!)?.tid ?? null,
         target: () => aso[2]!,
-        run: () => {
+        run: (_b, who) => {
           const a = accountOf(aso[1]!);
           const d = accountDevices(a).find((x) => x.cert.deviceId === aso[2]);
           if (!d) throw new CpError(404, "device_unknown", "这台电脑不属于这个账号");
           if (d.revoked_at) throw new CpError(409, "device_revoked", "这台电脑已经移除");
-          return { ok: true, device_id: d.cert.deviceId, signed_out: signOutDevice(a, d.cert.deviceId, "signed_out_support") };
+          const n = signOutDevice(a, d.cert.deviceId, "signed_out_support");
+          // 运营路由只记平台访问日志；进这家律所的审计链要显式记（控制台“操作记录”据此显示“让电脑退出登录”）
+          audit({ tid: a.tid, actor: { kind: "ops", id: who.operator }, action: "account.device_signout", target: d.cert.deviceId, result: "ok" });
+          return { ok: true, device_id: d.cert.deviceId, signed_out: n };
         },
       };
     const acm = /^\/v1\/ops\/accounts\/(acc_[A-Za-z0-9_-]{16})(?:\/([a-z-]+(?:\/[a-z-]+)?))?$/.exec(p);
@@ -5381,7 +5384,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const last = [...sessions.values()].filter((x) => x.device_id === d.cert.deviceId && !isStaffId(x.aid) && accounts.get(x.aid)?.tid === t.tid).sort((x, y) => y.last_seen_at.localeCompare(x.last_seen_at))[0];
         // 第 71 批（G2）：状态三态——有有效桌面登录 = 登录中；没有 = 已退出登录；吊销 = 已移除
         const signedIn = !d.revoked_at && [...sessions.values()].some((x) => x.device_id === d.cert.deviceId && x.kind === "desktop" && accounts.get(x.aid)?.tid === t.tid && sessionLive(x, now()));
-        return { device_id: d.cert.deviceId, name: d.name ?? null, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, registered_at: d.registered_at, revoked: !!d.revoked_at, state: d.revoked_at ? "revoked" : signedIn ? "signed_in" : "signed_out", flags };
+        return { device_id: d.cert.deviceId, name: d.name ?? null, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, last_active_at: last?.last_seen_at ?? null, registered_at: d.registered_at, revoked: !!d.revoked_at, state: d.revoked_at ? "revoked" : signedIn ? "signed_in" : "signed_out", flags };
       });
       return send(res, 200, { devices: list.sort((x, y) => (y.last_seen_at ?? "").localeCompare(x.last_seen_at ?? "")) });
     }

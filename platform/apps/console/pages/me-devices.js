@@ -19,7 +19,9 @@ export function render(page) {
 }
 
 function draw(box, me, reload) {
-  const rows = (me.devices ?? []).map((d) => ({ ...d, member_name: "我" }));
+  // 第五轮：“最近在线”用这台电脑上桌面登录的最近活动时刻（精确到分钟）；没有登录会话时退回按日报到
+  const lastActive = (id) => (me.sessions ?? []).filter((s) => s.device_id === id && s.last_seen_at).map((s) => s.last_seen_at).sort().at(-1) ?? null;
+  const rows = (me.devices ?? []).map((d) => ({ ...d, member_name: "我", last_active_at: d.last_active_at ?? lastActive(d.device_id) }));
   const live = rows.filter((d) => deviceState(d) !== "revoked");
   const on = live.filter((d) => deviceState(d) === "signed_in");
   const limit = Number(me.account?.device_limit) || 0;
@@ -81,7 +83,7 @@ function draw(box, me, reload) {
           "div",
           { class: "seat-card-text" },
           full ? h("b", { class: "tone-text-warn" }, "要在新电脑上登录，先让一台退出登录。") : null,
-          h("p", { class: "muted small" }, personal ? "换电脑：在新电脑上直接登录即可；同时登录的电脑数达到上限时，由你选择让哪台退出登录。不再使用或丢失的电脑请移除。" : me.account?.role === "admin" || ctx.firmRole === "admin" ? "换电脑：在新电脑上登录后，回到你的管理员电脑，在“设置 → 管理”里批准。不再使用或丢失的电脑请移除。" : "换电脑：在新电脑上登录后，需律所管理员批准才能使用。不再使用或丢失的电脑请移除。"),
+          h("p", { class: "muted small" }, personal ? "换电脑：在新电脑上直接登录即可；同时登录的电脑数达到上限时，由你选择让哪台退出登录。不再使用或丢失的电脑请移除。" : me.account?.role === "admin" || ctx.firmRole === "admin" ? "换电脑：在新电脑上登录提交申请 → 回到这台电脑批准 → 新电脑打开时会请你选择让哪台退出登录。不再使用或丢失的电脑请移除。" : "换电脑：在新电脑上登录后，需律所管理员批准才能使用。不再使用或丢失的电脑请移除。"),
         ),
         full && others.length ? btn(others.length === 1 ? `让「${deviceLabel(others[0])}」退出登录…` : "让一台退出登录…", pickSignout, { kind: "primary" }) : null,
       ),
@@ -98,7 +100,7 @@ function draw(box, me, reload) {
           { key: "name", label: "电脑", class: "col-device", value: (d) => deviceLabel(d), render: (d) => h("div", { class: "cell-row" }, deviceCell({ ...d, member_name: "我" }), d.current ? h("span", { class: "kind-tag" }, "本机") : null) },
           { key: "platform", label: "系统", class: "col-sys", value: (d) => platformText(d.platform) },
           { key: "client_version", label: "客户端", class: "col-ver", render: (d) => (d.client_version && d.client_version !== "legacy" ? mono(d.client_version) : h("span", { class: "muted" }, versionText(d.client_version))) },
-          { key: "last_seen_on", label: "最近在线", class: "col-time", value: (d) => d.last_seen_on ?? "", render: (d) => h("span", { title: fmt.full(d.last_seen_on) }, d.last_seen_on ? fmt.ago(d.last_seen_on) : "从未在线") },
+          { key: "last_seen_on", label: "最近在线", class: "col-time", value: (d) => d.last_seen_on ?? "", render: (d) => (d.last_active_at ? h("span", { title: fmt.full(d.last_active_at) }, fmt.ago(d.last_active_at)) : h("span", { title: fmt.full(d.last_seen_on) }, d.last_seen_on ? fmt.ago(d.last_seen_on) : "从未在线")) },
           { key: "registered_at", label: "登记于", class: "col-time", value: (d) => d.registered_at ?? "", render: (d) => fmt.date(d.registered_at) },
           { key: "state", label: "状态", class: "col-state", value: (d) => ({ signed_in: 0, pending: 1, signed_out: 2, revoked: 3 })[deviceState(d)], render: (d) => deviceStateCell(d) },
           {

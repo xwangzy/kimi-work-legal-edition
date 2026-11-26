@@ -136,7 +136,6 @@ function drawList(box, rows) {
                   { label: "续订…", onClick: () => renew(t, () => ctx.reload()), disabled: !can("tenant.manage") || t.status === "terminated", title: needs("tenant.manage") },
                   { label: "复制客户编号", onClick: () => navigator.clipboard?.writeText(t.tid).then(() => toast("已复制"), () => toast(t.tid, "info")) },
                 ], { aria: `操作：${t.name ?? t.tid}` }),
-                icon("chevron", "row-chevron"),
               ),
           },
         ],
@@ -507,7 +506,7 @@ function drawPeople(box, d, accs, reload) {
               },
             },
             { key: "seat", label: "席位", title: `${SEAT_NOTE}；未占席的成员能登录，但用不了 AI`, value: (m) => (m.seated ? 1 : 0), render: (m) => (m.seated ? stateCell("占用", "ok") : m.seat?.revoked_at ? stateCell(`已收回 ${fmt.date(m.seat.revoked_at)}`, "neutral", "能登录，但用不了 AI") : stateCell("未占席", "neutral", "能登录，但用不了 AI；成员在电脑上第一次用 AI 时自动占席，席位不够时改套餐或席位")) },
-            { key: "use", label: "本期占律所", num: true, title: "本期用量 ÷ 律所本期总额度", value: (m) => Number(m.use?.used_ratio_of_firm) || 0, render: (m) => (m.use ? fmt.pct(m.use.used_ratio_of_firm) : "0%") },
+            { key: "use", label: "占本期额度", num: true, title: "本期用量 ÷ 本期总额度", value: (m) => Number(m.use?.used_ratio_of_firm) || 0, render: (m) => (m.use ? fmt.pct(m.use.used_ratio_of_firm) : "0%") },
             {
               key: "_act",
               label: "",
@@ -619,7 +618,7 @@ function paneUsage(pane, d) {
           columns: [
             { key: "name", label: "成员", value: (x) => x.name ?? x.email ?? "", render: (x) => (x.aid ? h("div", { class: "cell-2" }, h("b", {}, x.name ?? "—"), h("small", {}, x.email ?? "")) : h("span", { class: "muted" }, x.uid ? "未关联账号" : "—")) },
             { key: "used", label: "用量", num: true, value: (x) => Number(x.used) || 0, render: (x) => fmt.amount(x.used, u.unit) },
-            { key: "used_ratio_of_firm", label: "占客户额度", title: "本期用量 ÷ 本期总额度", num: true, value: (x) => Number(x.used_ratio_of_firm) || 0, render: (x) => fmt.pct(x.used_ratio_of_firm) },
+            { key: "used_ratio_of_firm", label: "占本期额度", title: "本期用量 ÷ 本期总额度", num: true, value: (x) => Number(x.used_ratio_of_firm) || 0, render: (x) => fmt.pct(x.used_ratio_of_firm) },
             { key: "own_ratio", label: "占个人额度", num: true, value: (x) => x.own_ratio ?? null, render: (x) => (x.own_ratio === null || x.own_ratio === undefined ? h("span", { class: "muted" }, "不单设") : fmt.pct(x.own_ratio)) },
             { key: "requests", label: "请求", num: true, value: (x) => Number(x.requests) || 0, render: (x) => fmt.int(x.requests) },
           ],
@@ -658,12 +657,13 @@ function panePlan(pane, d, reload) {
         h(
           "div",
           { class: "stack-sm" },
-          h("p", { class: "muted small" }, `本期已加量 ${t.boost_pct ? `+${t.boost_pct}%` : "0"}。加量按本期总额度的百分比，加量费 = 席位费 × 加量% × 套餐系数，计入本期账单。`),
+          h("p", { class: "muted small" }, `本期已加量 ${t.boost_pct ? `+${t.boost_pct}%` : "0"}；加量费计入本期账单，下期自动失效。`),
           ((row) => (planOptions().then(({ plans }) => {
             const pl = plans.find((x) => x.id === t.plan?.id);
             const seatFee = pl?.seat_price_cny ? Number(pl.seat_price_cny) * (Number(t.seats) || 1) : null;
             const factor = Number(pl?.boost_price_factor ?? 1) || 1;
-            clear(row, [25, 50, 100].map((p) => btn(seatFee !== null ? `+${p}% · 加量费 ${fmt.cny((seatFee * p * factor) / 100)}` : `+${p}%`, () => boost(t, reload, p), { disabled: !can("quota.manage"), title: needs("quota.manage") })), seatFee === null ? h("span", { class: "muted small" }, "试用期不计费") : null);
+            const extra = (p) => (t.unit === "cny" && Number.isFinite(Number(t.total)) ? ` · 本期额度 +${fmt.cny((Number(t.total) * p) / 100)}` : "");
+            clear(row, [25, 50, 100].map((p) => btn(`+${p}%${extra(p)}${seatFee !== null ? ` · 加量费 ${fmt.cny((seatFee * p * factor) / 100)}` : ""}`, () => boost(t, reload, p), { disabled: !can("quota.manage"), title: needs("quota.manage") })), seatFee === null ? h("span", { class: "muted small" }, "试用期不计费") : null);
           }), row))(h("div", { class: "btn-row" }, [25, 50, 100].map((p) => btn(`+${p}%`, () => boost(t, reload, p), { disabled: !can("quota.manage"), title: needs("quota.manage") })))),
         ),
       ),
@@ -786,7 +786,7 @@ function paneSubscription(pane, d, reload) {
           },
         ],
       }),
-      { flush: true, actions: btn("发创始开通码…", () => issueFounder(t, reload), { size: "sm", kind: t.status === "pending" ? "primary" : undefined, disabled: !can("activation.issue"), title: needs("activation.issue") ?? "由开通专员发（与客户运营职责分离）" }) },
+      { flush: true, actions: [can("activation.issue") ? null : h("span", { class: "muted small" }, "由开通专员发（与客户运营职责分离）"), btn("发创始开通码…", () => issueFounder(t, reload), { size: "sm", kind: t.status === "pending" && can("activation.issue") ? "primary" : undefined, disabled: !can("activation.issue"), title: can("activation.issue") ? undefined : "由开通专员发：与客户运营职责分离" })] },
     ),
     dangerZone("危险操作", [
       {
@@ -816,6 +816,7 @@ const ACTION_LABEL = {
   "account.enable": "启用 / 解锁账号",
   "account.reset_code": "生成重置码",
   "account.sessions_revoke": "全部退出登录",
+  "account.session_revoke": "退出一处登录",
   "account.limits": "改个人上限",
   "account.password_setup": "设置密码",
   "account.password_reset": "重置密码",
@@ -846,7 +847,7 @@ const ACTION_LABEL = {
   "activation.redeem": "使用开通码",
   "invitation.create": "发成员邀请",
   "invitation.revoke": "作废成员邀请",
-  "join.request": "申请入组（新电脑）",
+  "join.request": "新电脑申请（待批准）",
   "join.withdraw": "撤回入组申请",
   "join.approve": "批准新电脑",
   "join.reject": "拒绝新电脑",
@@ -876,11 +877,11 @@ function paneLog(pane, d, _reload, o) {
   const toolBox = h("div", { class: "toolbar" });
   const toolBox2 = h("div", { class: "toolbar" });
   const more = h("div");
-  pane.append(toolBox, toolBox2, panel("操作记录", h("div", {}, box, more), { flush: true, sub: "这家客户的审计链：平台人员与律所的操作", actions: btn("导出 CSV", () => exportCsv(), { size: "sm", icon: icon("download"), title: "只导出当前筛选出来的记录，在浏览器本地生成" }) }));
+  pane.append(toolBox, toolBox2, panel("操作记录", h("div", {}, box, more), { class: "log-panel", flush: true, sub: "这家客户的审计链：平台人员与律所的操作", actions: btn("导出 CSV", () => exportCsv(), { size: "sm", icon: icon("download"), title: "只导出当前筛选出来的记录，在浏览器本地生成" }) }));
   const rows = [];
   const labels = {};
   const kinds = {};
-  const f = { kind: "", actor: "", range: "", failed: false };
+  const f = { kind: "", actor: "", range: "", failed: false, noLogin: true };
   let oldest = null;
   const actionText = (a) => ACTION_LABEL[a] ?? a ?? "—";
   const failed = (x) => x.result !== "ok";
@@ -892,15 +893,23 @@ function paneLog(pane, d, _reload, o) {
     if (k === "join") return () => o.setTab("people", "devices", "pending");
     return null;
   };
+  // 第五轮：只显示姓名，邮箱放悬停；链接平时用正文色（.log-panel .link）
+  const nameOnly = (text) => {
+    const m = /^(.*)（([^（）]*@[^（）]*)）$/.exec(String(text));
+    return m ? { text: m[1], title: m[2] } : { text, title: null };
+  };
   const cell = (id, text) => {
     const to = id ? link(id) : null;
-    return to ? h("button", { type: "button", class: "link", title: id, onclick: to }, text) : h("span", { title: id ?? undefined }, text);
+    const n = nameOnly(text);
+    const title = [n.title, id].filter(Boolean).join(" · ") || undefined;
+    return to ? h("button", { type: "button", class: "link", title, onclick: to }, n.text) : h("span", { title }, n.text);
   };
+  const LOGIN_ACTS = new Set(["account.login", "account.logout", "account.refresh", "account.session_revoke"]);
   const filtered = () => {
     const kf = LOG_KINDS.find(([id]) => id === f.kind)?.[2] ?? (() => true);
     const days = RANGES.find(([id]) => id === f.range)?.[2] ?? 0;
     const since = days ? Date.now() - days * 86_400_000 : 0;
-    return rows.filter((x) => kf(String(x.action ?? "")) && (!f.actor || who(x) === f.actor) && (!since || Date.parse(x.at ?? "") >= since) && (!f.failed || failed(x)));
+    return rows.filter((x) => kf(String(x.action ?? "")) && (!f.noLogin || !LOGIN_ACTS.has(x.action)) && (!f.actor || who(x) === f.actor) && (!since || Date.parse(x.at ?? "") >= since) && (!f.failed || failed(x)));
   };
   const actorDl = h("datalist", { id: "log-actor-opts" });
   const actorIn = h("input", { type: "search", class: "search", list: "log-actor-opts", placeholder: "操作人：输入姓名", "aria-label": "按操作人筛选", autocomplete: "off" });
@@ -911,6 +920,8 @@ function paneLog(pane, d, _reload, o) {
     clear(actorDl, [...new Set(rows.map(who))].map((v) => h("option", { value: v })));
     clear(
       toolBox2,
+      h("span", { class: "seg-label" }, "登录"),
+      segmented([{ id: "hide", label: "不含登录", count: rows.filter((x) => !LOGIN_ACTS.has(x.action)).length }, { id: "show", label: "含登录", count: rows.length }], f.noLogin ? "hide" : "show", (v) => ((f.noLogin = v === "hide"), drawTools(), drawRows()), "登录事件"),
       actorIn,
       actorDl,
       h("span", { class: "seg-label" }, "时间"),
@@ -931,8 +942,8 @@ function paneLog(pane, d, _reload, o) {
           { key: "at", label: "时间", value: (x) => x.at ?? "", render: (x) => h("span", { class: "nowrap" }, fmt.full(x.at)) },
           { key: "action", label: "动作", value: (x) => actionText(x.action), render: (x) => (ACTION_LABEL[x.action] ? h("span", { title: x.action }, ACTION_LABEL[x.action]) : mono(x.action ?? "—")) },
           { key: "actor", label: "操作人", value: (x) => who(x), render: (x) => cell(x.actor?.id, who(x)) },
-          { key: "target", label: "对象", value: (x) => targetText(x), render: (x) => (x.target ? cell(x.target, targetText(x)) : h("span", { class: "muted" }, "—")) },
-          { key: "result", label: "结果", value: (x) => (failed(x) ? 0 : 1), render: (x) => (failed(x) ? h("span", { class: "state-cell tone-text-danger", title: String(x.result ?? "") }, h("span", { class: "dot tone-danger", "aria-hidden": "true" }), /^rejected/.test(String(x.result)) ? "被拒绝" : "未完成") : stateCell("成功", "ok")) },
+          { key: "target", label: "对象", value: (x) => targetText(x), render: (x) => (!x.target ? h("span", { class: "muted" }, "—") : x.target === x.actor?.id ? h("span", { class: "muted", title: nameOnly(targetText(x)).title ?? undefined }, "本人") : cell(x.target, targetText(x))) },
+          { key: "result", label: "结果", value: (x) => (failed(x) ? 0 : 1), render: (x) => (failed(x) ? badge(/^rejected/.test(String(x.result)) ? "被拒绝" : "未完成", "danger", String(x.result ?? "")) : h("span", { class: "muted" }, "成功")) },
           { key: "seq", label: "序号", num: true, class: "muted-col", value: (x) => Number(x.seq) || 0 },
         ],
       }),

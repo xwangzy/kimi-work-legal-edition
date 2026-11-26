@@ -252,13 +252,11 @@ function draw(head, body, d, reload, params) {
   // 页头主操作随状态变（V-4）：锁定 → 解锁；停用 → 启用；其余 → 发重置码
   ctx.disableAccount = disable;
   const copyAdmins = () => navigator.clipboard?.writeText(adminText).then(() => toast("已复制律所管理员联系方式"), () => toast(adminText, "info"));
-  const primary = joins.length && admins.length && !locked && a.status !== "disabled"
-    ? btn("复制管理员联系方式", copyAdmins, { kind: "primary", title: adminText })
-    : locked
+  const primary = locked
     ? btn("解锁…", () => enable(true), { kind: "primary", disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") })
     : a.status === "disabled"
       ? btn("启用…", () => enable(false), { kind: "primary", disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") })
-      : btn(a.has_password === false ? "生成设置码…" : "生成重置码…", resetCode, { kind: "primary", disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") });
+      : btn(a.has_password === false ? "生成设置码…" : "生成重置码…", resetCode, { kind: full ? undefined : "primary", disabled: !canSupport(), title: canSupport() ? undefined : needs("account.support") });
   const actions = h(
     "div",
     { class: "btn-row" },
@@ -282,7 +280,7 @@ function draw(head, body, d, reload, params) {
         "div",
         { class: "head-stats" },
         h("div", { class: ["head-stat", "stat", Number(u.used_ratio) >= 1 && u.enforced ? "tone-danger" : Number(u.used_ratio) >= 0.8 ? "tone-warn" : null] }, h("span", { class: "stat-label" }, "本期用量"), h("span", { class: "stat-value num" }, fmt.pct(u.used_ratio)), h("span", { class: "stat-sub" }, DENOMINATOR[u.denominator] ?? (u.total === null ? "不单设上限" : "—"))),
-        h("div", { class: ["head-stat", "stat", full && "tone-warn"] }, h("span", { class: "stat-label" }, "电脑"), h("span", { class: "stat-value num" }, `登录中 ${signedIn.length} / ${fmt.int(limit)}${full ? " · 已满" : ""}`), h("span", { class: "stat-sub" }, `同时登录上限 ${fmt.int(limit)} 台（${LIMIT_SOURCE[a.device_limit_source] ?? "上限"}）${joins.length ? ` · ${joins.length} 台待批准` : ""}`)),
+        h("div", { class: ["head-stat", "stat", full && "tone-warn"] }, h("span", { class: "stat-label" }, "电脑"), h("span", { class: "stat-value num" }, `${signedIn.length} / ${fmt.int(limit)} 台在线${full ? " · 已满" : ""}`), h("span", { class: "stat-sub" }, `同时登录上限 ${fmt.int(limit)} 台（${LIMIT_SOURCE[a.device_limit_source] ?? "上限"}）${joins.length ? ` · ${joins.length} 台待批准` : ""}`)),
         h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "最近登录"), h("span", { class: "stat-value num" }, a.last_login_at ? fmt.ago(a.last_login_at) : "从未"), h("span", { class: "stat-sub" }, fmt.full(a.last_login_at))),
         t?.personal
           ? h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "所属客户"), h("span", { class: "stat-value" }, "个人"), h("span", { class: "stat-sub" }, "一人一所，不讲席位"))
@@ -295,7 +293,7 @@ function draw(head, body, d, reload, params) {
     body,
     a.disabled_reason ? h("div", { class: "banner danger" }, icon("alert"), h("span", {}, `停用原因：${a.disabled_reason}`)) : null,
     diagnosis({ a, d, t, u, live, signedIn, limit, full, locked, enable, limits }),
-    add(devBox, panel("电脑", deviceTable([...devs.map((x) => ({ ...x, member_name: a.name })), ...joins.map((j) => pendingRow({ ...j, aid: a.aid, email: a.email, member_name: a.name }, { tid: a.tid, admins_text: adminText || null }))], { state: { sort: "state", asc: true }, after: reload, showTenant: false, showMember: false, onRow: false, empty: "还没有登记电脑：在客户端用这个账号登录后出现在这里" }), { flush: true, sub: "“让它退出登录”可逆，资料留在那台电脑上；“移除这台电脑”不可逆，用于丢失或不再使用" })),
+    add(devBox, panel("电脑", deviceTable([...devs.map((x) => ({ ...x, member_name: a.name })), ...joins.map((j) => pendingRow({ ...j, aid: a.aid, email: a.email, member_name: a.name }, { tid: a.tid }))], { state: { sort: "state", asc: true }, after: reload, showTenant: false, showMember: false, onRow: false, empty: "还没有登记电脑：在客户端用这个账号登录后出现在这里" }), { flush: true, sub: "“让它退出登录”可逆，资料留在那台电脑上；“移除这台电脑”不可逆，用于丢失或不再使用" })),
     h(
       "div",
       { class: "grid-2" },
@@ -365,12 +363,12 @@ function diagnosis({ a, d, t, u, live, signedIn, limit, full, locked, enable, li
   if (full)
     row(
       "bad",
-      `同时登录的电脑已满（登录中 ${signedIn.length} / ${limit}，${LIMIT_SOURCE[a.device_limit_source] ?? "上限"}）：新电脑登录会被拒`,
+      `同时登录的电脑已满（${signedIn.length} / ${limit} 台在线，${LIMIT_SOURCE[a.device_limit_source] ?? "上限"}）：新电脑登录会被拒`,
       signedIn.length ? btn("让一台退出登录…", () => pick(signedIn, "让哪台电脑退出登录？", "可逆：那台电脑上的资料保留，之后可以再登录").then((x) => x && signoutDevice({ ...x, aid: x.aid ?? a.aid }, () => ctx.reload())), { size: "sm", kind: "primary", disabled: !canSupport() }) : null,
       btn("改电脑数上限", limits, { size: "sm", disabled: !can("account.manage") }),
       btn("移除一台…", () => pick(live, "移除哪台电脑？", "不可逆：那台电脑不能再用这个账号").then((x) => x && revokeDevice(x, () => ctx.reload())), { size: "sm", kind: "ghost", class: "text-danger", disabled: !can("device.revoke") }),
     );
-  else row("ok", `电脑：登录中 ${signedIn.length} / ${limit}（${LIMIT_SOURCE[a.device_limit_source] ?? "上限"}），还能再登录 ${Math.max(0, limit - signedIn.length)} 台`);
+  else row("ok", `电脑：${signedIn.length} / ${limit} 台在线（${LIMIT_SOURCE[a.device_limit_source] ?? "上限"}），还能再登录 ${Math.max(0, limit - signedIn.length)} 台`);
   if (t && !t.personal && !(d.seat && !d.seat.revoked_at)) row("warn", "未占席：这名成员能登录，但用不了 AI。第一次在电脑上用 AI 时自动占席；席位不够时改套餐或席位", btn("去客户详情", () => go(`tenants/${encodeURIComponent(t.tid)}?tab=people`), { size: "sm" }));
   if (t) {
     const left = t.subscription_until ? Math.ceil((Date.parse(t.subscription_until) - Date.now()) / 86_400_000) : null;

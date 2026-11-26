@@ -125,7 +125,7 @@ export const ALERT_LEVEL = { info: ["提示", "info"], warn: ["注意", "warn"],
 export const OUTCOME = { ok: ["成功", "ok"], client_gone: ["客户端断开", "warn"], upstream_error: ["上游出错", "danger"], timeout: ["超时", "danger"], blocked: ["已拦截", "neutral"] };
 /** 用量来源。第 62 批起 estimated 行不计费、不扣额度，待与上游账单对账（契约 contract-b62-pricing §3、§6） */
 export const USAGE_SOURCE = { upstream: ["上游回执", "ok"], drained: ["断开后读完", "info"], estimated: ["估算（待对账）", "warn"], none: ["无用量", "neutral"] };
-export const PAUSED = { cap: "已到上限", allowance: "额度用完", burst: "5 小时频率限制已满", seat: "个人额度用完" };
+export const PAUSED = { cap: "已到上限", allowance: "额度用完", burst: "任意 5 小时窗口已满", seat: "个人额度用完" };
 /** 个人用量的分母：与客户端 firm-usage.ts 的 ownDenominatorText 同一说法 */
 export const DENOMINATOR = { account_limit: "按个人上限（管理员设置）计算", seat_quota: "按每人额度（套餐约定，仅作参考、不限制）计算" };
 

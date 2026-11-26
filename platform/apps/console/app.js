@@ -419,7 +419,8 @@ function route() {
   for (const box of document.querySelectorAll(".nav-sub")) box.hidden = box.dataset.sub !== key;
   $("#sidebar-foot .user")?.classList.toggle("active", key === "me/security" && ctx.kind === "staff");
   // 第 71 批（第二轮，05）：账号列表页自带搜手机号 / 邮箱的搜索框，顶栏全局搜索在这一页收起，免得同屏两个搜索框
-  if ($("#gsearch")) $("#gsearch").hidden = !ctx.gsearchOn || (key === "ops/accounts" && !r.arg);
+  // 第五轮：全站同一规则——列表页自带搜索框的（客户、账号、电脑）收起顶栏搜索；其余页（含详情页）保留
+  if ($("#gsearch")) $("#gsearch").hidden = !ctx.gsearchOn || (["ops/tenants", "ops/accounts", "ops/devices"].includes(key) && !r.arg);
   const secLabel = r.section === "firm" && personalFirm() ? "我的工作室" : sec.label;
   clear($("#crumbs"), h("span", { class: "crumb-sec" }, secLabel), icon("chevron", "crumb-sep"), sub ? [h("span", { class: "crumb-sec" }, item.label), icon("chevron", "crumb-sep"), h("b", {}, sub[1])] : h("b", {}, item.label));
   $("#app").classList.remove("nav-open");

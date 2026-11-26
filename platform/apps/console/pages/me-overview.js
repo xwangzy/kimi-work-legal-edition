@@ -21,7 +21,7 @@ const burstBlock = (b) =>
   h(
     "div",
     { class: "burst" },
-    meter({ label: `${b.hours ?? 5} 小时频率限制`, ratio: b.used_ratio, resetsAt: b.resets_at, compact: true }),
+    meter({ label: `任意 ${b.hours ?? 5} 小时窗口`, ratio: b.used_ratio, resetsAt: b.resets_at, compact: true }),
     // 控制面 /v1/me/usage 的 burst 不带 pct（只给已用比例与恢复时刻）：没有就不写“—%”
     h("small", { class: "muted" }, [b.pct === null || b.pct === undefined ? `任意 ${b.hours ?? 5} 小时窗口` : `任意 ${b.hours ?? 5} 小时内最多用本期额度的 ${b.pct}%`, fmt.resets(b.resets_at) ? `${fmt.resets(b.resets_at)} 起逐步恢复` : null].filter(Boolean).join(" · ")),
   );
@@ -127,7 +127,7 @@ function securityPanel(me) {
   return panel(
     "安全提示",
     tips.length
-      ? h("ul", { class: "tips" }, tips.map(([tone, t, d, to, act]) => h("li", { class: `tip tone-${tone}` }, h("span", { class: "tip-dot", "aria-hidden": "true" }), h("div", {}, h("b", {}, t), h("small", {}, act === "web-signout" ? btn("全部退出网页登录…", () => signoutWeb(me), { size: "sm" }) : d)), to ? h("button", { type: "button", class: "link small", onclick: () => go(to) }, "去处理") : null)))
+      ? h("ul", { class: "tips" }, tips.map(([tone, t, d, to, act]) => h("li", { class: `tip tone-${tone}` }, h("span", { class: "tip-dot", "aria-hidden": "true" }), h("div", {}, h("b", {}, t), h("small", {}, d)), act === "web-signout" ? btn("全部退出网页登录…", () => signoutWeb(me), { size: "sm" }) : to ? h("button", { type: "button", class: "link small", onclick: () => go(to) }, "去处理") : null)))
       : h("div", { class: "all-good" }, h("span", { class: "ok-mark", "aria-hidden": "true" }, icon("check")), h("span", {}, "没有需要处理的安全事项")),
   );
 }
