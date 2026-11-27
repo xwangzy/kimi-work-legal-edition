@@ -29,6 +29,7 @@ import { createApi } from "./api/index.ts";
 import { parseWithPipeline } from "./services/parse-pipeline.ts";
 import { runChildSelftest, type ChildSelftestResult } from "./services/child-selftest.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
+import { accountMetaOf, readAccountMeta, writeAccountMeta, type AccountMeta } from "./services/workspaces.ts";
 import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
 import { onboardingStateText } from "./account-session.ts";
 import { accountErrorText, dropAccountSession, dropLoginRequired, maskedPhoneOrNull, modelRejectionProblem, readAccountSession, readLoginRequired, writeAccountSession, writeLoginRequired, type AccountSessionFile } from "./account-session.ts";
@@ -96,6 +97,33 @@ export interface Kernel {
   close(): Promise<void>;
 }
 
+/**
+ * 关闭本机 HTTP 端点而不被长连接拖住（第 72 批，A1 S7）：先断空闲连接，500 毫秒后仍没关完就断开全部连接，2 秒封顶。
+ * 关闭时 Agent 宿主、闸门已先关掉，剩下的只可能是空闲的 keep-alive 连接或已无人等待的请求。
+ */
+export function closeServerPromptly(s: import("node:http").Server, graceMs = 500, capMs = 2_000): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let done = false;
+    const timers: NodeJS.Timeout[] = [];
+    const finish = () => {
+      if (done) return;
+      done = true;
+      for (const t of timers) clearTimeout(t);
+      resolve();
+    };
+    try {
+      s.close(() => finish());
+    } catch {
+      finish();
+      return;
+    }
+    s.closeIdleConnections?.();
+    timers.push(setTimeout(() => s.closeAllConnections?.(), graceMs));
+    timers.push(setTimeout(finish, capMs));
+    for (const t of timers) t.unref?.();
+  });
+}
+
 /** 用当前主密钥试开账本（从备份恢复后确认主进程已采用旧主密钥；复核 R2A-15）。 */
 function canOpenLedger(file: string, key: string | undefined): boolean {
   if (!existsSync(file)) return false;
@@ -113,6 +141,10 @@ function canOpenLedger(file: string, key: string | undefined): boolean {
 }
 
 export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
+  // 第 72 批（A1 §2.4 T1）：启动各阶段耗时（毫秒）。进程启动到这里（装载 bundle + 等 kernel.init）记为 init_wait
+  const bootSinceProc = Math.round(process.uptime() * 1000);
+  const bootStartedAt = Date.now();
+  let bootMarkAt = bootStartedAt;
   let config = loadConfig(opts);
   // 从备份恢复的收尾（第 14 批第二轮复核 R2A-15）：清掉复制中途留下的暂存；待生效的激活记录在主密钥已被采用时生效，否则回滚
   cleanupRestoreStaging(config.dataRoot);
@@ -121,9 +153,17 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   // 统一脱敏日志（v9.2 §3.6）：内核单写数据根下 logs/；记录编号按本机盐 hash（盐与日志分开存放）
   const logSink = new FileSink({ dir: join(config.workspaceDir, "logs"), salt: loadOrCreateSalt(join(config.workspaceDir, ".log-salt")) });
   slog.setSink(logSink);
+  const bootOnboarding = config.onboarding === true;
+  const bootPhase = (phase: "db_open_migrate" | "lawdb" | "skills" | "identity_device" | "endpoints" | "ready"): void => {
+    const now = Date.now();
+    slog.event("KERNEL_BOOT_PHASE", { phase, ms: now - bootMarkAt, onboarding: bootOnboarding });
+    bootMarkAt = now;
+  };
+  slog.event("KERNEL_BOOT_PHASE", { phase: "init_wait", ms: bootSinceProc, onboarding: bootOnboarding });
 
   const db = new KernelDb(config.dbFile, { key: config.dbKey });
   db.migrate();
+  bootPhase("db_open_migrate");
   const identity = resolveIdentity(db, config.firmSlug, config.userSlug);
   // 经开通码激活（第 13 批）：成员角色以开通码 / 邀请码为准；占位工作区已无用
   if (config.activation) {
@@ -152,6 +192,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   const lawdbChoice = selectLawdb({ db, workspaceDir: config.workspaceDir, channel: distChannel, keys: contentKeys, bundledFile: config.lawdbFile, bundledReleaseFile: join(dirname(config.lawdbFile), "lawdb.release.json"), ...(config.lawdbAllowTestFixture ? { allowTestFixture: true } : {}) });
   const lawdbHolder = new LawdbHolder(lawdbChoice.lawdb);
   const lawdb = lawdbHolder.proxy;
+  bootPhase("lawdb");
 
   // 密钥体系引导（§5.3）：律所身份（只存公钥）+ 本机设备证书 + 签名事件链
   const keysDir = keysDirOf(config.workspaceDir);
@@ -172,6 +213,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     skillsBundle = materializeSkillsBundle(skillsChoice.bundled?.file ?? null, contentKeys, config.workspaceDir);
   }
   if (!skillsBundle.ok) slog.event("KERNEL_SKILLS_UNAVAILABLE", {});
+  bootPhase("skills");
   // 密钥文件按数据库主密钥派生的密钥封装（隐私安全审查 P0-1）；开发与测试形态无主密钥时为明文
   configureSecretSealing(keysDir, config.dbKey);
   // 第 68 批（D-294）：已激活档案补一份 profile.json（升级前的工作区没有；同一台电脑多个账号时据此找回这个档案）
@@ -226,6 +268,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   if (recovery.rejected) slog.event("KERNEL_RECOVERY_REJECTED", {});
   const device = ensureDevice(db, keysDir, identity, { firmSlug: config.firmSlug, userSlug: config.userSlug, ...(config.activation?.device_id ? { deviceId: config.activation.device_id } : {}) }, { promoteSole: !config.activation });
   const signer = createLedgerSigner({ db, deviceId: device.deviceId, signer: device.signer, tenantId: identity.tenantId });
+  bootPhase("identity_device");
   // 从备份恢复后的第一次正常启动（复核 R2A-14）：在恢复出的账本里记一条审计（本设备何时从备份恢复），界面据此提醒“原电脑丢失请联系管理员”
   {
     const marker = join(config.workspaceDir, RESTORED_MARKER);
@@ -438,8 +481,27 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       // 安全复核 U-2：取不到 /v1/meta（网络抖动、云端 5xx）不当作旧云端——照常带签名登录、不记缓存；只有云端答了而没有 account_switch 才是旧云端
       if (!m || !m.ok) return true;
       const features = Array.isArray((m.json as { features?: unknown }).features) ? ((m.json as { features: unknown[] }).features.filter((x) => typeof x === "string") as string[]) : [];
-      cloudSwitch = { at: now, ok: (m.json as { account_switch?: unknown }).account_switch === true, unbind: features.includes("device_limit_unbind"), signout: features.includes("device_signout") };
+      cloudSwitch = { at: now, ok: (m.json as { account_switch?: unknown }).account_switch === true, unbind: features.includes("device_limit_unbind"), signout: features.includes("device_signout"), features };
       return cloudSwitch.ok;
+    },
+    // ─── 第 72 批（契约 02 §7）：工作空间与团队 ───
+    // 云端能力（/v1/meta.features，与 signedLogin 同一份 60 秒缓存）；取不到 = null（按旧云端降级，不抛错）
+    features: async (): Promise<string[] | null> => {
+      await accountDeps.signedLogin();
+      return cloudSwitch && Date.now() - cloudSwitch.at < 120_000 ? cloudSwitch.features : null;
+    },
+    // 这台电脑上已有的账号档案（只给编号，界面据此标“切过去不用再登记这台电脑”）
+    localProfiles: (): { tid: string; member_slug: string }[] => {
+      try {
+        return listProfiles(config.dataRoot).map((x) => ({ tid: x.tid, member_slug: x.member_slug }));
+      } catch {
+        return [];
+      }
+    },
+    meta: () => accountMeta,
+    noteMeta: (j: unknown): void => {
+      const m = accountMetaOf(j);
+      if (m) accountMeta = writeAccountMeta(config.workspaceDir, accountMeta, m);
     },
     switchTo: (j: Record<string, unknown>): Record<string, unknown> => {
       const acc = (j.account ?? {}) as Record<string, any>;
@@ -525,7 +587,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     },
   };
   /** 第 68 批：云端是否支持带签名登录别的账号（/v1/meta 取一次记 60 秒）。 */
-  let cloudSwitch: { at: number; ok: boolean; unbind: boolean; signout: boolean } | null = null;
+  let cloudSwitch: { at: number; ok: boolean; unbind: boolean; signout: boolean; features: string[] } | null = null;
+  /** 第 72 批：当前工作空间的类型与账号级上手状态（工作区里 account-meta.json；取自登录 / me 应答）。 */
+  let accountMeta: AccountMeta | null = config.onboarding ? null : readAccountMeta(config.workspaceDir);
   /** 第 68 批：换到的账号电脑数已满时那次登录的会话（只在内存、10 分钟内），就地移除一台后继续。第 71 批：same = 本档案账号重新登录满额 */
   let limitSession: { token: string; at: number; same?: boolean } | null = null;
   /**
@@ -556,6 +620,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     if (!controlPlaneRef.current || !accountSession) return Promise.resolve();
     sessionChecking ??= controlPlaneRef.current
       .account("GET", "/v1/auth/me")
+      // 第 72 批：顺带记下当前工作空间的类型与账号级上手状态
+      .then((j) => accountDeps.noteMeta(j))
       .catch(() => undefined)
       .finally(() => {
         sessionChecking = null;
@@ -607,6 +673,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
           onEnrolled: () => dropActivationClaim(keysDir),
           // 第 44 批：控制面请求附账号会话；控制面说要重新登录 → 记原因、清掉本机席位令牌（AI 停用）、通知界面出登录框
           sessionToken: () => accountSession?.token ?? null,
+          // 第 72 批（A1 H2）：首次同步没成的退避重试间隔（缺省 2/4/8/16/30 秒；ZR_CP_FIRST_RETRY_MS="50,100" 供用例调短，"off" 关）
+          ...(env.ZR_CP_FIRST_RETRY_MS ? { firstSyncRetryMs: env.ZR_CP_FIRST_RETRY_MS === "off" ? [] : env.ZR_CP_FIRST_RETRY_MS.split(",").map((x) => Number(x)).filter((x) => Number.isSafeInteger(x) && x >= 10 && x <= 600_000) } : {}),
           // 第 64 批：只认“这次请求带的会话就是现在的会话”——退出登录时发出的同步，答复在重新登录之后才回来，不能把刚登录的人再踢回登录页
           onSessionProblem: (code, sent) => {
             if ((accountSession?.token ?? null) !== sent) return;
@@ -1155,6 +1223,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   );
   const localPort = localServerPort(servers.tcp);
   sweepInflight = servers.sweepNow;
+  bootPhase("endpoints");
 
   // 控制面同步（阶段 6）：启动即同步一次，之后定时（缺省 10 分钟，钳在 10 秒～1 小时——复核 S6-A21）；
   // ZR_CONTROL_PLANE_SYNC_MS=off 时只在显式调用 control_plane.sync 时同步（测试）
@@ -1460,6 +1529,11 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       activation: config.onboarding ? null : activationInfo(config, firm, identity),
       // 第 68 批：当前账号档案的标识（摘要，不含身份）：界面按它分开本机偏好、切换账号后据此确认已换到新档案
       profile: config.onboarding || !config.activation ? null : { id: profileScopeId(config.activation) },
+      // 第 72 批（契约 §7）：当前工作空间是个人还是团队（取自登录 / me 应答；还没取到为 null，界面按旧推断）；
+      // 这台电脑的证书是谁签的：firm_root = 律所根（能接收团队共享事项），account_ca = 云端账号签发钥（D-304：能登录、用 AI、处理自己的事项，
+      // 还不能接收团队共享事项——团队共享处提示“请管理员确认这台电脑”）
+      workspace_kind: config.onboarding ? null : (accountMeta?.workspace_kind ?? null),
+      device_issuer: config.onboarding ? null : (device.cert as { issuer?: unknown }).issuer === "account_ca" ? "account_ca" : "firm_root",
       // 这台电脑何时从备份恢复（复核 R2A-14 / R2B-22：界面据此提醒“原电脑丢了请找管理员”）
       restored_from_backup_at: config.onboarding ? null : (db.get<{ at: string }>(`SELECT created_at AS at FROM audit_events WHERE action = 'device.restored_from_backup' AND tenant_id = ? ORDER BY audit_event_id DESC LIMIT 1`, [identity.tenantId])?.at ?? null),
     });
@@ -1477,6 +1551,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   }
   // 第 66 批：模型目录每 10 分钟取一次（启动即取；ZR_MODEL_CATALOG_MS=off 关，开发联调可调短）
   if (controlPlane && env.ZR_MODEL_CATALOG_MS !== "off" && (env.ZR_CONTROL_PLANE_SYNC_MS !== "off" || env.ZR_MODEL_CATALOG_MS)) modelCatalog.start(Number(env.ZR_MODEL_CATALOG_MS ?? 600_000) || 600_000);
+  bootPhase("ready");
 
   return {
     identity,
@@ -1513,6 +1588,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       listeners.add(cb);
     },
     async close() {
+      const closeStartedAt = Date.now();
       // 关闭前冲刷（未到期的还原审计窗口等）：数据库还开着
       for (const fn of shutdownHooks.splice(0)) {
         try {
@@ -1542,12 +1618,14 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       if (contentFirst) clearTimeout(contentFirst);
       await contentUpdater.close();
       await queue.shutdown();
+      // 第 72 批（A1 S7）：server.close() 要等现存连接全部断开——空闲的长连接（keep-alive）先断，半秒后仍没关完就断开全部连接，
+      // 2 秒封顶；此前偶发等满主进程的 8 秒才被强杀（换账号、激活后的重启都要经过这里）
       for (const s of [servers.tcp, servers.pipe]) {
-        if (s) await new Promise<void>((r) => s.close(() => r()));
+        if (s) await closeServerPromptly(s);
       }
       lawdbHolder.current.close();
       db.close();
-      slog.event("KERNEL_CLOSED", {});
+      slog.event("KERNEL_CLOSED", { ms: Date.now() - closeStartedAt });
       if (slog.getSink() === logSink) slog.setSink(null);
     },
   };

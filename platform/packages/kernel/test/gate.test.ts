@@ -145,7 +145,8 @@ test("自带密钥端点经闸门直连：模型别名映射到上游 ID、不�
     const { run } = await runScenario(k.inv, matter.matter_id, "s1.contract_review", { document_version_ids: [doc.document_version_id] });
     assert.equal(run.status, "succeeded");
     const last = up.seen.at(-1)!;
-    assert.equal(last.body.model, "kimi-k3", "别名映射到上游模型 ID");
+    // 第 72 批（D-299 第 1 条）：BYOK 内置映射 K3 → kimi-k3.1-pro（原期望 kimi-k3）
+    assert.equal(last.body.model, "kimi-k3.1-pro", "别名映射到上游模型 ID");
     assert.equal(last.headers.authorization, "Bearer byok-fake-key");
     assert.equal(last.headers["x-kwl-anon-matter"], undefined, "直连端点不带 x-kwl 头");
     const sent = JSON.stringify(last.body);

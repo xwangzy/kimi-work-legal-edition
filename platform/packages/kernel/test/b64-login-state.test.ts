@@ -49,7 +49,8 @@ test("同步答复只认当时带的会话；开通写会话删旧记录；删�
   assert.match(ix, /onSessionProblem: \(code, sent\) => \{\s*if \(\(accountSession\?\.token \?\? null\) !== sent\) return;\s*markAccountProblem\(code, "sync"\);/);
   assert.match(ix, /clearProblem: \(\) => \{[\s\S]{0,300}try \{\s*dropLoginRequired\(keysDir\);\s*\} catch \(e\) \{/);
   assert.match(ix, /Date\.parse\(accountSession\.saved_at\) > Date\.parse\(p\.at\)/);
-  assert.match(src("services/onboarding.ts"), /writeAccountSession\(keysDir, \{ token: j\.session_token, \.\.\.account \}\);[\s\S]{0,200}dropLoginRequired\(keysDir\);/);
+  // 第 72 批补：第 71 批起写会话时另带打码手机号（`...account, ...(maskedPhoneOrNull…)`），原正则要求 `...account }` 紧接，HEAD 55d75f32 上即已不过
+  assert.match(src("services/onboarding.ts"), /writeAccountSession\(keysDir, \{ token: j\.session_token, \.\.\.account(?:, [^\n]{0,120})? \}\);[\s\S]{0,200}dropLoginRequired\(keysDir\);/);
 });
 
 test("闸门：关闭期间不再拉起、关闭最多等 3 秒；全量核对不符先撤回放行", () => {

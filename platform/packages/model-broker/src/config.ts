@@ -75,7 +75,8 @@ export function buildRoutes(e: BrokerEnv = process.env): Record<string, RouteDef
     "legal/k3": {
       alias: "legal/k3",
       provider: (env(e, "ZR_MODEL_PROVIDER_K3", defaultProvider) ?? "mock") as "upstream" | "mock",
-      providerModel: env(e, "ZR_MODEL_K3", "kimi-k3")!,
+      // 第 72 批（D-299 第 1 条）：内置本机型号与云端缺省路由同口径（只影响 mock / 自带密钥 / 私有端点；标准端点由网关按别名换上游）
+      providerModel: env(e, "ZR_MODEL_K3", "kimi-k3.1-pro")!,
       supportsEffort: true,
       defaultEffort: "high", // 厂商默认 max；本代理默认 high，按步骤分档控成本
       allowedEfforts: ["low", "high", "max"],

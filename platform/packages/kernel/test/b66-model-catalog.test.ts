@@ -46,7 +46,8 @@ test("目录服务：验签、丢弃未知字段、只进不退（同版本按�
   const svc = new ModelCatalogService({ pull: async () => { const x = queue.shift(); if (x instanceof Error) throw x; return x; }, open: open(), tenantId: TID, cacheFile, onChange: (d) => changes.push(d?.version ?? -1) });
   // 从未取到：内置两项（问答 K3 / K2.6，任务只有 K3）
   assert.deepEqual(svc.list("qa").map((m) => m.id), ["legal/k3", "legal/k2.6"]);
-  assert.deepEqual(svc.list("task").map((m) => m.id), ["legal/k3"]);
+  // 第 72 批（D-299 第 2 条）：内置兜底 K2.6 也进任务入口（原期望只有 K3）
+  assert.deepEqual(svc.list("task").map((m) => m.id), ["legal/k3", "legal/k2.6"]);
   assert.equal(svc.state().source, "builtin");
 
   queue.push(seal(V5));
@@ -121,7 +122,8 @@ test("模型路由按目录补别名：只收可用的非内置项；内置两�
   assert.deepEqual(broker.resolveRoute("legal/k3-fast").allowedEfforts, ["low", "high"]);
   assert.equal(broker.resolveRoute("legal/qa-lite").thinkingControl, "none");
   assert.throws(() => broker.resolveRoute("legal/blocked"), /未知模型路由/, "不可用的不进路由");
-  assert.equal(broker.resolveRoute("legal/k3").providerModel, "kimi-k3", "内置项仍按本机配置");
+  // 第 72 批（D-299 第 1 条）：内置本机型号与云端缺省路由同口径（原期望 kimi-k3）
+  assert.equal(broker.resolveRoute("legal/k3").providerModel, "kimi-k3.1-pro", "内置项仍按本机配置");
   const matter = { matter_id: "m1", model_endpoint: "byok" } as any;
   await assert.rejects(broker.chat({ matter, task: { tid: TID, uid: "u", mid: "m1" } as any, route: "legal/k3-fast", messages: [{ role: "user", content: "x" }] }), /只能用内置的 K3 或 K2\.6/);
   broker.setCatalog([]);
@@ -162,19 +164,23 @@ after(async () => {
   await cloud?.close();
 });
 
-test("models.list / models.select：任务只列 K3、问答 K3 / K2.6；不在入口的不能选；选了记在本机、按入口分开", async () => {
+// 第 72 批（D-299 第 2 条）：K2.6 进任务入口——原期望“任务只列 K3”、“任务选 K2.6 被拒”
+test("models.list / models.select：任务与问答都列 K3 / K2.6；不认识的不能选；选了记在本机、按入口分开", async () => {
   const { inv } = tk;
   const task = await inv("models.list", { scope: "task" });
-  assert.deepEqual([task.source, task.default, task.selected, task.models.map((m: any) => m.id)], ["builtin", "legal/k3", "legal/k3", ["legal/k3"]]);
+  assert.deepEqual([task.source, task.default, task.selected, task.models.map((m: any) => m.id)], ["builtin", "legal/k3", "legal/k3", ["legal/k3", "legal/k2.6"]]);
   assert.equal(JSON.stringify(task).includes("kimi-k3"), false, "不出上游型号");
   const qa = await inv("models.list", { scope: "qa" });
   assert.deepEqual(qa.models.map((m: any) => [m.id, m.label, m.thinking]), [["legal/k3", "K3", "effort"], ["legal/k2.6", "K2.6", "toggle"]]);
-  await assert.rejects(inv("models.select", { scope: "task", id: "legal/k2.6" }), /这个模型不能用于任务/);
   await assert.rejects(inv("models.select", { scope: "qa", id: "legal/nope" }), /没有这个模型/);
   await assert.rejects(inv("models.list", { scope: "chat" }), /scope 须为/);
   assert.deepEqual(await inv("models.select", { scope: "qa", id: "legal/k2.6" }), { ok: true, scope: "qa", selected: "legal/k2.6", label: "K2.6" });
   assert.equal((await inv("models.list", { scope: "qa" })).selected, "legal/k2.6");
   assert.equal((await inv("models.list", { scope: "task" })).selected, "legal/k3", "按入口分开");
+  assert.deepEqual(await inv("models.select", { scope: "task", id: "legal/k2.6" }), { ok: true, scope: "task", selected: "legal/k2.6", label: "K2.6" });
+  assert.equal((await inv("models.list", { scope: "task" })).selected, "legal/k2.6");
+  assert.equal((await inv("models.list", { scope: "qa" })).selected, "legal/k2.6");
+  await inv("models.select", { scope: "task", id: "legal/k3" });
   // chat.models 与之同源（仍是 K3 / K2.6）
   assert.deepEqual((await inv("chat.models")).choices.map((c: any) => c.alias), ["legal/k3", "legal/k2.6"]);
 });
@@ -184,7 +190,6 @@ test("runs.start 的 model：不在任务入口、不认识的拒绝；合格的
   const { matter } = await inv("matters.create", { title: "模型选择", stance: "原告", consent_status: "not_required" });
   const est = async () => (await inv("runs.estimate", { matter_id: matter.matter_id, scenario: "a1.agent_task", document_version_ids: [] })).estimate_id;
   const start = async (extra: Record<string, unknown>) => inv("runs.start", { matter_id: matter.matter_id, estimate_id: await est(), idempotency_key: `b66-${Date.now()}-${Math.random()}`, goal: "B66 请简要回答", plan_first: false, mode: "default", ...extra });
-  await assert.rejects(start({ model: "legal/k2.6" }), /不能用于这次任务：这个模型不能用于任务/);
   await assert.rejects(start({ model: "legal/nope" }), /没有这个模型/);
   await assert.rejects(start({ model: 42 }), /model 须为模型编号/);
 

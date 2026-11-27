@@ -8,6 +8,7 @@
  * 管理员动作（起草、签名、发布律所策略与连接器登记）同样经这里；签名绑定管理员在界面上看到的确切内容（待签字节摘要），
  * 签名时控制面返回的草稿与之不符即拒签并告警（复核 S6-B02）。
  */
+import { slog } from "@zr-legal/safe-log";
 import { sign } from "node:crypto";
 import { DEVICE_ID_PATTERN, type DeviceCertificate, type DeviceSyncSigner } from "@zr-legal/keys";
 import {
@@ -60,7 +61,12 @@ export interface ControlPlaneClientDeps {
   /** 控制面答复“要重新登录”（会话无效、过期、账号停用）时回调（内核据此提示重新登录）。 */
   /** 第 64 批：第二个参数是这次请求带的会话令牌（没带为 null）——答复回来时本机已换了会话（刚重新登录），就不是现在这次登录的问题。 */
   onSessionProblem?: (code: string, sentSession: string | null) => void;
+  /** 第 72 批（A1 H2）：首次同步没成的退避重试间隔（毫秒；用例调短）。缺省 2、4、8、16、30 秒。 */
+  firstSyncRetryMs?: readonly number[];
 }
+
+/** 第 72 批（A1 H2）：首次同步（register 或席位令牌）没成时按此退避重试，用尽后回到常规间隔。 */
+export const FIRST_SYNC_RETRY_MS: readonly number[] = [2_000, 4_000, 8_000, 16_000, 30_000];
 
 /**
  * 同步间隔上限（复核 S6-A21）：席位令牌签发 96 小时、剩余不足 73 小时即续期，“控制面停机后仍有 ≥ 72 小时”依赖同步间隔 ≤ 1 小时。
@@ -86,6 +92,8 @@ export interface SyncReport {
   at: string;
   ok: boolean;
   steps: Record<string, string>;
+  /** 第 72 批（A1 §2.4 T1）：各段用时（毫秒）：register、docs（五份文档并行取 + 逐个应用）、seat、total。 */
+  ms?: Record<string, number>;
 }
 
 export interface DraftView {
@@ -175,6 +183,11 @@ type CallResult = { ok: true; status: number; json: Record<string, unknown> } | 
  * base64url，大小写都有）在本机就被拒——“我的电脑 → 解绑”“登录记录 → 让这处下线”自第 44 批起在桌面端从没成功过（报“没有完成，请稍后重试”）。
  */
 export const ACCOUNT_PATH = /^\/v1\/auth\/[A-Za-z0-9/_-]{2,120}$/;
+/**
+ * 第 72 批（契约 02 §3～§4）：工作空间、团队与账号上手状态接口（同样是账号会话 + 设备签名；闸门白名单再精确核对）：
+ * /v1/workspace/upgrade、/v1/teams/{join,leave}、/v1/team/invites…、/v1/firm/…（团队成员管理）、/v1/me/onboarding。
+ */
+export const TEAM_PATH = /^\/v1\/(?:workspace|teams|team|firm|me)\/[A-Za-z0-9/_-]{2,120}$/;
 const SESSION_PROBLEMS: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch", "session_signed_out", "session_signed_out_admin", "session_signed_out_support", "session_device_limit"]);
 
 export class ControlPlaneClient {
@@ -341,6 +354,8 @@ export class ControlPlaneClient {
   private async doSync(opts: { retryFailed?: boolean }): Promise<SyncReport> {
     const { gov } = this.d;
     const steps: Record<string, string> = {};
+    const ms: Record<string, number> = {};
+    const t0 = Date.now();
     const outcome = (o: { accepted: boolean; changed: boolean; code?: string }) => (o.accepted ? (o.changed ? "accepted" : "unchanged") : `rejected:${o.code ?? "?"}`);
     // 一步出错不影响其余步骤（复核 S6-B11：apply 抛出的异常也只记在该步）
     const step = async (name: string, fn: () => Promise<string>) => {
@@ -351,12 +366,10 @@ export class ControlPlaneClient {
       }
     };
     await step("register", () => this.register());
-    // 第 71 批：首次登记这一步有结果了（成功或失败都放行，等着的请求照常发出、如实报错）
-    if (this.resolveRegister) {
-      this.resolveRegister();
-      this.resolveRegister = null;
-      this.registerSettled = null;
-    }
+    ms.register = Date.now() - t0;
+    // 第 71 批：首次登记这一步有结果了（成功或失败都放行，等着的请求照常发出、如实报错）。
+    // 第 72 批（A1 H2）：首次同步失败会退避重试——没成时先不放行，等重试成功或重试用尽（等着的请求另有 8 秒封顶）
+    if (this.resolveRegister && (steps.register === "ok" || !this.firstRetryPending)) this.settleRegister();
     if (steps.register === "ok") {
       await step("pending_actions", async () => `sent:${await this.flushPendingActions(!!opts.retryFailed)}`);
       // 第 71 批（V45）：五份文档并行取（原来逐个串行，开通后首次同步约 11 次往返，跨地域时要几秒），仍按原顺序逐个验签应用
@@ -367,17 +380,25 @@ export class ControlPlaneClient {
         ["policy", "/v1/policy", (e) => gov.applyPolicy(e)],
         ["connectors", "/v1/connectors", (e) => gov.applyConnectors(e)],
       ];
+      // 第 72 批（A1 S6）：席位令牌与五份文档同时发出（省一次往返：首次登记后 AI 早一个往返可用）。只在本机此刻没有因吊销 / 未配置而停用时
+      // 预先请求；许可还没取到或已到期的照样先请求（新许可可能正好解除），应用完许可后仍在退出模式就丢弃这份令牌、不采用——采用与否仍以应用后的许可为准
+      const preExit = gov.exitMode();
+      const wantSeat = (!preExit || preExit.code === "license_missing" || preExit.code === "license_expired") && (gov.seatInfo().renew_due || !gov.seatToken());
+      const tDocs = Date.now();
+      const seatEarly = wantSeat ? this.call("POST", "/v1/seat-token", {}).catch((e: unknown) => ({ ok: false as const, error: `error:${(e as Error)?.message ?? e}`.slice(0, 200) })) : null;
       const fetched = await Promise.all(docs.map(([, path]) => this.call("GET", path).catch((e: unknown) => ({ ok: false as const, error: `error:${(e as Error)?.message ?? e}`.slice(0, 200) }))));
       for (let i = 0; i < docs.length; i++) {
         const [name, , apply] = docs[i]!;
         const r = fetched[i]!;
         await step(name, async () => (r.ok ? outcome(apply(r.json)) : r.error));
       }
+      ms.docs = Date.now() - tDocs;
+      const tSeat = Date.now();
       await step("seat", async () => {
         const exit = gov.exitMode();
         if (exit) return `skipped:${exit.code}`;
-        if (!gov.seatInfo().renew_due && gov.seatToken()) return "valid";
-        const r = await this.call("POST", "/v1/seat-token", {});
+        if (!seatEarly && !gov.seatInfo().renew_due && gov.seatToken()) return "valid";
+        const r = (await seatEarly) ?? (await this.call("POST", "/v1/seat-token", {}));
         if (!r.ok) {
           // 控制面答复席位已吊销：清掉本机席位令牌（收紧）
           if (r.error === "seat_revoked") gov.seatRevokedByControlPlane();
@@ -386,10 +407,17 @@ export class ControlPlaneClient {
         if (typeof r.json.token === "string") this.outdated = null;
         return typeof r.json.token === "string" ? outcome(gov.applySeatToken(r.json.token)) : "seat_reply_invalid";
       });
+      ms.seat = Date.now() - tSeat;
       await step("summaries", async () => `pushed:${await this.pushSummaries()}`);
     }
+    ms.total = Date.now() - t0;
     const ok = Object.values(steps).every((v) => v === "ok" || v === "accepted" || v === "unchanged" || v === "valid" || v.startsWith("pushed:") || v.startsWith("sent:"));
-    this.last = { at: new Date(this.d.now?.() ?? Date.now()).toISOString(), ok, steps };
+    this.last = { at: new Date(this.d.now?.() ?? Date.now()).toISOString(), ok, steps, ms };
+    slog.event("KERNEL_CP_SYNC", { ms: ms.total, register_ms: ms.register ?? 0, ...(ms.docs !== undefined ? { docs_ms: ms.docs } : {}), ...(ms.seat !== undefined ? { seat_ms: ms.seat } : {}), ok, register_ok: steps.register === "ok", seat: seatOutcomeOf(steps.seat), first: this.inFirstRound });
+    if (!this.aiReadyLogged && gov.seatToken()) {
+      this.aiReadyLogged = true;
+      slog.event("KERNEL_AI_READY", { since_boot_ms: Math.round(process.uptime() * 1000) });
+    }
     try {
       this.d.onSynced?.(this.last);
     } catch {
@@ -479,15 +507,53 @@ export class ControlPlaneClient {
     this.registerSettled ??= new Promise<void>((r) => {
       this.resolveRegister = r;
     });
-    void this.sync().catch(() => {});
+    const delays = this.d.firstSyncRetryMs ?? FIRST_SYNC_RETRY_MS;
+    this.firstRetryPending = delays.length > 0;
+    this.inFirstRound = true;
+    // 第 72 批（A1 H2）：首次同步（登记这台电脑、取席位令牌）没成时按 2/4/8/16/30 秒退避重试——此前要等 10 分钟一次的定时同步，
+    // 首次 register 碰上网络抖动或云端忙，AI 最长 10 分钟不可用，律师看来就是“登记没完成”。重试只在启动后这一轮，成功即停
+    const attempt = (i: number): void => {
+      void this.sync()
+        .catch(() => null)
+        .then((rep) => {
+          if (this.stopped) return;
+          if ((rep && firstSyncDone(rep)) || i >= delays.length) {
+            this.inFirstRound = false;
+            this.firstRetryPending = false;
+            this.settleRegister();
+            return;
+          }
+          if (i === delays.length - 1) this.firstRetryPending = false;
+          this.firstRetryTimer = setTimeout(() => attempt(i + 1), delays[i]);
+          this.firstRetryTimer.unref?.();
+        });
+    };
+    attempt(0);
     this.timer = setInterval(() => void this.sync().catch(() => {}), Math.min(SYNC_MAX_INTERVAL_MS, Math.max(10_000, intervalMs)));
     this.timer.unref();
   }
 
   stop(): void {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    if (this.firstRetryTimer) clearTimeout(this.firstRetryTimer);
+    this.firstRetryTimer = null;
+    this.settleRegister();
   }
+
+  /** 放行等“首次登记”的请求（成功、重试用尽或停止时）。 */
+  private settleRegister(): void {
+    if (!this.resolveRegister) return;
+    this.resolveRegister();
+    this.resolveRegister = null;
+    this.registerSettled = null;
+  }
+  private firstRetryPending = false;
+  private firstRetryTimer: NodeJS.Timeout | null = null;
+  private inFirstRound = false;
+  private stopped = false;
+  private aiReadyLogged = false;
 
   // ─── 管理员：起草 → 签名 → 发布 ───
 
@@ -669,7 +735,7 @@ export class ControlPlaneClient {
 
   /** 账号接口原样调用（带设备签名与会话头）；失败抛带 code 的错误。 */
   async account(method: "GET" | "POST" | "PUT", path: string, body?: unknown): Promise<Record<string, unknown>> {
-    if (!ACCOUNT_PATH.test(path)) throw new Error("account_path_invalid");
+    if (!ACCOUNT_PATH.test(path) && !TEAM_PATH.test(path)) throw new Error("account_path_invalid");
     await this.afterFirstRegister();
     const r = await this.call(method, path, method === "GET" ? undefined : (body ?? {}));
     if (!r.ok) throw Object.assign(new Error(r.error), { code: r.error, cpMessage: r.message ?? null, status: r.status ?? null, retryAfter: r.retry_after_s ?? null, ...(r.error === "client_outdated" ? { minVersion: this.outdated?.min_version ?? null } : {}) });
@@ -791,4 +857,23 @@ export class ControlPlaneClient {
     if (!r.ok) throw new Error(r.error);
     return { ok: true };
   }
+}
+
+/**
+ * 第 72 批（A1 H2）：首次同步算不算“成了”——这台电脑登记上了（register ok）且席位令牌已取得或仍有效（AI 可用）；
+ * 因许可到期、设备吊销等退出模式而跳过的，重试也不会好，也算结束。纯函数。
+ */
+export function firstSyncDone(rep: SyncReport): boolean {
+  if (rep.steps.register !== "ok") return false;
+  const seat = rep.steps.seat ?? "";
+  return seat === "accepted" || seat === "unchanged" || seat === "valid" || (seat.startsWith("skipped:") && seat !== "skipped:license_missing");
+}
+
+/** 日志用：席位这一步的结果归到封闭枚举。纯函数。 */
+function seatOutcomeOf(v: string | undefined): "accepted" | "unchanged" | "valid" | "skipped" | "rejected" | "error" | "none" {
+  if (!v) return "none";
+  if (v === "accepted" || v === "unchanged" || v === "valid") return v;
+  if (v.startsWith("skipped:")) return "skipped";
+  if (v.startsWith("rejected:")) return "rejected";
+  return "error";
 }

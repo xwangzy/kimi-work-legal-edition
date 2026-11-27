@@ -4,6 +4,7 @@
  * - 来源：控制面 `GET /v1/models`（设备签名 + 账号会话，经出站闸门的控制面通道），控制面签名信封 `kwl-model-catalog`；
  *   只含别名、显示名、说明、排序、思考方式、能力、入口与可用性——上游型号、地址、目标与密钥不下发（网关按别名路由）。
  * - 验签后按 (version, issued_at) 只进不退：旧版本或同版本更早签发的一律不采用（防重放把停用的模型“放回来”）。
+ *   第 72 批：信封带纪元（epoch）时，纪元不同按签发时刻比（云端路由状态重建后版本号从头数起，见 catalogNewer）。
  * - 缓存：内存 + 工作区内 JSON（存的是原信封，读回时重新验签；记 fetched_at）；离线用最后一版；从未取到用内置两项兜底；
  *   开发形态与试用版（没有控制面）只用内置两项。
  * - 刷新：登录成功后、每 10 分钟、收到网关 model_* / price_unconfigured 拒绝时（至多 30 秒一次）。
@@ -16,7 +17,7 @@ export type ModelScope = "qa" | "task";
 export type ThinkingControl = "effort" | "toggle" | "none";
 export type ModelEffort = "low" | "high" | "max";
 export type ModelCapability = "tool_use" | "thinking" | "long_context";
-export type CatalogReason = "not_in_plan" | "unpriced" | "no_route" | "disabled";
+export type CatalogReason = "not_in_plan" | "unpriced" | "no_route" | "disabled" | "same_upstream";
 
 export interface CatalogModel {
   id: string;
@@ -35,6 +36,11 @@ export interface CatalogModel {
 
 export interface ModelCatalogDoc {
   version: number;
+  /**
+   * 第 72 批（D-299 第 6 条，A1 M7）：路由状态的纪元（控制面首次建立 / 重建路由状态时随机生成，运营修改不换；签名覆盖）。
+   * 旧云端没有 = null。
+   */
+  epoch: string | null;
   issued_at: string;
   tid: string;
   default: string;
@@ -47,7 +53,8 @@ export const BUILTIN_MODEL_IDS: readonly string[] = ["legal/k3", "legal/k2.6"];
 /** 内置两项（与控制面 BUILTIN_MODEL_META 同一口径；第 47～65 批客户端写死的样子）。 */
 export const BUILTIN_CATALOG: readonly CatalogModel[] = Object.freeze([
   { id: "legal/k3", label: "K3", description: "适合复杂问题", sort: 10, thinking: "effort", efforts: ["low", "high", "max"], capabilities: ["tool_use", "thinking", "long_context"], scopes: ["qa", "task"], max_context: 262_144, default: true, available: true, reason: null },
-  { id: "legal/k2.6", label: "K2.6", description: "更快、更省额度，复杂问题效果略弱", sort: 20, thinking: "toggle", efforts: [], capabilities: ["tool_use", "thinking"], scopes: ["qa"], max_context: 262_144, default: false, available: true, reason: null },
+  // 第 72 批（D-299 第 2 条）：K2.6 本来就是带 tool_use 的 Agent 模型（任务里的子 Agent 就是它），与云端内置口径一起进任务入口
+  { id: "legal/k2.6", label: "K2.6", description: "更快、更省额度，复杂问题效果略弱", sort: 20, thinking: "toggle", efforts: [], capabilities: ["tool_use", "thinking"], scopes: ["qa", "task"], max_context: 262_144, default: false, available: true, reason: null },
 ] as CatalogModel[]);
 
 const ID_RE = /^[a-z0-9][a-z0-9._/-]{1,47}$/;
@@ -55,7 +62,9 @@ const THINKING: readonly ThinkingControl[] = ["effort", "toggle", "none"];
 const EFFORTS: readonly ModelEffort[] = ["low", "high", "max"];
 const CAPS: readonly ModelCapability[] = ["tool_use", "thinking", "long_context"];
 const SCOPES: readonly ModelScope[] = ["qa", "task"];
-const REASONS: readonly CatalogReason[] = ["not_in_plan", "unpriced", "no_route", "disabled"];
+const REASONS: readonly CatalogReason[] = ["not_in_plan", "unpriced", "no_route", "disabled", "same_upstream"];
+/** 纪元：控制面随机 16 字节 base64url（22 字符）；留一点余量。 */
+const EPOCH_RE = /^[A-Za-z0-9_-]{8,64}$/;
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const subset = <T extends string>(v: unknown, all: readonly T[]): T[] | null => (Array.isArray(v) && v.length <= all.length && v.every((x) => (all as readonly unknown[]).includes(x)) ? all.filter((x) => v.includes(x)) : null);
@@ -67,6 +76,8 @@ const subset = <T extends string>(v: unknown, all: readonly T[]): T[] | null => 
 export function sanitizeCatalog(body: unknown, tenantId: string): ModelCatalogDoc | null {
   if (!isObj(body) || body.tid !== tenantId || !Number.isSafeInteger(body.version) || (body.version as number) < 0) return null;
   if (typeof body.issued_at !== "string" || !Number.isFinite(Date.parse(body.issued_at))) return null;
+  // 第 72 批：纪元可省（旧云端）；带了就必须合格（它在签名里，格式不对说明信封有问题，整份不收）
+  if (body.epoch !== undefined && body.epoch !== null && !(typeof body.epoch === "string" && EPOCH_RE.test(body.epoch))) return null;
   if (typeof body.default !== "string" || !ID_RE.test(body.default) || !Array.isArray(body.models) || body.models.length > 32) return null;
   const models: CatalogModel[] = [];
   const seen = new Set<string>();
@@ -98,12 +109,21 @@ export function sanitizeCatalog(body: unknown, tenantId: string): ModelCatalogDo
     });
   }
   models.sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id));
-  return { version: body.version as number, issued_at: body.issued_at, tid: tenantId, default: body.default, models };
+  return { version: body.version as number, epoch: typeof body.epoch === "string" ? body.epoch : null, issued_at: body.issued_at, tid: tenantId, default: body.default, models };
 }
 
-/** 新文档是否比当前的新：先比 version，同版本比签发时刻（纯函数）。当前没有 → 新。 */
-export function catalogNewer(next: { version: number; issued_at: string }, cur: { version: number; issued_at: string } | null): boolean {
+/**
+ * 新文档是否比当前的新（纯函数）。当前没有 → 新。
+ * - 同一纪元（两边都没有纪元 = 旧云端，也算同一纪元）：先比 version，同版本比签发时刻——与第 66 批相同。
+ * - 纪元不同（第 72 批，A1 M7）：控制面的路由状态被重建 / 从备份恢复 / 迁到新服务器，version 从头数起，按 version 比会把客户端钉在旧目录上。
+ *   此时不比 version，只要求签发时刻晚于当前这份——重建后的目录都是现签的（签发时刻 = 请求时刻），照样采用；
+ *   而把以前某个纪元的旧信封重放回来，签发时刻一定早于本机已采用的这份，仍不采用（防重放不因纪元放松）。
+ *   契约原文是“epoch 不同即接受”；这里多加一条签发时刻，代价只在云端时钟倒退超过本机上一份的签发时刻时晚一点采用。
+ */
+export function catalogNewer(next: { version: number; issued_at: string; epoch?: string | null }, cur: { version: number; issued_at: string; epoch?: string | null } | null): boolean {
   if (!cur) return true;
+  const sameEpoch = (next.epoch ?? null) === (cur.epoch ?? null);
+  if (!sameEpoch) return Date.parse(next.issued_at) > Date.parse(cur.issued_at);
   if (next.version !== cur.version) return next.version > cur.version;
   return Date.parse(next.issued_at) > Date.parse(cur.issued_at);
 }
@@ -122,6 +142,9 @@ export function catalogReasonText(reason: string | null | undefined, scope?: Mod
       return "这个模型暂时没有可用线路";
     case "disabled":
       return "这个模型已停用";
+    case "same_upstream":
+      // 第 72 批（D-299 第 3 条）：运营把它配成与缺省模型同一个上游型号——照列但置灰，不给“名字不同、实际相同”的选择
+      return "运营尚未给它配置独立的模型";
     case "no_tool_use":
       return "这个模型不支持任务需要的工具调用，只能在问答里用";
     case "not_in_scope":
@@ -205,8 +228,8 @@ export class ModelCatalogService {
     return this.doc?.models ?? BUILTIN_CATALOG;
   }
 
-  state(): { version: number | null; issued_at: string | null; source: "builtin" | "cloud" | "cache"; fetched_at: string | null } {
-    return { version: this.doc?.version ?? null, issued_at: this.doc?.issued_at ?? null, source: this.source, fetched_at: this.fetchedAt === null ? null : new Date(this.fetchedAt).toISOString() };
+  state(): { version: number | null; epoch: string | null; issued_at: string | null; source: "builtin" | "cloud" | "cache"; fetched_at: string | null } {
+    return { version: this.doc?.version ?? null, epoch: this.doc?.epoch ?? null, issued_at: this.doc?.issued_at ?? null, source: this.source, fetched_at: this.fetchedAt === null ? null : new Date(this.fetchedAt).toISOString() };
   }
 
   find(id: string | null | undefined): CatalogModel | null {
@@ -273,8 +296,8 @@ export class ModelCatalogService {
         return "invalid";
       }
       if (this.doc && !catalogNewer(doc, this.doc)) {
-        // 同一份（同版本、同签发时刻）只记取到的时刻；更旧的不采用（只进不退）
-        if (doc.version === this.doc.version && doc.issued_at === this.doc.issued_at) {
+        // 同一份（同纪元、同版本、同签发时刻）只记取到的时刻；更旧的不采用（只进不退）
+        if (doc.epoch === this.doc.epoch && doc.version === this.doc.version && doc.issued_at === this.doc.issued_at) {
           this.fetchedAt = this.now();
           return "unchanged";
         }

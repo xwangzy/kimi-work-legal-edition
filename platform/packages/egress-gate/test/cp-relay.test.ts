@@ -83,3 +83,42 @@ test("目的地固定：请求只发往配置的控制面地址；未配置即�
   }) as unknown as typeof fetch;
   assert.deepEqual(await relayControlPlane({ method: "GET", path: "/v1/policy", headers: H, body: "" }, { baseUrl: "https://cp.example-zr.cn", fetchImpl: down }), { ok: false, reason: "cp_unreachable" });
 });
+
+test("第 72 批（D-305）：工作空间与团队路径只放行内核实际调用的那几条，编号格式与控制面同口径；重置码、逐台退出、运营接口照旧拒绝", () => {
+  const aid = "acc_AbCdEfGhIjKlMnOp";
+  const iid = "tiv_AbCdEfGhIjKlMnOp";
+  for (const [m, p] of [
+    ["GET", "/v1/auth/workspaces"],
+    ["POST", "/v1/auth/workspaces/switch"],
+    ["POST", "/v1/workspace/upgrade"],
+    ["POST", "/v1/teams/join"],
+    ["POST", "/v1/teams/leave"],
+    ["GET", "/v1/team/invites"],
+    ["POST", "/v1/team/invites"],
+    ["POST", `/v1/team/invites/${iid}/revoke`],
+    ["GET", "/v1/firm/members"],
+    ["POST", `/v1/firm/members/${aid}/remove`],
+    ["POST", `/v1/firm/members/${aid}/role`],
+    ["POST", `/v1/firm/members/${aid}/limits`],
+    ["POST", `/v1/firm/members/${aid}/disable`],
+    ["POST", `/v1/firm/members/${aid}/enable`],
+    ["POST", `/v1/firm/seats/${aid}/assign`],
+    ["POST", `/v1/firm/seats/${aid}/release`],
+    ["PUT", "/v1/firm/policy/member-device"],
+    ["POST", "/v1/me/onboarding"],
+  ] as const) assert.equal(cpRelayAllowed({ method: m, path: p, headers: H, body: "" }), null, `${m} ${p}`);
+  for (const p of [
+    `/v1/firm/members/${aid}/reset-code`,
+    `/v1/firm/members/${aid}/sessions/revoke`,
+    `/v1/firm/members/${aid}/devices/dev_x/signout`,
+    "/v1/firm/members/acc_short/remove",
+    `/v1/firm/members/${aid}x/remove`,
+    `/v1/team/invites/act_AbCdEfGhIjKlMnOp/revoke`,
+    "/v1/teams/create",
+    "/v1/workspace/upgrade?x=1",
+    "/v1/ops/people",
+    `/v1/ops/tenants/ten_a/invites`,
+    "/v1/firm/cap",
+    "/v1/auth/workspaces/switch/../../ops/people",
+  ]) assert.equal(cpRelayAllowed({ method: "POST", path: p, headers: H, body: "" }), "cp_path_not_allowed", p);
+});

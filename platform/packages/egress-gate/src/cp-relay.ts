@@ -66,6 +66,19 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/auth\/onboarding$/,
   // 第 66 批（V40）：本人用量明细翻页（设备签名 + 账号会话，同 /v1/quota；只许这一种查询串：before 为 ISO 时刻、limit 1～3 位）
   /^\/v1\/quota\/usage\?(?:before=\d{4}-\d{2}-\d{2}T\d{2}(?:%3A|:)\d{2}(?:%3A|:)\d{2}(?:\.\d{1,3})?Z&)?limit=\d{1,3}$/,
+  // 第 72 批（V46，D-305）：一个人多个工作空间（列表与切换：账号会话；请求体只有目标账号编号）、个人工作室就地升级为团队（团队名称）、
+  // 凭团队邀请码加入 / 退出团队、团队邀请（被邀请人姓名与角色；码只在应答里一次）、团队成员管理（角色、席位、电脑上限、停用 / 启用 / 移出）、
+  // 成员新电脑策略、账号级上手状态（只有两个时间戳）——都是账号与团队元数据，不含任何事项、材料与成果。编号格式与控制面同一口径（acc_ / tiv_ + 16 位）
+  /^\/v1\/auth\/workspaces(?:\/switch)?$/,
+  /^\/v1\/workspace\/upgrade$/,
+  /^\/v1\/teams\/(?:join|leave)$/,
+  /^\/v1\/team\/invites$/,
+  /^\/v1\/team\/invites\/tiv_[A-Za-z0-9_-]{16}\/revoke$/,
+  /^\/v1\/firm\/members$/,
+  /^\/v1\/firm\/members\/acc_[A-Za-z0-9_-]{16}\/(?:remove|role|limits|disable|enable)$/,
+  /^\/v1\/firm\/seats\/acc_[A-Za-z0-9_-]{16}\/(?:assign|release)$/,
+  /^\/v1\/firm\/policy\/member-device$/,
+  /^\/v1\/me\/onboarding$/,
 ];
 const METHODS = new Set(["GET", "POST", "PUT", "DELETE"]);
 // 第 44 批：x-kwl-session = 账号会话令牌（内核从封装文件读出、只附在控制面请求上）

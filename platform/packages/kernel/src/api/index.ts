@@ -4,6 +4,7 @@
  * 所内节点都走这同一份方法表。签发已接入设备签名（§6.3）；审计事件入签名 hash 链（§6.4）；
  * 策略事件的签发人角色签名在同步阶段接入（当前经审计事件上链留痕）。
  */
+import { accountMetaOf, inviteCodeOf, kindOf, personOf, teamNameOf, validAid, workspaceItems, WORKSPACE_ROLES, type AccountMeta } from "../services/workspaces.ts";
 import { accountErrorText, accountFailure, controlPlaneErrorText, CP_RULE_REJECTIONS, maskedPhoneOrNull, onboardingStateText, seatBlockReason } from "../account-session.ts";
 import { fetchRegistrationMeta, loginBody, smsPhoneInput, smsSendResult } from "../services/onboarding.ts";
 import { diagnoseView } from "../services/cloud-connection.ts";
@@ -188,6 +189,13 @@ export interface ApiDeps {
     cloudDeviceFeatures?(): { unbind: boolean; signout: boolean };
     /** 第 71 批：这台电脑上别的账号的工作空间个数（不列姓名）。 */
     otherProfiles?(): number;
+    /** 第 72 批：云端能力（/v1/meta.features）；取不到为 null。 */
+    features?(): Promise<string[] | null>;
+    /** 第 72 批：这台电脑上已有的账号档案（律所编号 + 成员标识）。 */
+    localProfiles?(): { tid: string; member_slug: string }[];
+    /** 第 72 批：当前工作空间类型与账号级上手状态（本机记录）。 */
+    meta?(): AccountMeta | null;
+    noteMeta?(j: unknown): void;
   };
   /** 方法模板包（Kimi Code Skills）验签结果：方法库页展示可用的方法模板，校验失败如实显示原因。 */
   skills?: SkillsBundleStatus;
@@ -4144,6 +4152,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (signed && onb.state !== "ready") throw new DomainError("conflict", onboardingStateText(String(onb.state ?? ""), { admin: acc.role === "admin" }), 409, { reason: /^[a-z_]{1,40}$/.test(String(onb.state ?? "")) ? String(onb.state) : "unknown" });
       deps.account!.save({ token: String(j.session_token), aid: String(acc.aid), email: String(acc.email), name: String(acc.name ?? ""), tid: id.tenantId, role: String(acc.role ?? ""), ...(maskedPhoneOrNull(acc.phone) ? { phone: String(acc.phone) } : {}) });
       deps.account!.clearProblem();
+      deps.account!.noteMeta?.(j);
       audit(db, id, "account.login", "user", id.userId, undefined, keyctx);
       // 登录后立即同步：席位令牌此时才签得出
       void cp.sync().catch(() => undefined);
@@ -4203,8 +4212,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
     "account.me": async () => {
       const cp = requireCpAccount();
-      return accountCp(() => cp.account("GET", "/v1/auth/me"));
+      const j = await accountCp(() => cp.account("GET", "/v1/auth/me"));
+      deps.account?.noteMeta?.(j);
+      return j;
     },
+    ...workspaceHandlers(),
     "account.change_password": async (p, id) => {
       const cp = requireCpAccount();
       const r = await accountCp(() => cp.account("POST", "/v1/auth/password", { current: p?.current, next: p?.next }));
@@ -5545,6 +5557,220 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   }
 
   /** 第 44 批账号接口：需要控制面与本机会话存放处（开发形态没有）。 */
+  /**
+   * 第 72 批（V46，D-305，契约 02 §7）：工作空间与团队。内核只做代理（账号会话 + 设备签名，经闸门的控制面通道）；
+   * 云端没有对应能力（/v1/meta.features）时返回 { supported: false }（界面据此隐藏入口），不抛错。
+   * workspaces.switch / teams.join / teams.leave 的结果与第 68 批“换账号登录”同形（deps.account.switchTo：同档案直接进 / 新档案开通 / 满额抛带电脑列表的 409）。
+   */
+  function workspaceHandlers(): Record<string, Handler> {
+    const has = async (f: string): Promise<boolean> => {
+      if (!deps.controlPlane || !deps.account) return false;
+      const fs = (await deps.account.features?.()) ?? null;
+      return !!fs && fs.includes(f);
+    };
+    const unsupported = (extra: Record<string, unknown> = {}) => ({ supported: false, ...extra });
+    const aidOf = (v: unknown): string => {
+      if (!validAid(v)) throw validation("工作空间编号不合法");
+      return v;
+    };
+    const memberAidOf = (v: unknown): string => {
+      if (!validAid(v)) throw validation("成员编号不合法");
+      return v;
+    };
+    /** 切换类应答（与登录同形）→ 与“换账号登录”同一条路。应答就是当前这个工作空间时不切换。 */
+    const switchWith = (j: Record<string, unknown>, id: Identity, action: string): Record<string, unknown> => {
+      const acc = (j.account ?? {}) as Record<string, unknown>;
+      const cur = deps.account?.current?.() ?? { tid: id.tenantId, member_slug: "" };
+      if (acc.tid === cur.tid && acc.member_slug === cur.member_slug) {
+        deps.account?.noteMeta?.(j);
+        return { ok: true, switched: false, same: true };
+      }
+      if (!deps.account?.switchTo) throw new DomainError("conflict", accountErrorText("device_mismatch"), 409);
+      const r = deps.account.switchTo(j);
+      audit(db, id, action, "user", id.userId, undefined, keyctx);
+      return r;
+    };
+    const localOnlyCurrent = (): Record<string, unknown> | null => {
+      const s = deps.account?.session() ?? null;
+      const kind = deps.account?.meta?.()?.workspace_kind ?? null;
+      return s && kind ? { aid: s.aid, tid: s.tid, kind, name: s.name, role: s.role, status: "active", current: true, local_profile: true } : null;
+    };
+    const handlers: Record<string, Handler> = {
+      "workspaces.list": async (_p, id) => {
+        const cp = requireCpAccount();
+        const profiles = deps.account?.localProfiles?.() ?? [];
+        const cur = deps.account?.current?.() ?? null;
+        if (!(await has("workspaces"))) {
+          // 旧云端：只给当前一项（/v1/auth/me 取得到就用它，取不到用本机会话）；没有切换入口
+          let me: Record<string, unknown> | null = null;
+          try {
+            me = await cp.account("GET", "/v1/auth/me");
+            deps.account?.noteMeta?.(me);
+          } catch {
+            me = null;
+          }
+          const acc = (me?.account ?? null) as Record<string, unknown> | null;
+          const kind = deps.account?.meta?.()?.workspace_kind ?? (acc ? (acc.personal === true ? "personal" : acc.personal === false ? "team" : null) : null);
+          const one = acc && kind ? workspaceItems([{ aid: acc.aid, tid: acc.tid, kind, name: (acc.org as { name?: unknown } | undefined)?.name ?? acc.name, role: acc.role, status: "active", current: true }], profiles, cur) : [];
+          const current = one[0] ?? localOnlyCurrent();
+          return unsupported({ ...(current ? { current } : {}), workspaces: current ? [current] : [] });
+        }
+        const j = await accountCp(() => cp.account("GET", "/v1/auth/workspaces"));
+        const list = workspaceItems(j.workspaces, profiles, cur);
+        const current = list.find((w) => w.current) ?? null;
+        if (current) deps.account?.noteMeta?.({ workspace: { kind: current.kind } });
+        const person = personOf(j.person);
+        return { supported: true, ...(person ? { person } : {}), ...(current ? { current } : {}), workspaces: list };
+      },
+      "workspaces.switch": async (p, id) => {
+        const cp = requireCpAccount();
+        const aid = aidOf(p?.aid);
+        if (!(await has("workspaces"))) return unsupported();
+        if (deps.account?.session()?.aid === aid) return { ok: true, switched: false, same: true };
+        const j = await accountCp(() => cp.account("POST", "/v1/auth/workspaces/switch", { aid, client: clientInfo(), account_switch: true }));
+        return switchWith(j, id, "account.workspace_switch");
+      },
+      "workspace.upgrade": async (p, id) => {
+        const cp = requireCpAccount();
+        const name = teamNameOf(p?.name);
+        if (!name) throw validation("团队名称须为 2～40 个字");
+        if (!(await has("workspaces"))) return unsupported();
+        const j = await accountCp(() => cp.account("POST", "/v1/workspace/upgrade", { name }));
+        // 本机状态随即改为团队（界面据 workspace_kind 显示团队功能）；许可与策略随下一次同步更新，这里立即同步一次
+        deps.account?.noteMeta?.({ workspace: { kind: kindOf((j.workspace as { kind?: unknown } | undefined)?.kind) ?? "team" } });
+        audit(db, id, "workspace.upgrade_team", "tenant", id.tenantId, sha256Hex(name), keyctx);
+        void cp.sync().catch(() => undefined);
+        return { ok: true, ...(j.workspace && typeof j.workspace === "object" ? { workspace: j.workspace } : {}) };
+      },
+      "teams.join": async (p, id) => {
+        const cp = requireCpAccount();
+        const code = inviteCodeOf(p?.code);
+        if (!code) throw validation("邀请码是 16 位字母与数字（形如 XXXX-XXXX-XXXX-XXXX）");
+        if (!(await has("workspaces"))) return unsupported();
+        const j = await accountCp(() => cp.account("POST", "/v1/teams/join", { code, client: clientInfo(), account_switch: true }));
+        return switchWith(j, id, "team.join");
+      },
+      "teams.leave": async (_p, id) => {
+        const cp = requireCpAccount();
+        if (!(await has("workspaces"))) return unsupported();
+        const j = await accountCp(() => cp.account("POST", "/v1/teams/leave", { client: clientInfo(), account_switch: true }));
+        // 应答带切回的工作空间（主账号或另一工作空间的切换应答）：可能就是应答本身，也可能在 switch 字段里
+        const sw = (j.switch && typeof j.switch === "object" ? j.switch : j) as Record<string, unknown>;
+        audit(db, id, "team.leave", "tenant", id.tenantId, undefined, keyctx);
+        if (typeof sw.session_token !== "string" || !sw.account) return { ok: true, switched: false, left: true };
+        return { ...switchWith(sw, id, "account.workspace_switch"), left: true };
+      },
+      "team.invites.list": async () => {
+        const cp = requireCpAccount();
+        if (!(await has("team_invites"))) return unsupported({ invites: [] });
+        return { supported: true, ...(await accountCp(() => cp.account("GET", "/v1/team/invites"))) };
+      },
+      "team.invites.create": async (p, id) => {
+        const cp = requireCpAccount();
+        const name = typeof p?.name === "string" ? p.name.replace(/\s+/g, " ").trim() : "";
+        if ([...name].length < 1 || [...name].length > 40) throw validation("请填写被邀请人的姓名（至多 40 个字）");
+        const role = p?.role ?? "lawyer";
+        if (!WORKSPACE_ROLES.includes(role)) throw validation("角色须为管理员、合伙人、律师或助理");
+        const hint = p?.phone_hint === undefined || p?.phone_hint === null || p?.phone_hint === "" ? null : String(p.phone_hint).replace(/\s+/g, "");
+        if (hint !== null && !/^[0-9*]{4,11}$/.test(hint)) throw validation("手机号提示只填数字（可只填后四位）");
+        if (!(await has("team_invites"))) return unsupported();
+        const r = await accountCp(() => cp.account("POST", "/v1/team/invites", { name, role, ...(hint ? { phone_hint: hint } : {}) }));
+        audit(db, id, "team.invite_create", "tenant", id.tenantId, undefined, keyctx);
+        // 邀请码明文只此一次（云端只存 HMAC）：原样交界面显示，本机不留
+        return { supported: true, ...r };
+      },
+      "team.invites.revoke": async (p, id) => {
+        const cp = requireCpAccount();
+        const iid = typeof p?.id === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(p.id) ? p.id : null;
+        if (!iid) throw validation("邀请编号不合法");
+        if (!(await has("team_invites"))) return unsupported();
+        await accountCp(() => cp.account("POST", `/v1/team/invites/${iid}/revoke`, {}));
+        audit(db, id, "team.invite_revoke", "invite", iid, undefined, keyctx);
+        return { supported: true, ok: true };
+      },
+      "team.members.list": async () => {
+        const cp = requireCpAccount();
+        if (!(await has("workspaces"))) return unsupported({ members: [] });
+        return { supported: true, ...(await accountCp(() => cp.account("GET", "/v1/firm/members"))) };
+      },
+      "team.members.remove": async (p, id) => memberAction(p, id, "remove", {}),
+      "team.members.disable": async (p, id) => memberAction(p, id, "disable", {}),
+      "team.members.enable": async (p, id) => memberAction(p, id, "enable", {}),
+      "team.members.role": async (p, id) => {
+        if (!WORKSPACE_ROLES.includes(p?.role)) throw validation("角色须为管理员、合伙人、律师或助理");
+        return memberAction(p, id, "role", { role: p.role });
+      },
+      "team.members.limits": async (p, id) => {
+        const v = p?.device_limit;
+        if (!(v === null || (Number.isSafeInteger(v) && v >= 1 && v <= 99))) throw validation("电脑上限须为 1～99 的整数，或不单独设置（跟随套餐）");
+        return memberAction(p, id, "limits", { device_limit: v });
+      },
+      "team.members.seat": async (p, id) => {
+        const cp = requireCpAccount();
+        const aid = memberAidOf(p?.aid);
+        if (typeof p?.assign !== "boolean") throw validation("assign 须为 true（分配席位）或 false（释放席位）");
+        if (!(await has("workspaces"))) return unsupported();
+        const r = await accountCp(() => cp.account("POST", `/v1/firm/seats/${aid}/${p.assign ? "assign" : "release"}`, {}));
+        audit(db, id, p.assign ? "team.seat_assign" : "team.seat_release", "user", aid, undefined, keyctx);
+        return { supported: true, ok: true, ...r };
+      },
+      "team.policy.memberDevice": async (p, id) => {
+        const cp = requireCpAccount();
+        const policy = p?.policy;
+        if (policy !== "auto" && policy !== "approve") throw validation("policy 须为 auto（直接登记）或 approve（须管理员确认）");
+        if (!(await has("workspaces"))) return unsupported();
+        const r = await accountCp(() => cp.account("PUT", "/v1/firm/policy/member-device", { policy }));
+        audit(db, id, "team.policy_member_device", "tenant", id.tenantId, sha256Hex(policy), keyctx);
+        return { supported: true, ok: true, ...r };
+      },
+      "account.onboarding": async (p) => {
+        const cp = requireCpAccount();
+        if (!(await has("onboarding_state"))) return unsupported({ completed_at: null, dismissed_at: null });
+        const m = deps.account?.meta?.() ?? null;
+        const fresh = m?.onboarding && Date.now() - Date.parse(m.fetched_at) < 5 * 60_000 && p?.refresh !== true;
+        if (!fresh) {
+          const j = await accountCp(() => cp.account("GET", "/v1/auth/me"));
+          deps.account?.noteMeta?.(j);
+        }
+        const ob = deps.account?.meta?.()?.onboarding ?? null;
+        return { supported: true, completed_at: ob?.completed_at ?? null, dismissed_at: ob?.dismissed_at ?? null };
+      },
+      "account.onboardingMark": async (p) => {
+        const cp = requireCpAccount();
+        const body = { ...(p?.completed === true ? { completed: true } : {}), ...(p?.dismissed === true ? { dismissed: true } : {}) };
+        if (Object.keys(body).length === 0) throw validation("请给 completed: true 或 dismissed: true");
+        if (!(await has("onboarding_state"))) return unsupported({ ok: false });
+        const r = await accountCp(() => cp.account("POST", "/v1/me/onboarding", body));
+        // 应答带回两个时间戳时记下；不带时按本次动作在本机补记（只置不清）
+        const prev = deps.account?.meta?.()?.onboarding ?? { completed_at: null, dismissed_at: null };
+        const now = new Date().toISOString();
+        deps.account?.noteMeta?.(accountMetaOf(r) ? r : { account_onboarding: { completed_at: prev.completed_at ?? (body.completed ? now : null), dismissed_at: prev.dismissed_at ?? (body.dismissed ? now : null) } });
+        return { ok: true };
+      },
+    };
+    // 云端已有这项能力、而本机出站闸门的控制面白名单还没放行这条路径（cp_path_not_allowed：闸门与内核不同步的安装包）——
+    // 与旧云端同样降级为 { supported: false }，界面隐藏入口，不报“没有完成”
+    for (const [name, h] of Object.entries(handlers)) {
+      handlers[name] = async (p, id) => {
+        try {
+          return await h(p, id);
+        } catch (e) {
+          if ((e as { detail?: { reason?: unknown } })?.detail?.reason === "cp_path_not_allowed" || (e as { code?: unknown })?.code === "cp_path_not_allowed") return unsupported({ reason: "gate_path_not_allowed" });
+          throw e;
+        }
+      };
+    }
+    return handlers;
+    async function memberAction(p: any, id: Identity, action: "remove" | "disable" | "enable" | "role" | "limits", body: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const cp = requireCpAccount();
+      const aid = memberAidOf(p?.aid);
+      if (!(await has("workspaces"))) return unsupported();
+      const r = await accountCp(() => cp.account("POST", `/v1/firm/members/${aid}/${action}`, body));
+      audit(db, id, `team.member_${action}`, "user", aid, undefined, keyctx);
+      return { supported: true, ok: true, ...r };
+    }
+  }
+
   function requireCpAccount(): ControlPlaneClient {
     if (!deps.controlPlane || !deps.account) throw validation(edition === "trial" ? "试用版不需要登录账号" : "这台电脑没有连接中软账号服务，不能登录：请联系律所 IT 或中软客服");
     return deps.controlPlane;

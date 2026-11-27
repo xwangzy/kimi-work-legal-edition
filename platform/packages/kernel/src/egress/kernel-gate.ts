@@ -8,6 +8,7 @@
  * - 去向记录写入事项账本并上签名事件链；模型请求的用量写入计量账本（与 broker 同一请求 ID，INSERT OR IGNORE 去重）；
  * - 闸门新识别的令牌条目写回事项令牌表（按事项密钥重算校验）。
  */
+import { rememberRuntime, runtimeAlreadyVerified, runtimeStampOf } from "./runtime-stamp.ts";
 import { createHash } from "node:crypto";
 import { createReadStream, mkdirSync, readFileSync, statSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
@@ -66,7 +67,8 @@ function pinsFrom(v: string | undefined): string[] {
 
 export function gateUpstreamsFromEnv(env: NodeJS.ProcessEnv, cp?: { seatToken: string | null } | null): GateUpstreams {
   const seat = cp ? (cp.seatToken ?? "") : env.ZR_SEAT_TOKEN?.trim() || null;
-  const models = { "legal/k3": env.ZR_MODEL_K3 || "kimi-k3", "legal/k2.6": env.ZR_MODEL_K26 || "kimi-k2.6" };
+  // 第 72 批（D-299 第 1 条）：与 model-broker 内置路由、云端缺省路由同口径（K3 → kimi-k3.1-pro，K2.6 → kimi-k2.6）
+  const models = { "legal/k3": env.ZR_MODEL_K3 || "kimi-k3.1-pro", "legal/k2.6": env.ZR_MODEL_K26 || "kimi-k2.6" };
   const direct = (base: string | undefined, key: string | undefined, caFile?: string): DirectModelEndpoint | null => {
     if (!base || !key) return null;
     const b = base.replace(/\/+$/, "");
@@ -397,11 +399,23 @@ export class KernelGate {
   private async startInner(): Promise<GateHandle> {
     if (this.d.runtimeSha256) {
       const bin = resolveExecutable(this.d.runtime ?? process.execPath);
-      // 第 64 批：流式计算（约 100 MB 的 Node 可执行文件）——此前同步整读整算，内核事件循环要卡住这段时间，界面的调用（含登录页）都得等
-      const digest = bin ? await sha256OfFile(bin) : null;
-      if (digest !== this.d.runtimeSha256.toLowerCase()) throw new Error(`出站闸门运行时摘要不符（${bin ?? this.d.runtime}）：不拉起闸门，模型与联网步骤不可用`);
-      // 摘要计算期间内核可能已在关闭：不再对账、不再拉起
-      if (this.closed) throw new Error("出站闸门已关闭");
+      const want = this.d.runtimeSha256.toLowerCase();
+      const th = Date.now();
+      // 第 72 批（A1 S3）：本次应用启动里已核对过（主进程按随包清单核对、或本进程算过）且文件元数据没变 → 不再整份重算；
+      // 否则照旧整份算，不一致照旧拒绝拉起（runtime-stamp.ts 写明安全取舍）
+      const seen = bin ? runtimeAlreadyVerified(bin, want) : null;
+      let digest: string | null;
+      if (seen) digest = want;
+      else {
+        const before = bin ? runtimeStampOf(bin) : null;
+        // 第 64 批：流式计算（约 100 MB 的 Node 可执行文件）——此前同步整读整算，内核事件循环要卡住这段时间，界面的调用（含登录页）都得等
+        digest = bin ? await sha256OfFile(bin) : null;
+        if (bin && digest === want) rememberRuntime(bin, want, before);
+        // 摘要计算期间内核可能已在关闭：不再对账、不再拉起（免算的一支没有等待，不会在这里错过关闭）
+        if (this.closed) throw new Error("出站闸门已关闭");
+      }
+      slog.event("KERNEL_GATE_HASH", { ms: Date.now() - th, how: seen ?? "hashed", ok: digest === want });
+      if (digest !== want) throw new Error(`出站闸门运行时摘要不符（${bin ?? this.d.runtime}）：不拉起闸门，模型与联网步骤不可用`);
     }
     const { db, secret, revoked, tokens } = this.d;
     // 上一个闸门进程留下的未补全预写：结果不明，进入对账（复核 S4-21）

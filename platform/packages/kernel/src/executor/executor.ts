@@ -60,17 +60,34 @@ export function runModelId(db: KernelDb, runId: string): string {
   }
 }
 
+/** 所选模型在任务进行中被停用 / 撤出套餐 / 目录已不认时给律师的话（第 72 批 D-299 第 4 条）。 */
+export const MODEL_GONE_TEXT = "所选模型已停用，请重新发起";
+
+/** 内核自发调用时所选模型已不可用（第 72 批 D-299 第 4 条：不再静默改用 K3）。detail.reason = "model_unavailable"。 */
+export function isModelGone(err: unknown): boolean {
+  return (err as { detail?: { reason?: unknown } } | null)?.detail?.reason === "model_unavailable";
+}
+
 /**
- * 内核自己发起的模型调用（合同审查分析、独立复核、复核追问）跟随任务所选模型（第 66 批）；本机路由已不认这个别名
- * （之后被停用或套餐撤掉、目录已更新）时退回 legal/k3，免得复核整段失败。推理强度只在该模型支持时才带。
+ * 内核自己发起的模型调用（合同审查分析、独立复核、复核追问）跟随任务所选模型（第 66 批）。
+ * 第 72 批（D-299 第 4 条，A1 M3）：本机路由已不认这个别名（任务进行中被停用、套餐撤掉、目录已更新）时**明确失败**——
+ * 原来悄悄退回 legal/k3，律师选的是 X、复核却用了 K3，交付件与运行记录都看不出来。现在写一条运行记录
+ * （tool_operations：model / route_unavailable，带所选别名与哪一步）并抛出律师话“所选模型已停用，请重新发起”。
+ * 推理强度只在该模型支持时才带（effortIfSupported）。
  */
-function kernelRouteOf(deps: Pick<ExecutorDeps, "db" | "broker">, runId: string): string {
+export function kernelRouteOf(deps: Pick<ExecutorDeps, "db" | "broker">, runId: string, attemptId: string | null, step: "review_analysis" | "independent_review" | "review_followup"): string {
   const id = runModelId(deps.db, runId);
   try {
     deps.broker.resolveRoute(id);
     return id;
   } catch {
-    return LEGACY_TASK_MODEL;
+    try {
+      if (attemptId) recordToolOperation(deps.db, runId, attemptId, "model", "route_unavailable", { route: id, step }, "failed");
+    } catch {
+      // 记录失败不改变结论：照样明确失败
+    }
+    slog.event("EXECUTOR_MODEL_UNAVAILABLE", { step });
+    throw new DomainError("conflict", `这一步没有完成：${MODEL_GONE_TEXT}`, 409, { reason: "model_unavailable", model: id, step, retryable: false });
   }
 }
 
@@ -554,7 +571,7 @@ async function stepModelReview(ctx: Ctx, runId: string, attemptId: string, mater
       : "引用核验未发现问题。";
 
   // 第 66 批：跟随任务所选模型（缺省 / 旧任务为 legal/k3）
-  const s1Route = kernelRouteOf(ctx.deps, runId);
+  const s1Route = kernelRouteOf(ctx.deps, runId, attemptId, "review_analysis");
   const result = await withBoundedRetry(async () => {
     try {
       const r = await broker.chat({
@@ -1804,6 +1821,7 @@ export function reviewFailureReason(error: string | undefined): string {
   if (RATE_LIMITED_RE.test(e)) return "AI 服务繁忙，请求被限流，重试几次仍没有成功";
   if (/超过 \d+ 分钟没有完成|超过时限/.test(e)) return "复核超过时限没有完成";
   if (/输出为空/.test(e)) return "复核没有给出意见";
+  if (e.includes(MODEL_GONE_TEXT)) return MODEL_GONE_TEXT;
   return "AI 服务调用失败";
 }
 const REVIEW_RETRY_WAIT_MS = 15_000;
@@ -2181,8 +2199,15 @@ async function runReviewStage(
     // 本次复核用的推理强度：高强度一次跑了很久后被上游断开（第 58 批真实复测：劳动仲裁答辩书三份交付件一起复核，两次都在 10 分钟整被断开，
     // 复核没做成、任务记部分完成）——重试改用低强度，宁可推理浅一些也要做完复核（reviewEffortDowngrade）
     let effortNow = reviewEffortOf(ctx.deps);
-    // 第 66 批：独立复核跟随任务所选模型（推理强度只在它支持时带）
-    const reviewRoute = kernelRouteOf(ctx.deps, runId);
+    // 第 66 批：独立复核跟随任务所选模型（推理强度只在它支持时带）；第 72 批：所选模型已不可用时不改用 K3，复核明确记“没有做成”并说明原因
+    let reviewRoute: string;
+    try {
+      reviewRoute = kernelRouteOf(ctx.deps, runId, attemptId, "independent_review");
+    } catch (e) {
+      if (!isModelGone(e)) throw e;
+      appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.skipped, "review.skipped", { kind: picked.kind, reason: "model_unavailable", error: MODEL_GONE_TEXT, attempts: 0 });
+      return { ok: false, text: "", findings: [], error: MODEL_GONE_TEXT };
+    }
     for (let attempt = 1; ; attempt++) {
       const limit = ctx.deps.reviewLimitMs ?? REVIEW_LIMIT_MS;
       const ac = new AbortController();
@@ -2467,7 +2492,14 @@ async function runReviewStage(
       const messages = followUpMessages({ findings: modelMust, handling, docs, hints: quoteHints(modelMust, docs), laws: reviewLawLines(ctx.deps.lawdb, lawRefs, p.ctxM.asOf), asOf: p.ctxM.asOf, today: localToday() });
       const limit = followUpLimitMs(reviewEffortOf(ctx.deps), ctx.deps.reviewLimitMs ?? REVIEW_LIMIT_MS);
       const nos = modelMust.map((f) => f.no);
-      const followRoute = kernelRouteOf(ctx.deps, runId);
+      let followRoute: string;
+      try {
+        followRoute = kernelRouteOf(ctx.deps, runId, attemptId, "review_followup");
+      } catch (e) {
+        if (!isModelGone(e)) throw e;
+        appendEvent(ctx.deps, runId, attemptId, REVIEW_SEQ.followUp, "review.followup", { must, failed: true, error: MODEL_GONE_TEXT, reason: "model_unavailable" });
+        return { ok: false, items: [], error: MODEL_GONE_TEXT };
+      }
       for (let attempt = 1; ; attempt++) {
         const ac = new AbortController();
         const timer = setTimeout(() => ac.abort(), limit);

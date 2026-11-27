@@ -151,6 +151,23 @@ export function accountErrorText(code: string, fallback?: string): string {
       return fallback ?? "密码错误次数过多，请稍后再试，或找回密码";
     case "account_disabled":
       return "账号已停用，请联系律所管理员或中软客服";
+    // ─── 第 72 批：首次登记的暂时性错误、工作空间与团队（契约 02 §2～§3）───
+    case "enroll_in_progress":
+      return "这个账号正在登记另一台电脑，已自动重试几次仍没有完成：请等半分钟后再登录一次";
+    case "workspace_not_found":
+      return "没有找到这个工作空间（可能已被移出团队或已停用）：请刷新后再选";
+    case "invite_invalid":
+      return "邀请码不正确、已过期或已被使用：请向团队管理员重新获取";
+    case "already_member":
+      return "你已经是这个团队的成员：在侧栏底部的账号区切换过去即可";
+    case "upgrade_required":
+      return "个人工作室要先升级为团队，才能邀请同事";
+    case "team_only":
+      return "这项设置只有团队才有";
+    case "platform_disabled":
+      return "这个账号被中软停用，团队管理员不能启用：请联系中软客服";
+    case "last_admin":
+      return "团队至少要保留一名管理员：请先把另一位成员设为管理员";
     case "registration_closed":
       return "暂不开放自助注册，请联系中软开通";
     case "code_required":

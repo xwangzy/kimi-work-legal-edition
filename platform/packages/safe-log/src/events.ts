@@ -36,7 +36,10 @@ export const EVENTS = {
   // —— 内核 ——
   KERNEL_INDEX_EXCLUDE: { level: "info", fields: { outcome: ["done", "failed", "not_applicable"] } },
   KERNEL_STARTED: { level: "info", fields: { engine: ["kap", "sdk"], at_rest: ["required", "on", "off"], control_plane: ["dev", "configured"] } },
-  KERNEL_CLOSED: { level: "info", fields: {} },
+  // 第 72 批（A1 S7）：ms = close() 用时（换账号、激活后重启都经过这里；原来偶发等满主进程 8 秒强杀）
+  KERNEL_CLOSED: { level: "info", fields: { "ms?": "ms" } },
+  // 第 72 批（A1 §2.4 T1）：内核启动各阶段耗时（init_wait = 进程启动到 createKernel，含装载与等 kernel.init；其余为上一阶段结束起算）
+  KERNEL_BOOT_PHASE: { level: "info", fields: { phase: ["init_wait", "db_open_migrate", "lawdb", "skills", "identity_device", "endpoints", "ready"], ms: "ms", onboarding: "bool" } },
   KERNEL_SKILLS_UNAVAILABLE: { level: "warn", fields: {} },
   KERNEL_RECOVERY_REJECTED: { level: "warn", fields: {} },
   /** 正式安装包里的开发内容签名公钥（复核 A-14 余项）：随包公钥是开发公钥即拒载；content_keys 里的开发公钥剔除并记把数。 */
@@ -51,6 +54,8 @@ export const EVENTS = {
   // 第 66 批（V40，D-292）：个人账号新电脑自动登记（成功 / 失败原因码）
   KERNEL_ONBOARDING_AUTO_ENROLLED: { level: "info", fields: {} },
   KERNEL_ONBOARDING_AUTO_ENROLL_FAILED: { level: "warn", fields: { reason: "ident" } },
+  // 第 72 批（A1 §2.4 T1）：待激活内核里登录、补取认领、自动登记（含云端签名与 enroll_in_progress 重试）、写暂存各用了多久
+  KERNEL_ONB_STEP: { level: "info", fields: { step: ["login", "withclaim", "enroll", "stage_write"], ms: "ms", "ok?": "bool" } },
   KERNEL_JOIN_STAGED_REJECTED: { level: "warn", fields: {} },
   // 第 68 批（D-294）：同一台电脑上切换账号档案（只记去向种类与失败原因，不记账号与目录名）
   KERNEL_PROFILE_SWITCH: { level: "info", fields: { to: ["existing", "enroll"] } },
@@ -73,6 +78,10 @@ export const EVENTS = {
   KERNEL_EXIT_MODE_LIFTED: { level: "info", fields: { resumed: "int" } },
   // 第 66 批：云端模型目录没取成或没采用（取不到、验签或格式不过、比本机旧、缓存写不进）；trigger = 登录、定时、网关拒绝等触发原因
   KERNEL_MODEL_CATALOG: { level: "warn", fields: { outcome: ["fetch_failed", "invalid", "stale", "cache_failed"], trigger: "ident" } },
+  // 第 72 批（A1 §2.4 T1）：一次控制面同步各段用时（register、五份文档、席位令牌）与结果；first = 启动后首轮（含退避重试）
+  KERNEL_CP_SYNC: { level: "info", fields: { ms: "ms", register_ms: "ms", "docs_ms?": "ms", "seat_ms?": "ms", ok: "bool", register_ok: "bool", seat: ["accepted", "unchanged", "valid", "skipped", "rejected", "error", "none"], first: "bool" } },
+  // 第 72 批：这个内核进程第一次持有有效席位令牌（AI 从此可用）；since_boot_ms = 内核进程启动以来
+  KERNEL_AI_READY: { level: "info", fields: { since_boot_ms: "ms" } },
   KERNEL_RUNS_RECOVERED: { level: "warn", fields: { count: "int", parked: "bool" } },
   KERNEL_CHECKPOINT_FAILED: { level: "warn", fields: { ...ERR } },
   KERNEL_SYNC_TIMER_FAILED: { level: "warn", fields: { ...ERR } },
@@ -85,6 +94,8 @@ export const EVENTS = {
   KERNEL_NODE_ENQUEUE_EXPORT_FAILED: { level: "warn", fields: { ...ERR } },
   SERVICE_AUTH_DEV_SECRET: { level: "warn", fields: {} },
   EXECUTOR_PROVIDER_RETRY: { level: "warn", fields: { step: "ident", attempt: "int", delay_ms: "ms" } },
+  // 第 72 批（D-299 第 4 条）：内核自发的模型调用发现所选模型已不可用（不再静默改用 K3），明确失败；step = 哪一步
+  EXECUTOR_MODEL_UNAVAILABLE: { level: "warn", fields: { step: ["review_analysis", "independent_review", "review_followup"] } },
   EXECUTOR_MARK_TERMINAL_FAILED: { level: "error", fields: { run: "id", ...ERR } },
   EXECUTOR_MARK_RECONCILING_FAILED: { level: "error", fields: { run: "id", ...ERR } },
   EXECUTOR_LEASE_LOST: { level: "warn", fields: { attempt: "id", status: "ident", ...ERR } },
@@ -97,6 +108,8 @@ export const EVENTS = {
   // 闸门拉不起来（第 50 批）：只记封闭枚举的原因码；调用方照旧报 gate_unavailable
   // 第 64 批：闸门拉起（ms = 本次启动耗时，含等待运行时核对与进程拉起；since_boot_ms = 内核进程启动以来）
   KERNEL_GATE_STARTED: { level: "info", fields: { ms: "ms", since_boot_ms: "ms" } },
+  // 第 72 批（A1 S3、§2.4 T1）：拉起闸门前核对它的 Node 用了多久；how = attested（主进程本次启动已核对、元数据未变）/ cached（本进程算过）/ hashed（整份重算）
+  KERNEL_GATE_HASH: { level: "info", fields: { ms: "ms", how: ["attested", "cached", "hashed"], ok: "bool" } },
   KERNEL_GATE_START_FAILED: { level: "error", fields: { reason: ["closed", "runtime_digest", "runtime_missing", "spawn_denied", "start_timeout", "exited_early", "listen_failed", "tls_relaxed", "other"], ...ERR } },
   // 第 52 批：随包子进程自检（安装冒烟逐个真拉起闸门、解析进程、Agent 宿主、W 执行域；值为 ok 或原因码）
   KERNEL_CHILD_SELFTEST: { level: "info", fields: { gate: "ident", parse: "ident", kap: "ident", w: "ident" } },
@@ -119,7 +132,14 @@ export const EVENTS = {
   MAIN_TRIAL_GATEWAY_READY: { level: "info", fields: {} },
   MAIN_TRIAL_GATEWAY_FAILED: { level: "error", fields: { code: ["unseal", "timeout", "port_in_use", "start_failed", "other"] } },
   MAIN_TRIAL_GATEWAY_EXIT: { level: "warn", fields: { recent: "int" } },
-  MAIN_KERNEL_READY: { level: "info", fields: {} },
+  // 第 72 批（A1 §2.4 T1）：ms = fork 到内核就绪；onboarding = 待激活内核
+  MAIN_KERNEL_READY: { level: "info", fields: { "ms?": "ms", "onboarding?": "bool" } },
+  // 第 72 批：取库密钥（含密钥格整理）、fork 各用了多久
+  MAIN_KERNEL_SPAWNED: { level: "info", fields: { key_ms: "ms", fork_ms: "ms" } },
+  // 第 72 批（A1 S7）：关内核用了多久；how = exit（自己退出）/ timeout（等满 8 秒被强杀）
+  MAIN_KERNEL_STOPPED: { level: "info", fields: { ms: "ms", how: ["exit", "timeout"] } },
+  // 第 72 批（A1 H4、H5）：一次按身份重启（含排队补跑）的结果与总耗时；trigger = identity（激活 / 入组）、profile（换账号档案）、manual（界面请求重拉）
+  MAIN_KERNEL_RESTARTED: { level: "info", fields: { result: ["restarted", "skipped", "failed"], ms: "ms", trigger: ["identity", "profile", "manual"] } },
   MAIN_KERNEL_FATAL: { level: "error", fields: {} },
   MAIN_KERNEL_EXITED: { level: "warn", fields: { "code?": "int" } },
   /** 开通或入组完成：主进程按 activation.json 有序重启内核（第 13 批）。 */
