@@ -7,7 +7,7 @@
  * - 记忆：resize / move / maximize / unmaximize 防抖写 userData/window-state.json（逻辑像素）；
  *   启动时保存的矩形与某个显示器工作区相交不足一半就不用（外接屏拔掉后窗口不会跑到屏幕外），回到居中；
  *   保存的尺寸**放不下**那块工作区（换到更小的屏、缩放调高）→ 不夹成满屏，回到按比例的初始尺寸并居中；
- *   显示器缩放比例与保存时不同 → 保留尺寸、在那块工作区重新居中（逻辑像素的位置跨缩放没有意义）。
+ *   显示器缩放比例与保存时不同 → 回到按比例的初始尺寸并居中（逻辑像素的位置与尺寸跨缩放都没有意义；保留尺寸会让窗口换一次缩放就永久变小 / 变大——产品评分第二轮 F1）。
  *   第 72 批 Windows 实机（运行 45955267514）：100% 下记住的 1440×888 到 150%（逻辑工作区 1280×688）被夹成整块工作区，窗口“铺满全屏”；
  *   回到 100% 又按那个贴边矩形恢复到左上角——即用户最初说的“Windows 启动是全屏”的另一条路径；
  * - 默认窗口化：只有上次关闭时是最大化才恢复最大化。
@@ -63,16 +63,15 @@ function restoreBounds(saved, workAreas, fallback) {
     if (best && bestRatio >= 0.5) {
       const maximized = s.maximized === true;
       // 放不下：回到按比例的初始尺寸（不把窗口夹成整块工作区）
-      if (Math.round(s.width) > Math.floor(best.width) || Math.round(s.height) > Math.floor(best.height)) {
+      const rescaled = typeof s.scale === "number" && typeof best.scaleFactor === "number" && Math.abs(s.scale - best.scaleFactor) > 0.01;
+      if (rescaled || Math.round(s.width) > Math.floor(best.width) || Math.round(s.height) > Math.floor(best.height)) {
         return { bounds: initialBounds(best), maximized, workArea: best };
       }
       const m = minSize(best);
       const width = clamp(Math.round(s.width), m.minWidth, Math.floor(best.width));
       const height = clamp(Math.round(s.height), m.minHeight, Math.floor(best.height));
-      // 缩放比例变了：保留尺寸、重新居中
-      const rescaled = typeof s.scale === "number" && typeof best.scaleFactor === "number" && Math.abs(s.scale - best.scaleFactor) > 0.01;
-      const x = rescaled ? Math.round(best.x + (best.width - width) / 2) : clamp(Math.round(s.x), best.x, best.x + best.width - width);
-      const y = rescaled ? Math.round(best.y + (best.height - height) / 2) : clamp(Math.round(s.y), best.y, best.y + best.height - height);
+      const x = clamp(Math.round(s.x), best.x, best.x + best.width - width);
+      const y = clamp(Math.round(s.y), best.y, best.y + best.height - height);
       return { bounds: { x, y, width, height }, maximized, workArea: best };
     }
   }

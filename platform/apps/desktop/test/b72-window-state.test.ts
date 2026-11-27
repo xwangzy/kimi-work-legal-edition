@@ -57,10 +57,11 @@ test("相交判定与恢复：与某屏工作区相交 ≥ 一半才用保存的
   assert.deepEqual(at150.bounds, ws.initialBounds(hi));
   assert.deepEqual(at150.bounds, { x: 115, y: 24, width: 1050, height: 640 });
   assert.notDeepEqual(at150.bounds, { x: 0, y: 0, width: 1280, height: 688 });
-  // 150% 下记住 1050×640（115,24），回到 100%（1920×1032）→ 尺寸保留、重新居中（不停在左上角）
+  // 150% 下记住 1050×640（115,24），回到 100%（1920×1032）→ 按比例的初始尺寸居中（不停在左上角，也不永久变小）
   const lo = { ...WA(0, 0, 1920, 1032), scaleFactor: 1 };
   const back = ws.restoreBounds({ x: 115, y: 24, width: 1050, height: 640, maximized: false, scale: 1.5 }, [lo], lo);
-  assert.deepEqual(back.bounds, { x: 435, y: 196, width: 1050, height: 640 });
+  assert.deepEqual(back.bounds, ws.initialBounds(lo));
+  assert.deepEqual(back.bounds, { x: 240, y: 72, width: 1440, height: 888 });
   // 同一缩放比例：按记住的位置恢复（不重新居中）
   const same = ws.restoreBounds({ x: 100, y: 50, width: 1200, height: 800, scale: 1 }, [lo], lo);
   assert.deepEqual(same.bounds, { x: 100, y: 50, width: 1200, height: 800 });
