@@ -1,0 +1,8 @@
+{
+ "code": "forbidden",
+ "message": "你在这个事项里是“只看”：不能加材料或发起任务，请找负责人qa14a",
+ "detail": {
+  "reason": "viewer_read_only",
+  "owner_name": "qa14a"
+ }
+}

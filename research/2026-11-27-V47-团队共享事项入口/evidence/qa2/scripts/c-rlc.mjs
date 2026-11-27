@@ -1,0 +1,27 @@
+const ts = () => new Date().toISOString();
+export default async ({ page, shot }) => {
+  page.on("response", async (r) => { if (!r.url().includes("/invoke")) return; try { const b = JSON.parse(r.request().postData() || "{}"); if (/remove_local_copy|deletion_receipt/.test(b.method)) console.log(ts(), "INVOKE", b.method, JSON.stringify(b.params), "→", (await r.text()).slice(0, 1200)); } catch {} });
+  await page.waitForTimeout(3000);
+  const base = page.url().split("#")[0];
+  await page.goto(base + "#/matter/" + process.env.MID); await page.waitForTimeout(5000);
+  const sb = page.locator(".sidebar, aside").first();
+  const item = sb.locator("a, button, li").filter({ hasText: process.env.TITLE }).first();
+  console.log("SIDEBAR ITEM (reloaded):", (await item.innerText().catch(() => "-")).replace(/\s+/g, " "), "|", (await item.innerHTML().catch(() => "")).replace(/\s+/g, " ").match(/title="[^"]*"/g));
+  await page.locator(".removed-me-note button", { hasText: "从我的电脑移除" }).click(); await page.waitForTimeout(1000);
+  const m = page.locator(".modal, [role=dialog]").last();
+  console.log("MODAL:", (await m.innerText()).replace(/\s+/g, " "));
+  const go = m.locator("button", { hasText: /^\s*从我的电脑移除\s*$/ }).last();
+  console.log("GO label:", await go.innerText(), "disabled before name:", await go.isDisabled());
+  await m.locator("input").first().fill(process.env.TITLE.slice(0, 4)); await page.waitForTimeout(300);
+  console.log("disabled with partial name:", await go.isDisabled());
+  await m.locator("input").first().fill(process.env.FULL); await page.waitForTimeout(300);
+  console.log("disabled with full name:", await go.isDisabled());
+  await shot(process.env.TAG + "-modal");
+  await go.click(); console.log(ts(), "GO"); await page.waitForTimeout(5000);
+  console.log("AFTER URL:", page.url());
+  console.log("AFTER MAIN:", (await page.locator("main").first().innerText()).replace(/\s+/g, " ").slice(0, 900));
+  const dl = page.locator(".modal, [role=dialog]");
+  if (await dl.count()) console.log("AFTER MODAL:", (await dl.last().innerText()).replace(/\s+/g, " ").slice(0, 900));
+  await shot(process.env.TAG + "-after");
+  console.log("SIDEBAR AFTER:", (await sb.innerText()).replace(/\s+/g, " ").match(/事项.{0,200}/)?.[0]);
+};

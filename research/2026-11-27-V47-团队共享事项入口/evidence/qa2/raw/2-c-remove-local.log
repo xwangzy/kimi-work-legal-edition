@@ -1,0 +1,12 @@
+SIDEBAR ITEM (reloaded): 云杉科技股权回购纠纷 已移出 | null
+MODAL: 从我的电脑移除「云杉科技股权回购纠纷」 删除这台电脑上这个事项的全部内容（材料副本、代号对照、审查意见、事实、成果正文），删除后在这台电脑上无法恢复。 负责人和其他同事电脑上的这个事项、中软那里的加密副本都不受影响。 删除后生成删除回执，写明删了什么、哪些副本保留；法律保全中的事项不能删除。 输入事项名称“云杉科技股权回购纠纷”以确认 取消 从我的电脑移除
+GO label: 从我的电脑移除 disabled before name: true
+disabled with partial name: true
+disabled with full name: false
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/2-c-remove-local-modal.png
+2026-11-27T17:02:12.524Z GO
+2026-11-27T17:02:12.538Z INVOKE matters.remove_local_copy {"matter_id":"mat_68e115ff-e1f1-4691-9299-970033a88b05","confirm_title":"云杉科技股权回购纠纷"} → {"ok":true,"result":{"lifecycle":{"lifecycle":"purged","closed_at":null,"retention_until":null,"legal_hold":false,"legal_hold_reason":null,"purged_at":"2026-11-27T17:02:12.524Z","purge_eligible":false},"receipt":{"receipt":{"by":"usr_qa14a_u64222f","closed_at":null,"copies":[{"note":"这台电脑上的本事项副本已删除：密钥包裹（密码学擦除）、材料块、解析文本、令牌表、成果正文与 Agent 会话及工作区；审计与签名事件链保留元数据","status":"deleted","where":"本机（本设备）"},{"note":"你已被负责人移出这个事项：事项在负责人与其他同事那边照旧，这次只删了你这台电脑上的副本","status":"kept","where":"负责人与其他同事的电脑"},{"note":"中继上的密文属于这个事项，由负责人那边管理；这台电脑已不是读者，拿不到此后的内容","status":"kept","where":"中软共享中继（同步段与块的密文）"},{"note":"这台电脑共发出过 0 次请求（令牌化后的内容）：不可撤回；上游留存以模型服务企业协议为准","status":"none","where":"已外发的内容（模型推理、联网检索）"},{"note":"没有导出或下载记录","status":"none","where":"已导出或下载的文件（成果下载、账本导出、结案归档）"},{"note":"没有设置备份位置","status":"none","where":"本应用的自动备份（设置 · 恢复与备份里选的备份位置）"},{"note":"不在本次删除范围：按律所备份保留期到期删除","status":"pending","where":"电脑与律所的系统备份（系统还原点、卷影副本、NAS 快照等）"}],"device_id":"dev_qa14a_u64222f","early":false,"inventory":{"artifacts":0,"document_versions_imported":0,"document_versions_mounted":0,"egress_records":0,"egress_sent":0,"exports":0,"facts":0,"key_wrappings":5,"outlines":0,"parse_texts":0,"redacted_signed_rows":0,"relay":1,"
+AFTER URL: http://127.0.0.1:5913/#/matter/mat_68e115ff-e1f1-4691-9299-970033a88b05
+AFTER MAIN: 删除回执 已从这台电脑删除：云杉科技股权回购纠纷 删除证明有效 删除于 2026年11月28日 01:02 · 回执编号 drc_04129384-c382-4212-bbe6-2dcf65e3da8b 副本在哪里 现在 这台电脑 已删除 负责人与其他同事的电脑 保留 中软上的加密副本 保留 电脑与律所的系统备份 待删除 这台电脑上删除的内容无法恢复；负责人那边的事项照旧，需要时请负责人重新把你加进来。 删除清单 保存删除证明
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/2-c-remove-local-after.png
+SIDEBAR AFTER: 事项 还没有事项，新建一个 任务 还没有任务 温 温景行 试用 韩启明律师团队 · 团队 账号与设置

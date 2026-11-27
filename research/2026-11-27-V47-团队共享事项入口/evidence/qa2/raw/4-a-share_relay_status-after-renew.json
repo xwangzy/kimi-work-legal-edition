@@ -1,0 +1,19 @@
+{
+ "relay_configured": true,
+ "state": "allowed",
+ "closed": false,
+ "closed_at": null,
+ "expires_at": "2026-12-27T17:06:53.025Z",
+ "days_left": 30,
+ "expiring": null,
+ "can_manage": true,
+ "threshold": 1,
+ "signatures": 0,
+ "pending": null,
+ "carry_relaxations": {
+  "enable": [],
+  "renew": []
+ },
+ "fallback_reason": null,
+ "policy_version": 3
+}

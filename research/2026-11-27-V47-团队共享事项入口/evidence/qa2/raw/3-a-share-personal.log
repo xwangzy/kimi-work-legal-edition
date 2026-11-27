@@ -1,0 +1,11 @@
+PILL before: 0
+MORE MENU: 改为团队共享… 当事人名单 数据去向记录 结案与删除
+MODAL: 改为团队共享「海棠物业服务合同审查」 加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果，内容在你们的电脑之间加密同步。 客户授权要按新范围（同事电脑、中软保存加密副本）重新记录，记录前这个事项的 AI 暂停；正在等你确认的任务也要重新确认一次。 之后不能改回“只有我”：要结束共享，把同事逐个移出，或结案。 同时加哪些同事（可以先不选） 已选 0 人 林 林清越 律师 · 还没有 AI 使用名额 苏 苏若溪 律师 温 温景行 律师 加进来的同事默认是“一起办”；要只给看，加进来后在事项成员里改。 取消 改为团队共享
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/3-a-share-personal-modal.png
+PRIMARY: 改为团队共享（1）
+2026-11-27T17:05:45.164Z GO
+2026-11-27T17:05:45.177Z INVOKE matters.update {"matter_id":"mat_7a01689b-9855-4be4-bb65-d6eb482f0117","patch":{"collab_scope":"team"}} → {"ok":true,"result":{"matter":{"matter_id":"mat_7a01689b-9855-4be4-bb65-d6eb482f0117","tenant_id":"ten_qa14a","title":"海棠物业服务合同审查","client_name":"海棠物业有限公司","counterparty":null,"stance":"原告","jurisdiction":"中国大陆","key_dates":{},"confidentiality":"normal","model_endpoint":"standard","collab_scope":"team","consent_status":"agreed","policy_version":3,"status":"active","created_by":"usr_qa14a_qa14a","created_at":"2026-11-27T17:05:20.913Z","node_allowed":0,"full_pseudonym":false,"basis":{"engagement":"confirmed","personal_info":"confirmed","sensitive":"not_applicable","subprocessor":"confirmed"},"lifecycle":"active","closed_at":null,"retention_until":null,"legal_hold":false,"legal_hold_reason":nul
+2026-11-27T17:05:45.180Z INVOKE matters.members.add {"matter_id":"mat_7a01689b-9855-4be4-bb65-d6eb482f0117","user_id":"usr_qa14a_u176be5","matter_role":"editor"} → {"ok":true,"result":{"matter_id":"mat_7a01689b-9855-4be4-bb65-d6eb482f0117","user_id":"usr_qa14a_u176be5","name":"苏若溪","epoch":1,"devices_wrapped":1,"can_receive":true,"lawyer_note":"已把苏若溪加进这个事项：同步后他的电脑就能打开","note":"已按当前密钥纪元为对方 active 设备补包裹（对方设备方可解事项密钥）；变更已记入成员链"}}
+MODAL2: (closed)
+MAIN: 事项 ›海棠物业服务合同审查 海棠物业服务合同审查 发起任务 设提醒 客户 海棠物业有限公司 相对方 — 立场 原告 法域 中国大陆 AI 暂不可用：客户授权待重新确认 当事人名单 团队共享 · 2 人 去重新确认 → 概览 材料（0） 事实 AI 记录（0） 成果 事项成员 ⋯ 事项成员 2 加同事 加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果，内容在你们的电脑之间加密同步。 这个事项还在等第一次同步：联网时会自动同步给同事。 已改为团队共享，已加入苏若溪。苏若溪的电脑下次同步时收到。 韩 韩启明 我 负责人 苏 苏若溪 一起办 移出
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/3-a-share-personal-after.png

@@ -1,0 +1,16 @@
+FORM relay part: undefined
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/4-a-close-draft-form.png
+2026-11-27T17:14:38.974Z INVOKE firm_policy.create_draft → {"ok":true,"result":{"draft":{"draft_id":"drf_125ced5de103ffa1","kind":"policy","created_at":"2026-11-27T17:14:38.955Z","doc":{"kind":"kwl-firm-policy","v":1,"tid":"ten_qa14a","version":4,"issued_at":"2026-11-27T17:14:38.955Z","expires_at":"2026-12-27T17:14:38.955Z","body":{"max_mode":"default","auto_preauthorizations":[],"fetch_allowlist_extra":[],"l3a_standard_model":"deny"}},"digest":"0EFxQqx83
+DRAFT: 律所策略第 4 版 起草于 2026年11月28日 01:14 有效期：2026年11月28日 01:14 至 2026年12月28日 01:14 最高档位：标准 · “放手做”可以事先同意：无 · 官方网站之外还可打开的网站：无 · 敏感事项用通用 AI 服务：不放开 · 上传诊断包给中软支持：不允许 · 经中软共享服务的团队共享：不允许 比最严规则放宽的地方：无（不比最严规则宽） 已确认：— 核对无误，确认发布
+2026-11-27T17:14:42.536Z INVOKE firm_policy.sign → {"ok":true,"result":{"draft":{"draft_id":"drf_125ced5de103ffa1","kind":"policy","created_at":"2026-11-27T17:14:38.955Z","doc":{"kind":"kwl-firm-policy","v":1,"tid":"ten_qa14a","version":4,"issued_at":"2026-11-27T17:14:38.955Z","expires_at":"2026-12-27T17:14:38.955Z","body":{"max_mode":"default","auto_preauthorizations":[],"fetch_allowlist_extra":[],"l3a_standard_model":"deny"}},"digest":"0EFxQqx83
+2026-11-27T17:14:46.178Z PUBLISHED click
+2026-11-27T17:14:46.237Z INVOKE firm_policy.publish → {"ok":true,"result":{"report":{"at":"2026-11-27T17:14:46.236Z","ok":true,"steps":{"register":"ok","pending_actions":"sent:0","license":"accepted","salt":"unchanged","directory":"unchanged","policy":"accepted","connectors":"unchanged","seat":"valid","summaries":"pushed:0"},"ms":{"register":4,"docs":32,"seat":0,"total":36}},"status":{"mode":"control_plane","unconfigured":false,"admin_threshold":1,"a
+ROW AFTER CLOSE: 同事之间同步 团队共享事项在同事电脑之间加密同步。 已关闭 · 11 月 28 日关闭 重新开通…
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/4-a-closed-row.png
+REOPEN MODAL: 开通同事之间同步 团队共享事项的内容加密后经服务方中软在同事电脑之间转送，服务方打不开。 本机删除事项不会删除服务方那里的加密副本；关闭后，已存的副本保留到律所停止使用。 没更新软件的电脑会暂时按最严规则运行，直到更新。 只改这一项，本所规则的其他各项不变；有效期 30 天，到期前 7 天提醒续期。 同事的电脑一般几分钟内开始收到（最长约 10 分钟）；他们打开团队页会立即刷新。 取消 开通
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/4-a-reopen-modal.png
+2026-11-27T17:14:51.953Z REOPEN GO
+2026-11-27T17:14:52.037Z INVOKE firm_policy.share_relay_enable → {"ok":true,"result":{"relay_configured":true,"state":"allowed","closed":false,"closed_at":null,"expires_at":"2026-12-27T17:14:51.958Z","days_left":30,"expiring":null,"can_manage":true,"threshold":1,"signatures":0,"pending":null,"carry_relaxations":{"enable":[],"renew":[]},"fallback_reason":null,"policy_version":5,"published":true,"draft_id":"drf_0c947e2ff2ebcb08","lawyer_note":"已开通同事之间同步，有效到 2026-
+TOAST: 已开通 · 12 月 28 日前有效 | 已开通：同事的电脑一般几分钟内开始收到（最长约 10 分钟）；他们打开团队页会立即刷新。
+ROW AFTER REOPEN: 同事之间同步 团队共享事项在同事电脑之间加密同步。 已开通 · 12 月 28 日前有效 续期… 关闭… 已开通：同事的电脑一般几分钟内开始收到（最长约 10 分钟）；他们打开团队页会立即刷新。
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/4-a-reopened-row.png

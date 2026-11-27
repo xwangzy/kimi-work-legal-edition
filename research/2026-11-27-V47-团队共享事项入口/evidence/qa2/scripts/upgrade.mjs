@@ -1,0 +1,33 @@
+// 甲：账号页 → 升级为团队 → 团队页 → 邀请乙（码写 invite.txt）
+import { writeFileSync } from "node:fs";
+const btn = (page, re) => page.locator("button:visible").filter({ hasText: re });
+export default async ({ page, shot }) => {
+  await page.waitForTimeout(3000);
+  const base = page.url().split("#")[0];
+  await page.goto(base + "#/connections/account");
+  await page.waitForTimeout(3500);
+  await btn(page, /把工作室升级为团队/).click();
+  await page.waitForTimeout(500);
+  await page.locator(".ws-upgrade input:not([type=checkbox])").fill(process.env.TEAM);
+  await page.locator(".ws-upgrade input[type=checkbox]").check();
+  await shot("a01-upgrade-confirm");
+  await btn(page, /^\s*升级为团队\s*$/).click();
+  await page.waitForSelector(".ws-done", { timeout: 30000 });
+  await page.waitForTimeout(2500);
+  await shot("a02-upgraded");
+  await page.goto(base + "#/connections/team");
+  await page.waitForTimeout(4000);
+  await btn(page, /邀请成员/).first().click();
+  await page.waitForTimeout(400);
+  await page.locator(".invite-form input").fill(process.env.INV || "孙二青");
+  await page.locator(".role-opt").filter({ hasText: "律师" }).first().click();
+  await btn(page, /^\s*生成邀请码\s*$/).click();
+  await page.waitForSelector(".invite-code", { timeout: 20000 });
+  const code = (await page.locator(".invite-code").innerText()).trim();
+  writeFileSync(new URL("./invite.txt", import.meta.url), code);
+  console.log("CODE", code.replace(/[A-Z0-9]/g, (c, i) => (i < 4 ? c : "*")));
+  await shot("a03-invite-code");
+  await btn(page, /^\s*完成\s*$/).click();
+  await page.waitForTimeout(1500);
+  console.log("TABS:", (await page.locator(".set-page .tabs-line [role=tab]").allInnerTexts()).join(" | "));
+};

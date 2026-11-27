@@ -1,0 +1,13 @@
+HOME CHIP: 先给我看计划 K3 云杉科技股权回购纠纷 团队共享 方法 材料 1 我方：原告 上手清单 2 / 5 下一步：发起任务 去发起 展开
+2026-11-27T17:04:24.092Z INTERCEPT ai_authorization.get mode=fail
+2026-11-27T17:04:24.094Z INTERCEPT ai_authorization.get mode=fail
+inputs in card: 1
+[FAIL] go disabled: true | retry btns: 1
+[FAIL] CARD: 记录本案的客户授权 这是本事项第一次用 AI。请记下客户授权的依据——它是你核实过的事实记录，不代替客户本人的授权；记录随事项保存、写进事项日志。 委托合同中的 AI 条款 合同里写明使用 AI 辅助及次处理者 客户单独书面同意 补充协议、确认函、邮件等 出处 本案 云杉科技股权回购纠纷 · 客户 云杉科技有限公司 授权要覆盖 （AI 使用时） 使用 AI 辅助处理本案材料；次处理者：中软国际（云端转发，不保存内容）、月之暗面（Kimi 模型推理） 系统另外做到 发出前把姓名、证件号、电话等换成代号 选团队共享时已发生（律所已开通同事之间同步） 同事电脑 经加密同步到事项成员的电脑；他们电脑上也有材料与成果 中软 保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本 改为逐项记录四项依据 没读到这个事项的数据去向，暂时不能记录授权。 重试 还没有取得授权？ 先只用本机功能 · 记为客户要求不上云 （团队共享事项不能选） 返回修改 记录授权并开始
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/3-a-home-team-authz-fail.png
+2026-11-27T17:04:27.132Z INTERCEPT ai_authorization.get mode=delay
+[LOADING] go disabled: true | note: 正在读取这个事项的数据去向… 还没有取得授权？ 先只用本机功能 · 
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/3-a-home-team-authz-loading.png
+[OK] go disabled: false
+[OK] CARD: 记录本案的客户授权 这是本事项第一次用 AI。请记下客户授权的依据——它是你核实过的事实记录，不代替客户本人的授权；记录随事项保存、写进事项日志。 委托合同中的 AI 条款 合同里写明使用 AI 辅助及次处理者 客户单独书面同意 补充协议、确认函、邮件等 出处 本案 云杉科技股权回购纠纷 · 客户 云杉科技有限公司 授权要覆盖 （AI 使用时） 使用 AI 辅助处理本案材料；次处理者：中软国际、月之暗面 AI 用 AI 时：任务用到的内容先把姓名、证件号、电话等换成代号，经中软转发给 Kimi 模型（月之暗面）；中软不保存内容 选团队共享时已发生（律所已开通同事之间同步） 同事电脑 经加密同步到事项成员的电脑（本所同事 2 人）；他们电脑上也有材料与成果 中软 保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本 改为逐项记录四项依据 还没有取得授权？ 先只用本机功能 · 记为客户要求不上云 （团队共享事项不能选） 返回修改 记录授权并开始
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/3-a-home-team-authz-ok.png

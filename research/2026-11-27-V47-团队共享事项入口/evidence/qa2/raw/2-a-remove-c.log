@@ -1,0 +1,6 @@
+ASK: 移出温景行？移出后，他的电脑拿不到这个事项此后的新内容；他电脑上已有的内容不会被收回。 确定移出 取消
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/2-a-remove-c-ask.png
+2026-11-27T17:00:08.989Z REMOVE GO
+2026-11-27T17:00:09.002Z INVOKE matters.members.remove {"matter_id":"mat_68e115ff-e1f1-4691-9299-970033a88b05","user_id":"usr_qa14a_u64222f"} → {"ok":true,"result":{"matter_id":"mat_68e115ff-e1f1-4691-9299-970033a88b05","removed":"usr_qa14a_u64222f","name":"温景行","new_epoch":2,"devices_wrapped":3,"lawyer_note":"已把温景行移出这个事项：他的电脑拿不到此后的新内容；已同步到他电脑上的不会被收回","note":"已轮换事项密钥（新纪元）：移出成员的设备拿不到新密钥；其历史签名与旧纪元包裹行保留；变更已记入成员链"}}
+AFTER: 事项成员 3 加同事 加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果，内容在你们的电脑之间加密同步。 已移出温景行：他的电脑拿不到这个事项此后的新内容。 韩 韩启明 我 负责人 林 林清越 一起办 移出 他还没有分配到 AI 使用名额，收不到这个事项：请管理员在“设置 → 团队”里分配。去分配 → 苏 苏若溪 一起办 移出
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/2-a-remove-c-after.png

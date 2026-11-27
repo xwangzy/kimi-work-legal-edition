@@ -1,0 +1,23 @@
+const ts = () => new Date().toISOString();
+export default async ({ page, shot }) => {
+  const TAG = process.env.TAG;
+  page.on("response", async (r) => { if (!r.url().includes("/invoke")) return; try { const b = JSON.parse(r.request().postData() || "{}"); if (/^(members\.|team\.)/.test(b.method) && !/list|status|roster|summary/.test(b.method)) console.log(ts(), "INVOKE", b.method, JSON.stringify(b.params), "→", (await r.text()).slice(0, 400)); } catch {} });
+  await page.waitForTimeout(3000);
+  const base = page.url().split("#")[0];
+  await page.goto(base + "#/connections/team"); await page.waitForTimeout(4500);
+  const row = page.locator("tr", { hasText: process.env.NAME }).filter({ has: page.locator("button") }).first();
+  await row.scrollIntoViewIfNeeded();
+  console.log("ROW:", (await row.innerText()).replace(/\s+/g, " "));
+  await row.locator("button").last().click(); await page.waitForTimeout(800);
+  const menu = page.locator("[role=menu], .popover").last();
+  console.log("MENU:", (await menu.innerText()).replace(/\s+/g, " "));
+  await shot(`${TAG}-menu`);
+  await menu.locator("button, [role=menuitem]", { hasText: /移出/ }).first().click(); await page.waitForTimeout(1000);
+  const d = page.locator(".modal, [role=dialog], [role=alertdialog]").last();
+  console.log("DIALOG:", (await d.innerText()).replace(/\s+/g, " ").slice(0, 600));
+  await d.locator("input[type=checkbox]").first().check().catch((e) => console.log("nocheck", e.message));
+  await shot(`${TAG}-confirm`);
+  await d.locator("button").filter({ hasText: /移出/ }).last().click(); console.log(ts(), "KICK GO"); await page.waitForTimeout(4000);
+  console.log("AFTER:", (await page.locator("main").first().innerText()).replace(/\s+/g, " ").match(/成员.{0,500}/)?.[0]);
+  await shot(`${TAG}-after`);
+};

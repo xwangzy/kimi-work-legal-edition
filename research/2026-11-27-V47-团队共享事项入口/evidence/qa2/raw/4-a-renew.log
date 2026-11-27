@@ -1,0 +1,14 @@
+SIDEBAR FOOT: 韩 韩启明 试用 同事之间同步 6 天后到期 账号与设置
+ROW BEFORE: 同事之间同步 团队共享事项在同事电脑之间加密同步。 已开通 · 12 月 4 日前有效 · 还有 6 天 续期… 关闭…
+TEAM PAGE notes: [
+  '账号 团队 套餐与用量 备份与安全 数据去向 审计与支持 同事之间同步 6 天后到期（12 月 4 日前有效）：到期后，团队共享事项暂停同步，各人电脑上的内容不受影响'
+]
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/4-a-renew-row-before.png
+MODAL: 续期同事之间同步 按现在的本所规则原样再确认一次，有效期从今天起算 30 天；规则内容不变。 到期不续，团队共享事项会暂停同步，各人电脑上的内容不受影响。 取消 确认续期
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/4-a-renew-modal.png
+2026-11-27T17:06:53.023Z CLICK GO
+2026-11-27T17:06:53.106Z INVOKE firm_policy.share_relay_renew {} → {"ok":true,"result":{"relay_configured":true,"state":"allowed","closed":false,"closed_at":null,"expires_at":"2026-12-27T17:06:53.025Z","days_left":30,"expiring":null,"can_manage":true,"threshold":1,"signatures":0,"pending":null,"carry_relaxations":{"enable":[],"renew":[]},"fallback_reason":null,"policy_version":3,"published":true,"draft_id":"drf_2bb1723deee945f0","lawyer_note":"已续期：同事之间同步继续有效，到 2026-12-27"}}
+TOAST: 已开通 · 12 月 28 日前有效
+ROW AFTER: 同事之间同步 团队共享事项在同事电脑之间加密同步。 已开通 · 12 月 28 日前有效 续期… 关闭…
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/4-a-renew-after.png
+SIDEBAR FOOT AFTER: 韩 韩启明 试用 韩启明律师团队 · 团队 账号与设置

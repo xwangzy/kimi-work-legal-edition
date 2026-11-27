@@ -1,0 +1,18 @@
+## 17:12:09 A(管理员) matters.list 标题
+   "title": "海棠物业服务合同审查",
+   "title": "青松借款合同纠纷",
+   "title": "云杉科技股权回购纠纷",
+## A 直调 matters.get 松柏（B 建、A 不在成员里）
+mid=mat_244be05e-8734-4652-aa32-460459e87f99
+{
+ "code": "not_found",
+ "message": "事项不存在或无权查看"
+}
+{
+ "code": "not_found",
+ "message": "事项不存在或无权查看"
+}
+## B relay
+ "pending_upload": 0,
+ "stuck": 0,
+ "matters": 3

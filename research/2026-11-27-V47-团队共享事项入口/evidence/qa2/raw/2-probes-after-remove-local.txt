@@ -1,0 +1,49 @@
+## B (未被移出) 直调 remove_local_copy
+{
+ "code": "not_found",
+ "message": "事项不存在或无权查看"
+}
+## A (负责人) 直调 remove_local_copy
+{
+ "code": "forbidden",
+ "message": "只有已被负责人移出的团队共享事项才能在这里删除本机副本；要删除事项，请找负责人（结案后删除）",
+ "detail": {
+  "reason": "not_removed"
+ }
+}
+## A matters.get
+  "collab_scope": "team",
+  "status": "active",
+  "lifecycle": "active",
+  "can_write": true,
+  "removed_me": false
+## A members.list
+ "removed_me": false,
+   "name": "韩启明",
+   "name": "苏若溪",
+   "name": "林清越",
+ "sync": "ok"
+## B matters.get
+## B documents
+ "removed_matters": 0,
+ "pending_upload": 0,
+ "stuck": 0,
+ "matters": 0
+## 17:06:01 B (未被移出、已收到事项) 直调 remove_local_copy
+{
+ "code": "forbidden",
+ "message": "只有已被负责人移出的团队共享事项才能在这里删除本机副本；要删除事项，请找负责人（结案后删除）",
+ "detail": {
+  "reason": "not_removed"
+ }
+}
+## B matters.get 之后
+  "title": "云杉科技股权回购纠纷",
+  "lifecycle": "active",
+  "can_write": true,
+  "removed_me": false
+## B materials
+ "removed_matters": 0,
+ "pending_upload": 0,
+ "stuck": 0,
+ "matters": 2

@@ -1,0 +1,19 @@
+{
+ "relay_configured": true,
+ "state": "not_allowed",
+ "closed": false,
+ "closed_at": null,
+ "expires_at": null,
+ "days_left": null,
+ "expiring": null,
+ "can_manage": true,
+ "threshold": 1,
+ "signatures": 0,
+ "pending": null,
+ "carry_relaxations": {
+  "enable": [],
+  "renew": null
+ },
+ "fallback_reason": null,
+ "policy_version": 1
+}

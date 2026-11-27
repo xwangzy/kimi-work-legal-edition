@@ -1,0 +1,21 @@
+const ts = () => new Date().toISOString();
+export default async ({ page, shot }) => {
+  page.on("response", async (r) => { if (!r.url().includes("/invoke")) return; try { const b = JSON.parse(r.request().postData() || "{}"); if (/share_relay_(enable|renew)|firm_policy\.(sign|publish)/.test(b.method)) console.log(ts(), "INVOKE", b.method, JSON.stringify(b.params), "→", (await r.text()).slice(0, 900)); } catch {} });
+  await page.waitForTimeout(3000);
+  const base = page.url().split("#")[0];
+  await page.goto(base + "#/connections/team"); await page.waitForTimeout(4500);
+  const row = page.locator("#row-share-relay"); await row.scrollIntoViewIfNeeded(); await page.waitForTimeout(400);
+  console.log("ROW BEFORE:", (await row.innerText()).replace(/\s+/g, " "));
+  await shot("2-1-relay-row-before");
+  await row.locator("button", { hasText: /开通|续期/ }).first().click(); await page.waitForTimeout(1200);
+  const m = page.locator(".modal, [role=dialog]").last();
+  console.log("MODAL:", (await m.innerText()).replace(/\s+/g, " "));
+  await shot("2-2-relay-confirm-modal");
+  if (process.env.NOGO) return;
+  await m.locator("button.btn-primary").click(); console.log(ts(), "CLICK GO");
+  await page.waitForTimeout(5000);
+  console.log("ROW AFTER:", (await row.innerText()).replace(/\s+/g, " "));
+  console.log("POLICY AFTER:", (await page.locator("main").first().innerText()).replace(/\s+/g, " ").match(/生效策略.{0,500}/)?.[0]);
+  await row.scrollIntoViewIfNeeded(); await shot("2-3-relay-row-after");
+  console.log("SIDEBAR:", (await page.locator(".sidebar-foot").innerText().catch(() => "")).replace(/\s+/g, " "));
+};

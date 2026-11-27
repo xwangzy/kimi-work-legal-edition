@@ -1,0 +1,21 @@
+2026-11-27T17:07:19.095Z INVOKE members.attention {} → {"ok":true,"result":{"pending_joins":0}}
+2026-11-27T17:07:19.107Z INVOKE members.attention {} → {"ok":true,"result":{"pending_joins":0}}
+2026-11-27T17:07:22.069Z INVOKE members.departed_in_matters {} → {"ok":true,"result":{"items":[]}}
+2026-11-27T17:07:22.100Z INVOKE members.departed_in_matters {} → {"ok":true,"result":{"items":[]}}
+2026-11-27T17:07:22.110Z INVOKE members.attention {} → {"ok":true,"result":{"pending_joins":0}}
+SEATS: 席位（AI 使用名额） 3 个 团队可同时用 AI 的人数 团队本期已用 0% 占团队总额度 你本期已
+ROW 温景行 : 温 温景行 139****4203 律师 有 1 / 2 台 正常 
+MENU: 释放席位 保留成员，暂时不能用 AI 停用 暂时不能登录，可随时重新启用 移出团队… 离开团队；之后可重新启用或重新邀请
+DIALOG: 释放温景行的席位？ 释放后温景行暂时不能用 AI（本机的事项和文件照常可用），直到再给他分配席位。 取消 释放席位
+2026-11-27T17:07:28.644Z DONE 温景行 释放席位
+2026-11-27T17:07:28.660Z INVOKE team.members.seat {"aid":"acc_Y8GsMN3SF14j_cIX","assign":false} → {"ok":true,"result":{"supported":true,"ok":true,"member":{"aid":"acc_Y8GsMN3SF14j_cIX","email":"q***@kwl-local.example","name":"温景行","role":"lawyer","status":"active","disabled_reason":null,"disabled_by":null,"disabled_kind":null,"person_phone_masked":"139****4203","seat":null,"devices_summary":{"signed_in":1,"limit":2},"locked_s":0,"member_slug":"u64222f","person_aid":"acc_0iQrA1HXPL2X93mB","last
+ROW AFTER 温景行 : 温 温景行 139****4203 律师 无 1 / 2 台 正常 
+ERR: 
+ROW 林清越 : 林 林清越 139****4204 律师 无 1 / 2 台 正常 
+MENU: 分配席位 可以用 AI 停用 暂时不能登录，可随时重新启用 移出团队… 离开团队；之后可重新启用或重新邀请
+2026-11-27T17:07:33.049Z INVOKE team.members.seat {"aid":"acc_oJ2Fa3tZwFMrAmkl","assign":true} → {"ok":true,"result":{"supported":true,"ok":true,"seat":{"sid":"seat_ten_qa14a_4","assigned_at":"2026-11-27T17:07:33.027Z"},"member":{"aid":"acc_oJ2Fa3tZwFMrAmkl","email":"q***@kwl-local.example","name":"林清越","role":"lawyer","status":"active","disabled_reason":null,"disabled_by":null,"disabled_kind":null,"person_phone_masked":"139****4204","seat":{"sid":"seat_ten_qa14a_4","assigned_at":"2026-11-27T
+2026-11-27T17:07:34.233Z DONE 林清越 分配席位
+ROW AFTER 林清越 : 林 林清越 139****4204 律师 有 1 / 2 台 正常 
+ERR: 
+SEATS AFTER: 席位（AI 使用名额） 3 个 团队可同时用 AI 的人数 团队本期已用 0% 占团队总额度 你本期已
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V47-团队共享事项入口/evidence/qa2/1-a-seat-move.png

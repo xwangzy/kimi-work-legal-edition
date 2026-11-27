@@ -1,0 +1,24 @@
+{
+ "relay_configured": true,
+ "state": "allowed",
+ "closed": false,
+ "closed_at": null,
+ "expires_at": "2026-12-03T16:55:28.216Z",
+ "days_left": 6,
+ "expiring": {
+  "days_left": 6
+ },
+ "can_manage": true,
+ "threshold": 1,
+ "signatures": 0,
+ "pending": null,
+ "carry_relaxations": {
+  "enable": [],
+  "renew": []
+ },
+ "fallback_reason": null,
+ "policy_version": 2,
+ "published": true,
+ "draft_id": "drf_187e8b8146e8dade",
+ "lawyer_note": "已开通同事之间同步，有效到 2026-12-03"
+}
