@@ -112,6 +112,13 @@
 - 团队共享事项 0 位同事时 `data_flows` 不写“0 人”：“经加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果”。
 - 验证：b73 8/8；回归 609/609；tsc 0 错；build:kernel 已重建。已写进 03（W2 第六行）。
 
+## 界面第二轮复评三项（未提交）
+
+- `matters.list` 每条 `removed_me`（同 `matters.get`）。
+- `matters.remove_local_copy { matter_id, confirm_title }`：只在已被移出时允许（`not_removed` 拒绝）；`purgeMatter` 加 `mode: "local_copy"`（不要求结案 / 保留期，法律保全照拦；回执 `mode: local_copy`，同事与中继两处 `kept`）；签名审计 `matter.purged`（链复核照常核对删除清单）+ `matter.local_copy_removed`；index.ts 的“删除后再备份”包装同样覆盖。用例：没被移出时拒绝；被移出后名称不对拒绝、对了即删（密钥包裹清零、回执、列表不再列出、两条审计）；负责人那边事项照旧（进行中、密钥包裹在、列表在、再同步无错）。
+- `data_flows` 同事电脑一条 `count`。
+- 验证：b73 8/8；回归 614/614（加跑 backup-purge、keys-chain、a1-lifecycle、matter-lifecycle）；tsc 0 错；build:kernel 已重建。已写进 03（W2 第七行）。
+
 ## 未做 / 留给主会话判断
 
 - A4 K6（云端移出团队不吊销设备、本机不自动移出事项与轮换）未做：现在靠成员页 `departed` 标记 + 负责人一键移出（D-308 口径）。

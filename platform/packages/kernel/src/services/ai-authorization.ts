@@ -47,6 +47,8 @@ export interface DataFlowEntry {
   key: "local" | "colleagues" | "zr_relay";
   label: string;
   text: string;
+  /** 第 73 批：同事电脑一条带人数（不含本人的在册事项成员；不知道为 null）；其余条目没有。 */
+  count?: number | null;
 }
 
 /**
@@ -60,6 +62,7 @@ export function dataFlowsFor(scope: CollabScopeLike, colleagues: number | null =
     {
       key: "colleagues",
       label: "同事电脑",
+      count: colleagues,
       text: colleagues === 0 ? "经加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果" : `经加密同步到事项成员的电脑${colleagues !== null ? `（本所同事 ${colleagues} 人）` : ""}；他们电脑上也有材料与成果`,
     },
     { key: "zr_relay", label: "中软", text: "保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本" },

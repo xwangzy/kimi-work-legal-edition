@@ -1562,9 +1562,11 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     backupFirst?.unref();
     // 删除事项后（复核 R2A-10）：记“待清旧代”并立即再备份一次——这次成功后备份位置上只留新的一代，旧几代账本快照（仍有该事项的密钥包裹）
     // 与该事项的块随之删除；正有一次备份在跑（它的账本快照是删除之前的），等它结束再备份一次；备份位置不可用时标记留到下次成功
-    const purge = api["matters.purge"];
-    if (purge) {
-      api["matters.purge"] = async (p, id) => {
+    // 第 73 批：被移出的成员删除本机副本（matters.remove_local_copy）同样记“待清旧代”并再备份一次
+    for (const name of ["matters.purge", "matters.remove_local_copy"]) {
+      const purge = api[name];
+      if (!purge) continue;
+      api[name] = async (p, id) => {
         const r = await purge(p, id);
         if (markPrunePending(backupDeps.stateFile) && !revoked()) {
           const inFlight = backupRun;

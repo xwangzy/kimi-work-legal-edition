@@ -226,6 +226,9 @@ test("旧律所体系：建团队事项同时加同事；事项成员视图与�
     [usr("test-lawyer"), false],
     [usr("bob"), true],
   ]);
+  // 删除本机副本：没被移出时一律拒绝（不能借此绕过负责人删除团队事项）
+  await assert.rejects(kB.inv("matters.remove_local_copy", { matter_id: mid, confirm_title: made.matter.title }), fault("forbidden", "not_removed"));
+  assert.equal((await kB.inv("matters.list")).matters.find((m: any) => m.matter_id === mid)?.removed_me, false);
   // 实拍补 2：上手清单第 1 步按“我在其中、未删除的事项”算——B 自己一个没建，被 A 加进团队共享事项也算完成
   const gB = await kB.inv("guide.progress");
   assert.deepEqual([gB.own_matters, gB.created_matters, gB.shared_matters, gB.latest_matter_id], [1, 0, 1, mid], JSON.stringify(gB));
@@ -315,6 +318,31 @@ test("旧律所体系：建团队事项同时加同事；事项成员视图与�
   const lP = await kB.inv("matters.members.list", { matter_id: mid });
   assert.deepEqual([lP.removed_me, lP.sync], [true, "removed"], "核对后同样如实");
   assert.deepEqual(await kB.inv("team.refresh_share_state", { matter_id: mid }), { refreshed: false, sync: "removed" });
+  // 列表同一判定：B 这边标“已移出”，A 这边不是
+  assert.equal((await kB.inv("matters.list")).matters.find((m: any) => m.matter_id === mid)?.removed_me, true);
+  assert.equal((await inv("matters.list")).matters.find((m: any) => m.matter_id === mid)?.removed_me, false);
+  // 被移出后删除本机副本：要输入事项名称；密码学擦除 + 回执（只删这台电脑上的）；之后列表不再列出
+  await assert.rejects(kB.inv("matters.remove_local_copy", { matter_id: mid, confirm_title: "不对" }), (e: any) => e.code === "validation");
+  const keysBefore = kB.kernel.db.get(`SELECT COUNT(*) AS n FROM matter_keys WHERE matter_id = ?`, [mid]).n;
+  assert.ok(keysBefore > 0);
+  const del = await kB.inv("matters.remove_local_copy", { matter_id: mid, confirm_title: made.matter.title });
+  assert.equal(del.lifecycle.lifecycle ?? del.lifecycle, "purged", JSON.stringify(del.lifecycle));
+  assert.equal(del.receipt.receipt.mode, "local_copy", JSON.stringify(del.receipt).slice(0, 300));
+  assert.deepEqual(
+    del.receipt.receipt.copies.filter((c: any) => /负责人与其他同事|中软共享中继/.test(c.where)).map((c: any) => c.status),
+    ["kept", "kept"],
+    "不碰同事与中继",
+  );
+  assert.equal(kB.kernel.db.get(`SELECT COUNT(*) AS n FROM matter_keys WHERE matter_id = ?`, [mid]).n, 0, "密钥包裹已删（密码学擦除）");
+  assert.ok(!(await kB.inv("matters.list")).matters.some((m: any) => m.matter_id === mid), "之后不再列出");
+  const au = kB.kernel.db.all(`SELECT action FROM audit_events WHERE object_id = ? AND action IN ('matter.purged','matter.local_copy_removed')`, [mid]).map((r: any) => r.action);
+  assert.deepEqual(au.sort(), ["matter.local_copy_removed", "matter.purged"], "签名审计");
+  // 负责人这边不受影响
+  const gA2 = await inv("matters.get", { matter_id: mid });
+  assert.equal(gA2.matter.lifecycle, "active");
+  assert.ok(kA!.kernel.db.get(`SELECT COUNT(*) AS n FROM matter_keys WHERE matter_id = ?`, [mid]).n > 0, "负责人的密钥包裹照旧");
+  assert.ok((await inv("matters.list")).matters.some((m: any) => m.matter_id === mid));
+  assert.deepEqual((await inv("relay.sync")).push.errors, []);
 
   // 补四项第 1 条：律所规则回退（签名的管理员电脑被停用 → 签名人不足门限）不是“所内没开通”——sync 回 unknown
   await inv("devices.revoke", { device_id: `dev_${FIRM}_bob`, reason: "用例：签名人不足" });
@@ -437,6 +465,9 @@ test("P2-3：团队共享事项的客户授权按团队共享的次处理者清�
     assert.equal(gt.subprocessors.version, AI_SUBPROCESSORS_TEAM.version);
     assert.deepEqual(gt.data_flows.map((f: any) => f.key), ["colleagues", "zr_relay"]);
     assert.equal(gt.data_flows[0].text, "经加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果", "还没加同事：不写“0 人”");
+    assert.equal(gt.data_flows[0].count, 0);
+    assert.equal(dataFlowsFor("team", 3)[0]!.count, 3);
+    assert.equal(dataFlowsFor("personal")[0]!.count, undefined, "只有同事电脑一条带人数");
     assert.match(dataFlowsFor("team", 2)[0]!.text, /经加密同步到事项成员的电脑（本所同事 2 人）/);
     assert.doesNotMatch(dataFlowsFor("team", null)[0]!.text, /人）/);
     assert.equal(gt.authorization_history[0].scope, "team");

@@ -133,6 +133,8 @@ export interface DeletionReceipt {
   inventory: Record<string, number>;
   /** deleted 已删除；pending 待处理；irrevocable 不可撤回；kept 保留（未删除）；none 不涉及（该处没有本事项内容）。 */
   copies: { where: string; status: "deleted" | "pending" | "irrevocable" | "kept" | "none"; note: string }[];
+  /** 第 73 批：local_copy = 被负责人移出的成员删除本机副本（不碰中继与同事，事项在负责人与其他同事那边照旧）；没有该字段即事项删除。 */
+  mode?: "local_copy";
 }
 
 /**
@@ -149,15 +151,21 @@ export async function purgeMatter(
     reason?: unknown;
     /** 在删除事务内追加签名的 matter.purged 审计事件（detail_hash = 删除清单摘要）：清单与事件同生同灭，链复核据此核对。 */
     audit: (redactionDigest: string) => void;
+    /**
+     * 第 73 批：local_copy = 被负责人移出的成员删除本机副本（调用方已核对“已被移出”）。不要求结案与保留期（那是负责人对事项的处置），
+     * 法律保全照样拦；回执写明只删了这台电脑上的副本、负责人与同事那边不受影响。
+     */
+    mode?: "local_copy";
   },
 ): Promise<{ receipt: DeletionReceipt; signature: string; public_key_pem: string; redaction_digest: string }> {
   const r = row(d.db, matterId);
-  if (r.lifecycle !== "closed") throw new DomainError("conflict", r.lifecycle === "purged" ? "事项数据已删除" : "须先结案，进入保留期后才能删除", 409);
+  const localCopy = input.mode === "local_copy";
+  if (localCopy ? r.lifecycle === "purged" : r.lifecycle !== "closed") throw new DomainError("conflict", r.lifecycle === "purged" ? "事项数据已删除" : "须先结案，进入保留期后才能删除", 409);
   if (r.legal_hold === 1) throw new DomainError("conflict", `事项处于法律保全（${r.legal_hold_reason ?? ""}）：解除保全前不得删除`, 409);
   if (String(input.confirm_title ?? "") !== r.title) throw new DomainError("validation", "请输入事项名称以确认删除（删除不可恢复）", 422);
   const now = new Date().toISOString();
-  const early = !!r.retention_until && r.retention_until > now;
-  const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 300) : "";
+  const early = !localCopy && !!r.retention_until && r.retention_until > now;
+  const reason = localCopy ? "已被负责人移出：删除这台电脑上的副本" : typeof input.reason === "string" ? input.reason.trim().slice(0, 300) : "";
   if (early && (input.early !== true || !reason)) throw new DomainError("validation", `保留期至 ${r.retention_until?.slice(0, 10)}：提前删除须勾选“提前删除”并写明原因（例如客户书面要求）`, 422);
   if (d.db.get<{ n: number }>(OPEN_RUN, [matterId])!.n > 0) throw new DomainError("conflict", "事项还有进行中的任务", 409);
 
@@ -290,7 +298,8 @@ export async function purgeMatter(
       by: input.by,
       device_id: d.deviceId,
       inventory,
-      copies: [
+      ...(localCopy ? { mode: "local_copy" as const } : {}),
+      copies: localCopy ? localCopyCopies(inventory, d.backupConfigured?.() ?? false) : [
         { where: "本机（本设备）", status: "deleted", note: "密钥包裹已删除（密码学擦除）；导入副本块、解析文本、令牌表、当事人词典、风险卡、事实行、成果正文、挂载路径与 Agent 会话及工作区已删除；审计与签名事件链保留元数据" },
         {
           where: "其他成员设备",
@@ -375,6 +384,29 @@ export async function purgeMatter(
     // 有并发读者时 checkpoint 可能不完整：下次自动 checkpoint 时补上
   }
   return { receipt: receipt!, signature, public_key_pem: d.signPublicKeyPem, redaction_digest: redactionDigest(d.db, matterId) };
+}
+
+/** 第 73 批：被移出的成员删除本机副本时回执的各处副本（只删这台电脑上的；负责人、同事与中软那边不受影响）。纯函数。 */
+function localCopyCopies(inventory: Record<string, number>, backupConfigured: boolean): DeletionReceipt["copies"] {
+  return [
+    { where: "本机（本设备）", status: "deleted", note: "这台电脑上的本事项副本已删除：密钥包裹（密码学擦除）、材料块、解析文本、令牌表、成果正文与 Agent 会话及工作区；审计与签名事件链保留元数据" },
+    { where: "负责人与其他同事的电脑", status: "kept", note: "你已被负责人移出这个事项：事项在负责人与其他同事那边照旧，这次只删了你这台电脑上的副本" },
+    { where: "中软共享中继（同步段与块的密文）", status: "kept", note: "中继上的密文属于这个事项，由负责人那边管理；这台电脑已不是读者，拿不到此后的内容" },
+    {
+      where: "已外发的内容（模型推理、联网检索）",
+      status: (inventory.egress_sent ?? 0) > 0 ? "irrevocable" : "none",
+      note: `这台电脑共发出过 ${inventory.egress_sent ?? 0} 次请求（令牌化后的内容）：不可撤回；上游留存以模型服务企业协议为准`,
+    },
+    {
+      where: "已导出或下载的文件（成果下载、账本导出、结案归档）",
+      status: (inventory.exports ?? 0) > 0 ? "kept" : "none",
+      note: (inventory.exports ?? 0) > 0 ? `${inventory.exports} 次导出或下载：文件在你自己选择的位置，本产品无法删除，请按律所档案制度处理` : "没有导出或下载记录",
+    },
+    backupConfigured
+      ? { where: "本应用的自动备份（设置 · 恢复与备份里选的备份位置）", status: "pending", note: "删除后立即再备份一次，成功后备份位置上只留新的一代；备份位置自身若保留旧版本，请按律所保留期清理" }
+      : { where: "本应用的自动备份（设置 · 恢复与备份里选的备份位置）", status: "none", note: "没有设置备份位置" },
+    { where: "电脑与律所的系统备份（系统还原点、卷影副本、NAS 快照等）", status: "pending", note: "不在本次删除范围：按律所备份保留期到期删除" },
+  ];
 }
 
 /** 删除清单摘要：该事项被清除内容的签名业务行（按种类与编号排序，含清除后行摘要）。写进签名的 matter.purged 审计事件，链复核时核对。 */

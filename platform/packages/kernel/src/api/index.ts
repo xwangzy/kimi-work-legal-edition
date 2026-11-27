@@ -1121,6 +1121,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           basis_recorded_at: lastAuth.get(m.matter_id)?.at ?? null,
           basis_recorded_by: lastAuth.has(m.matter_id) ? displayNameOf(lastAuth.get(m.matter_id)!.by, null) : null,
           ...(samples.has(m.matter_id) ? { is_sample: true } : {}),
+          // 第 73 批：已被负责人移出（与 matters.get 同一判定；侧栏、列表、搜索标“已移出”、不挂团队共享记号）
+          removed_me: m.collab_scope === CollabScope.team && removedFromMatter(m.matter_id),
           activity: { ...(act.get(m.matter_id) ?? { waiting: 0, running: 0, waiting_run_id: null }), pending_review: pendingReview.get(m.matter_id) ?? 0, last_at: lastAt.get(m.matter_id) ?? m.created_at },
         })),
       };
@@ -1772,6 +1774,24 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         audit: (digest) => audit(db, id, "matter.purged", "matter", matter.matter_id, digest, keyctx),
       });
       return { lifecycle: lifecycleOf(db, matter.matter_id), receipt: receiptView(matter.matter_id) };
+    },
+
+    // 第 73 批：被负责人移出的成员删除这台电脑上的副本（只在本机记为“已被移出”时允许——中继答“不是读者”、本机不是负责人；
+    // 不能借此绕过负责人删除团队事项）。密码学擦除与回执同 matters.purge（同一个 matter.purged 审计事件，链复核照常核对删除清单），
+    // 另记 matter.local_copy_removed；不碰中继与同事。之后 matters.list 不再列出
+    "matters.remove_local_copy": async (p, id) => {
+      const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
+      if (matter.collab_scope !== CollabScope.team || !removedFromMatter(matter.matter_id)) {
+        throw new DomainError("forbidden", "只有已被负责人移出的团队共享事项才能在这里删除本机副本；要删除事项，请找负责人（结案后删除）", 403, { reason: "not_removed" });
+      }
+      await purgeMatter(lifecycleDeps(), matter.matter_id, {
+        by: id.userId,
+        confirm_title: p?.confirm_title,
+        mode: "local_copy",
+        audit: (digest) => audit(db, id, "matter.purged", "matter", matter.matter_id, digest, keyctx),
+      });
+      audit(db, id, "matter.local_copy_removed", "matter", matter.matter_id, undefined, keyctx);
+      return { lifecycle: lifecycleOf(db, matter.matter_id), receipt: receiptView(matter.matter_id), lawyer_note: "已删除这台电脑上的副本：负责人与其他同事那边的事项不受影响" };
     },
 
     // 结案归档导出（第 02 篇 §9.13 开放格式；services/matter-archive.ts）：含案卷原文，只由事项负责人发起并记审计
