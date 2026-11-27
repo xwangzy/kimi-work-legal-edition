@@ -5,7 +5,8 @@
  * R1 鉴权与 /v1/quota 同一口径：本人账号会话 + 这台电脑的设备签名，缺一不可；会话与设备须是同一成员、同一工作空间；网页会话不行；
  * R2 团队里的律师（账号签发钥电脑）与管理员（律所根电脑）都能读，读到的是同一份；
  * R3 个人空间 403 team_only；
- * R4 应答只有 member_slug / name / role / status：不含邮箱、手机号、账号编号（aid）与设备；按姓名排序；
+ * R4 应答只有 member_slug / name / role / status / seat：不含邮箱、手机号、账号编号（aid）、设备与席位编号；按姓名排序；
+ * R7（第 73 批验收 P2）：seat = 此刻是否占有席位（只是 true / false）——与管理员看到的席位一致，分配 / 收回席位后名单随之变化；移出即无席位；
  * R5 跨租户不可读：别的团队的会话或设备一律 403，读到的只是本团队的人；
  * R6 被移出 / 停用 / 本人退出之后：这些人的会话读名单 401；名单里仍有他们，status 分别为 removed / disabled / left；启用后回到 active；
  *    平台停用这个人（主账号）时名单里记 disabled。
@@ -140,7 +141,7 @@ test("/v1/meta：features 含 team_roster", async () => {
   assert.ok(m.json.features.includes("team_roster"), JSON.stringify(m.json.features));
 });
 
-test("R2 + R4：律师与管理员都能读、读到同一份；只有成员标识、姓名、角色、状态，按姓名排序；不含邮箱、手机号、账号编号与设备", async () => {
+test("R2 + R4：律师与管理员都能读、读到同一份；只有成员标识、姓名、角色、状态、是否有席位，按姓名排序；不含邮箱、手机号、账号编号、设备与席位编号", async () => {
   const rl = await roster(L.dev, L.session);
   assert.equal(rl.status, 200, rl.text);
   const ra = await roster(A.dev, A.session);
@@ -150,7 +151,9 @@ test("R2 + R4：律师与管理员都能读、读到同一份；只有成员标�
   assert.equal(rl.json.tid, A.tid);
   const ms = rl.json.members as any[];
   assert.deepEqual(ms.map((m) => m.name).sort(), ["丁律师", "丙律师", "乙律师", "己律师", "戊律师", "甲律师"].sort());
-  for (const m of ms) assert.deepEqual(Object.keys(m).sort(), ["member_slug", "name", "role", "status"], JSON.stringify(m));
+  for (const m of ms) assert.deepEqual(Object.keys(m).sort(), ["member_slug", "name", "role", "seat", "status"], JSON.stringify(m));
+  for (const m of ms) assert.equal(typeof m.seat, "boolean", "席位只给是 / 否");
+  assert.doesNotMatch(rl.text, /seat_ten_|"sid"/, "不给席位编号");
   const n = byName(rl);
   assert.deepEqual([n["甲律师"].role, n["乙律师"].role, n["戊律师"].role, n["己律师"].role], ["admin", "lawyer", "assistant", "partner"]);
   assert.ok(ms.every((m) => m.status === "active"));
@@ -213,6 +216,41 @@ test("R5：跨租户不可读——别的团队的会话 / 设备一律 403；�
   assert.equal(q.json.tid, A.tid);
 });
 
+test("R7：seat 与管理员看到的席位一致；收回 / 分配席位后名单随之变化（律师读到的同一份）", async () => {
+  const held = async () => {
+    const fm = await get("/v1/firm/members", A.session);
+    assert.equal(fm.status, 200, JSON.stringify(fm.json));
+    return Object.fromEntries((fm.json.members as any[]).map((x) => [x.name, x.seat !== null]));
+  };
+  const seats = async () => {
+    const r = await roster(L.dev, L.session);
+    assert.equal(r.status, 200, r.text);
+    return Object.fromEntries((r.json.members as any[]).map((x) => [x.name, x.seat]));
+  };
+  assert.deepEqual(await seats(), await held(), "与管理员成员页的席位一致");
+  // 腾出一个席位给乙（乙原本有就先收回乙的）：收回 → false，分配 → true
+  const before = await held();
+  const other = Object.keys(before).find((n) => before[n] && n !== "乙律师" && n !== "甲律师");
+  const otherAid = { 丙律师: M.aid, 丁律师: N.aid, 戊律师: Q.aid, 己律师: P.aid }[other as "丙律师"];
+  if (before["乙律师"]) {
+    assert.equal((await post(`/v1/firm/seats/${L.aid}/release`, {}, A.session)).status, 200);
+  } else {
+    assert.ok(otherAid, "没有可腾出的席位");
+    assert.equal((await post(`/v1/firm/seats/${otherAid}/release`, {}, A.session)).status, 200);
+    assert.equal((await seats())[other!], false);
+  }
+  assert.equal((await seats())["乙律师"], false, "收回后名单里乙没有席位");
+  const as = await post(`/v1/firm/seats/${L.aid}/assign`, {}, A.session);
+  assert.equal(as.status, 200, JSON.stringify(as.json));
+  assert.equal((await seats())["乙律师"], true, "分配后名单里乙有席位");
+  assert.deepEqual(await seats(), await held());
+  // 收回乙的、再还给乙（来回一次，名单每次都跟着变）
+  assert.equal((await post(`/v1/firm/seats/${L.aid}/release`, {}, A.session)).status, 200);
+  assert.equal((await seats())["乙律师"], false);
+  assert.equal((await post(`/v1/firm/seats/${L.aid}/assign`, {}, A.session)).status, 200);
+  assert.equal((await seats())["乙律师"], true);
+});
+
 test("R6：移出 / 停用 / 本人退出之后——这些人的会话 401；名单里仍有他们并标 removed / disabled / left；启用后回到 active", async () => {
   assert.equal((await post(`/v1/firm/members/${M.aid}/remove`, {}, A.session)).status, 200);
   assert.equal((await post(`/v1/firm/members/${N.aid}/disable`, {}, A.session)).status, 200);
@@ -232,6 +270,7 @@ test("R6：移出 / 停用 / 本人退出之后——这些人的会话 401；�
   const n = byName(r);
   assert.deepEqual([n["丙律师"].status, n["丁律师"].status, n["戊律师"].status, n["乙律师"].status, n["甲律师"].status], ["removed", "disabled", "left", "active", "active"]);
   assert.equal(n["丙律师"].role, "lawyer", "离开的人保留最后的角色");
+  for (const who of ["丙律师", "丁律师", "戊律师"]) assert.equal(n[who].seat, false, `${who}：移出 / 停用 / 退出即释放席位`);
   // 启用丁 → active
   assert.equal((await post(`/v1/firm/members/${N.aid}/enable`, {}, A.session)).status, 200);
   assert.equal(byName(await roster(L.dev, L.session))["丁律师"].status, "active");

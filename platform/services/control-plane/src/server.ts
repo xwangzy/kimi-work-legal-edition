@@ -6120,7 +6120,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     // ─── 第 73 批（契约 1.1，D-308）：团队名单（团队里每位成员都可读）——本人会话 + 这台电脑的设备签名（与 /v1/quota 同一口径，由内核经出站闸门调用）。
     // 只给成员标识、姓名、角色与状态：不含邮箱、手机号、账号编号（aid）与设备；含已移出 / 已退出 / 已停用的人（status 标明），
-    // 律师电脑据此把事项成员标“已离开团队”。被移出 / 停用的人会话已撤，上面 sessionOf 即 401（同现有口径）
+    // 律师电脑据此把事项成员标“已离开团队”。被移出 / 停用的人会话已撤，上面 sessionOf 即 401（同现有口径）。
+    // 第 73 批验收（P2）：每人另给 seat（此刻是否占有席位，只是是 / 否；不给席位编号与额度）——没有席位的成员领不到中继凭据、同步永远失败，
+    // 负责人据此看出是谁、为什么（请管理员分配席位）
     if (method === "GET" && p === "/v1/team/roster") {
       if (kindOf(t) !== "team") throw new CpError(403, "team_only", "个人工作空间没有团队名单");
       const { t: dt, dev } = await authDevice(req, _path, raw);
@@ -6129,7 +6131,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (me.s.kind !== "desktop" || (me.s.device_id !== null && me.s.device_id !== dev.cert.deviceId)) throw new CpError(401, "session_invalid", "登录已失效，请重新登录");
       const members = [...accounts.values()]
         .filter((x) => x.tid === t.tid)
-        .map((x) => ({ member_slug: x.member_slug, name: x.name, role: x.role, status: rosterStatusOf(x) }))
+        .map((x) => ({ member_slug: x.member_slug, name: x.name, role: x.role, status: rosterStatusOf(x), seat: ((s0) => !!s0 && !s0.revoked_at)(t.seatsByUser.get(uidOfAccount(x))) }))
         .sort((x, y) => ROSTER_COLLATOR.compare(x.name, y.name) || (x.member_slug < y.member_slug ? -1 : x.member_slug > y.member_slug ? 1 : 0));
       return send(res, 200, { ok: true, tid: t.tid, members });
     }

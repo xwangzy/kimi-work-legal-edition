@@ -9,6 +9,7 @@
 - 鉴权：本人账号会话（`sessionOf`：被移出 401 `session_team_removed`、退出 401 `session_team_left`、停用会话已撤 401）→ 团队空间（个人空间 403 `team_only`）→ 这台电脑的设备签名（`authDevice`，缺签名 401 `device_auth_*`）→ 会话与设备同一租户、同一成员（否则 403 `session_member_mismatch`）→ 会话须是客户端会话、且没绑别的电脑（否则 401 `session_invalid`；还没绑设备的客户端会话照样可读，不在这里绑）。平台停用了这个人（主账号）时会话 403 `account_disabled`（现有口径）。
 - 应答：`{ ok: true, tid, members: [{ member_slug, name, role, status }] }`；按姓名（`Intl.Collator("zh-Hans-CN")`）再按成员标识排序；只含本租户账号；`status`：`active`（`memberActive`）/ `removed`（团队移出）/ `left`（本人退出）/ `disabled`（团队停用、平台停用这个身份或这个人）。不含邮箱、手机号、aid、设备。
   - `member_slug` 不是新暴露：它就是设备证书里 `usr_<firm>_<member_slug>` 的后半段，本所设备目录 `/v1/directory` 早已对每台成员电脑公开。
+- **验收 P2 补（07396e70 之后，未提交）**：每人加 `seat: boolean`（此刻是否占有席位，只有是 / 否，不给席位编号与额度）——没有席位的成员领不到中继凭据、同步永远失败，负责人据此看出是谁、为什么。用例加 R7（与管理员成员页的席位一致；收回 / 分配后名单随之变化，来回一次）；R4 字段集改为五项、不含 `sid`；R6 加“移出 / 停用 / 退出即无席位”。契约变更见 `03` 第 W1 第三行；CONTRACT.md 与运维手册 v1.8.0 行同步。控制面全量用例 258 / 258。
 - `/v1/meta.features` 追加 `team_roster`（无条件）。
 - 用例 `platform/services/control-plane/test/b73-team-roster.test.ts`（7 条）：features；律师（账号签发钥电脑）与管理员（律所根电脑）读到同一份、字段只有四项、按姓名排序、成员标识与证书成员编号对得上、不含邮箱 / aid / 设备编号；缺会话 / 缺签名 / 别人的会话 / 网页会话 / 已绑别的电脑的会话；个人空间 403；跨租户（另一团队的会话配本团队电脑、反之）403、查询串写别的租户无效；移出 / 停用 / 退出后这些人的会话 401、名单标 `removed` / `disabled` / `left`、启用后回 `active`、平台停用这个人后名单记 `disabled`。
 

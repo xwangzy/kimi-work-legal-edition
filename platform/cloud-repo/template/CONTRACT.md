@@ -35,7 +35,7 @@
 
 第 63 批（客户端 0.4.0 起使用，旧客户端不受影响）：`/v1/auth/login` 可给 `{ phone, sms_code }`（不给 email/password）做手机号验证码登录；`/v1/auth/sms/send` 的 `purpose` 增加 `login`（手机号须已绑定账号，否则 404 `phone_not_registered`、不发短信）与 `bind`（要账号会话）；`POST /v1/auth/phone` 绑定 / 更换手机号（换绑要 `password`）。能力字段：`/v1/meta` 的 `features` 含 `phone_login`、`phone_bind`，`registration_policy.phone_login` / `phone_bind` 为当前是否可用。详见 monorepo `docs/contract-b63-phone-login.md`。
 
-第 73 批（v1.8.0，客户端 0.12.0 起使用）：`GET /v1/team/roster` → `{ ok, tid, members: [{ member_slug, name, role, status }] }`，`role` 与 `/v1/firm/members` 同一口径，`status ∈ active|disabled|removed|left`；不含邮箱、手机号、账号编号与设备；按姓名排序；个人空间 403 `team_only`；会话与设备不是同一成员 403 `session_member_mismatch`，网页会话或会话已绑别的电脑 401 `session_invalid`。能力字段：`/v1/meta` 的 `features` 含 `team_roster`。共享中继（`services/relay-api`）自 v1.8.0 起为标准服务：端口 8446、与控制面同一张证书，客户端地址只来自 `release.json` 的 `relay_base` / `relay_pins`（`/v1/meta` 不下发地址）。
+第 73 批（v1.8.0，客户端 0.12.0 起使用）：`GET /v1/team/roster` → `{ ok, tid, members: [{ member_slug, name, role, status, seat }] }`，`role` 与 `/v1/firm/members` 同一口径，`status ∈ active|disabled|removed|left`，`seat` 为此刻是否占有席位（只有 true / false；没有席位的成员领不到中继凭据，同步不了）；不含邮箱、手机号、账号编号、设备与席位编号；按姓名排序；个人空间 403 `team_only`；会话与设备不是同一成员 403 `session_member_mismatch`，网页会话或会话已绑别的电脑 401 `session_invalid`。能力字段：`/v1/meta` 的 `features` 含 `team_roster`。共享中继（`services/relay-api`）自 v1.8.0 起为标准服务：端口 8446、与控制面同一张证书，客户端地址只来自 `release.json` 的 `relay_base` / `relay_pins`（`/v1/meta` 不下发地址）。
 
 ## 3. 令牌与签名格式
 
