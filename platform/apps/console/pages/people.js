@@ -13,6 +13,7 @@ import { alertList, can, canSupport, CREATED_VIA, DENOMINATOR, deviceLabel, devi
 import { add, badge, btn, clear, confirmAction, copyBtn, dataTable, errorBlock, facts, fmt, fold, h, loadingBlock, meter, metaLine, mono, note, panel, rowMenu, searchInput, showSecret, stateCell, toast } from "../ui.js";
 
 const st = { q: "", table: { sort: "last_login_at", asc: false } };
+const isNum = (x) => x !== null && x !== undefined && Number.isFinite(Number(x));
 const wsLabel = (w) => (kindOf(w) === "personal" ? "个人空间" : w.name ?? w.tid);
 
 export function render(page, r) {
@@ -22,7 +23,7 @@ export function render(page, r) {
   const count = h("span", { class: "toolbar-count" });
   const tools = h("div", { class: "toolbar" });
   const box = h("div", { class: "stack" });
-  page.append(pageHead("用户", "一行 = 一个人：他的个人空间与加入的团队。接电话时先在这里搜手机号、邮箱或姓名；要给团队加人，在客户 · 团队详情里“邀请成员”"), tools, box);
+  page.append(pageHead("用户", "按人查找：手机号、邮箱或姓名。一个人的个人空间与所在团队都在这里"), tools, box);
   let rows = [];
   let pageNo = 1;
   let pages = 1;
@@ -125,6 +126,8 @@ function draw(head, body, d, accs, reload, params) {
   const locked = !!a.locked && a.status !== "disabled";
   // 验收 Q-5：团队数只算有效身份；被移出 / 停用的另写一句
   const nTeam = ws.filter((w) => kindOf(w) === "team" && w.status !== "disabled").length;
+  const nRemoved = ws.filter((w) => w.status === "disabled" && wsStatus(w) !== "platform" && wsStatus(w) !== "disabled").length;
+  const nStopped = ws.filter((w) => w.status === "disabled").length - nRemoved;
   const nOff = ws.filter((w) => w.status === "disabled").length;
   const nPersonal = ws.filter((w) => kindOf(w) === "personal").length;
   const sessions = ws.flatMap((w) => (w.sessions ?? []).map((s) => ({ ...s, ws: w })));
@@ -159,7 +162,7 @@ function draw(head, body, d, accs, reload, params) {
       h(
         "div",
         { class: "head-stats" },
-        h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "工作空间"), h("span", { class: "stat-value num" }, `${ws.length} 个`), h("span", { class: "stat-sub" }, [nPersonal ? "个人空间 1" : "没有个人空间", nTeam ? `团队 ${nTeam}` : null, nOff ? `已移出 / 停用 ${nOff}` : null].filter(Boolean).join(" · "))),
+        h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "工作空间"), h("span", { class: "stat-value num" }, `${ws.length} 个`), h("span", { class: "stat-sub" }, [nPersonal ? "个人空间 1" : "没有个人空间", nTeam ? `团队 ${nTeam}` : null, nRemoved ? `已移出 ${nRemoved}` : null, nStopped ? `已停用 ${nStopped}` : null].filter(Boolean).join(" · "))),
         h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "电脑"), h("span", { class: "stat-value num" }, `${signedIn.length} 台在线`), h("span", { class: "stat-sub" }, `共登记 ${live.length} 台 · 各工作空间分别计同时登录上限`)),
         h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "最近登录"), h("span", { class: "stat-value num" }, p.last_login_at ? fmt.ago(p.last_login_at) : "从未"), h("span", { class: "stat-sub" }, fmt.full(p.last_login_at))),
         h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "登录会话"), h("span", { class: "stat-value num" }, `${fmt.int(sessions.length)} 个`), h("span", { class: "stat-sub" }, `桌面 ${sessions.filter((s) => s.kind === "desktop").length} · 网页 ${sessions.filter((s) => s.kind !== "desktop").length}（网页不占电脑名额）`)),
@@ -190,10 +193,11 @@ function wsTable(ws, p, reload) {
     rowClass: (w) => (w.status === "disabled" ? "dim" : ""),
     caption: "工作空间",
     columns: [
-      { key: "name", label: "工作空间", sortable: false, render: (w) => h("div", { class: "cell-2" }, h("b", {}, wsLabel(w), h("span", { class: "kind-tag" }, kindOf(w) === "personal" ? "个人" : "团队")), mono(w.tid)) },
+      // 评审（K9）：编号不进主列；胶囊与用户列表同款；团队身份名与本人不同时写出“团队内名”
+      { key: "name", label: "工作空间", sortable: false, render: (w) => h("div", { class: "cell-2" }, wsChip(w), kindOf(w) === "team" && w.acc.name && w.acc.name !== p.name ? h("small", {}, `团队内名：${w.acc.name}`) : null) },
       { key: "role", label: "角色", sortable: false, render: (w) => (kindOf(w) === "personal" ? h("span", { class: "muted" }, "本人") : roleText(w.role)) },
-      { key: "status", label: "状态", sortable: false, render: (w) => wsStatusCell(w) },
-      { key: "seat", label: "席位", title: SEAT_NOTE, sortable: false, render: (w) => (kindOf(w) === "personal" ? h("span", { class: "muted" }, "个人不讲席位") : w.status === "disabled" ? h("span", { class: "muted" }, "—") : w.seat ? stateCell("已占席", "ok") : stateCell("未占席", "neutral", UNSEATED_TIP)) },
+      { key: "status", label: "状态", sortable: false, render: (w) => (w.status !== "disabled" && w.dd?.tenant?.status === "pending" ? stateCell("待开通", "info", "还没在客户端登录过：在电脑上用这个账号登录一次即可开通") : wsStatusCell(w)) },
+      { key: "seat", label: "席位", title: SEAT_NOTE, sortable: false, render: (w) => (kindOf(w) === "personal" ? h("span", { class: "muted", title: "个人空间不占席位" }, "—") : w.status === "disabled" ? h("span", { class: "muted" }, "—") : w.seat ? stateCell("已占席", "ok") : stateCell("未占席", "neutral", UNSEATED_TIP)) },
       { key: "devices", label: "电脑", sortable: false, render: (w) => ((on, lim) => h("span", { class: lim && on >= lim ? "tone-text-warn" : "", title: `同时登录上限 ${fmt.int(lim)} 台（${LIMIT_SOURCE[w.acc.device_limit_source] ?? "上限"}）` }, `${on} / ${fmt.int(lim)} 台在线${lim && on >= lim ? " · 已满" : ""}`))(signedOf(w), Number(w.acc.device_limit) || 0) },
       { key: "used", label: "本期用量", num: true, sortable: false, title: "个人上限或每人额度的已用比例", render: (w) => (w.acc.used_ratio === null || w.acc.used_ratio === undefined ? h("span", { class: "muted" }, "—") : fmt.pct(w.acc.used_ratio)) },
       { key: "joined", label: "加入", class: "nowrap", sortable: false, render: (w) => h("div", { class: "cell-2" }, fmt.date(w.acc.created_at), h("small", {}, CREATED_VIA[w.acc.created_via] ?? (w.acc.created_via === "team_invite" ? "团队邀请" : "—"))) },
@@ -297,8 +301,8 @@ function devicePanels(ws, devsOf, reload) {
   const out = withDevs.map((w) =>
     panel(
       `电脑 · ${wsLabel(w)}`,
-      deviceTable([...devsOf(w), ...(w.dd?.join_requests_pending ?? []).map((j) => pendingRow({ ...j, aid: w.aid, member_name: w.acc.name }, { tid: w.tid, tenant_name: w.name }))], { state: { sort: "state", asc: true }, after: reload, showTenant: false, showMember: false, onRow: false, team: kindOf(w) === "team" }),
-      { flush: true, sub: kindOf(w) === "personal" ? "个人空间：新电脑直接登录；“让它退出登录”可逆，“移除这台电脑”不可逆" : "这个团队里的电脑：“让它退出登录”可逆，资料留在那台电脑上；“移除这台电脑”不可逆" },
+      deviceTable([...devsOf(w), ...(w.dd?.join_requests_pending ?? []).map((j) => pendingRow({ ...j, aid: w.aid, member_name: w.acc.name }, { tid: w.tid, tenant_name: w.name }))], { state: { sort: "state", asc: true }, after: reload, showTenant: false, showMember: false, onRow: false, team: kindOf(w) === "team", confirmHint: "由团队管理员在管理员电脑上确认" }),
+      { flush: true, sub: "“让它退出登录”可逆，“移除这台电脑”不可逆" },
     ),
   );
   if (!withDevs.length) out.push(panel("电脑", note("还没有登记电脑：在客户端用这个账号登录后出现在这里（按工作空间分组）。")));
@@ -312,7 +316,8 @@ function usagePanel(ws) {
   if (!list.length) return null;
   return panel(
     "本期用量",
-    h("div", { class: "stack-sm" }, list.map((w) => ((u) => meter({ label: wsLabel(w), ratio: u.used_ratio, used: u.used, total: u.total, unit: u.unit, denominator: DENOMINATOR[u.denominator] ?? (u.total === null ? "不单设上限" : null), resetsAt: u.period?.resets_at ?? null }))(w.dd.usage))),
+    // 评审（K9）：只作参考、不限制的额度不画进度条，直接写已用与参考额度
+    h("div", { class: "stack-sm" }, list.map((w) => ((u) => (u.enforced === false || u.denominator === "seat_quota" ? h("p", { class: "usage-line" }, h("b", {}, wsLabel(w)), `　本期已用 ${fmt.amount(u.used, u.unit)}`, h("span", { class: "muted" }, isNum(u.total) ? `（团队给每人的参考额度 ${fmt.amount(u.total, u.unit)}，不限制）` : "")) : meter({ label: wsLabel(w), ratio: u.used_ratio, used: u.used, total: u.total, unit: u.unit, denominator: DENOMINATOR[u.denominator] ?? (u.total === null ? "不单设上限" : null), resetsAt: u.period?.resets_at ?? null })))(w.dd.usage))),
     { sub: "按工作空间分别计；个人空间与团队的额度互不相通" },
   );
 }
@@ -360,7 +365,7 @@ function diagnosis({ p, a, ws, locked, enable, reload }) {
   if (a.has_password === false) row("warn", "还没设密码：只能用手机号验证码登录，或用设置密码码设置");
   if (ws.length && ws.every((w) => w.status === "disabled")) row("bad", "全部工作空间都已停用：这个人现在登不上");
   for (const w of ws) {
-    const L = `${wsLabel(w)}：`;
+    const L = `${wsLabel(w)} · `;
     const team = kindOf(w) === "team";
     const t = w.dd?.tenant ?? null;
     if (w.status === "disabled") {
@@ -374,19 +379,23 @@ function diagnosis({ p, a, ws, locked, enable, reload }) {
     if (lim && on.length >= lim)
       row(
         "info",
-        `${L}已达同时登录上限（${on.length} / ${lim} 台）：在新电脑登录时可选一台退出`,
+        `${L}已达同时登录上限（${on.length} / ${lim} 台）—— 在新电脑登录时可选一台退出`,
         btn("让一台退出登录…", () => pickOne(on, "让哪台电脑退出登录？", "可逆：那台电脑上的资料保留，之后可以再登录").then((x) => x && signoutDevice({ ...x, aid: x.aid ?? w.aid, tid: x.tid ?? w.tid }, reload)), { size: "sm", disabled: !canSupport() }),
         btn("改电脑数上限", () => limitsOf(w, p, reload), { size: "sm", disabled: !can("account.manage") }),
-        btn("移除一台…", () => pickOne(on, "移除哪台电脑？", "不可逆：那台电脑不能再用这个账号").then((x) => x && revokeDevice({ ...x, tid: x.tid ?? w.tid }, reload)), { size: "sm", kind: "ghost", class: "text-danger", disabled: !can("device.revoke") }),
+        btn("移除一台…", () => pickOne(on, "移除哪台电脑？", "不可逆：那台电脑不能再用这个账号").then((x) => x && revokeDevice({ ...x, tid: x.tid ?? w.tid }, reload)), { size: "sm", kind: "danger", disabled: !can("device.revoke") }),
       );
     else row("ok", `${L}电脑 ${on.length} / ${lim} 台在线，还能再登录 ${Math.max(0, lim - on.length)} 台`);
+    // 评审（K9 第 1 条）：待开通是正常的前置状态，不是阻止原因——中性提示 + 怎么做
+    if (t?.status === "pending") row("info", `${L}还没在客户端登录过 —— 让他在电脑上用这个账号登录一次即可开通`);
     if (team && !w.seat && t) {
       const free = Math.max(0, Number(t.seats) - Number(t.seats_used));
       if (free > 0) row("info", `${L}未占席：第一次在电脑上用 AI 时自动占用（还有 ${free} 个空席）`, btn("分配席位…", () => assignSeat(w, p, reload), { size: "sm", disabled: !can("device.revoke"), title: needs("device.revoke") }));
       else row("warn", `${L}席位已满：用不了 AI，请改套餐或席位`, btn("去组织详情", () => go(`tenants/${encodeURIComponent(w.tid)}?tab=subscription`), { size: "sm" }));
     }
     if (t) {
-      if (t.status !== "active") row("bad", `${L}${({ pending: "待开通", expired: "已到期", terminated: "已终止" })[t.status] ?? t.status}：${t.status === "pending" ? "还没有在电脑上完成开通（第一次在客户端登录即完成）" : "不签发用 AI 的凭证"}`, btn("去看订阅", () => go(`tenants/${encodeURIComponent(w.tid)}?tab=subscription`), { size: "sm" }));
+      if (t.status === "pending") {
+        /* 已在上面给了中性提示 */
+      } else if (t.status !== "active") row("bad", `${L}${({ pending: "待开通", expired: "已到期", terminated: "已终止" })[t.status] ?? t.status}：${t.status === "pending" ? "还没有在电脑上完成开通（第一次在客户端登录即完成）" : "不签发用 AI 的凭证"}`, btn("去看订阅", () => go(`tenants/${encodeURIComponent(w.tid)}?tab=subscription`), { size: "sm" }));
       else if (t.paused) row("bad", `${L}已暂停（${PAUSED[t.paused] ?? t.paused}），这里的 AI 全部暂停`, btn("去加量", () => go(`tenants/${encodeURIComponent(w.tid)}?tab=subscription`), { size: "sm" }));
       else row("ok", `${L}订阅正常，到 ${fmt.date(t.subscription_until)}，没有暂停`);
     }

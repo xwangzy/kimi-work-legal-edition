@@ -25,9 +25,9 @@ const DSTATUS = [
   ["", "全部", () => true],
   ["signed_in", "登录中", (d) => deviceState(d) === "signed_in"],
   ["signed_out", "已退出登录", (d) => deviceState(d) === "signed_out"],
-  ["pending", "待批准", (d) => deviceState(d) === "pending"],
+  ["pending", "待批准登录", (d) => deviceState(d) === "pending"],
   // 第 72 批（D-304）：团队里还没经管理员确认、不能接收团队共享事项的电脑（电脑行 issuer = account_ca）
-  ["confirm", "待确认", (d) => unconfirmed(d)],
+  ["confirm", "待确认共享", (d) => unconfirmed(d)],
   ["revoked", "已移除", (d) => deviceState(d) === "revoked"],
 ];
 const st = { dstatus: "", kind: "team", filter: "all", q: "", table: { sort: "used_ratio", asc: false }, tab: "overview", tabTid: null, pq: "", pstatus: "", memberTable: { sort: "name", asc: true }, devTable: { sort: "state", asc: true }, acctTable: {}, sel: new Set() };
@@ -53,7 +53,9 @@ const FILTERS = [
   ["closed", "已到期 / 终止", (t) => t.status === "expired" || t.status === "terminated"],
 ];
 const STATUS_CELL = { active: ["正常", "ok"], pending: ["待开通", "info"], expired: ["已到期", "warn"], terminated: ["已终止", "neutral"] };
-const tenantState = (t) => (t.paused ? stateCell(PAUSED[t.paused] ?? "已暂停", "danger") : stateCell(...(STATUS_CELL[t.status] ?? [t.status ?? "—", "neutral"])));
+/** 第 72 批评审（K1/K2/K14）：有未确认告警的正常客户主状态写“需关注”（告警数作次级）；自助注册还没在电脑上开通的写“待创建人开通” */
+const PENDING_SELF = "待创建人在电脑上完成开通";
+const tenantState = (t) => (t.paused ? stateCell(PAUSED[t.paused] ?? "已暂停", "danger") : t.status === "active" && Number(t.alerts_open) > 0 ? stateCell("需关注", "warn") : t.status === "pending" && t.created_via === "self" ? stateCell("待创建人开通", "info", PENDING_SELF) : stateCell(...(STATUS_CELL[t.status] ?? [t.status ?? "—", "neutral"])));
 const daysLeft = (t) => (t.subscription_until ? Math.ceil((Date.parse(t.subscription_until) - Date.now()) / DAY) : null);
 
 export function render(page, r) {
@@ -65,7 +67,7 @@ export function render(page, r) {
   if (r.params.filter && FILTERS.some(([id]) => id === r.params.filter)) st.filter = r.params.filter;
   const box = h("div", { class: "stack" });
   page.append(
-    pageHead("客户", "团队客户按组织管理（成员、席位、电脑）；个人客户一行 = 一个人的个人空间", btn("开通客户", () => createCustomer(), { kind: "primary", icon: icon("plus"), disabled: !can("tenant.manage"), title: needs("tenant.manage") })),
+    pageHead("客户", "团队客户按组织管理成员、席位与电脑；个人客户按人管理", btn("开通客户", () => createCustomer(), { kind: "primary", icon: icon("plus"), disabled: !can("tenant.manage"), title: needs("tenant.manage") })),
     box,
   );
   load(box, () => Promise.all([api.get("/v1/ops/tenants"), personsByTid()]), ([d, people]) => drawList(box, d.tenants ?? [], people), "正在读取客户…");
@@ -74,20 +76,22 @@ export function render(page, r) {
  * 个人客户的“这个人”：GET /v1/ops/people（account.read）里各人的个人空间 → {tid: 人}。没有权限或读不到时为空，个人客户行退回显示工作室名。
  * 每页 50 人，先读第 1 页，再并行读其余页（至多 20 页，再多的个人客户行同样退回工作室名）。
  */
-async function personsByTid() {
-  const map = new Map();
-  if (!can("account.read")) return map;
-  const put = (r) => {
-    for (const p of r?.people ?? []) for (const w of p.workspaces ?? []) if (kindOf(w) === "personal") map.set(w.tid, p);
-  };
+async function loadPeople() {
+  if (!can("account.read")) return [];
+  const all = [];
   try {
     const first = await api.get("/v1/ops/people", { page: 1 });
-    put(first);
+    all.push(...(first.people ?? []));
     const pages = Math.min(20, Number(first.pages) || 1);
-    (await Promise.all(Array.from({ length: pages - 1 }, (_, i) => api.get("/v1/ops/people", { page: i + 2 }).catch(() => null)))).forEach(put);
+    for (const r of await Promise.all(Array.from({ length: pages - 1 }, (_, i) => api.get("/v1/ops/people", { page: i + 2 }).catch(() => null)))) all.push(...(r?.people ?? []));
   } catch {
     /* 没有 account.read 或旧云端：个人客户行显示工作室名 */
   }
+  return all;
+}
+async function personsByTid() {
+  const map = new Map();
+  for (const p of await loadPeople()) for (const w of p.workspaces ?? []) if (kindOf(w) === "personal") map.set(w.tid, p);
   return map;
 }
 
@@ -108,7 +112,7 @@ function seatCell(t) {
 }
 
 function drawList(box, rows, people) {
-  ctx.tenants = rows.map((t) => ({ tid: t.tid, name: t.name ?? t.tid }));
+  ctx.tenants = rows.map((t) => ({ tid: t.tid, name: t.name ?? t.tid, kind: kindOf(t) }));
   const tabBox = h("div");
   const tableBox = h("div");
   const seg = h("span");
@@ -122,7 +126,7 @@ function drawList(box, rows, people) {
     label: "状态",
     class: "nowrap",
     value: (t) => (t.paused ? 0 : 1) * 100 - (Number(t.alerts_open) || 0) + ({ active: 1, pending: 2, expired: 3, terminated: 4 }[t.status] ?? 0),
-    render: (t) => h("div", { class: "cell-2" }, tenantState(t), Number(t.alerts_open) > 0 ? h("small", { class: "tone-text-warn" }, `${fmt.int(t.alerts_open)} 条告警`) : t.paused ? h("small", {}, tenantBadgeText(t.status)) : t.status === "pending" && t.created_via === "self" ? h("small", {}, "第一次在电脑上登录即开通") : null),
+    render: (t) => h("div", { class: "cell-2" }, tenantState(t), Number(t.alerts_open) > 0 ? h("small", {}, `${fmt.int(t.alerts_open)} 条告警未确认`) : t.paused ? h("small", {}, tenantBadgeText(t.status)) : t.status === "pending" && t.created_via === "self" ? h("small", {}, "第一次在电脑上登录即开通") : null),
   };
   const untilCol = {
     key: "subscription_until",
@@ -150,7 +154,8 @@ function drawList(box, rows, people) {
   };
   const COLS = {
     team: [
-      { key: "name", label: "组织", value: (t) => t.name ?? t.tid, render: (t) => h("div", { class: "cell-2" }, h("b", {}, t.name ?? t.tid), mono(t.tid)) },
+      // 评审（跨页 1）：客户编号不进主列，放悬停；第二行写人能用的信息（怎么开通的、哪天）
+      { key: "name", label: "组织", value: (t) => t.name ?? t.tid, render: (t) => h("div", { class: "cell-2" }, h("b", { title: `客户编号 ${t.tid}` }, t.name ?? t.tid), h("small", {}, `${({ ops: "运营开通", self: "自助注册", founder_code: "开通码" })[t.created_via] ?? "开通"} · ${fmt.date(t.created_at)}`)) },
       statusCol,
       { key: "plan", label: "套餐", class: "nowrap", value: (t) => t.plan?.label ?? "", render: (t) => h("div", { class: "cell-2" }, t.plan?.label ?? t.plan?.id ?? "—", h("small", {}, t.edition === "firm" ? "律所版" : "团队版")) },
       { key: "seats", label: "成员 / 席位", title: SEAT_NOTE, value: (t) => Number(t.member_count ?? t.accounts) || 0, render: (t) => seatCell(t) },
@@ -171,7 +176,7 @@ function drawList(box, rows, people) {
         label: "用户",
         value: (t) => personOf(t)?.name ?? t.name ?? t.tid,
         // 验收 Q-5：“另在 N 个团队”只算有效的团队身份（被移出 / 停用的不算）
-        render: (t) => ((p, teams) => (p ? h("div", { class: "cell-2" }, h("b", {}, p.name ?? "—", teams.length ? h("span", { class: "kind-tag", title: teams.map((w) => `${w.name} · ${ROLE[w.role] ?? w.role}`).join("、") }, `另在 ${teams.length} 个团队`) : null), h("small", {}, p.phone_masked ?? p.email_masked ?? "未绑定手机号")) : h("div", { class: "cell-2" }, h("b", {}, t.name ?? t.tid), mono(t.tid))))(personOf(t), activeTeamsOf(personOf(t))),
+        render: (t) => ((p, teams) => (p ? h("div", { class: "cell-2" }, h("b", {}, p.name ?? "—", teams.length ? h("span", { class: "kind-tag", title: teams.map((w) => `${w.name} · ${ROLE[w.role] ?? w.role}`).join("、") }, `另在 ${teams.length} 个团队`) : null), h("small", {}, p.phone_masked ?? p.email_masked ?? "未绑定手机号")) : h("div", { class: "cell-2" }, h("b", { title: `客户编号 ${t.tid}` }, t.name ?? t.tid), h("small", {}, "个人空间"))))(personOf(t), activeTeamsOf(personOf(t))),
       },
       statusCol,
       { key: "plan", label: "套餐", class: "nowrap", value: (t) => t.plan?.label ?? "", render: (t) => t.plan?.label ?? t.plan?.id ?? "—" },
@@ -321,8 +326,8 @@ function drawDetail(head, body, d, reload) {
       "div",
       { class: "stack" },
       pageHead(
-        h("span", { class: "title-row" }, t.name ?? t.tid, personal ? h("span", { class: "kind-tag" }, "个人客户") : null, tenantBadge(t.status), t.paused ? badge(PAUSED[t.paused] ?? "已暂停", "danger") : null, Number(t.alerts_open) > 0 ? badge(`${t.alerts_open} 条告警`, "warn") : null),
-        metaLine(mono(t.tid), `${t.plan?.label ?? "—"}套餐`, personal ? null : t.edition === "firm" ? "律所版" : "团队版", `${({ ops: "运营开通", self: "自助注册", founder_code: "开通码" })[t.created_via] ?? "开通"}于 ${fmt.date(t.created_at)}`, personal ? null : t.member_device_policy === "approve" ? "成员新电脑须确认" : "成员新电脑直接登录", t.accounts_required ? "要求账号登录" : "不要求账号登录"),
+        h("span", { class: "title-row" }, t.name ?? t.tid, personal ? h("span", { class: "kind-tag" }, "个人客户") : null, t.status === "pending" && t.created_via === "self" ? badge(PENDING_SELF, "info") : tenantBadge(t.status), t.paused ? badge(PAUSED[t.paused] ?? "已暂停", "danger") : null, Number(t.alerts_open) > 0 ? badge(`${t.alerts_open} 条告警`, "warn") : null),
+        metaLine(`${t.plan?.label ?? "—"}套餐`, personal ? null : t.edition === "firm" ? "律所版" : "团队版", `${({ ops: "运营开通", self: "自助注册", founder_code: "开通码" })[t.created_via] ?? "开通"}于 ${fmt.date(t.created_at)}`, personal ? null : t.member_device_policy === "approve" ? "新电脑须管理员确认" : "新电脑：成员自己登录即可"),
         actions,
       ),
       h(
@@ -435,10 +440,11 @@ function quotaPanel(t, d) {
     h(
       "div",
       { class: "stack-sm" },
-      u.burst ? h("div", { title: `任意 ${u.burst.hours} 小时内至多用本期总额度的一定比例，按小时桶滑动` }, meter({ label: `任意 ${u.burst.hours} 小时窗口`, ratio: u.burst.used_ratio, unit: t.unit, resetText: "滚动窗口" })) : null,
+      u.burst ? h("div", { title: `近 ${u.burst.hours} 小时内至多用本期总额度的一定比例，随时间逐步恢复` }, meter({ label: `近 ${u.burst.hours} 小时用量`, ratio: u.burst.used_ratio, resetText: "随时间逐步恢复" })) : null,
       facts([
         ["周期", periodText(t.period)],
-        ["上限", t.cap_pct ? `${t.cap_pct}%（用到即暂停）` : "未设"],
+        ["月度上限", t.cap_pct ? `${t.cap_pct}%（用到即暂停）` : "未设（用满本期额度为止）"],
+        ["账号登录", t.accounts_required ? "成员须登录账号才能用 AI" : "不要求登录（旧方式）"],
         ["加量", t.boost_pct ? `+${t.boost_pct}%` : "无"],
         ["预计用完", t.forecast_exhaust_at ? fmt.full(t.forecast_exhaust_at) : "本期内不会"],
         Number(t.legacy_used_ratio) > 0 ? ["迁移前已用", `${fmt.pct(t.legacy_used_ratio)}（计费方式调整前本期已用的比例，已计入）`] : null,
@@ -454,11 +460,10 @@ function paneOverview(pane, d, reload, o) {
   const todo = [
     { label: "待开通", count: t.status === "pending" ? 1 : 0, tone: "info", hint: t.created_via === "self" ? "自助注册的工作空间：律师第一次在客户端登录即完成开通，不用开通码" : "请开通专员发创始开通码", onClick: t.created_via === "self" ? null : () => o.setTab("subscription") },
     o.personal ? null : { label: "电脑待批准", count: o.hidden.has("accounts") ? 0 : joins.length, tone: "warn", hint: `${joins.slice(0, 2).map((j) => `${j.member_name ?? "成员"}的新电脑`).join("、")}等团队管理员批准`, onClick: () => o.setTab("devices", "pending") },
-    { label: "未确认告警", count: Number(t.alerts_open) || 0, tone: "warn", hint: "见下方" },
     { label: "待结算的预留额度", count: Number(u.unreconciled_leases) || 0, tone: "warn", hint: "有用量还没回报，稍后会自动结算" },
   ].filter(Boolean);
   const live = todo.filter((x) => x.count > 0);
-  const daily = u.daily?.length ? panel("本期每日用量", trendChart({ labels: u.daily.map((x) => x.day), series: [{ name: `用量（${fmt.unit(u.unit)}）`, values: u.daily.map((x) => Number(x.used) || 0), kind: "bar" }], format: (v) => (u.unit === "cny" ? fmt.cny(v, 0) : fmt.tokens(v)), tick: (l) => l.slice(5), height: 160 })) : panel("本期每日用量", emptyBlock("本期还没有用量"));
+  const daily = u.daily?.length ? panel("近 30 天每日用量", trendChart({ labels: u.daily.map((x) => x.day), series: [{ name: `用量（${fmt.unit(u.unit)}）`, values: u.daily.map((x) => Number(x.used) || 0), kind: "bar" }], format: (v) => (u.unit === "cny" ? fmt.cny(v, 0) : fmt.tokens(v)), tick: (l) => l.slice(5), height: 160 })) : panel("近 30 天每日用量", emptyBlock("近 30 天还没有用量"));
   add(
     pane,
     // 第二轮（04）：全为 0 时收成一行“无待办”，不占首屏三张空卡
@@ -496,9 +501,10 @@ function paneMembers(pane, d, reload) {
   if (new Set(d.hidden ?? []).has("accounts")) return noAccounts(pane, d);
   const box = h("div", { class: "stack-sm" });
   pane.append(box);
-  load(box, () => api.get("/v1/ops/accounts", { tid: d.tenant?.tid, limit: 200 }).catch(() => ({ accounts: [] })), (r) => drawMembers(box, d, r.accounts ?? [], reload), "正在读取成员…");
+  // 评审（跨页 9）：团队身份的姓名取邀请上写的名字（契约设计）；运营视图在旁边写“本人：某某”，与用户列表对得上
+  load(box, () => Promise.all([api.get("/v1/ops/accounts", { tid: d.tenant?.tid, limit: 200 }).catch(() => ({ accounts: [] })), loadPeople()]), ([r, people]) => drawMembers(box, d, r.accounts ?? [], reload, new Map(people.map((p) => [p.aid, p]))), "正在读取成员…");
 }
-function drawMembers(box, d, accs, reload) {
+function drawMembers(box, d, accs, reload, people = new Map()) {
   const t = d.tenant ?? {};
   const byAid = new Map(accs.map((a) => [a.aid, a]));
   const usage = new Map((d.usage?.by_account ?? []).filter((x) => x.aid).map((x) => [x.aid, x]));
@@ -548,7 +554,7 @@ function drawMembers(box, d, accs, reload) {
           caption: "成员",
           columns: [
             { key: "_sel", label: headBox, sortable: false, class: "sel", render: (m) => (m.aid ? h("input", { type: "checkbox", "aria-label": `选择 ${m.name ?? m.email}`, checked: st.sel.has(m.aid), onchange: (ev) => (ev.currentTarget.checked ? st.sel.add(m.aid) : st.sel.delete(m.aid), drawTable()) }) : null) },
-            { key: "name", label: "成员", value: (m) => m.name ?? "", render: (m) => (m.aid ? h("div", { class: "cell-2" }, h("b", {}, m.name ?? "—"), h("small", {}, [m.acc?.phone, m.email].filter(Boolean).join(" · "))) : h("div", { class: "cell-2" }, h("b", { class: "muted" }, "未建账号的成员"), h("small", {}, m.seat ? `席位 ${m.seat.sid}` : "旧租户入组"))) },
+            { key: "name", label: "成员", value: (m) => m.name ?? "", render: (m) => (m.aid ? ((pr) => h("div", { class: "cell-2" }, h("b", {}, m.name ?? "—"), h("small", {}, [pr && pr.name && pr.name !== m.name ? `本人：${pr.name}` : null, m.acc?.phone, m.email].filter(Boolean).join(" · "))))(m.acc?.person ? people.get(m.acc.person) : null) : h("div", { class: "cell-2" }, h("b", { class: "muted" }, "未建账号的成员"), h("small", {}, m.seat ? `席位 ${m.seat.sid}` : "旧租户入组"))) },
             { key: "role", label: "角色", value: (m) => roleText(m.role) },
             { key: "status", label: "状态", value: (m) => (m.acc ? (m.acc.status === "disabled" ? 2 : m.acc.locked ? 1 : 0) : 3), render: statusOf },
             { key: "last_login_at", label: "最近登录", value: (m) => m.acc?.last_login_at ?? "", render: (m) => (m.acc ? h("span", { title: fmt.full(m.acc.last_login_at) }, m.acc.last_login_at ? fmt.ago(m.acc.last_login_at) : "从未登录") : "—") },
@@ -574,12 +580,12 @@ function drawMembers(box, d, accs, reload) {
   };
   // 第 72 批（W-3）：团队邀请列表（GET /v1/ops/tenants/{tid}/invites，account.read，不含码）与撤回（account.manage）
   const invBox = h("div");
-  clear(box, note("运营代发团队邀请：对方用自己的手机号登录（没注册的先注册）后输入邀请码即加入；已有个人空间的人接受后多一个团队空间。改角色、移出团队与团队管理员在“本所 · 成员”里做的是同一件事，都记审计。"), tools, batch, tableBox, panel("团队邀请", invBox, { flush: true, sub: "邀请码只在生成时显示一次；未接受的可以撤销" }));
+  clear(box, note("运营可代发邀请、改角色、移出成员，与团队管理员在“本所 · 成员”里做的是同一件事，都记审计。"), tools, batch, tableBox, panel("团队邀请", invBox, { flush: true, sub: "邀请码只在生成时显示一次；未接受的可以撤销" }));
   draw();
   load(invBox, () => api.get(`${api.T(t.tid)}/invites`), (r) => clear(invBox, inviteTable(r.invites ?? [], { onRevoke: (x) => revokeInviteOps(t, x, reload), revokeTitle: needs("account.manage") })), "正在读取邀请…");
 }
 async function revokeInviteOps(t, x, reload) {
-  const ok = await confirmAction({ title: `撤销给 ${x.name} 的邀请`, danger: true, lead: h("p", {}, `${t.name ?? t.tid} · ${roleText(x.role)}`), consequences: ["这个邀请码立即不能再用；", "已经加入的成员不受影响；记入这家客户的操作记录。"], confirmLabel: "撤销", run: () => api.post(`${api.T(t.tid)}/invites/${api.seg(x.id)}/revoke`) });
+  const ok = await confirmAction({ title: `撤销给${x.name}的邀请`, danger: true, lead: h("p", {}, `${t.name ?? t.tid} · ${roleText(x.role)}`), consequences: ["这个邀请码立即不能再用；", "已经加入的成员不受影响；记入这家客户的操作记录。"], confirmLabel: "撤销", run: () => api.post(`${api.T(t.tid)}/invites/${api.seg(x.id)}/revoke`) });
   if (ok) (toast("已撤销邀请"), reload());
 }
 /**
@@ -602,7 +608,7 @@ export function memberOpsActions(t, m, reload) {
 }
 async function changeRoleOps(t, m, reload) {
   const r = await confirmAction({
-    title: `改 ${m.name ?? ""} 的角色`,
+    title: `改${m.name ?? "成员"}的角色`,
     lead: h("p", { class: "muted" }, `${t.name ?? t.tid}：代团队管理员操作，记入这家客户的操作记录`),
     fields: [{ name: "role", label: "角色", type: "radio", options: [["lawyer", ROLE.lawyer, "处理自己的事项"], ["assistant", ROLE.assistant, "协助律师"], ["partner", ROLE.partner, "另可只读查看“本所”"], ["admin", ROLE.admin, "管理成员、席位、电脑与团队设置"]], value: m.role }],
     consequences: ["立即生效；他下次刷新或重新登录时看到新权限；", "最后一名管理员不能降级；管理员降级时，他发出的未接受邀请一并撤销。"],
@@ -613,13 +619,12 @@ async function changeRoleOps(t, m, reload) {
 }
 async function removeMemberOps(t, m, reload) {
   const r = await confirmAction({
-    title: `把 ${m.name ?? ""} 移出 ${t.name ?? t.tid}`,
+    title: `把${m.name ?? "成员"}移出${t.name ?? t.tid}`,
     danger: true,
     consequences: [
-      "一步完成：他在本团队的登录立即全部失效，名下电脑不能再用本团队的 AI；",
+      "他在本团队的登录立即失效，名下电脑不能再用本团队的 AI；",
       "席位释放；电脑记录保留，事项与材料在他自己的电脑上；",
-      "他的账号不删除：个人空间与别的团队照常可用；要再加入须重新邀请；",
-      "与团队管理员“移出团队”同一效果，记入这家客户的操作记录。",
+      "账号不删除：个人空间与别的团队照常可用；要再加入须重新邀请。",
     ],
     typeToConfirm: m.name ?? m.aid,
     typeLabel: "再输入一次成员姓名以确认：",
@@ -691,11 +696,11 @@ function paneDevices(pane, d, reload) {
   const draw = () => {
     const df = DSTATUS.find(([id]) => id === st.dstatus)?.[2] ?? (() => true);
     clear(tools, searchInput({ placeholder: "电脑名称、成员、版本", value: st.pq, onInput: (v) => ((st.pq = v), draw()) }), h("span", { class: "seg-label" }, "状态"), segmented(DSTATUS.map(([id, label, fn]) => ({ id, label, count: devRows.filter(fn).length })), st.dstatus, (v) => ((st.dstatus = v), draw()), "电脑状态"));
-    clear(tableBox, deviceTable(devRows.filter((x) => df(x) && matches(st.pq, x.name, x.device_id, x.member_name, x.email, x.client_version)), { state: st.devTable, after: reload, showTenant: false, team: true, empty: "还没有登记电脑：成员在客户端登录后出现在这里" }));
+    clear(tableBox, deviceTable(devRows.filter((x) => df(x) && matches(st.pq, x.name, x.device_id, x.member_name, x.email, x.client_version)), { state: st.devTable, after: reload, showTenant: false, team: true, confirmHint: "由团队管理员在管理员电脑上确认", empty: "还没有登记电脑：成员在客户端登录后出现在这里" }));
   };
   add(
     pane,
-    note(t.member_device_policy === "approve" ? "成员新电脑须团队管理员确认后才能登录（团队设置）。" : "成员新电脑直接登录（团队设置）；只有要接收团队共享事项时才需团队管理员确认。", "同时登录的电脑数按每人上限计；“让它退出登录”可逆，“移除这台电脑”不可逆。"),
+    note(t.member_device_policy === "approve" ? "新电脑须团队管理员确认后才能登录。" : "新电脑：成员自己登录即可；要接收团队共享事项的电脑须团队管理员确认。"),
     tools,
     tableBox,
   );
@@ -759,11 +764,11 @@ function paneUsage(pane, d) {
     h(
       "div",
       { class: "grid-2" },
-      panel("本期", h("div", { class: "stack-sm" }, meter({ label: "本期", ratio: u.used_ratio, used: u.used, total: u.total, unit: u.unit, resetsAt: u.period?.resets_at ?? t.period?.resets_at, capPct: t.cap_pct, inflight: t.in_flight_ratio }), u.burst ? meter({ label: `任意 ${u.burst.hours} 小时窗口`, ratio: u.burst.used_ratio, unit: u.unit, resetText: "滚动窗口" }) : null)),
+      panel("本期额度", h("div", { class: "stack-sm" }, meter({ label: "已用", ratio: u.used_ratio, used: u.used, total: u.total, unit: u.unit, resetsAt: u.period?.resets_at ?? t.period?.resets_at, capPct: t.cap_pct, inflight: t.in_flight_ratio }), u.burst ? meter({ label: `近 ${u.burst.hours} 小时用量`, ratio: u.burst.used_ratio, resetText: "随时间逐步恢复" }) : null)),
       panel("历史周期", periodBars(u.history ?? []), { sub: "每期已用比例" }),
     ),
     panel(
-      "每日",
+      "近 30 天每日",
       u.daily?.length
         ? trendChart({ labels: u.daily.map((x) => x.day), series: [{ name: `用量（${fmt.unit(u.unit)}）`, values: u.daily.map((x) => Number(x.used) || 0), kind: "bar" }, { name: "请求", values: u.daily.map((x) => Number(x.requests) || 0), kind: "line", cls: "s-warn" }], format: (v) => (u.unit === "cny" ? fmt.num(v, 0) : fmt.tokens(v)), tick: (l) => l.slice(5), height: 170 })
         : emptyBlock("本期还没有用量"),
@@ -783,7 +788,7 @@ function paneUsage(pane, d) {
             { key: "name", label: "成员", value: (x) => x.name ?? x.email ?? "", render: (x) => (x.aid ? h("div", { class: "cell-2" }, h("b", {}, x.name ?? "—"), h("small", {}, x.email ?? "")) : h("span", { class: "muted" }, x.uid ? "未关联账号" : "—")) },
             { key: "used", label: "用量", num: true, value: (x) => Number(x.used) || 0, render: (x) => fmt.amount(x.used, u.unit) },
             { key: "used_ratio_of_firm", label: "占本期额度", title: "本期用量 ÷ 本期总额度", num: true, value: (x) => Number(x.used_ratio_of_firm) || 0, render: (x) => fmt.pct(x.used_ratio_of_firm) },
-            { key: "own_ratio", label: "占个人额度", num: true, value: (x) => x.own_ratio ?? null, render: (x) => (x.own_ratio === null || x.own_ratio === undefined ? h("span", { class: "muted" }, "不单设") : fmt.pct(x.own_ratio)) },
+            { key: "own_ratio", label: "占个人上限", title: "管理员给这名成员单设的本期上限；没单设的不算", num: true, value: (x) => x.own_ratio ?? null, render: (x) => (x.own_ratio === null || x.own_ratio === undefined ? h("span", { class: "muted" }, "不单设") : fmt.pct(x.own_ratio)) },
             { key: "requests", label: "请求", num: true, value: (x) => Number(x.requests) || 0, render: (x) => fmt.int(x.requests) },
           ],
         }),
@@ -809,7 +814,6 @@ function panePlan(pane, d, reload) {
           facts([
             ["套餐", t.plan?.label ?? "—"],
             ["席位", `${fmt.int(t.seats)}（在用 ${fmt.int(t.seats_used)}）`],
-            ["单位", fmt.unit(t.unit)],
           ]),
           // 第 71 批（B-7）：控制面改套餐要 tenant.manage（原先前端按 quota.manage 判）
           h("div", { class: "btn-row" }, btn("改套餐或席位…", () => changePlan(t, reload, d), { disabled: !can("tenant.manage"), title: needs("tenant.manage") })),
@@ -927,16 +931,16 @@ function paneSubscription(pane, d, reload) {
     h(
       "div",
       { class: "grid-2" },
-      panel("订阅", h("div", { class: "stack-sm" }, facts([["到期", fmt.full(t.subscription_until)], ["状态", tenantBadge(t.status)], ["许可", `${fmt.date(d.license?.issued_at)} 签发，有效至 ${fmt.date(d.license?.expires_at)}`]]), h("div", { class: "btn-row" }, btn("续订…", () => renew(t, reload), { disabled: !can("tenant.manage") || t.status === "terminated", title: needs("tenant.manage") })))),
+      panel("订阅", h("div", { class: "stack-sm" }, facts([["到期", fmt.date(t.subscription_until)], ["状态", t.status === "pending" && t.created_via === "self" ? badge(PENDING_SELF, "info") : tenantBadge(t.status)], ["授权有效至", fmt.date(d.license?.expires_at)]]), h("div", { class: "btn-row" }, btn("续订…", () => renew(t, reload), { disabled: !can("tenant.manage") || t.status === "terminated", title: needs("tenant.manage") })))),
       panel(
         "类型与成员",
         isPersonal(t)
           ? facts([["类型", "个人空间（一人）"], ["说明", "个人律师可在客户端把工作室升级为团队（就地升级，事项、电脑不动）；升级后才能邀请同事"]])
-          : facts([["类型", "团队"], ["成员新电脑", t.member_device_policy === "approve" ? "须团队管理员确认后才能登录" : "直接登录（只有接收团队共享事项前要确认）"], ["加成员", h("span", {}, "在“成员与席位”里", h("button", { type: "button", class: "link", onclick: () => go(`tenants/${encodeURIComponent(t.tid)}?tab=members`) }, "邀请成员"), "（运营代发团队邀请，对方凭码加入）")]]),
+          : facts([["类型", "团队"], ["成员新电脑", t.member_device_policy === "approve" ? "须团队管理员确认后才能登录" : "成员自己登录即可；接收团队共享事项的电脑须管理员确认"], ["加成员", h("span", {}, "在“成员与席位”里", h("button", { type: "button", class: "link", onclick: () => go(`tenants/${encodeURIComponent(t.tid)}?tab=members`) }, "邀请成员"), "（运营代发团队邀请，对方凭码加入）")]]),
       ),
     ),
     planBox,
-    panel(
+    t.created_via === "self" && !(d.activation_codes ?? []).length ? null : panel(
       "创始开通码",
       dataTable({
         state: {},

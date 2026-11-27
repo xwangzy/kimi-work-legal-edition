@@ -18,7 +18,7 @@ export function render(page, r) {
   // 第 72 批（D-306 第 5 条）：个人用户在“我的 · 用量”看同一页（#/me/usage）；团队管理员在“本所 · 用量”
   const sec = r.section === "me" ? "me" : "firm";
   st.sec = sec;
-  page.append(pageHead(sec === "me" ? "用量" : "本所用量", sec === "me" ? "个人空间的本期用量；逐请求只记用量，不含任何内容" : "逐请求只记用量，不含任何内容"), tabs, box);
+  page.append(pageHead(sec === "me" ? "用量" : "本所用量", "逐请求只记用量，不含任何内容"), tabs, box);
   const draw = () => {
     clear(tabs, tabBar([{ id: "summary", label: "汇总" }, { id: "records", label: "逐请求明细" }], st.view, (id) => {
       const want = id === "records" ? `#/${sec}/usage?view=records` : `#/${sec}/usage`;
@@ -46,10 +46,10 @@ function summary(box) {
       h(
         "div",
         { class: "kpis" },
-        stat("请求", fmt.int(t.requests), `近 ${st.days} 日`, { hero: true }),
-        stat("实际消耗", `${fmt.tokens(tokensOf(t) || t.tokens)} token`, `输入 ${fmt.tokens(t.tokens_in)}（缓存 ${fmt.tokens(t.tokens_cached)}）· 输出 ${fmt.tokens(t.tokens_out)}`, { hero: true }),
+        stat("AI 调用", `${fmt.int(t.requests)} 次`, `近 ${st.days} 日`),
+        stat("实际消耗", `${fmt.tokens(tokensOf(t) || t.tokens)} token`, `输入 ${fmt.tokens(t.tokens_in)}（缓存 ${fmt.tokens(t.tokens_cached)}）· 输出 ${fmt.tokens(t.tokens_out)}`),
         stat("计费金额", fmt.cny(t.value_cny), "按价目计的用量价值（元）"),
-        st.sec === "me" ? stat("用了的模型", fmt.int((d.by_model ?? []).filter((m) => Number(m.requests) > 0).length), "有请求的模型") : stat("活跃成员", fmt.int((d.by_member ?? []).filter((m) => Number(m.requests) > 0).length), "有请求的成员"),
+        st.sec === "me" ? stat("用到的模型", fmt.int((d.by_model ?? []).filter((m) => Number(m.requests) > 0).length), "有调用的模型") : stat("活跃成员", fmt.int((d.by_member ?? []).filter((m) => Number(m.requests) > 0).length), "有请求的成员"),
       ),
       panel("按日", daily.length ? trendChart({ labels: daily.map((x) => x.day), series: [{ name: "输入 token", values: daily.map((x) => Number(x.tokens_in) || 0), kind: "bar", stack: true }, { name: "输出 token", values: daily.map((x) => Number(x.tokens_out) || 0), kind: "bar", stack: true, cls: "s2" }], format: (v) => fmt.tokens(v), tick: (l) => l.slice(5), height: 220 }) : emptyBlock("这段时间没有用量"), { sub: "实际消耗（token），北京时间日" }),
       h(

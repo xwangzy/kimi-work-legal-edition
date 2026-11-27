@@ -41,8 +41,8 @@ export function render(page) {
       head,
       pageHead(
         "成员",
-        h("span", { title: SEAT_NOTE }, seats ? `席位 已用 ${seats.used} / 共 ${seats.total}（${SEAT_NOTE}）` : "成员与席位", ((sn) => (sn ? h("span", { class: sn.full ? "tone-text-warn" : "muted" }, `；${sn.text}`) : null))(seats ? seatNote(unseated, seats.total, seats.used) : null), readOnly() ? "。合伙人只读，管理操作请团队管理员完成" : null),
-        btn("邀请成员", () => invite(reload), { kind: "primary", icon: icon("plus"), disabled: readOnly(), title: readOnly() ? "只有团队管理员能邀请" : undefined }),
+        h("span", { title: SEAT_NOTE }, seats ? `席位 已用 ${seats.used} / 共 ${seats.total}` : "成员与席位", ((sn) => (sn ? h("span", { class: sn.full ? "tone-text-warn" : "muted" }, `；${sn.text}`) : null))(seats ? seatNote(unseated, seats.total, seats.used) : null), readOnly() ? "。合伙人只读，管理操作请团队管理员完成" : null),
+        btn("邀请成员", () => invite(reload, seats), { kind: "primary", icon: icon("plus"), disabled: readOnly(), title: readOnly() ? "只有团队管理员能邀请" : undefined }),
       ),
     );
     const STATUS = [
@@ -132,24 +132,25 @@ function policyPanel() {
   return panel(
     "成员新电脑",
     settingRow(
-      "新电脑登录",
-      cur === "approve" ? "须确认：新电脑要等管理员确认后才能登录。" : "直接登录（缺省）：只有要接收团队共享事项前才需管理员确认那台电脑。",
+      "登录方式",
+      cur === "approve" ? "须确认：新电脑要等管理员确认后才能登录。" : "直接登录（默认）：成员自己登录即可；要接收团队共享事项的电脑须管理员确认。",
       h("div", { class: "btn-row" }, segmented([{ id: "auto", label: "直接登录" }, { id: "approve", label: "须确认" }], cur, (v) => (readOnly() ? toast("只有团队管理员能改", "error") : set(v)), "成员新电脑")),
     ),
   );
 }
 
 /** 邀请成员（契约 §3.2）：一次性码只显示这一次 + 复制 + 有效期 */
-async function invite(reload) {
+async function invite(reload, seats) {
+  const full = seats && Number(seats.used) >= Number(seats.total);
   const r = await confirmAction({
     title: "邀请成员",
     lead: h("p", { class: "muted" }, "生成一次性邀请码（7 天有效）。对方用自己的手机号登录客户端或控制台后输入；没注册的人注册时填这个码，直接进团队。"),
     fields: [
       { name: "name", label: "姓名", required: true, maxlength: 40, hint: "成员在团队里显示的名字" },
       { name: "role", label: "角色", type: "select", options: [["lawyer", ROLE.lawyer], ["assistant", ROLE.assistant], ["partner", ROLE.partner], ["admin", ROLE.admin]], value: "lawyer" },
-      { name: "phone_hint", label: "手机号（选填）", type: "tel", placeholder: "如 13900001234", hint: "只存打码，便于对上人；不发短信" },
+      { name: "phone_hint", label: "手机号（选填）", type: "tel", placeholder: "如 13900001234", hint: "只保存打码后的号码，用来核对是谁；不会发短信" },
     ],
-    consequences: ["席位不在发邀请时占用：对方加入后有空席即可用 AI，席位已满时能加入但用不了 AI（可在成员行“分配席位”）；", "邀请码只显示这一次，请当面或经安全渠道交给本人。"],
+    consequences: [full ? `当前席位已满（${seats.used} / ${seats.total}）：对方加入后暂时用不了 AI，需要先腾出或加席位；` : "对方加入后有空席即可用 AI（席位不在发邀请时占用）；", "邀请码只显示这一次，请当面或经安全渠道交给本人。"],
     confirmLabel: "生成邀请码",
     run: (v) => api.post("/v1/team/invites", { name: v.name.trim(), role: v.role, ...(v.phone_hint ? { phone_hint: v.phone_hint.trim() } : {}) }),
   });
@@ -180,11 +181,11 @@ function memberActions(m, reload) {
   };
   const remove = async () => {
     const r = await confirmAction({
-      title: `把 ${who} 移出团队`,
+      title: `把${who}移出团队`,
       danger: true,
       lead: h("p", {}, `${who} · ${roleText(m.role)}${m.person_phone_masked ? ` · ${m.person_phone_masked}` : ""}`),
       consequences: [
-        "一步完成：他在本团队的登录立即全部失效，名下电脑不能再用本团队的 AI；",
+        "他在本团队的登录立即失效，名下电脑不能再用本团队的 AI；",
         "席位释放，可分给别人；电脑记录保留，事项与材料在他自己的电脑上（离所交接在客户端完成）；",
         "他的账号不删除：个人空间与别的团队照常可用；",
         "要再加入须重新邀请（或在这里“启用”恢复）。",
@@ -196,7 +197,7 @@ function memberActions(m, reload) {
   };
   const role = async () => {
     const r = await confirmAction({
-      title: `改 ${who} 的角色`,
+      title: `改${who}的角色`,
       fields: [{ name: "role", label: "角色", type: "radio", options: [["lawyer", ROLE.lawyer, "处理自己的事项"], ["assistant", ROLE.assistant, "协助律师"], ["partner", ROLE.partner, "另可只读查看“本所”"], ["admin", ROLE.admin, "管理成员、席位、电脑与团队设置"]], value: m.role }],
       consequences: ["立即生效；他下次刷新或重新登录时看到新权限；", "最后一名管理员不能降级。"],
       confirmLabel: "保存",
@@ -206,7 +207,7 @@ function memberActions(m, reload) {
   };
   const seat = async (assign) => {
     const r = await confirmAction({
-      title: assign ? `给 ${who} 分配席位` : `释放 ${who} 的席位`,
+      title: assign ? `给${who}分配席位` : `释放${who}的席位`,
       danger: !assign,
       consequences: assign ? ["他立即可以用 AI（席位 = 能用 AI 的名额）；", "不超过席位数：已满时请联系中软加席位。"] : ["他不能再用 AI（本机功能照常）；", "席位空出可分给别人；用量记录保留。"],
       confirmLabel: assign ? "分配" : "释放",
@@ -225,7 +226,7 @@ function memberActions(m, reload) {
   // 第 72 批（C-6）：重置改为给成员本人手机发短信验证码，管理员看不到码
   const reset = async () => {
     const r = await confirmAction({
-      title: `给 ${who} 发重置密码短信`,
+      title: `给${who}发重置密码短信`,
       consequences: ["给他本人绑定的手机号发一条找回密码的验证码（你看不到码）；", "他在登录页“忘记密码”里填验证码、设新密码；设好后他的全部登录失效、须重新登录。"],
       confirmLabel: "发短信",
       run: async () => {

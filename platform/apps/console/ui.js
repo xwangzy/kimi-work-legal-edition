@@ -651,7 +651,7 @@ export function showSecret(o) {
         h("div", { class: "secret-box" }, h("code", { class: "secret" }, secret), copyBtn(secret)),
         h("p", { class: "modal-note warn" }, o.warn ?? "只显示这一次：关掉后无法再查看。请当面或经安全渠道交给本人。"),
         note ? h("p", { class: "modal-note" }, note) : null,
-        expiresAt ? h("p", { class: "modal-note" }, `有效期至 ${fmt.full(expiresAt)}（北京时间）`) : null,
+        expiresAt ? h("p", { class: "modal-note" }, `有效期至 ${fmt.time(expiresAt)}（北京时间）`) : null,
         h("div", { class: "modal-actions" }, h("button", { type: "button", class: "btn primary", onclick: close }, "我已记下")),
       ),
     );
@@ -1009,8 +1009,9 @@ export function quotaCard(o) {
         h("dd", { class: "num" }, isNum(o.used) ? (isNum(o.total) ? `${fmt.amount(o.used, o.unit)} / ${fmt.amount(o.total, o.unit)}` : `${fmt.amount(o.used, o.unit)}（不设上限）`) : r === null ? "—" : fmt.pct(r)),
         h("dt", {}, "本期"),
         h("dd", {}, fmt.resetLine(o.resetsAt)),
-        h("dt", {}, "单位"),
-        h("dd", {}, o.capPct && o.capPct < 100 ? `${unitText} · 本所上限 ${o.capPct}%` : unitText),
+        // 第 72 批评审（跨页 2）：金额已带“¥”，不再单列“单位”；设了上限才写上限
+        o.capPct && o.capPct < 100 ? h("dt", {}, "上限") : null,
+        o.capPct && o.capPct < 100 ? h("dd", {}, `${o.capPct}%（用到即暂停）`) : null,
       ),
       o.note ? h("p", { class: "quota-note" }, o.note) : null,
       o.extra ?? null,

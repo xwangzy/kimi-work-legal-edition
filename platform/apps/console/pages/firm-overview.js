@@ -5,10 +5,10 @@
  */
 import * as api from "../api.js";
 import { alertList, ctx, go, pageHead, roleText, seatNote, tenantBadge } from "../domain.js";
-import { btn, clear, clientOnlyList, confirmAction, facts, fmt, h, icon, load, metaLine, panel, periodBars, quotaCard, stat, toast } from "../ui.js";
+import { badge, btn, clear, clientOnlyList, confirmAction, facts, fmt, h, icon, load, metaLine, panel, periodBars, quotaCard, stat, toast } from "../ui.js";
 
 export const CLIENT_ONLY = [
-  ["确认新电脑", "“须确认”时的新电脑、要接收团队共享事项的电脑：在管理员电脑上核对校验码后确认（邀请成员、移出、席位已可在网页“成员”里做）"],
+  ["确认新电脑", "核对校验码后确认（含要接收团队共享事项的电脑）"],
   ["移除电脑", "只能在管理员电脑上做；让电脑退出登录可在网页“成员”或“电脑”里做"],
   ["策略与连接器发布", "本所策略由管理员电脑发布后才会下发"],
   ["恢复包与备份", "律所根密钥的备份与恢复只在本机完成"],
@@ -31,7 +31,7 @@ function draw(head, box, d, reload) {
   const plan = d.plan ?? {};
   const c = d.counts ?? {};
   const seats = d.seats ?? {};
-  clear(head, pageHead(h("span", { class: "title-row" }, f.name ?? "本所", tenantBadge(f.status)), metaLine(plan.label ? `${plan.label}套餐` : null, `你是${roleText(ctx.firmRole)}`, readOnly() ? "只读" : null, f.expires_at ? `${fmt.date(f.expires_at)} 到期` : null)));
+  clear(head, pageHead(h("span", { class: "title-row" }, f.name ?? "本所", f.status === "pending" ? badge("待创建人在电脑上完成开通", "info", "创建人第一次在自己的电脑上登录 Kimi Work 即完成开通") : tenantBadge(f.status)), metaLine(plan.label ? `${plan.label}套餐` : null, `你是${roleText(ctx.firmRole)}`, readOnly() ? "只读" : null, f.expires_at ? `${fmt.date(f.expires_at)} 到期` : null)));
   const capPct = q.cap_pct ?? q.monthly_cap_pct ?? null;
   const editCap = async () => {
     const r = await confirmAction({
@@ -46,8 +46,17 @@ function draw(head, box, d, reload) {
     if (r) (toast("已保存月度上限"), reload());
   };
   const pending = Number(c.pending_joins) || 0;
+  const todoVal = h("span", {}, fmt.int(pending));
+  const todoSub = h("span", {}, pending > 0 ? "到管理员电脑“设置 → 管理”处理" : "没有待处理的电脑");
+  const todoStat = stat("电脑待处理", todoVal, todoSub, { tone: pending > 0 ? "warn" : undefined, title: "待批准登录 + 待确认共享（要接收团队共享事项的电脑）" });
+  api.get("/v1/firm/devices").then((r) => {
+    const n = pending + (r.devices ?? []).filter((x) => x.issuer === "account_ca" && x.state !== "revoked").length;
+    clear(todoVal, fmt.int(n));
+    clear(todoSub, n > 0 ? "到管理员电脑“设置 → 管理”处理" : "没有待处理的电脑");
+    if (n > 0) todoStat.classList.add("tone-warn");
+  }, () => {});
   const joinBanner = h("div", { class: "banner warn soft" }, icon("info"), h("span", { class: "spacer" }, `有 ${pending} 台新电脑等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。`), btn("查看成员", () => go("firm/members"), { size: "sm" }));
-  const seatSub = h("span", {}, "成员名额");
+  const seatSub = h("span", {}, "能用 AI 的名额");
   const devVal = h("span", {}, `${fmt.int(c.devices)} 台`);
   const devSub = h("span", {}, "只有登录中的电脑占名额");
   // 姓名与未占席人数在成员接口里：拿到后补上（拿不到就保持上面的通用写法）
@@ -56,7 +65,8 @@ function draw(head, box, d, reload) {
     if (p.length) clear(joinBanner.querySelector(".spacer"), p.map((x, i) => [i ? "、" : null, h("b", {}, `${x.member_name ?? "成员"}的新电脑`), `（申请于 ${fmt.time(x.created_at)}）`]), "等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。");
     const n = (m.members ?? []).filter((x) => x.seat_used === false).length;
     const sn = seatNote(n, seats.total, seats.used);
-    if (sn) (clear(seatSub, sn.text), sn.full && seatSub.classList.add("tone-text-warn"));
+    // 评审（K14 第 3 条）：席位格说明缩成一行，细节放悬停
+    if (sn) (clear(seatSub, sn.full ? `席位已满：${n} 人用不了 AI` : `另有 ${n} 人未占席，空席 ${sn.free}`), (seatSub.title = sn.text), sn.full && seatSub.classList.add("tone-text-warn"));
     // 第四轮（23）：电脑格写“x 台登录中 · y 台待批准”
     const on = (m.members ?? []).reduce((s, x) => s + (x.devices ?? []).filter((d) => d.state === "signed_in").length, 0);
     clear(devVal, `${on} 台登录中`);
@@ -72,7 +82,7 @@ function draw(head, box, d, reload) {
       panel(
         "本期额度",
         quotaCard({
-          title: "全所额度",
+          title: "全团队额度",
           ratio: q.used_ratio,
           used: q.used,
           total: q.total,
@@ -80,7 +90,7 @@ function draw(head, box, d, reload) {
           resetsAt: q.period?.resets_at ?? q.resets_at,
           capPct,
           paused: q.paused,
-          extra: h("div", { class: "btn-row" }, btn(capPct ? `月度上限 ${capPct}%` : "设月度上限", editCap, { size: "sm", disabled: readOnly(), title: readOnly() ? "只有本所管理员能改" : undefined }), q.burst ? h("span", { class: "muted small", title: `任意 ${q.burst.hours ?? 5} 小时内最多用本期额度的 ${q.burst.pct ?? "—"}%` }, `任意 ${q.burst.hours ?? 5} 小时窗口已用 ${fmt.pct(q.burst.used_ratio)}`) : null),
+          extra: h("div", { class: "btn-row" }, btn(capPct ? `月度上限 ${capPct}%` : "设月度上限", editCap, { size: "sm", disabled: readOnly(), title: readOnly() ? "只有本所管理员能改" : undefined }), q.burst ? h("span", { class: "muted small", title: `近 ${q.burst.hours ?? 5} 小时内最多用本期额度的 ${q.burst.pct ?? "—"}%` }, `近 ${q.burst.hours ?? 5} 小时已用 ${fmt.pct(q.burst.used_ratio)}`) : null),
         }),
         { sub: q.period ? fmt.period(q.period) : undefined },
       ),
@@ -88,30 +98,28 @@ function draw(head, box, d, reload) {
         "div",
         { class: "kpis kpis-2" },
         stat("成员", fmt.int(c.members), `7 日活跃 ${fmt.int(c.active_7d)}`),
-        stat("席位", `已用 ${fmt.int(seats.used)} / 共 ${fmt.int(seats.total)}`, seatSub, { title: "席位 = 律所可同时使用 AI 的成员名额" }),
+        stat("席位", `已用 ${fmt.int(seats.used)} / 共 ${fmt.int(seats.total)}`, seatSub, { title: "席位：能用 AI 的名额" }),
         stat("电脑", devVal, devSub),
-        stat("电脑待批准", fmt.int(c.pending_joins), Number(c.pending_joins) > 0 ? "在管理员电脑上核对校验码后批准" : "没有待批准的电脑", { tone: Number(c.pending_joins) > 0 ? "warn" : undefined }),
+        // 评审（K14 第 2 条）：待处理 = 待批准登录 + 待确认共享，数字大于 0 时写去哪儿处理
+        todoStat,
       ),
     ),
-    h(
-      "div",
-      { class: "grid-3" },
-      panel("告警", alertList(d.alerts ?? [], { compact: true }), { sub: "本所未确认的告警" }),
+    ((cards) => h("div", { class: cards.length === 3 ? "grid-3" : "grid-2" }, cards))([
+      (d.alerts ?? []).length ? panel("告警", alertList(d.alerts ?? [], { compact: true }), { sub: "本所未确认的告警" }) : null,
       panel(
         "订阅",
         facts([
-          ["律所编号", h("span", { class: "mono" }, f.tid ?? "—")],
           ["套餐", plan.label ?? plan.id ?? "—"],
-          ["额度单位", plan.unit === "cny" ? "金额（元）" : plan.unit === "tokens" ? "按用量" : "—"],
-          ["每人额度（每席位）", plan.seat_quota === undefined || plan.seat_quota === null ? "—" : fmt.amount(plan.seat_quota, plan.unit)],
-          ["每账号电脑数", plan.device_limit ? `${plan.device_limit} 台` : "—"],
-          ["开通于", fmt.date(f.created_at)],
+          ["每人参考额度", plan.seat_quota === undefined || plan.seat_quota === null ? "—" : fmt.amount(plan.seat_quota, plan.unit)],
+          ["每人同时登录", plan.device_limit ? `${plan.device_limit} 台电脑` : "—"],
+          // 评审（K14 第 1 条）：还没开通时不写“开通于”
+          f.status === "pending" ? ["开通", "等创建人第一次在客户端登录"] : ["开通于", fmt.date(f.created_at)],
           ["到期", fmt.date(f.expires_at)],
-          ["要求账号登录", f.accounts_required === false ? "否" : "是"],
+          ["账号登录", f.accounts_required === false ? "不要求（旧方式）" : "成员须登录账号才能用 AI"],
         ]),
       ),
-      panel("历史周期", periodBars(q.history ?? []), { sub: "每期已用比例" }),
-    ),
+      (q.history ?? []).length ? panel("历史周期", periodBars(q.history ?? []), { sub: "每期已用比例" }) : panel("历史周期", h("p", { class: "muted small" }, "从下个账期开始出现每期已用比例。")),
+    ].filter(Boolean)),
     panel("在管理员电脑上完成", h("div", { class: "stack-sm" }, h("p", { class: "muted small" }, "下面这些只能在管理员电脑的“设置 → 管理”里完成；网页能查看状态。"), clientOnlyList(CLIENT_ONLY), pending > 0 ? btn(`查看待批准的 ${pending} 个申请`, () => go("firm/members"), { size: "sm" }) : null)),
   );
 }

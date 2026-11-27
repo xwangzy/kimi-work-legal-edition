@@ -59,7 +59,7 @@ kbd { font-family: var(--font-mono); font-size: var(--fs-meta); }
 .spacer { flex: 1; }
 
 /* ── 表单控件 ── */
-input[type="text"], input[type="search"], input[type="email"], input[type="number"], input[type="password"], input[type="date"], input:not([type]), select, textarea {
+input[type="text"], input[type="search"], input[type="email"], input[type="tel"], input[type="number"], input[type="password"], input[type="date"], input:not([type]), select, textarea {
   border: 1px solid var(--border-default);
   border-radius: var(--r-sm);
   padding: 7px 10px;
@@ -937,3 +937,19 @@ dialog { color: var(--text-primary); }
 .ws-chip:has(.ws-kind:only-child) { padding-right: 0; }
 .ws-chip.off { color: var(--text-secondary); border-style: dashed; }
 .ws-chip.off .ws-kind { color: var(--text-secondary); background: var(--bg-subtle); }
+
+/* ─── 第 72 批评审第一轮：全局清理 ─── */
+/* 说明条（按钮形态）一律左对齐，与“事项内容只在成员电脑”同一组件 */
+button.banner { width: 100%; text-align: left; font: inherit; font-size: var(--fs-caption); color: inherit; }
+/* 危险确认框：只有标题与“执行后：”用红色，后果条目用正文色 */
+.consequences.danger { color: var(--text-primary); }
+.consequences.danger > b { color: var(--status-danger-strong); }
+/* 表格里的跳转链接平时用正文色，悬停才显示链接色（整列蓝色抢主色） */
+.link.plain { color: var(--text-primary); }
+.link.plain:hover { color: var(--accent-text); text-decoration: underline; }
+/* 中文孤字行：说明、对话框、次要文字按段落平衡折行 */
+.modal-form, .note, .modal-note, .page-sub, .panel-sub, .stat-sub, .diag-text, .seat-card-text, .muted.small, .consequences li, .quota-note { text-wrap: pretty; }
+/* 编号与“复制”按钮留出间距 */
+.facts dd .btn { margin-left: var(--sp-2); }
+.toolbar.inset { padding: var(--sp-3) var(--sp-5) 0; }
+.usage-line { margin: 0; font-size: var(--fs-caption); }

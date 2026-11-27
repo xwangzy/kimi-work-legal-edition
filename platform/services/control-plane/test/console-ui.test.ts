@@ -356,7 +356,7 @@ test("第 72 批（D-305/D-306）：工作空间类型取显式 kind、团队移
   assert.equal(wsStatus({ status: "disabled", disabled_by: "team" }), "team");
   assert.equal(wsStatus({ status: "disabled" }), "disabled");
   assert.deepEqual([WS_STATUS.team[0], WS_STATUS.platform[0]], ["已移出团队", "平台停用"]);
-  assert.equal(SEAT_NOTE, "席位 = 能用 AI 的名额");
+  assert.equal(SEAT_NOTE, "席位：能用 AI 的名额", "评审：不用等号写法");
   assert.equal(CREATED_VIA.team_invite, "团队邀请");
   const { isPersonal } = await mod("apps/console/pages/tenants.js");
   assert.equal(isPersonal({ kind: "team", personal: true, created_via: "self", accounts: 1 }), false, "升级后的团队不再按形状当个人");

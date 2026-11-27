@@ -17,14 +17,8 @@ const ownNote = (own) =>
         : "按个人上限（管理员设置）计：到上限后暂停调用 AI，本机流程不受影响"
       : null;
 /** 5 小时频率限制（客户端“用量”页同一说法） */
-const burstBlock = (b) =>
-  h(
-    "div",
-    { class: "burst" },
-    meter({ label: `任意 ${b.hours ?? 5} 小时窗口`, ratio: b.used_ratio, resetsAt: b.resets_at, compact: true }),
-    // 控制面 /v1/me/usage 的 burst 不带 pct（只给已用比例与恢复时刻）：没有就不写“—%”
-    h("small", { class: "muted" }, [b.pct === null || b.pct === undefined ? `任意 ${b.hours ?? 5} 小时窗口` : `任意 ${b.hours ?? 5} 小时内最多用本期额度的 ${b.pct}%`, fmt.resets(b.resets_at) ? `${fmt.resets(b.resets_at)} 起逐步恢复` : null].filter(Boolean).join(" · ")),
-  );
+/** 近 5 小时用量：与组织详情“本期额度”同一行式组件（评审跨页 4） */
+const burstBlock = (b) => meter({ label: `近 ${b.hours ?? 5} 小时用量`, ratio: b.used_ratio, resetText: fmt.resets(b.resets_at) ? `${fmt.resets(b.resets_at)} 起逐步恢复` : "随时间逐步恢复" });
 
 const emptyBlockSafe = (t) => h("div", { class: "state state-empty small" }, h("b", {}, t));
 export function render(page) {
@@ -55,7 +49,7 @@ function draw(box, u, wsPanel) {
       { class: "grid-2" },
       isPersonalSpace() ? null : panel(
         "我的用量",
-        quotaCard({
+        own.denominator === "seat_quota" || own.enforced === false ? h("div", { class: "stack-sm" }, h("div", { class: "stat-value num" }, fmt.amount(own.used, u.unit)), h("p", { class: "muted small" }, `本月已用。团队给每人的参考额度 ${fmt.amount(own.total, u.unit)}，只作参考、不限制；团队总额度用完时才会暂停。`)) : quotaCard({
           title: own.denominator === "account_limit" ? "本期个人上限" : "本期每人额度",
           ratio: own.used_ratio,
           used: own.used,
@@ -70,9 +64,8 @@ function draw(box, u, wsPanel) {
       panel(
         isPersonalSpace() ? "本期额度" : "本所本期额度",
         quotaCard({
-          title: isPersonalSpace() ? "本期已用" : "全所本期已用",
+          title: isPersonalSpace() ? "本期已用" : "全团队本期已用",
           ratio: firm.used_ratio ?? (firm.remaining_ratio !== undefined && firm.remaining_ratio !== null ? 1 - Number(firm.remaining_ratio) : null),
-          unit: u.unit,
           resetsAt: resets,
           capPct: firm.cap_pct,
           paused: firm.paused && firm.paused !== "seat" ? firm.paused : null,
@@ -86,9 +79,8 @@ function draw(box, u, wsPanel) {
       "div",
       { class: "kpis" },
       stat("本期请求", fmt.int(own.requests), "调用 AI 的次数"),
-      stat("计费金额", fmt.cny(own.value_cny ?? cny), "按价目计的用量价值（元）"),
-      // 控制面 own.estimated_share = 本期按估算计入的请求数 ÷ 请求数（server.ts /v1/me/usage），不是“占本所用量”
-      stat("本期额度已用", fmt.pct(own.used_ratio ?? u.used_ratio), "占你本期额度的比例"),
+      // 评审（K15a / K16a）：说清是不是要付钱；首屏不再重复“本期额度已用 0%”
+      stat("本月用量折合", fmt.cny(own.value_cny ?? cny), isPersonalSpace() ? "按价目折算；费用见“账单”" : "按价目折算，不另向你收费"),
     ),
     h(
       "div",
@@ -114,12 +106,12 @@ function workspacesPanel(me) {
       empty: "没有工作空间",
       rowClass: (w) => (w.status === "disabled" ? "dim" : ""),
       columns: [
-        { key: "name", label: "名称", sortable: false, render: (w) => h("div", { class: "cell-2" }, h("b", {}, kindOf(w) === "personal" ? "个人空间" : w.name ?? "—", w.current ? h("span", { class: "kind-tag" }, "当前") : null), h("small", {}, kindOf(w) === "personal" ? w.name ?? "" : "团队")) },
+        { key: "name", label: "名称", sortable: false, render: (w) => h("div", { class: "cell-2" }, h("b", {}, kindOf(w) === "personal" ? "个人空间" : w.name ?? "—", w.current ? h("span", { class: "kind-tag" }, "当前") : null), h("small", {}, kindOf(w) === "personal" ? "只有你自己" : "团队")) },
         { key: "role", label: "角色", sortable: false, render: (w) => (kindOf(w) === "personal" ? h("span", { class: "muted" }, "本人") : roleText(w.role)) },
         { key: "status", label: "状态", sortable: false, render: (w) => wsStatusCell(w) },
       ],
     }),
-    { flush: true, sub: "切换工作空间在客户端左下角账号区；网页控制台显示的是当前工作空间" },
+    { flush: true, sub: "在客户端左下角账号区切换" },
   );
 }
 

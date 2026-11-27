@@ -5,7 +5,7 @@
  * 接口：GET /v1/ops/devices?tid（account.read；应答 devices + pending）；行尾“让它退出登录”“移除这台电脑”。
  */
 import * as api from "../api.js";
-import { DEVICE_FLAG, deviceState, deviceTable, pageHead, pendingRow, tenantOptions, versionText } from "../domain.js";
+import { DEVICE_FLAG, deviceState, deviceTable, pageHead, pendingRow, tenantOptions, unconfirmed, versionText, wsKindOfTid } from "../domain.js";
 import { clear, errorBlock, fold, h, hbars, loadingBlock, matches, searchInput, segmented } from "../ui.js";
 
 const st = { tid: "", status: "live", flag: "", q: "", table: { sort: "state", asc: true } };
@@ -13,7 +13,8 @@ const STATUS = [
   ["live", "未移除", (d) => deviceState(d) !== "revoked"],
   ["signed_in", "登录中", (d) => deviceState(d) === "signed_in"],
   ["signed_out", "已退出登录", (d) => deviceState(d) === "signed_out"],
-  ["pending", "待批准", (d) => deviceState(d) === "pending"],
+  ["pending", "待批准登录", (d) => deviceState(d) === "pending"],
+  ["confirm", "待确认共享", (d) => unconfirmed(d) && wsKindOfTid(d.tid, d.tenant_name) === "team"],
   ["revoked", "已移除", (d) => deviceState(d) === "revoked"],
   ["", "全部", () => true],
 ];
@@ -28,14 +29,14 @@ export function render(page, r) {
   const box = h("div");
   const versionsBox = h("div");
   // 第 72 批（D-306 第 4 条）：跨客户查找入口，页头写明范围；日常操作在组织详情与用户详情里（行内“成员”进用户详情、“客户”进组织详情）
-  page.append(pageHead("电脑", h("span", {}, h("b", {}, "范围：所有工作空间的电脑"), "（个人空间与各团队）。用来巡检久未在线和旧版本，或按名称、编号查是谁的电脑；日常操作在组织详情与用户详情里")), tools, tools2, box, versionsBox);
+  page.append(pageHead("电脑", h("span", {}, h("b", {}, "范围：所有工作空间的电脑。"), "用来巡检和按名称、编号查是谁的电脑；日常处理在组织详情与用户详情里")), tools, tools2, box, versionsBox);
   let rows = [];
   let seq = 0;
   const fetchRows = async () => {
     const my = ++seq;
     clear(box, loadingBlock("正在读取电脑…"));
     try {
-      const res = await api.get("/v1/ops/devices", { tid: st.tid });
+      const [res] = await Promise.all([api.get("/v1/ops/devices", { tid: st.tid }), tenantOptions().catch(() => null)]);
       if (my !== seq) return;
       rows = [...(res.devices ?? []), ...(res.pending ?? []).map((j) => pendingRow(j))];
       draw();
@@ -49,7 +50,7 @@ export function render(page, r) {
     const list = ofStatus.filter((d) => (!st.flag || (d.flags ?? []).includes(st.flag)) && matches(st.q, d.device_id, d.name, d.member_name, d.email, d.tenant_name, d.client_version));
     clear(tools, h("span", { class: "seg-label" }, "状态"), segmented(STATUS.map(([id, label, f]) => ({ id, label, count: rows.filter(f).length })), st.status, (v) => ((st.status = v), draw()), "状态"));
     clear(tools2.querySelector(".flag-group") ?? tools2.appendChild(h("span", { class: "flag-group" })), h("span", { class: "seg-label" }, "标记"), segmented([{ id: "", label: "不限", count: ofStatus.length }, ...Object.entries(DEVICE_FLAG).filter(([f]) => f !== "suspended").map(([f, [label]]) => ({ id: f, label, count: ofStatus.filter((d) => (d.flags ?? []).includes(f)).length }))], st.flag, (v) => ((st.flag = v), draw()), "异常标记"));
-    clear(box, deviceTable(list, { state: st.table, after: fetchRows, memberLabel: "用户", empty: rows.length ? "没有符合条件的电脑" : "还没有登记的电脑。律师在客户端登录后，电脑会出现在这里。" }));
+    clear(box, deviceTable(list, { state: st.table, after: fetchRows, memberLabel: "用户", team: (d) => wsKindOfTid(d.tid, d.tenant_name) === "team", confirmHint: "由团队管理员在管理员电脑上确认", empty: rows.length ? "没有符合条件的电脑" : "还没有登记的电脑。律师在客户端登录后，电脑会出现在这里。" }));
     const versions = {};
     for (const d of rows) if (!["revoked", "pending"].includes(deviceState(d))) versions[versionText(d.client_version)] = (versions[versionText(d.client_version)] ?? 0) + 1;
     const vs = Object.entries(versions).sort((a, b) => b[1] - a[1]);

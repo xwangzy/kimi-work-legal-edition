@@ -8,7 +8,7 @@
  *   标“待确认（可接收团队共享事项前）”，确认沿用入组批准，在管理员电脑上完成。控制面的电脑行带 issuer 时才显示（见 03 契约变更记录 W-1）。
  */
 import * as api from "../api.js";
-import { CONFIRM_TIP, deviceCell, deviceState, deviceStateCell, FIRM_DEVICE_FLAG, firmFlagBadge, pageHead, pendingRow, platformText, unconfirmed, versionText } from "../domain.js";
+import { confirmCell, deviceCell, deviceState, deviceStateCell, FIRM_DEVICE_FLAG, flagBadge, pageHead, pendingRow, platformText, unconfirmed, versionText } from "../domain.js";
 import { badge } from "../ui.js";
 import { readOnly } from "./firm-overview.js";
 import { clear, confirmAction, dataTable, fmt, h, hbars, load, matches, mono, panel, rowMenu, searchInput, segmented, toast } from "../ui.js";
@@ -18,8 +18,8 @@ const STATUS = [
   ["live", "未移除", (d) => deviceState(d) !== "revoked"],
   ["signed_in", "登录中", (d) => deviceState(d) === "signed_in"],
   ["signed_out", "已退出登录", (d) => deviceState(d) === "signed_out"],
-  ["pending", "待批准", (d) => deviceState(d) === "pending"],
-  ["confirm", "待确认", (d) => unconfirmed(d)],
+  ["pending", "待批准登录", (d) => deviceState(d) === "pending"],
+  ["confirm", "待确认共享", (d) => unconfirmed(d)],
   ["revoked", "已移除", (d) => deviceState(d) === "revoked"],
   ["", "全部", () => true],
 ];
@@ -64,7 +64,7 @@ export function render(page) {
         rows: list,
         state: st.table,
         empty: rows.length ? "没有符合条件的电脑" : "还没有登记电脑",
-        rowClass: (d) => (deviceState(d) === "revoked" ? "dim" : d.pending ? "pending-row" : ""),
+        rowClass: (d) => (deviceState(d) === "revoked" ? "dim" : d.pending ? "pending-row" : unconfirmed(d) ? "flagged" : ""),
         caption: "电脑",
         columns: [
           { key: "name", label: "电脑", value: (d) => d.name || d.member || "", render: (d) => deviceCell(d) },
@@ -72,8 +72,8 @@ export function render(page) {
           { key: "platform", label: "系统", value: (d) => platformText(d.platform) },
           { key: "version", label: "客户端", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.version && d.version !== "legacy" ? mono(d.version) : h("span", { class: "muted" }, versionText(d.version))) },
           { key: "last_seen_at", label: "最近在线", value: (d) => d.last_seen_at ?? "", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.last_active_at ? h("span", { title: fmt.full(d.last_active_at) }, fmt.ago(d.last_active_at)) : h("span", { title: fmt.full(d.last_seen_at) }, d.last_seen_at ? fmt.ago(d.last_seen_at) : "从未在线")) },
-          { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)] - (unconfirmed(d) ? 0.5 : 0), render: (d) => (unconfirmed(d) ? h("span", { class: "cell-2" }, deviceStateCell(d), h("small", {}, badge("待确认（可接收团队共享事项前）", "warn", CONFIRM_TIP))) : deviceStateCell(d)) },
-          anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => ((d.flags ?? []).length ? h("span", { class: "badges" }, d.flags.map(firmFlagBadge)) : "") } : null,
+          { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)] - (unconfirmed(d) ? 0.5 : 0), render: (d) => (unconfirmed(d) ? confirmCell(d, "到你电脑上的 Kimi Work：设置 → 管理 → 确认新电脑") : deviceStateCell(d)) },
+          anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => ((d.flags ?? []).length ? h("span", { class: "badges" }, d.flags.map((f) => flagBadge(f, d))) : "") } : null,
           {
             key: "_act",
             label: "",
@@ -92,7 +92,7 @@ export function render(page) {
           },
         ].filter(Boolean),
       }),
-      vs.length > 1 ? panel("客户端版本（在用）", hbars(vs.slice(0, 6).map(([v, n]) => ({ label: v, value: n })), { format: (v) => `${v} 台` })) : vs.length === 1 ? h("p", { class: "muted small" }, `在用电脑都是客户端 ${vs[0][0]}（${vs[0][1]} 台）`) : null,
+      vs.length > 1 ? panel("客户端版本（在用）", hbars(vs.slice(0, 6).map(([v, n]) => ({ label: v, value: n })), { format: (v) => `${v} 台` })) : vs.length === 1 ? h("p", { class: "muted small" }, vs[0][0] === "未上报版本" ? `${vs[0][1]} 台电脑还没上报客户端版本：请成员把 Kimi Work 更新到最新版` : `在用的 ${vs[0][1]} 台电脑都是客户端 ${vs[0][0]}`) : null,
     );
   };
   const reload = () =>

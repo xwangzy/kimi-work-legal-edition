@@ -13,39 +13,44 @@ export function render(page) {
   const months = Array.from({ length: 12 }, (_, i) => monthShift(cur, -i));
   const box = h("div", { class: "stack" });
   const sel = selectEl(months.map((m) => [m, m === cur ? `${m}（本期）` : m]), st.period, (v) => ((st.period = v), reload()), { "aria-label": "账期" });
-  page.append(pageHead(location.hash.startsWith("#/me/") ? "账单" : "本所账单", "北京时间自然月；金额以元计，保留两位小数", sel), box);
+  page.append(pageHead(location.hash.startsWith("#/me/") ? "账单" : "本所账单", "按北京时间自然月出账", sel), box);
   const reload = () => load(box, () => api.get("/v1/firm/billing", { period: st.period }), (d) => draw(box, d), "正在读取账单…");
   reload();
 }
 
+/**
+ * 第 72 批评审（K16c）：写给付钱的人看——首格直接给结论“本月费用”；试用期（席位没有定价）写“试用期免费”，不列一串“未定价”；
+ * 个人空间不讲席位；调用量用“AI 调用 N 次”，token 只放在悬停。
+ */
 function draw(box, raw) {
   const d = raw.bill ?? raw;
   const plan = d.plan ?? {};
+  const personal = location.hash.startsWith("#/me/");
+  const trial = d.seat_price_cny === null || d.seat_price_cny === undefined;
+  const tokens = d.tokens === undefined ? null : `${fmt.tokens(d.tokens)} token`;
   clear(
     box,
-    d.priced === false ? h("div", { class: "banner warn" }, icon("alert"), h("span", {}, "价目未配齐：未定价的项显示“未定价”，合计只含已定价部分。")) : null,
-    d.basis === "current_estimate" ? h("div", { class: "banner warn" }, icon("alert"), h("span", {}, "这个月的席位费与加量费按现在的套餐与席位估算（当月结束时没有留下记录），以账单为准。")) : null,
+    !trial && d.priced === false ? h("div", { class: "banner warn" }, icon("alert"), h("span", {}, "部分价目还没配齐：合计只含已定价的部分。")) : null,
+    d.basis === "current_estimate" ? h("div", { class: "banner warn" }, icon("alert"), h("span", {}, "这个月的费用按现在的套餐与席位估算（当月结束时没有留下记录），以正式账单为准。")) : null,
     h(
       "div",
       { class: "kpis" },
-      stat("应收", fmt.cny(d.revenue_cny), `席位费 ${fmt.cny(d.seat_fee_cny)} + 加量费 ${fmt.cny(d.boost_fee_cny)}`, { hero: true }),
-      stat("席位费", fmt.cny(d.seat_fee_cny), `${fmt.int(d.seats)} 席 × ${fmt.cny(d.seat_price_cny)}`),
-      stat("加量费", fmt.cny(d.boost_fee_cny), d.boost_pct ? `本期加量 +${d.boost_pct}%` : "本期未加量"),
-      stat("用量价值", fmt.cny(d.value_cny), "按价目计的实际用量（不另收费）"),
+      trial ? stat("本月费用", "¥0", "试用期免费") : stat("本月费用", fmt.cny(d.revenue_cny), personal ? `套餐费 ${fmt.cny(d.seat_fee_cny)} + 加量费 ${fmt.cny(d.boost_fee_cny)}` : `席位费 ${fmt.cny(d.seat_fee_cny)} + 加量费 ${fmt.cny(d.boost_fee_cny)}`),
+      trial ? null : stat(personal ? "套餐费" : "席位费", fmt.cny(d.seat_fee_cny), personal ? "个人版" : `${fmt.int(d.seats)} 席 × ${fmt.cny(d.seat_price_cny)}`),
+      stat("加量", d.boost_pct ? `+${d.boost_pct}%` : "无", trial ? "试用期加量不收费" : d.boost_pct ? `加量费 ${fmt.cny(d.boost_fee_cny)}` : "本月没有加量"),
+      stat("AI 调用", `${fmt.int(d.requests)} 次`, tokens ? h("span", { title: tokens }, "按价目折合 ", fmt.cny(d.value_cny), "，不另收费") : "不另收费"),
     ),
     panel(
       `${d.period ?? st.period} 明细`,
       facts([
         ["套餐", plan.label ?? plan.id ?? d.plan_label ?? "—"],
-        ["席位", fmt.int(d.seats)],
-        ["席位单价", fmt.cny(d.seat_price_cny)],
+        personal ? null : ["席位", fmt.int(d.seats)],
+        personal || trial ? null : ["席位单价", fmt.cny(d.seat_price_cny)],
         ["加量", d.boost_pct ? `+${d.boost_pct}%` : "—"],
-        ["请求", fmt.int(d.requests)],
-        ["实际消耗", d.tokens === undefined ? "—" : `${fmt.tokens(d.tokens)} token`],
-        ["账期", d.period ?? st.period],
-        ["状态", d.status ?? (d.period === bjMonth() ? "本期进行中，数字会随用量变化" : "—")],
+        ["AI 调用", `${fmt.int(d.requests)} 次`, tokens ?? undefined],
+        ["状态", d.status ?? (d.period === bjMonth() ? "本月进行中，数字会随用量变化" : "—")],
       ]),
-      { sub: "应收 = 席位费 + 加量费；用量价值只作参考" },
+      { sub: trial ? "试用期内不收费；正式定价后按月出账" : personal ? "本月费用 = 套餐费 + 加量费" : "本月费用 = 席位费 + 加量费" },
     ),
   );
 }
