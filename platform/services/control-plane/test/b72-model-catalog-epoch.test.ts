@@ -3,7 +3,7 @@
  * - 内置别名真实映射：legal/k3 → kimi-k3.1-pro、legal/k2.6 → kimi-k2.6（原先两个都指 kimi-k3.1-pro，问答里切 K2.6 实际仍是 K3.1 Pro）；K2.6 问答 + 任务都可选；
  * - 防伪切换：非缺省别名的主上游型号与缺省别名相同 → 照列但置灰（same_upstream + 说明），运营视图出告警 routing.same_upstream；
  * - 目录信封带 epoch：路由状态首次建立 / 迁移（之前没有）时随机生成，运营修改不换；读回定型即写盘，重启不变；
- * - 存量租户读回时按 personal（personalOf 口径）定型 kind 一次，即时写盘。
+ * - 存量租户读回时按 personal（personalOf 口径）定型 kind 一次，存量团队成员电脑策略写定 approve、存量停用账号回填 disabled_by = platform（安全审查 P1-1 / P2-1），即时写盘。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -91,7 +91,9 @@ test("读回定型（真实控制面 + 状态存储）：存量租户按 persona
   const tGrow = st.tenants.find((t: any) => st.accounts.some((a: any) => a.tid === t.tid && a.email === "grow-b72e@example.cn"));
   for (const t of st.tenants) delete t.kind;
   const grower = st.accounts.find((a: any) => a.email === "grow-b72e@example.cn");
-  st.accounts.push({ ...grower, aid: "acc_b72growmember0001", email: "member-b72e@example.cn", member_slug: "mem2", role: "lawyer", phone: null });
+  // 这名成员 1.7.0 之前已被停用（没有 disabled_by）
+  st.accounts.push({ ...grower, aid: "acc_b72growmember0001", email: "member-b72e@example.cn", member_slug: "mem2", role: "lawyer", phone: null, status: "disabled", disabled_reason: "旧版停用" });
+  for (const a of st.accounts) delete a.disabled_by;
   assert.equal(tGrow.personal, true);
   delete st.routing.epoch;
   saved = JSON.stringify(st);
@@ -100,6 +102,11 @@ test("读回定型（真实控制面 + 状态存储）：存量租户按 persona
   assert.ok(saves > n0, "读回定型即写盘");
   assert.deepEqual([c2.ops.tenant(tSolo.tid)!.kind, c2.ops.tenant(tSolo.tid)!.personal], ["personal", true]);
   assert.deepEqual([c2.ops.tenant(tGrow.tid)!.kind, c2.ops.tenant(tGrow.tid)!.personal], ["team", false], "形状不再是个人的：定为团队（之后不再翻转）");
+  // 安全审查 P1-1：存量团队显式保持“新电脑要管理员批准”（由管理员自己改成 auto）；个人空间不写
+  assert.deepEqual([c2.ops.tenant(tGrow.tid)!.member_device_policy, c2.ops.tenant(tSolo.tid)!.member_device_policy], ["approve", undefined]);
+  // 安全审查 P2-1：存量停用账号回填 disabled_by = platform（团队侧不能启用）
+  assert.equal(c2.ops.account("member-b72e@example.cn")!.disabled_by, "platform");
+  assert.equal(JSON.parse(saved!).accounts.find((a: any) => a.aid === "acc_b72growmember0001").disabled_by, "platform", "已写盘");
   const e2 = JSON.parse(saved!).routing.epoch;
   assert.match(e2, EPOCH_RE);
   assert.ok(JSON.parse(saved!).tenants.every((t: any) => t.kind === "personal" || t.kind === "team"));

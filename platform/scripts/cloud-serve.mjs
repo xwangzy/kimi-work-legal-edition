@@ -252,8 +252,8 @@ if (consoleCfg.origins !== undefined) {
 if (consoleCfg.staff_mfa !== undefined) console.error("[cloud-serve] console.staff_mfa（平台人员两步验证）已废弃（D-218：平台人员登录只要账号密码，另有登录限流与锁定、危险操作密码复核），已忽略");
 if (consoleCfg.bootstrap_admin !== undefined && (typeof consoleCfg.bootstrap_admin?.email !== "string" || typeof consoleCfg.bootstrap_admin?.name !== "string")) fail("console.bootstrap_admin 须为 { email, name }");
 if (cfg.clients !== undefined && (typeof cfg.clients !== "object" || cfg.clients === null || (cfg.clients.min_version !== undefined && cfg.clients.min_version !== null && !/^\d{1,4}\.\d{1,4}\.\d{1,6}$/.test(String(cfg.clients.min_version))))) fail("clients.min_version 须为 x.y.z");
-/** 控制台跨源调用的路径（控制面）：账号、本人、本所、元信息与运营接口；设备签名接口、订阅、额度租约与健康检查不回 CORS。 */
-const CONSOLE_PATH_RE = cpRole ? /^\/v1\/(?:auth|me|firm|ops)(?:\/|$)|^\/v1\/meta$/ : opsMod.OPS_PATH_RE;
+/** 控制台跨源调用的路径（控制面）：账号、本人、本所、团队邀请（第 72 批，/v1/team/*，团队管理员会话）、元信息与运营接口；设备签名接口、订阅、额度租约与健康检查不回 CORS。 */
+const CONSOLE_PATH_RE = cpRole ? /^\/v1\/(?:auth|me|firm|team|ops)(?:\/|$)|^\/v1\/meta$/ : opsMod.OPS_PATH_RE;
 /**
  * 运营功能没开（原样与规范化后任一路径命中运营路径即算）：控制面的 /v1/ops/* 一律交给服务（账号会话 + 角色鉴权）；
  * 支持、中继、通知没配 ops 段、以及没有运营接口的角色，运营路径在入口即 404。D-218 起不看来源地址。

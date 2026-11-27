@@ -155,12 +155,16 @@ test("契约 §3.1 / §6.8：就地升级（同一 tid）——kind → team、�
 });
 
 test("契约 §3.2：团队邀请——会话 + admin 发（不要求律所根电脑）；码只此一次、列表不含码；撤销；非管理员 403", async () => {
-  const c = await post("/v1/team/invites", { name: "乙律师", role: "lawyer", phone_hint: "13912347201" }, A.session);
+  const c = await post("/v1/team/invites", { name: "乙律师", role: "lawyer" }, A.session);
   assert.equal(c.status, 200, JSON.stringify(c.json));
   assert.match(c.json.code, /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/);
-  assert.deepEqual([c.json.invite.name, c.json.invite.role, c.json.invite.status, c.json.invite.phone_hint], ["乙律师", "lawyer", "open", "139****7201"]);
+  assert.deepEqual([c.json.invite.name, c.json.invite.role, c.json.invite.status, c.json.invite.phone_hint], ["乙律师", "lawyer", "open", null]);
+  // 手机号提示只存打码（接受时按末 4 位核对，见 b72-security）
+  const h = await post("/v1/team/invites", { name: "提示", role: "lawyer", phone_hint: "13912347201" }, A.session);
+  assert.equal(h.json.invite.phone_hint, "139****7201");
+  assert.equal((await post(`/v1/team/invites/${h.json.invite.id}/revoke`, {}, A.session)).status, 200);
   const list = await get("/v1/team/invites", A.session);
-  assert.equal(list.json.invites.length, 1);
+  assert.equal(list.json.invites.filter((x: any) => x.status === "open").length, 1);
   assert.ok(!JSON.stringify(list.json).includes(c.json.code.replace(/-/g, "").slice(0, 8)) && !("code_hash" in list.json.invites[0]), "列表不含码与摘要");
   (globalThis as any).b72InviteB = c.json.code;
   const r2 = await post("/v1/team/invites", { name: "作废", role: "assistant" }, A.session);
@@ -258,7 +262,9 @@ test("契约 §6.2 / §6.3 / X2：关联账号（律师）调 /v1/firm/* → 403
   assert.ok(!devs.json.devices.some((d: any) => d.device_id === B.dev.cert.deviceId), "团队电脑列表没有成员个人空间的电脑");
   const mem = await get("/v1/firm/members", A.session);
   const row = mem.json.members.find((m: any) => m.aid === bTeam.aid);
-  assert.deepEqual([row.email, row.person_phone_masked, row.disabled_by, row.devices_summary.signed_in >= 0, Array.isArray(row.devices)], ["yi-b72@example.cn", null, null, true, true]);
+  // 安全审查 P2-4：团队看到的是打码邮箱；由团队邀请新建的成员标识是随机串（不从邮箱派生）
+  assert.deepEqual([row.email, row.person_phone_masked, row.disabled_by, row.devices_summary.signed_in >= 0, Array.isArray(row.devices)], ["y***@example.cn", null, null, true, true]);
+  assert.match(row.member_slug, /^u[0-9a-f]{6}$/);
   assert.ok(row.seat && row.seat.sid, "登记电脑时已占席");
 });
 

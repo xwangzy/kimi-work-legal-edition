@@ -644,6 +644,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if ((st.routing as { epoch?: unknown } | undefined)?.epoch !== routing.epoch) migratedOnLoad = true;
     alerts = Array.isArray(st.alerts) ? st.alerts : [];
     for (const a of st.accounts ?? []) {
+      // 第 72 批（安全审查 P2-1）：1.7.0 之前停用的账号没有 disabled_by——一律按平台停用处理（宁严勿宽：团队侧不能启用），即时写盘
+      if (a.status === "disabled" && a.disabled_by !== "platform" && a.disabled_by !== "team") {
+        a.disabled_by = "platform";
+        migratedOnLoad = true;
+      }
       accounts.set(a.aid, a);
       indexAccount(a);
     }
@@ -696,6 +701,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 第 72 批（D-305）：kind 按现有 personal（personalOf 口径）定型一次，之后只由显式动作改变；personal 布尔随之成为只读兼容字段
       if (t.kind !== "personal" && t.kind !== "team") {
         t.kind = t.personal === true && personalShape(t) ? "personal" : "team";
+        // 安全审查 P1-1：存量团队（第 72 批之前一律“新电脑要管理员批准”）显式保持 approve——由管理员自己改成 auto；1.7.0 起新开通 / 新升级的团队缺省 auto
+        if (t.kind === "team" && t.member_device_policy !== "auto" && t.member_device_policy !== "approve") t.member_device_policy = "approve";
         migratedOnLoad = true;
       }
       t.personal = t.kind === "personal";
@@ -1123,6 +1130,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         personal: createdVia === "self",
         // 第 72 批（D-305）：显式类型——自助注册 = 个人空间，运营开通 = 团队
         kind: createdVia === "self" ? "personal" : "team",
+        ...(createdVia === "self" ? {} : { member_device_policy: "auto" as const }),
       };
       issueLicense(t);
       publishStrictest(t);
@@ -1487,22 +1495,63 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (a.length !== b.length || !timingSafeEqual(a, b)) throw new CpError(401, "service_auth_invalid", "服务凭据无效");
   };
 
-  /** 收紧类管理动作（吊销设备与席位）：管理员或合伙人设备（与本机吊销的角色口径一致；复核 S6-B04）。 */
-  const requireRevoker = (dev: DeviceRecord): void => {
-    if (dev.cert.role !== "admin" && dev.cert.role !== "partner") throw new CpError(403, "revoker_required", "需要管理员或合伙人设备");
+  const ROLE_RANK: Readonly<Record<string, number>> = { node: -1, assistant: 0, lawyer: 1, partner: 2, admin: 3 };
+  /** 第 72 批（安全审查 P2-2）：平台停用了这个人的主账号 = 停用这个人（他的全部工作空间）。团队停用主账号的成员身份不算（disabled_by = team）。 */
+  const personBlocked = (a: AccountRecord): boolean => {
+    const p = primaryOf(a);
+    return p.status === "disabled" && p.disabled_by === "platform";
+  };
+  /** 这个成员身份此刻可用：本身有效，且这个人没有被平台停用。 */
+  const memberActive = (a: AccountRecord): boolean => a.status === "active" && !personBlocked(a);
+  /**
+   * 第 72 批（安全审查 P0-2）：设备签名请求的有效角色——账号存在时取证书角色与账号当前角色中较低者（被降级的管理员，其电脑即刻失去管理权限）；
+   * 账号已停用 / 已移出团队（或这个人被平台停用）一律 403；没有账号的历史成员照旧看证书。设备记录不吊销（契约原样），只是不再有管理权限。
+   */
+  const effectiveRoleOf = (t: TenantRecord, dev: DeviceRecord): string => {
+    const a = accountOfMember(t.tid, dev.cert.memberId);
+    if (!a) return dev.cert.role;
+    if (!memberActive(a)) throw new CpError(403, "account_disabled", "这台电脑所属的成员身份已停用或已移出团队：不能再做这项操作");
+    return (ROLE_RANK[a.role] ?? -1) < (ROLE_RANK[dev.cert.role] ?? -1) ? a.role : dev.cert.role;
+  };
+  /** 第 72 批（安全审查 P0-2）：这台电脑的成员身份已停用 / 移出时，不再签发席位令牌、各服务专用凭据与许可。 */
+  const requireDeviceMemberActive = (t: TenantRecord, dev: DeviceRecord): void => {
+    const a = accountOfMember(t.tid, dev.cert.memberId);
+    if (a && !memberActive(a)) throw new CpError(403, "account_disabled", "这台电脑所属的成员身份已停用或已移出团队");
+  };
+  /**
+   * 收紧类管理动作（吊销设备与席位、读本所操作记录）：管理员或合伙人设备（与本机吊销的角色口径一致；复核 S6-B04）。
+   * 第 72 批：按有效角色判（P0-2）；账号签发钥签的电脑不行（P1-1：团队管理员 / 合伙人在网页 / 会话接口上做这些）。
+   */
+  const requireRevoker = (t: TenantRecord, dev: DeviceRecord): void => {
+    const r = effectiveRoleOf(t, dev);
+    if (r !== "admin" && r !== "partner") throw new CpError(403, "revoker_required", "需要管理员或合伙人设备");
+    if (certIssuerOf(dev.cert) === "account_ca") throw new CpError(403, "firm_root_device_required", "这项操作只能在律所根签发的电脑上进行，或在网页控制台用管理员账号操作");
   };
 
-  const requireAdmin = (dev: DeviceRecord): void => {
-    if (dev.cert.role !== "admin") throw new CpError(403, "admin_required", "需要管理员设备");
+  const requireAdmin = (t: TenantRecord, dev: DeviceRecord): void => {
+    if (effectiveRoleOf(t, dev) !== "admin") throw new CpError(403, "admin_required", "需要管理员设备");
     // 第 66 批（V40，D-292）：控制面签的账号设备证书不能做团队管理动作（批准成员、发邀请、发布策略与连接器、设律所上限）——只认律所根签发的电脑
     if (certIssuerOf(dev.cert) === "account_ca") throw new CpError(403, "firm_root_device_required", "这项操作只能在律所开通时的那台电脑上进行");
   };
 
-  const adminCheck = (t: TenantRecord, bytes: Buffer, sigs: AdminSignature[], at: Date = new Date(now())) =>
+  /**
+   * strict = true（新收的签名：草稿签名、发布；安全审查 P0-2）：成员身份已停用 / 移出、或账号已不是管理员的电脑，签名不再计数。
+   * 已发布文档的历史签名照旧按“当时有效”核（不因之后的降级而让现行策略失效）。
+   */
+  const adminCheck = (t: TenantRecord, bytes: Buffer, sigs: AdminSignature[], at: Date = new Date(now()), strict = false) =>
     verifyAdminSignatures(bytes, sigs, {
       rootPublicKeyPem: t.root_public_key_pem ?? "",
       threshold: adminThresholdForEdition(t.edition),
-      revokedDevices: new Set([...t.devices.values()].filter((d) => d.revoked_at).map((d) => d.cert.deviceId)),
+      revokedDevices: new Set(
+        [...t.devices.values()]
+          .filter((d) => {
+            if (d.revoked_at) return true;
+            if (!strict) return false;
+            const a = accountOfMember(t.tid, d.cert.memberId);
+            return !!a && (!memberActive(a) || a.role !== "admin");
+          })
+          .map((d) => d.cert.deviceId),
+      ),
       now: at,
     });
 
@@ -1727,7 +1776,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   /** 对外账号视图：关联账号显示主账号的邮箱与打码手机号。 */
   const viewOf = (a: AccountRecord) => accountView(a, { org: orgOf(a.tid), email: emailOf(a), phone: phoneOfPerson(a)?.masked ?? null });
   /** 这个人有没有可用的工作空间（找回密码、发登录码按人判断）。 */
-  const personActive = (a: AccountRecord): boolean => workspacesOf(a).some((x) => x.status === "active" && tenants.has(x.tid));
+  const personActive = (a: AccountRecord): boolean => !personBlocked(a) && workspacesOf(a).some((x) => x.status === "active" && tenants.has(x.tid));
   /** 这个人全部工作空间账号的 aid（改密码、找回密码撤会话按人）。 */
   const personAids = (a: AccountRecord): Set<string> => new Set(workspacesOf(a).map((x) => x.aid));
   const workspaceOf = (x: AccountRecord) => {
@@ -1900,7 +1949,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         // 第 46 批：账号被停用的成员，设备在任何律所都暂停（不只要求账号登录的律所；网关 15 秒内随订阅生效）
         const acc = accountOfMember(t.tid, d.cert.memberId);
         const key = `${t.tid}\u0000${d.cert.deviceId}`;
-        if (t.accounts_required === true ? !liveDev.has(key) : acc?.status === "disabled" || (signedOut.has(key) && !liveDev.has(key))) out.push({ tid: t.tid, device_id: d.cert.deviceId });
+        if (t.accounts_required === true ? !liveDev.has(key) : acc?.status === "disabled" || (!!acc && personBlocked(acc)) || (signedOut.has(key) && !liveDev.has(key))) out.push({ tid: t.tid, device_id: d.cert.deviceId });
       }
     }
     return out;
@@ -1965,6 +2014,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const a = accounts.get(x.aid);
     if (!a) throw new AuthError(401, "session_invalid", "登录已失效，请重新登录");
     if (a.status !== "active") throw new AuthError(403, "account_disabled", "账号已停用，请联系管理员");
+    // 第 72 批（安全审查 P2-2）：平台停用了这个人的主账号 = 停用这个人——他在别的工作空间的会话同样不能用
+    if (a.person && personBlocked(a)) throw new AuthError(403, "account_disabled", "账号已停用，请联系管理员");
     // 续期：空闲到期往后推；按小时落盘（不让每个请求都整份重写状态）
     const t0 = now();
     if (t0 - Date.parse(x.last_seen_at) > 3600_000) {
@@ -2096,6 +2147,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
    * 否则 last_workspace（存在且可用）；否则主账号（可用时）；否则第一个可用的。都不可用时与原来同样回答。
    */
   const pickWorkspace = (person: AccountRecord, dev: DeviceRecord | null): AccountRecord => {
+    // 安全审查 P2-2：平台停用主账号 = 停用这个人（任何凭证都进不来）
+    if (personBlocked(person)) throw new CpError(403, "account_disabled", "账号已停用，请联系管理员");
     const ws = workspacesOf(person).filter((x) => x.status === "active" && tenants.has(x.tid));
     if (!ws.length) {
       if (person.status !== "active") throw new CpError(403, "account_disabled", "账号已停用，请联系管理员");
@@ -2124,7 +2177,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   const phoneOfDevice = (t: TenantRecord, dev: DeviceRecord): string => {
     const acc = accountOfMember(t.tid, dev.cert.memberId);
-    if (!acc || acc.status !== "active") throw new CpError(403, "account_disabled", "账号已停用，请联系管理员");
+    if (!acc || !memberActive(acc)) throw new CpError(403, "account_disabled", "账号已停用，请联系管理员");
     // 第 72 批：关联账号没有手机号——验证码发到这个人（主账号）绑定的手机号（密文的附加数据是主账号 aid）
     const a = primaryOf(acc);
     const ph = a.phone ? openText(sealKey, a.phone.sealed, `kwl-account-phone/1\n${a.aid}`) : null;
@@ -2436,7 +2489,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const state = d.revoked_at ? "revoked" : live ? "signed_in" : "signed_out";
     // 第 71 批（第二轮，07）：成员姓名与系统（最近一次桌面登录上报的），界面用来显示“某某的 Mac”这类派生名
     const lastDesk = [...sessions.values()].filter((x) => x.device_id === d.cert.deviceId && x.kind === "desktop" && accounts.get(x.aid)?.tid === t.tid).sort((x, y) => y.last_seen_at.localeCompare(x.last_seen_at))[0];
-    return { tid: t.tid, tenant_name: t.name ?? t.tid.replace(/^ten_/, ""), device_id: a ? d.cert.deviceId : `fp:${certFingerprint(d.cert)}`, name: d.name ?? null, member_name: a?.name ?? null, platform: lastDesk?.client.platform ?? null, uid: a ? d.cert.memberId : null, aid: a?.aid ?? null, email: a?.email ?? null, role: d.cert.role, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, last_active_at: lastDesk?.last_seen_at ?? null, registered_at: d.registered_at, revoked_at: d.revoked_at, session: live ? "active" : "none", state, flags };
+    // 第 72 批（D-304）：issuer——firm_root（律所根签发，可接收团队共享事项）/ account_ca（账号签发钥直接登记，团队共享前待管理员确认）
+    return { tid: t.tid, tenant_name: t.name ?? t.tid.replace(/^ten_/, ""), issuer: certIssuerOf(d.cert), device_id: a ? d.cert.deviceId : `fp:${certFingerprint(d.cert)}`, name: d.name ?? null, member_name: a?.name ?? null, platform: lastDesk?.client.platform ?? null, uid: a ? d.cert.memberId : null, aid: a?.aid ?? null, email: a?.email ?? null, role: d.cert.role, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, last_active_at: lastDesk?.last_seen_at ?? null, registered_at: d.registered_at, revoked_at: d.revoked_at, session: live ? "active" : "none", state, flags };
   };
   const cmpVer = (x: string, y: string): number => {
     const px = x.split(/[.-]/).map((n) => Number(n) || 0);
@@ -3293,7 +3347,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           // 第 72 批（A3 R2）：记下是平台停用的——团队管理员不能启用
           a.disabled_by = "platform";
           a.disabled_reason = typeof b.reason === "string" ? b.reason : null;
-          const n = revokeSessions((x) => x.aid === a.aid, "account_disabled");
+          // 安全审查 P2-2：停用主账号 = 停用这个人——撤他全部工作空间的会话
+          const ids = a.person ? new Set([a.aid]) : personAids(a);
+          const n = revokeSessions((x) => ids.has(x.aid), "account_disabled");
           feedVersion += 1;
           accountAudit(a, "account.disable", who);
           return { ok: true, sessions_revoked: n, account: accountRow(a) };
@@ -3304,6 +3360,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           a.disabled_by = null;
           a.disabled_reason = null;
           a.failed = { count: 0, first_at: null, locked_until: null };
+          // 安全审查 P2-5：解锁作用于凭证所在的主账号（关联账号没有自己的失败计数），并在主账号所在租户记审计
+          const pr = primaryOf(a);
+          if (pr !== a) {
+            pr.failed = { count: 0, first_at: null, locked_until: null };
+            accountAudit(pr, "account.unlock", who);
+          }
           feedVersion += 1;
           accountAudit(a, "account.enable", who);
           return { ok: true, account: accountRow(a) };
@@ -3313,7 +3375,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           // 第 72 批：凭证在主账号上——关联账号的重置码发给这个人（主账号）
           const a = primaryOf(a0);
           const c = issueAccountCode(a, a.pw ? "reset" : "setup", (a.pw ? 30 * 60_000 : 24 * 3600_000), who.operator);
-          accountAudit(a0, "account.reset_code", who);
+          // 安全审查 P2-5：凭证是这个人的——审计主条目记在主账号所在租户；关联账号所在团队另记一条
+          accountAudit(a, "account.reset_code", who);
+          if (a !== a0) accountAudit(a0, "account.reset_code", who);
           return { ok: true, reset_code: formatOneTimeCode(c.code), expires_at: c.expires_at, purpose: a.pw ? "reset" : "setup", ...(a !== a0 ? { person: a.aid } : {}) };
         }, "account.support");
       if (sub === "sessions/revoke")
@@ -4250,10 +4314,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (pm && accountByPhone.has(pm)) throw new CpError(409, "phone_taken", "这个手机号已注册，请直接登录（忘记密码可用手机号找回）");
       if (tinv) {
         // 核对验证码之后再看一次（期间被撤销或被别人用掉）
-        tinv = findTeamInvite(src, teamCode!, false);
+        tinv = findTeamInvite(src, teamCode!, false, phone ? maskPhone(phone) : null);
         t = tinv.t;
         role = tinv.r.role;
-        slug = newMemberSlug(t, email);
+        // 安全审查 P2-4：由团队邀请新建的成员身份，成员标识用随机串（不从邮箱派生：成员编号进证书与全所设备目录）
+        slug = newMemberSlug(t, null);
         via = "team_invite";
         memberName = tinv.r.name;
       } else if (act) {
@@ -5103,7 +5168,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "device", id: dev.cert.deviceId, fp: certFingerprint(dev.cert) }, action, target }, written: false });
 
     if (method === "GET" && p === "/v1/directory") return send(res, 200, await seal("kwl-device-directory", directoryBody(t)));
-    if (method === "GET" && p === "/v1/license") return send(res, 200, await seal("kwl-license", issueLicense(t)));
+    if (method === "GET" && p === "/v1/license") {
+      requireDeviceMemberActive(t, dev);
+      return send(res, 200, await seal("kwl-license", issueLicense(t)));
+    }
     if (method === "GET" && p === "/v1/tenant-salt") {
       const body: TenantSaltBody = { tid: t.tid, purpose: "anon_matter", salt_b64: t.salt_b64, issued_at: t.created_at };
       return send(res, 200, await seal("kwl-tenant-salt", body));
@@ -5112,6 +5180,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       mark("seat_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
       if (!issueAllowed(t.tid, dev.cert.deviceId, "seat_token")) throw new CpError(429, "rate_limited", "签发过于频繁，请稍后再试");
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发席位令牌");
+      requireDeviceMemberActive(t, dev);
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
@@ -5125,6 +5194,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       mark("support_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
       if (!issueAllowed(t.tid, dev.cert.deviceId, "support_token")) throw new CpError(429, "rate_limited", "签发过于频繁，请稍后再试");
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发");
+      requireDeviceMemberActive(t, dev);
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
@@ -5136,6 +5206,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       mark("notify_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
       if (!issueAllowed(t.tid, dev.cert.deviceId, "notify_token")) throw new CpError(429, "rate_limited", "签发过于频繁，请稍后再试");
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发");
+      requireDeviceMemberActive(t, dev);
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
@@ -5148,6 +5219,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       mark("relay_token.issue", t.seatsByUser.get(dev.cert.memberId)?.sid ?? null);
       if (!issueAllowed(t.tid, dev.cert.deviceId, "relay_token")) throw new CpError(429, "rate_limited", "签发过于频繁，请稍后再试");
       if (!licenseValid(t)) throw new CpError(402, "license_expired", "许可已到期：不签发");
+      requireDeviceMemberActive(t, dev);
       const seat = t.seatsByUser.get(dev.cert.memberId);
       if (!seat) throw new CpError(402, "no_seat", "该成员没有席位");
       if (seat.revoked_at) throw new CpError(403, "seat_revoked", "席位已吊销");
@@ -5157,7 +5229,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (method === "GET" && p === "/v1/policy") return send(res, 200, await seal("kwl-firm-policy-current", t.policy));
     // ─── 本所用量与额度（第 44 批 v2）：成员看本所与自己的百分比、剩余、重置时间；管理员与合伙人另看用量数与按成员明细 ───
     if (method === "GET" && p === "/v1/quota") {
-      const detail = dev.cert.role === "admin" || dev.cert.role === "partner";
+      // 第 72 批（安全审查 P0-2）：按有效角色（被降级 / 移出的管理员不再看按成员明细）
+      const detail = ((r) => r === "admin" || r === "partner")((() => { try { return effectiveRoleOf(t, dev); } catch { return "none"; } })());
       const { q, ctx } = qOf(t);
       const plan = ctx.plan;
       const me = accountOfMember(t.tid, dev.cert.memberId);
@@ -5271,7 +5344,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     if (method === "PUT" && p === "/v1/quota/cap") {
       mark("quota.cap_set");
-      requireAdmin(dev);
+      requireAdmin(t, dev);
       const b = parseJson(raw);
       // 第 40 批：上限为本月总额度的百分比（monthly_cap_pct）；旧客户端的点数上限明确拒绝
       if ("monthly_cap" in b) throw new CpError(400, "cap_invalid", "已取消点数：月度上限请按百分比设置（monthly_cap_pct）");
@@ -5286,7 +5359,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     // ─── 中软侧操作记录（S14 v0）：管理员与合伙人可取本所流水（控制面签名的分页；律所侧另行验链） ───
     if (method === "GET" && p === "/v1/audit") {
-      requireRevoker(dev);
+      requireRevoker(t, dev);
       const after = Number(url.searchParams.get("after") ?? "0");
       const limit = Number(url.searchParams.get("limit") ?? "500");
       if (!Number.isSafeInteger(after) || after < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new CpError(400, "audit_range_invalid", "分页参数不合法");
@@ -5314,13 +5387,13 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
 
     // ─── 起草 → 管理员设备签名 → 发布（律所策略、连接器登记） ───
     if (method === "GET" && p === "/v1/drafts") {
-      requireAdmin(dev);
+      requireAdmin(t, dev);
       return send(res, 200, { drafts: [...t.drafts.values()].filter((d) => !d.published_at) });
     }
     if (method === "POST" && p === "/v1/drafts") {
       const draftId = `drf_${randomBytes(8).toString("hex")}`;
       mark("draft.create", draftId);
-      requireAdmin(dev);
+      requireAdmin(t, dev);
       const b = parseJson(raw);
       if (b.kind === "policy") {
         const body = validatePolicyBody(b.body);
@@ -5355,14 +5428,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (method === "POST" && m[2]) mark(m[2] === "/signatures" ? "draft.sign" : "draft.publish", m[1]!);
       const d = t.drafts.get(m[1]!);
       if (!d) throw new CpError(404, "draft_unknown", "草稿不存在");
-      requireAdmin(dev);
+      requireAdmin(t, dev);
       if (method === "GET" && !m[2]) return send(res, 200, { draft: d });
       if (d.published_at) throw new CpError(409, "draft_published", "草稿已发布");
       const bytes = signingBytesOf(d);
       if (method === "POST" && m[2] === "/signatures") {
         const b = parseJson(raw);
         const sig = { cert: b.cert as DeviceCertificate, sig: String(b.sig ?? "") };
-        const v = adminCheck(t, bytes, [sig]);
+        const v = adminCheck(t, bytes, [sig], new Date(now()), true);
         if (v.devices.length !== 1) throw new CpError(400, "admin_signature_invalid", `管理员签名无效：${v.problems.join("、")}`);
         if (!d.admin_signatures.some((s) => s.cert.deviceId === sig.cert.deviceId)) d.admin_signatures.push(sig);
         return send(res, 200, { draft: d });
@@ -5370,7 +5443,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       if (method === "POST" && m[2] === "/publish") {
         if (d.kind === "policy") {
           const doc = d.doc as FirmPolicyDoc;
-          if (policyRelaxations(doc.body).length > 0 && !adminCheck(t, bytes, d.admin_signatures).ok) {
+          if (policyRelaxations(doc.body).length > 0 && !adminCheck(t, bytes, d.admin_signatures, new Date(now()), true).ok) {
             throw new CpError(409, "admin_threshold_not_met", `放宽类策略需 ${adminThresholdForEdition(t.edition)} 名管理员设备签名`);
           }
           if (t.policy && t.policy.doc.version >= doc.version) throw new CpError(409, "draft_stale", "已有同版本或更高版本的策略发布：本草稿已过时，请重新起草");
@@ -5379,7 +5452,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           for (const [id, x] of t.drafts) if (id !== d.draft_id && !x.published_at && x.kind === "policy" && (x.doc as FirmPolicyDoc).version <= doc.version) t.drafts.delete(id);
         } else {
           const doc = d.doc as FirmConnectorDoc;
-          if (!adminCheck(t, bytes, d.admin_signatures).ok) throw new CpError(409, "admin_threshold_not_met", `连接器登记需 ${adminThresholdForEdition(t.edition)} 名管理员设备签名`);
+          if (!adminCheck(t, bytes, d.admin_signatures, new Date(now()), true).ok) throw new CpError(409, "admin_threshold_not_met", `连接器登记需 ${adminThresholdForEdition(t.edition)} 名管理员设备签名`);
           const cur = t.connectors.get(doc.connector_id);
           const published = Math.max(cur?.doc.version ?? 0, ...[...t.drafts.values()].filter((x) => x.kind === "connector" && x.published_at && (x.doc as FirmConnectorDoc).connector_id === doc.connector_id).map((x) => (x.doc as FirmConnectorDoc).version));
           if (published >= doc.version) throw new CpError(409, "draft_stale", "该连接器已有同版本或更高版本的登记发布：本草稿已过时，请重新起草");
@@ -5398,14 +5471,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const rc = /^\/v1\/connectors\/([a-z][a-z0-9_-]{1,40})$/.exec(p);
     if (method === "DELETE" && rc) {
       mark("connector.remove", rc[1]!);
-      requireAdmin(dev);
+      requireAdmin(t, dev);
       if (t.connectors.delete(rc[1]!)) t.connectorsVersion += 1;
       return send(res, 200, { ok: true, version: t.connectorsVersion });
     }
     // ─── 成员邀请与入组批准（第 13 批；管理员设备） ───
     if (method === "POST" && p === "/v1/invitations") {
       mark("invitation.create");
-      requireAdmin(dev);
+      requireAdmin(t, dev);
       // 第 72 批（契约 §3.1）：取消“发第一张成员邀请就悄悄转团队”——个人工作室要先就地升级
       if (kindOf(t) === "personal") throw new CpError(409, "upgrade_required", "个人工作室要先升级为团队，才能邀请同事");
       const b = parseJson(raw);
@@ -5417,7 +5490,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       return send(res, 200, { ok: true, ...r });
     }
     if (method === "GET" && p === "/v1/invitations") {
-      requireAdmin(dev);
+      requireAdmin(t, dev);
       const list = [...t.activations.values()]
         .filter((r) => r.kind === "member")
         .map((r) => ({
@@ -5434,14 +5507,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const rir = /^\/v1\/invitations\/([A-Za-z0-9_-]{1,64})\/revoke$/.exec(p);
     if (method === "POST" && rir) {
       mark("invitation.revoke", rir[1]!);
-      requireAdmin(dev);
+      requireAdmin(t, dev);
       const r = t.activations.get(rir[1]!);
       if (!r || r.kind !== "member") throw new CpError(404, "activation_unknown", "没有这个邀请");
       viaRoute(() => ops.revokeActivationCode(t.tid, r.id, { by: dev.cert.deviceId }));
       return send(res, 200, { ok: true });
     }
     if (method === "GET" && p === "/v1/join-requests") {
-      requireAdmin(dev);
+      requireAdmin(t, dev);
       const list = [...t.joinRequests.values()]
         .filter((x) => x.status === "pending" && Date.parse(x.created_at) + 7 * DAY_MS > now())
         .map((x) => {
@@ -5455,7 +5528,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (method === "POST" && rja) {
       const approve = rja[2] === "approve";
       mark(approve ? "join.approve" : "join.reject", rja[1]!);
-      requireAdmin(dev);
+      requireAdmin(t, dev);
       const jr = t.joinRequests.get(rja[1]!);
       if (!jr || jr.status !== "pending" || Date.parse(jr.created_at) + 7 * DAY_MS <= now()) throw new CpError(404, "join_unknown", "没有这个待批准的申请");
       const rec = t.activations.get(jr.activation_id);
@@ -5498,9 +5571,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const rd = /^\/v1\/devices\/([^/]{1,200})\/revoke$/.exec(p);
     if (method === "POST" && rd) {
       mark("device.revoke", rd[1]!);
-      requireRevoker(dev);
+      requireRevoker(t, dev);
       // 第 72 批（A3 R4）：合伙人只能吊销非管理员的电脑
-      if (dev.cert.role === "partner" && t.devices.get(rd[1]!)?.cert.role === "admin") throw new CpError(403, "partner_cannot_revoke_admin", "合伙人不能移除管理员的电脑");
+      if (effectiveRoleOf(t, dev) === "partner" && ((d0) => !!d0 && (accountOfMember(t.tid, d0.cert.memberId)?.role ?? d0.cert.role) === "admin")(t.devices.get(rd[1]!))) throw new CpError(403, "partner_cannot_revoke_admin", "合伙人不能移除管理员的电脑");
       const b = parseJson(raw);
       // 本请求的审计由路由记（运维包装不再记一条“运营吊销”）；仍经 ops 调用（演练可替换 ops 模拟被攻破的控制面）
       viaRoute(() => ops.revokeDevice(t.tid, rd[1]!, { cert: b.cert, by: dev.cert.deviceId }));
@@ -5509,8 +5582,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     const rs = /^\/v1\/seats\/([^/]{1,200})\/revoke$/.exec(p);
     if (method === "POST" && rs) {
       mark("seat.revoke", t.seatsByUser.get(decodeURIComponent(rs[1]!))?.sid ?? null);
-      requireRevoker(dev);
-      if (dev.cert.role === "partner" && accountOfMember(t.tid, decodeURIComponent(rs[1]!))?.role === "admin") throw new CpError(403, "partner_cannot_revoke_admin", "合伙人不能收回管理员的席位");
+      requireRevoker(t, dev);
+      if (effectiveRoleOf(t, dev) === "partner" && accountOfMember(t.tid, decodeURIComponent(rs[1]!))?.role === "admin") throw new CpError(403, "partner_cannot_revoke_admin", "合伙人不能收回管理员的席位");
       if (!t.seatsByUser.has(decodeURIComponent(rs[1]!))) throw new CpError(404, "seat_unknown", "成员没有席位");
       viaRoute(() => ops.revokeSeat(t.tid, decodeURIComponent(rs[1]!)));
       return send(res, 200, { ok: true, directory_version: t.directoryVersion });
@@ -5553,7 +5626,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
    * 按码找团队邀请：码错、过期、已用、已撤销、租户不是团队或订阅已到期，统一 400 invite_invalid（不区分，防枚举）。
    * count = false：同一请求里第二次核对（注册时核过验证码再看一次），不再计入限流。
    */
-  const findTeamInvite = (src: string, raw: unknown, count = true): { t: TenantRecord; r: TeamInviteRecord } => {
+  const findTeamInvite = (src: string, raw: unknown, count = true, phoneMasked?: string | null): { t: TenantRecord; r: TeamInviteRecord } => {
     const win = Math.floor(now() / 600_000);
     if (count) {
       if (inviteWindow.size > 50_000) for (const [k, w] of inviteWindow) if (w.win !== win) inviteWindow.delete(k);
@@ -5575,6 +5648,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       for (const r of t.team_invites?.values() ?? [])
         if (sameHexStr(r.code_hash, mac)) {
           if (inviteStatusOf(r) !== "open" || kindOf(t) !== "team" || !licenseValid(t)) throw fail();
+          if (phoneMasked !== undefined && !hintMatches(r, phoneMasked)) throw fail();
           return { t, r };
         }
     throw fail();
@@ -5657,15 +5731,37 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
    * 移出团队（契约 §3.4；退出团队同一效果）：停用这个成员身份（disabled_by = team）+ 释放席位 + 吊销会话；设备记录保留（离所交接后再移除）。
    * 停用的成员设备随订阅进暂停名单（网关 ≤ 15 秒拒绝）；这个人的其他工作空间不受影响。
    */
-  const removeMember = (t: TenantRecord, x: AccountRecord, reason: string): { sessions_revoked: number; seat_released: number } => {
+  /** 安全审查 P2-3：撤回这名成员发出、还没被接受的团队邀请（移出、退出、从管理员降级时）；返回撤回张数。 */
+  const revokeInvitesBy = (t: TenantRecord, x: AccountRecord): number => {
+    let n = 0;
+    for (const r of t.team_invites?.values() ?? [])
+      if (r.created_by === `account:${x.aid}` && inviteStatusOf(r) === "open") {
+        r.status = "revoked";
+        n += 1;
+      }
+    return n;
+  };
+  const removeMember = (t: TenantRecord, x: AccountRecord, reason: string): { sessions_revoked: number; seat_released: number; invites_revoked: number } => {
     x.status = "disabled";
-    x.disabled_by = "team";
+    // 安全审查 P0-1：已被平台停用的保持 platform（否则“移出 → 启用”就绕过了平台停用）
+    if (x.disabled_by !== "platform") x.disabled_by = "team";
     const seat = releaseSeat(t, uidOfAccount(x)) ? 1 : 0;
     const n = revokeSessions((y) => y.aid === x.aid, reason);
+    const inv = revokeInvitesBy(t, x);
     const pr = primaryOf(x);
     if (pr.last_workspace === x.aid) delete pr.last_workspace;
     feedVersion += 1;
-    return { sessions_revoked: n, seat_released: seat };
+    return { sessions_revoked: n, seat_released: seat, invites_revoked: inv };
+  };
+  /**
+   * 安全审查 P2-3：邀请带 phone_hint 时，接受人（这个人的主账号）验证过的手机号末 4 位须与之一致；没有手机号即不符。
+   * 不符与码错同样回 invite_invalid（不区分，防枚举）。
+   */
+  const hintMatches = (r: TeamInviteRecord, masked: string | null): boolean => {
+    if (!r.phone_hint) return true;
+    const want = (/(\d+)$/.exec(r.phone_hint)?.[1] ?? "").slice(-4);
+    if (!want) return true;
+    return !!masked && masked.endsWith(want);
   };
   /** 发重置短信给成员本人绑定的手机号（A3 R3：管理员拿不到明文）。dry-run 部署只记录、不回码。 */
   const sendResetSmsTo = async (x: AccountRecord): Promise<{ phone_masked: string; expires_in_s: number; dry_run?: true }> => {
@@ -5769,10 +5865,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const b = parseJson(raw);
       minVersionGate(b.client);
       const person = primaryOf(a);
-      const { t: tt, r } = findTeamInvite(sourceOf(req), b.code);
+      const { t: tt, r } = findTeamInvite(sourceOf(req), b.code, true, person.phone?.masked ?? null);
       if (workspacesOf(person).some((x) => x.tid === tt.tid)) throw new CpError(409, "already_member", "你已经是这个团队的成员：在工作空间里切换过去即可");
       const at = iso();
-      const x: AccountRecord = { aid: newId("acc"), email: null, name: r.name, status: "active", disabled_reason: null, tid: tt.tid, member_slug: newMemberSlug(tt, person.email), role: r.role, pw: null, pw_changed_at: null, created_at: at, created_via: "team_invite", last_login_at: null, failed: { count: 0, first_at: null, locked_until: null }, device_limit: null, quota_limit: null, person: person.aid };
+      const x: AccountRecord = { aid: newId("acc"), email: null, name: r.name, status: "active", disabled_reason: null, tid: tt.tid, member_slug: newMemberSlug(tt, null), role: r.role, pw: null, pw_changed_at: null, created_at: at, created_via: "team_invite", last_login_at: null, failed: { count: 0, first_at: null, locked_until: null }, device_limit: null, quota_limit: null, person: person.aid };
       accounts.set(x.aid, x);
       indexAccount(x);
       Object.assign(r, { status: "accepted", accepted_by: x.aid, accepted_at: at });
@@ -5791,7 +5887,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const kind = me.s.kind;
       const r = removeMember(t, a, "team_left");
       const out = enterWorkspace(req, next, kind, null, b.client);
-      auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "account", id: a.aid }, action: "team.leave", target: a.aid, detail: { seat_released: r.seat_released } }, written: false });
+      auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "account", id: a.aid }, action: "team.leave", target: a.aid, detail: { seat_released: r.seat_released, invites_revoked: r.invites_revoked } }, written: false });
       return send(res, 200, out);
     }
     if (method === "GET" && p === "/v1/me/usage") {
@@ -5827,7 +5923,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const u = usedIn(unit, ag);
       return {
         aid: x.aid,
-        email: emailOf(x),
+        // 安全审查 P2-4：团队管理员 / 合伙人只看打码邮箱（这个人的主账号邮箱属于个人身份信息）
+        email: maskEmail(emailOf(x)),
         name: x.name,
         role: x.role,
         status: x.status,
@@ -5919,14 +6016,16 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         if (x.aid === a.aid) throw new CpError(409, "cannot_remove_self", "不能移出自己：请用“退出团队”");
         if (lastAdmin(t, x)) throw new CpError(409, "last_admin", "这是本团队最后一名有效管理员，不能移出");
         const r = removeMember(t, x, "team_removed");
-        mark("team.member_remove", x.aid, { seat_released: r.seat_released });
+        mark("team.member_remove", x.aid, { seat_released: r.seat_released, invites_revoked: r.invites_revoked });
         return send(res, 200, { ok: true, ...r, member: memberRow(x) });
       }
       if (act === "role") {
         const role = b.role;
         if (role !== "admin" && role !== "partner" && role !== "lawyer" && role !== "assistant") throw new CpError(400, "role_invalid", "角色须为 admin / partner / lawyer / assistant");
         if (role !== "admin" && lastAdmin(t, x)) throw new CpError(409, "last_admin", "这是本团队最后一名有效管理员，不能降级");
-        mark("account.role", x.aid, { admin: role === "admin" ? 1 : 0 });
+        // 安全审查 P2-3：从管理员降级时，撤回他发出、还没被接受的团队邀请
+        const invRevoked = x.role === "admin" && role !== "admin" ? revokeInvitesBy(t, x) : 0;
+        mark("account.role", x.aid, { admin: role === "admin" ? 1 : 0, invites_revoked: invRevoked });
         x.role = role;
         feedVersion += 1;
         return send(res, 200, { ok: true, member: memberRow(x) });
@@ -5947,6 +6046,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         return send(res, 200, { ok: true, sessions_revoked: n, seat_released: seatReleased, member: memberRow(x) });
       }
       if (act === "enable") {
+        // 安全审查 P2-7：本就有效的成员——幂等空操作（不清零登录失败计数：它保护的是这个人的全部工作空间）
+        if (x.status === "active") return send(res, 200, { ok: true, unchanged: true, seat_reassigned: false, member: memberRow(x) });
         // 第 72 批（A3 R2）：平台停用的（风控、欠费），团队侧不能启用
         if (x.status === "disabled" && x.disabled_by === "platform") throw new CpError(403, "platform_disabled", "这个账号由平台停用，团队管理员不能启用：请联系中软客服");
         // 停用时释放的席位：有空席就还给他（没有空席照样启用，AI 用不了，由管理员分配席位）
@@ -6003,7 +6104,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const last = [...sessions.values()].filter((x) => x.device_id === d.cert.deviceId && !isStaffId(x.aid) && accounts.get(x.aid)?.tid === t.tid).sort((x, y) => y.last_seen_at.localeCompare(x.last_seen_at))[0];
         // 第 71 批（G2）：状态三态——有有效桌面登录 = 登录中；没有 = 已退出登录；吊销 = 已移除
         const signedIn = !d.revoked_at && [...sessions.values()].some((x) => x.device_id === d.cert.deviceId && x.kind === "desktop" && accounts.get(x.aid)?.tid === t.tid && sessionLive(x, now()));
-        return { device_id: d.cert.deviceId, name: d.name ?? null, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, last_active_at: last?.last_seen_at ?? null, registered_at: d.registered_at, revoked: !!d.revoked_at, state: d.revoked_at ? "revoked" : signedIn ? "signed_in" : "signed_out", flags };
+        return { device_id: d.cert.deviceId, issuer: certIssuerOf(d.cert), name: d.name ?? null, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, last_active_at: last?.last_seen_at ?? null, registered_at: d.registered_at, revoked: !!d.revoked_at, state: d.revoked_at ? "revoked" : signedIn ? "signed_in" : "signed_out", flags };
       });
       return send(res, 200, { devices: list.sort((x, y) => (y.last_seen_at ?? "").localeCompare(x.last_seen_at ?? "")) });
     }
@@ -6024,7 +6125,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           .map(([k, x]) => {
             const uid = k.split("\u0000")[1] || null;
             const acc = uid ? accountOfMember(t.tid, uid) : undefined;
-            return { aid: acc?.aid ?? null, name: memberLabel(t, uid), email: acc ? emailOf(acc) : null, tokens: x.tokens_in + x.tokens_out, used_ratio_of_firm: ratio(usedIn(unit, x), tot.total), ...aggOut(x) };
+            return { aid: acc?.aid ?? null, name: memberLabel(t, uid), email: acc ? maskEmail(emailOf(acc)) : null, tokens: x.tokens_in + x.tokens_out, used_ratio_of_firm: ratio(usedIn(unit, x), tot.total), ...aggOut(x) };
           })
           .sort((x, y) => y.tokens - x.tokens),
         by_model: byModel.map(([alias, x]) => ({ alias, label: modelLabel(alias), tokens: x.tokens_in + x.tokens_out, requests: x.requests, share: ratio(x.tokens_in + x.tokens_out, allTok) })).sort((x, y) => y.tokens - x.tokens),

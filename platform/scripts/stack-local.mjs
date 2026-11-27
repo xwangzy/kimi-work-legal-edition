@@ -24,7 +24,7 @@
  */
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -222,12 +222,19 @@ createServer((req, res) => {
   }
   const rel = normalize(u.pathname === "/" ? "/index.html" : u.pathname).replace(/^(\.\.[/\\])+/, "");
   const f = join(dist, rel);
-  if (!f.startsWith(dist) || !existsSync(f)) {
+  // 第 72 批：目录路径（如 /before/）与读失败一律 404——原来 readFileSync 读目录抛 EISDIR 未捕获，整个栈父进程随之退出
+  let body = null;
+  try {
+    if (f.startsWith(dist) && existsSync(f) && statSync(f).isFile()) body = readFileSync(f);
+  } catch {
+    body = null;
+  }
+  if (!body) {
     res.writeHead(404, headers);
     return res.end("not found");
   }
   res.writeHead(200, { ...headers, "content-type": TYPES[extname(f)] ?? "application/octet-stream" });
-  res.end(readFileSync(f));
+  res.end(body);
 }).listen(P.console, "127.0.0.1");
 
 // ─── 6b. 首个系统管理员：读 bootstrap-admin.txt 的设置码 → /v1/auth/password-reset/confirm 设密码 → 登录信息写 0600 文件 ───
