@@ -4,7 +4,7 @@
  * “重新同步成员名单”（原“本机重新引导”）只给管理员与事项负责人，用原位两步确认（不再用浏览器原生确认框）。
  */
 import { useEffect, useState } from "react";
-import { api, team, type DeviceShareStatus, type RelayStatus } from "../api.ts";
+import { api, team, teamMatters, type DeviceShareStatus, type RelayStatus } from "../api.ts";
 import { shareConfirmLine, shareIssuerNote, shareNoteVisible } from "../lib/workspace.ts";
 import { notifyWorkspaceChanged } from "./WorkspaceSwitch.tsx";
 import { canResyncMembers, relayErrorText, syncAlertAction, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
@@ -28,6 +28,8 @@ export function TeamShare({ admin = false, note = null, canEnable = false }: { a
     const load = () => void api.relayStatus().then(setSt).catch(() => setSt(null));
     load();
     const t = setInterval(load, 15_000);
+    // 第 73 批（实拍补）：打开团队页时让内核看一眼所内规则是否刚放开（只这一次、不轮询；内核另有 60 秒节流，已开通不同步）；放开了就立即重读这一行
+    void teamMatters.refreshShareState().then((r) => r?.refreshed && load());
     return () => clearInterval(t);
   }, []);
   const alerts = st?.alerts ?? [];

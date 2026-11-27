@@ -3,7 +3,7 @@
  * 第 73 批（D-308、D-310）：团队共享事项——事项头“团队共享 · n 人”胶囊、“⋯ → 事项成员”页；个人事项的负责人在团队空间里有“⋯ → 和同事一起办…”。
  */
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { api, matterMembers, type MatterMembersView, type AiAuthorization, type EgressRecord, type Matter, type MaterialFile, type MaterialImportResult, type MaterialTriage, type MaterialUsage, type MatterBasis, type RunPolicyView } from "../api.ts";
+import { api, matterMembers, teamMatters, type MatterMembersView, type AiAuthorization, type EgressRecord, type Matter, type MaterialFile, type MaterialImportResult, type MaterialTriage, type MaterialUsage, type MatterBasis, type RunPolicyView } from "../api.ts";
 import { triageSuggestion, triageText } from "../lib/material-triage.ts";
 import { nav } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
@@ -39,7 +39,7 @@ import { MaterialPicker } from "../components/MaterialPicker.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { AddColleaguesDialog, MatterMembersPanel, useTeamKind } from "../components/TeamMatter.tsx";
-import { canOfferShare, isTeamShared } from "../lib/team-matters.ts";
+import { canOfferShare, isTeamShared, needsShareRefresh } from "../lib/team-matters.ts";
 import "../styles-materials.css";
 import "../styles-matter.css";
 
@@ -173,6 +173,16 @@ export function MatterPage({ matterId }: { matterId: string }) {
       live = false;
     };
   }, [matterId, teamShared, membersTick]);
+  // 第 73 批（实拍补）：事项成员页上方是“所内还没开通 / 不知道”时问一次内核（带 matter_id，每次打开这个事项至多一次，不轮询；内核另有 60 秒节流）；
+  // 规则刚放开就把那句换掉
+  const shareAsked = useRef<string | null>(null);
+  useEffect(() => {
+    if (tab !== "members" || !members || members.matter_id !== matterId || shareAsked.current === matterId || !needsShareRefresh(members.sync)) return;
+    shareAsked.current = matterId;
+    void teamMatters.refreshShareState(matterId).then((r) => {
+      if (r && r.sync !== members.sync) setMembers((v) => (v && v.matter_id === matterId ? { ...v, sync: r.sync } : v));
+    });
+  }, [tab, matterId, members]);
 
   const patch = async (p: Record<string, unknown>, note: string) => {
     try {

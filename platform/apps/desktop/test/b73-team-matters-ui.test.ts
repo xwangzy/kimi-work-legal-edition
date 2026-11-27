@@ -18,6 +18,7 @@ import {
   canOfferShare,
   carriedLine,
   manageBlockedText,
+  needsShareRefresh,
   relaxationText,
   shareRelayRenewLines,
   colleagueMeta,
@@ -58,6 +59,7 @@ import { shareReadyText, upgradeLines } from "../src/lib/workspace.ts";
 import { searchGroups } from "../src/lib/search.ts";
 import { sidebarFoot } from "../src/lib/user-card.ts";
 import { teamShareLine } from "../src/lib/relay-text.ts";
+import { checklistItems, matterStepText } from "../src/lib/guide-checklist.ts";
 import type { MatterMemberRow, ShareRelayStatus, TeamRosterMember } from "../src/api.ts";
 
 const css0 = () => readFileSync(fileURLToPath(new URL("../src/styles-team-matters.css", import.meta.url)), "utf8");
@@ -491,4 +493,34 @@ test("接线：设置 → 团队 → 团队策略首行“同事之间同步”�
   const ts = code("components/TeamShare.tsx");
   assert.match(ts, /canEnable && st\?\.blocked === "not_allowed" && !st\.policy_fallback/);
   assert.match(ts, /\{!\(relay === false && noteLine\) && <span>\{teamShareLine\(st\)\}<\/span>\}/, "同一页不重复“所内没开通”");
+});
+
+test("实拍补（内核 team.refresh_share_state）：提示可见时各问一次、不轮询——团队页打开、事项成员页（带 matter_id）、表单里“所内还没开通”那句；只在没开通 / 不知道时问", () => {
+  for (const s of ["not_allowed", "unknown"] as const) assert.equal(needsShareRefresh(s), true, s);
+  for (const s of ["ok", "pending", "unreachable", "not_configured", null, undefined] as const) assert.equal(needsShareRefresh(s), false, String(s));
+  // 团队页：挂载时一次（在 15 秒轮询之外），放开了就立即重读
+  const ts = code("components/TeamShare.tsx");
+  assert.match(ts, /const t = setInterval\(load, 15_000\);\s*void teamMatters\.refreshShareState\(\)\.then\(\(r\) => r\?\.refreshed && load\(\)\);/);
+  assert.doesNotMatch(ts, /setInterval\([^)]*refreshShareState/, "不轮询");
+  // 事项成员页：带 matter_id，每次打开这个事项至多一次，拿到的 sync 直接换掉那句
+  const mt = code("pages/Matter.tsx");
+  assert.match(mt, /if \(tab !== "members" \|\| !members \|\| members\.matter_id !== matterId \|\| shareAsked\.current === matterId \|\| !needsShareRefresh\(members\.sync\)\) return;/);
+  assert.match(mt, /teamMatters\.refreshShareState\(matterId\)\.then\(\(r\) => \{\s*if \(r && r\.sync !== members\.sync\) setMembers/);
+  // 表单 / “和同事一起办…”：读到状态之后、每个表单至多一次
+  const tm = code("components/TeamMatter.tsx");
+  assert.match(tm, /if \(asked\.current \|\| !st\.loaded \|\| !needsShareRefresh\(st\.sync\)\) return;\s*asked\.current = true;\s*void teamMatters\.refreshShareState\(\)\.then\(\(r\) => r\?\.refreshed && read\(\)\);/);
+  assert.match(tm, /if \(teamShown && relay\.ready !== true\) relay\.refresh\?\.\(\);/);
+  assert.match(tm, /if \(mode === "share" && relay\.ready === false\) relay\.refresh\(\);/);
+  for (const f of ["components/TeamMatter.tsx", "pages/Matter.tsx", "components/TeamShare.tsx"]) assert.equal((code(f).match(/refreshShareState\(/g) ?? []).length, 1, `${f} 只有一处调用`);
+});
+
+test("实拍补（内核 guide.progress 口径变了）：上手清单第 1 步只是被同事加进来时写“已有事项”，不写“建事项”", () => {
+  const base = { materials: 0, runs: 0, deliverables: 0, latest_matter_id: null, latest_run: null };
+  const shared = checklistItems({ ...base, own_matters: 2, created_matters: 0, shared_matters: 2 })[0]!;
+  assert.deepEqual([shared.title, shared.done], ["已有事项", true]);
+  assert.equal(shared.body, "同事把你加进了 2 个事项；自己的事项也可以随时新建");
+  const mine = checklistItems({ ...base, own_matters: 3, created_matters: 1, shared_matters: 2 })[0]!;
+  assert.deepEqual([mine.title, mine.done], ["建事项", true], "自己建过：照旧");
+  assert.deepEqual([checklistItems({ ...base, own_matters: 0, created_matters: 0, shared_matters: 0 })[0]!.title, checklistItems({ ...base, own_matters: 0 })[0]!.done], ["建事项", false]);
+  assert.deepEqual(matterStepText({ own_matters: 2 }), {}, "旧内核没有 created / shared：照旧");
 });

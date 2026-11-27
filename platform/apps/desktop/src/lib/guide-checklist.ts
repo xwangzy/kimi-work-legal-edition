@@ -1,8 +1,8 @@
 /**
  * 首页“上手清单”（第 46 批，主文 §5-5）：建事项 → 加材料 → 发起第一个任务 → 查看成果。纯数据与纯函数，可单测。
  *
- * - 完成与否只看真实数据（内核 guide.progress：自己建的事项、自己导入的材料、自己发起的任务、这些任务的成果），做完自动打勾；
- *   按“自己建的”判断，所以有团队共享事项的新成员同样看得到清单；示例事项不算。
+ * - 完成与否只看真实数据（内核 guide.progress：我在其中的事项、自己导入的材料、自己发起的任务、这些任务的成果），做完自动打勾；示例事项不算。
+ *   第 73 批：第 1 步把同事加进来的团队共享事项也算上（内核 own_matters 口径变了）；只是被加进来、自己没建过时写“已有事项”，不写“建事项”。
  * - 每项有“去做”，直达对应界面；“看看界面”打开原有的聚光讲解。
  * - 收起状态按律所 + 成员分键记在本机（键里只有 8 位摘要，与“看过指南”同一做法）；已经在用的老用户（第一次见到时四项都已完成）不打扰。
  *
@@ -15,7 +15,11 @@
 import { accountDigest, type GuideStore } from "./guide-steps.ts";
 
 export interface GuideProgress {
+  /** 我在其中的事项（第 73 批起含同事把我加进的团队共享事项）。 */
   own_matters: number;
+  /** 其中我自己建的 / 同事建、把我加进来的（第 73 批；旧内核没有）。 */
+  created_matters?: number;
+  shared_matters?: number;
   materials: number;
   runs: number;
   deliverables: number;
@@ -59,7 +63,16 @@ export interface BackupFacts {
 export function checklistItems(p: GuideProgress, backup?: BackupFacts | null): ChecklistItem[] {
   const backupDone = !!backup?.packages_created && !!backup?.configured;
   const done: Partial<Record<ChecklistKey, boolean>> = { matter: p.own_matters > 0, material: p.materials > 0, task: p.runs > 0, result: p.deliverables > 0, backup: backupDone };
-  return CHECKLIST.map((c) => ({ ...c, done: !!done[c.key], ...(c.key === "backup" && p.materials === 0 ? { locked: true } : {}) }));
+  return CHECKLIST.map((c) => ({ ...c, ...(c.key === "matter" ? matterStepText(p) : {}), done: !!done[c.key], ...(c.key === "backup" && p.materials === 0 ? { locked: true } : {}) }));
+}
+
+/**
+ * 第 1 步的说法（第 73 批）：只是被同事加进团队共享事项、自己还没建过时，打勾的不是“建事项”——如实写“已有事项”与来由。纯函数。
+ */
+export function matterStepText(p: Pick<GuideProgress, "own_matters" | "created_matters" | "shared_matters">): { title: string; body: string } | Record<string, never> {
+  const shared = p.shared_matters ?? 0;
+  if (p.own_matters > 0 && p.created_matters === 0 && shared > 0) return { title: "已有事项", body: `同事把你加进了 ${shared} 个事项；自己的事项也可以随时新建` };
+  return {};
 }
 
 /** 新电脑版三项：第一项点“知道了”即完成（本机记）；选备份位置按真实状态。 */

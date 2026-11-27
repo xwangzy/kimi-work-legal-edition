@@ -33,6 +33,11 @@ export function relayReady(st: Pick<RelayStatus, "blocked" | "policy_fallback"> 
   return st.blocked === null ? true : null;
 }
 
+/** 什么时候值得让内核看一眼所内规则是不是刚放开（team.refresh_share_state）：只在“没开通 / 不知道”时；已开通、没部署都不用。纯函数。 */
+export function needsShareRefresh(sync: MatterSync | null | undefined): boolean {
+  return sync === "not_allowed" || sync === "unknown";
+}
+
 /** relay.status → 事项成员页同一套状态（与内核 matters.members.list 的 sync 同口径）。纯函数。 */
 export function relaySyncOf(st: Pick<RelayStatus, "blocked" | "policy_fallback"> | null | undefined): MatterSync {
   if (!st) return "unknown";

@@ -1416,7 +1416,7 @@ export const api = {
     }>("search.titles", { q, labels }),
   /** 上手清单（第 46 批）：自己建的事项、自己导入的材料、自己发起的任务与其成果的数目，以及“去做”直达的目标。 */
   guideProgress: () =>
-    invoke<{ firm: string | null; user: string | null; own_matters: number; materials: number; runs: number; deliverables: number; latest_matter_id: string | null; latest_run: { run_id: string; matter_id: string } | null }>("guide.progress"),
+    invoke<{ firm: string | null; user: string | null; own_matters: number; created_matters?: number; shared_matters?: number; materials: number; runs: number; deliverables: number; latest_matter_id: string | null; latest_run: { run_id: string; matter_id: string } | null }>("guide.progress"),
   recentRuns: (limit = 5) =>
     invoke<{ runs: { run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string; title?: string | null; skill?: string | null }[]; waiting: { run_id: string; matter_id: string }[] }>("runs.list_recent", { limit }),
 
@@ -2055,6 +2055,11 @@ export const teamMatters = {
   /** 调用没成功（旧内核、内核重启中）按“暂时取不到”处理，界面不报错。 */
   roster: () => invoke<TeamRoster>("team.roster").catch(() => ({ available: false, reason: "unavailable", members: [] }) as TeamRoster),
   shareRelayStatus: () => invoke<ShareRelayStatus>("firm_policy.share_relay_status").catch(() => null),
+  /**
+   * 第 73 批（实拍补）：让内核看一眼所内规则是不是刚放开（只在 sync 为 not_allowed / unknown 时才可能同步，距上次控制面同步不足 60 秒不同步；
+   * 已开通、没配中继一律不同步）。给 matter_id 时 sync 按事项算。界面在提示可见时调一次，不轮询；旧内核没有这个方法时为 null。
+   */
+  refreshShareState: (matterId?: string) => invoke<{ refreshed: boolean; sync: MatterSync }>("team.refresh_share_state", matterId ? { matter_id: matterId } : {}).catch(() => null),
   /** 第二位管理员在自己电脑上调同一个方法即签同一份待签草稿；ttl_days 1～30，缺省 30。 */
   shareRelayEnable: (ttlDays?: number) => invoke<ShareRelayActionResult>("firm_policy.share_relay_enable", ttlDays ? { ttl_days: ttlDays } : {}),
   shareRelayRenew: (ttlDays?: number) => invoke<ShareRelayActionResult>("firm_policy.share_relay_renew", ttlDays ? { ttl_days: ttlDays } : {}),

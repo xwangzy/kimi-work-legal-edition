@@ -108,7 +108,8 @@ test("上手清单：首页渲染卡片；按“自己建的”判断（内核 g
   assert.doesNotMatch(app, /shouldAutoOpenGuide\(/);
   assert.doesNotMatch(app, /主进程与开发桥目前不转发这条广播/, "过时注释已改");
   const kernel = readFileSync(join(import.meta.dirname, "../../../packages/kernel/src/api/index.ts"), "utf8");
-  assert.match(kernel, /"guide\.progress": \(_p, id\) => \{[\s\S]{0,400}created_by = \?/);
+  // 第 73 批：第 1 步按“我在其中的事项”算（含同事加进来的团队共享事项），另给自己建的数（created_by）
+  assert.match(kernel, /"guide\.progress": \(_p, id\) => \{[\s\S]{0,600}JOIN matter_members mm ON mm\.matter_id = m\.matter_id AND mm\.user_id = \?[\s\S]{0,400}m\.created_by === id\.userId/);
   // 第 5 步说“左下角是账号、备份与设置”：一并框出设置入口
   assert.deepEqual(GUIDE_STEPS.at(-1)!.anchors, ["nav-reminders", "nav-chat", "settings"]);
   assert.match(src("components/Sidebar.tsx"), /data-tour="settings"/);

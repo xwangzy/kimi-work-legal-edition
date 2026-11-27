@@ -26,6 +26,7 @@ import {
   memberErrorText,
   memberName,
   memberRowNote,
+  needsShareRefresh,
   ownerHint,
   PICKER_SEARCH_FROM,
   pickableColleagues,
@@ -97,20 +98,31 @@ export function useTeamKind(): { ws: WorkspaceState; kind: WorkspaceKind | null 
 }
 
 /** 同事之间同步的状态（relay.status → true 已开通 / false 没开通 / null 不知道；configured：中软是否已为本所开通服务）。 */
-export function useRelayState(enabled: boolean): { ready: boolean | null; configured: boolean | null; sync: MatterSync } {
-  const [st, setSt] = useState<{ ready: boolean | null; configured: boolean | null; sync: MatterSync }>({ ready: null, configured: null, sync: "unknown" });
-  useEffect(() => {
-    if (!enabled) return;
-    let live = true;
+export function useRelayState(enabled: boolean): { ready: boolean | null; configured: boolean | null; sync: MatterSync; refresh: () => void } {
+  const [st, setSt] = useState<{ ready: boolean | null; configured: boolean | null; sync: MatterSync; loaded?: boolean }>({ ready: null, configured: null, sync: "unknown" });
+  const live = useRef(true);
+  const read = () =>
     void api
       .relayStatus()
-      .then((s) => live && setSt({ ready: relayReady(s), configured: s.blocked === "not_configured" ? false : true, sync: relaySyncOf(s) }))
+      .then((s) => live.current && setSt({ ready: relayReady(s), configured: s.blocked === "not_configured" ? false : true, sync: relaySyncOf(s), loaded: true }))
       .catch(() => undefined);
+  useEffect(() => {
+    live.current = true;
+    if (enabled) read();
     return () => {
-      live = false;
+      live.current = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
-  return st;
+  // 第 73 批（实拍补）：“所内还没开通”那句可见时，让内核看一眼规则是否刚放开（每个表单至多一次，不轮询；内核另有 60 秒节流）；放开了就重读这一句
+  const asked = useRef(false);
+  const refresh = () => {
+    // 还没读到状态时不问（读到之前 sync 记的是“不知道”）
+    if (asked.current || !st.loaded || !needsShareRefresh(st.sync)) return;
+    asked.current = true;
+    void teamMatters.refreshShareState().then((r) => r?.refreshed && read());
+  };
+  return { ready: st.ready, configured: st.configured, sync: st.sync, refresh };
 }
 
 /* ── 记号 ── */
@@ -138,10 +150,16 @@ export function ScopeField({ variant, scope, onScope, picked, onPicked, avail, r
   picked: string[];
   onPicked: (ids: string[]) => void;
   avail: ScopeAvailability;
-  relay: { ready: boolean | null; configured: boolean | null };
+  relay: { ready: boolean | null; configured: boolean | null; sync?: MatterSync; refresh?: () => void };
 }) {
   const roster = useRoster(avail.show && avail.team);
   const reasonId = useId();
+  // 选了一起办、看到“所内还没开通…”时问一次内核（规则刚放开时这句随即换成正常说明）
+  const teamShown = avail.show && avail.team && scope === "team";
+  useEffect(() => {
+    if (teamShown && relay.ready !== true) relay.refresh?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamShown, relay.ready, relay.sync]);
   if (!avail.show) return null;
   const modal = variant === "modal";
   const note = modal ? "authz-note" : "place-hint";
@@ -503,6 +521,11 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
   const avail = mode === "share" ? scopeAvailability({ kind, issuer: ws.issuer, level: levelOfMatter(matter), roster }) : { show: true, team: true, reason: null, apply: false };
   const blocked = mode === "share" && ws.ready && !avail.team;
   const effSync: MatterSync | null = mode === "share" ? relay.sync : sync;
+  // “和同事一起办…”弹窗里显示“所内还没开通…”时问一次内核（同 ScopeField）
+  useEffect(() => {
+    if (mode === "share" && relay.ready === false) relay.refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, relay.ready, relay.sync]);
   const submit = async () => {
     setBusy(true);
     setErr("");
