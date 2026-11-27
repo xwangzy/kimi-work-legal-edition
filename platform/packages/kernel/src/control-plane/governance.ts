@@ -266,6 +266,24 @@ export class FirmGovernance {
     }
   }
 
+  /**
+   * 第 73 批：这台电脑接受过的各版律所策略里 share_relay 的取值（旧 → 新）：version、是否允许、生效时刻（签发时刻，没有取接受时刻）。
+   * 只有这台电脑接受过的版本（之后才入组的电脑看不到更早的版本）。
+   */
+  shareRelayHistory(): { version: number; allow: boolean; at: string }[] {
+    if (this.mode === "local_dev") return [];
+    const out: { version: number; allow: boolean; at: string }[] = [];
+    for (const r of this.d.db.all<{ version: number; doc_json: string; accepted_at: string }>(`SELECT version, doc_json, accepted_at FROM firm_policies WHERE tenant_id = ? ORDER BY version`, [this.d.tenantId])) {
+      try {
+        const doc = JSON.parse(r.doc_json) as FirmPolicyDoc;
+        out.push({ version: r.version, allow: doc.body?.share_relay === "allow", at: typeof doc.issued_at === "string" ? doc.issued_at : r.accepted_at });
+      } catch {
+        // 认不出的行不算
+      }
+    }
+    return out;
+  }
+
   /** 开发形态：本机配置项（D-17；只限未配置控制面且从未接入过控制面时）。 */
   private localDevPolicy(): EffectiveFirmPolicy {
     const body = localDevPolicyBody(this.d.env);

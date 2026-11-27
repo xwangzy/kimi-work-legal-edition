@@ -79,3 +79,19 @@ export function seatProblemOf(credentialError: string | null, seatStep: string |
   if (credentialError === "credential_no_seat" || credentialError === "credential_seat_revoked") return true;
   return (seatStep === "no_seat" || seatStep === "seat_revoked") && !hasSeatToken;
 }
+
+/**
+ * 第 73 批：同事之间同步是不是“开通后又关闭”了（纯函数；只用于显示，再开通与首次开通同一流程——D-311）：现行生效规则来自控制面且明确不允许，而更早某一版允许过。
+ * closed_at = 最后一次允许之后第一版不允许的生效时刻。规则回退（过期、签名人不足）不算关闭（那是“已过期”）。
+ */
+export function shareRelayClosedOf(effectiveFromControlPlane: boolean, effectiveAllows: boolean, history: readonly { version: number; allow: boolean; at: string }[]): { closed: boolean; closed_at: string | null } {
+  if (!effectiveFromControlPlane || effectiveAllows) return { closed: false, closed_at: null };
+  const sorted = [...history].sort((a, b) => a.version - b.version);
+  let lastAllow = -1;
+  sorted.forEach((h, i) => {
+    if (h.allow) lastAllow = i;
+  });
+  if (lastAllow < 0) return { closed: false, closed_at: null };
+  const firstOff = sorted.slice(lastAllow + 1).find((h) => !h.allow);
+  return firstOff ? { closed: true, closed_at: firstOff.at } : { closed: false, closed_at: null };
+}

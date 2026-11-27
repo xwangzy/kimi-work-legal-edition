@@ -25,7 +25,7 @@ import type { Kernel } from "../src/index.ts";
 import type { ProfileHandoff } from "../src/profiles.ts";
 import { rosterFromReply, rosterOfflineCode, rosterUnsupportedCode, rosterUserId } from "../src/services/team-roster.ts";
 import { AI_SUBPROCESSORS, AI_SUBPROCESSORS_TEAM, dataFlowsFor } from "../src/services/ai-authorization.ts";
-import { carriedRelaxations, daysLeftOf, enableBodyOf, expiringOf, sameBody, seatProblemOf, shareRelayStateOf, signerCount } from "../src/services/share-relay-policy.ts";
+import { carriedRelaxations, daysLeftOf, enableBodyOf, expiringOf, sameBody, seatProblemOf, shareRelayClosedOf, shareRelayStateOf, signerCount } from "../src/services/share-relay-policy.ts";
 
 /** 律师层的报错不讲这些词（D-310；第 73 批补四项第 2 条）。 */
 const JARGON = /中继|控制成员|纪元|包裹|证书|密钥/;
@@ -94,6 +94,17 @@ test("开通同事之间同步的底稿：当前生效规则只改 share_relay�
   assert.equal(expiringOf("allowed", "2026-12-05T00:00:00Z", now), null);
   assert.equal(expiringOf("not_allowed", "2026-12-01T00:00:00Z", now), null);
   assert.equal(signerCount([{ member_id: "a" }, { member_id: "a" }, { member_id: "b" }]), 2, "门限按成员计");
+  // D-94：开通后又关闭（现行规则明确不允许、更早某一版允许过）；closed_at = 最后一次允许之后第一版不允许的生效时刻
+  const H = [
+    { version: 1, allow: false, at: "2026-11-01T00:00:00Z" },
+    { version: 2, allow: true, at: "2026-11-02T00:00:00Z" },
+    { version: 3, allow: false, at: "2026-11-03T00:00:00Z" },
+    { version: 4, allow: false, at: "2026-11-04T00:00:00Z" },
+  ];
+  assert.deepEqual(shareRelayClosedOf(true, false, H), { closed: true, closed_at: "2026-11-03T00:00:00Z" });
+  assert.deepEqual(shareRelayClosedOf(true, false, H.slice(0, 1)), { closed: false, closed_at: null }, "从没开通过");
+  assert.deepEqual(shareRelayClosedOf(false, false, H), { closed: false, closed_at: null }, "规则回退（过期）不算关闭");
+  assert.deepEqual(shareRelayClosedOf(true, true, H.slice(0, 2)), { closed: false, closed_at: null }, "正开着");
   // 没有席位：没分配到（no_seat）与名额被释放 / 收回（seat_revoked）同样算（11-27 实拍）
   for (const c of ["credential_no_seat", "credential_seat_revoked"]) assert.equal(seatProblemOf(c, null, true), true, c);
   for (const st of ["no_seat", "seat_revoked"]) assert.equal(seatProblemOf(null, st, false), true, st);
@@ -398,6 +409,37 @@ test("实拍补 1：team.refresh_share_state——管理员刚开通，成员电
   }
 });
 
+test("D-311：开通后又关闭的，closed / closed_at 如实给出（只用于显示）；再开通与首次开通同一流程，照常成功、closed 随之变回 false", { timeout: 300_000 }, async () => {
+  const F4 = "b73c-firm";
+  const c = await startCloudCp({ tenant: `ten_${F4}` });
+  const k = await makeKernel({ ...c.env, ZR_MODEL_PROVIDER: "upstream" }, F4);
+  const publish = async (body: Record<string, unknown>) => {
+    const { draft } = await k.inv("firm_policy.create_draft", { kind: "policy", body });
+    await k.inv("firm_policy.sign", { draft_id: draft.draft_id, expected_digest: draft.digest });
+    await k.inv("firm_policy.publish", { draft_id: draft.draft_id });
+  };
+  try {
+    assert.equal((await k.inv("control_plane.sync")).report.ok, true);
+    const s0 = await k.inv("firm_policy.share_relay_status");
+    assert.deepEqual([s0.state, s0.closed, s0.closed_at], ["not_allowed", false, null], "从没开通过");
+    assert.equal((await k.inv("firm_policy.share_relay_enable")).published, true);
+    assert.equal((await k.inv("firm_policy.share_relay_status")).closed, false);
+    // 关闭（管理员起草“不允许同事之间同步”）
+    await publish({ ...strictestTemplate(), share_relay: "deny" });
+    const s1 = await k.inv("firm_policy.share_relay_status");
+    assert.deepEqual([s1.state, s1.closed], ["not_allowed", true], JSON.stringify(s1));
+    assert.equal(s1.closed_at, (await k.inv("kernel.status")).control_plane.policy.issued_at, "取关闭那一版的生效时刻");
+    // 再开通：与首次开通同一流程（团队版门限 1，一步发布），不要求联系中软
+    const re = await k.inv("firm_policy.share_relay_enable");
+    assert.deepEqual([re.published, re.state, re.closed, re.closed_at], [true, "allowed", false, null], JSON.stringify(re));
+    assert.doesNotMatch(String(re.lawyer_note), /联系中软/);
+    assert.equal((await k.inv("kernel.status")).egress_gate.share_relay_allowed, true);
+  } finally {
+    await k.kernel.close().catch(() => {});
+    await c.close();
+  }
+});
+
 test("P2-1：没有席位的成员——同事之间同步用不了如实报 no_seat（不说“连不上”），relay.status 给出 credential_no_seat", { timeout: 300_000 }, async () => {
   const F3 = "b73s-firm";
   const c = await startCloudCp({ tenant: `ten_${F3}`, seats: 1 });
@@ -463,7 +505,13 @@ test("P2-3：团队共享事项的客户授权按团队共享的次处理者清�
     assert.deepEqual([team.basis_notice_version, team.basis_state], [AI_SUBPROCESSORS_TEAM.version, "valid"]);
     const gt = (await tk.inv("matters.get", { matter_id: team.matter_id })).matter;
     assert.equal(gt.subprocessors.version, AI_SUBPROCESSORS_TEAM.version);
-    assert.deepEqual(gt.data_flows.map((f: any) => f.key), ["colleagues", "zr_relay"]);
+    // G5 第 3 条：同事电脑、中软加密副本是团队共享就已发生的（on_team_share，不受单个事项的 AI 授权约束）；用 AI 时的转发另列（on_ai_use）
+    assert.deepEqual(gt.data_flows.map((f: any) => [f.key, f.when]), [
+      ["colleagues", "on_team_share"],
+      ["zr_relay", "on_team_share"],
+      ["ai_forward", "on_ai_use"],
+    ]);
+    assert.match(gt.data_flows[2].text, /^用 AI 时：.*经中软转发给 Kimi 模型（月之暗面）；中软不保存内容$/);
     assert.equal(gt.data_flows[0].text, "经加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果", "还没加同事：不写“0 人”");
     assert.equal(gt.data_flows[0].count, 0);
     assert.equal(dataFlowsFor("team", 3)[0]!.count, 3);
@@ -471,20 +519,33 @@ test("P2-3：团队共享事项的客户授权按团队共享的次处理者清�
     assert.match(dataFlowsFor("team", 2)[0]!.text, /经加密同步到事项成员的电脑（本所同事 2 人）/);
     assert.doesNotMatch(dataFlowsFor("team", null)[0]!.text, /人）/);
     assert.equal(gt.authorization_history[0].scope, "team");
-    assert.deepEqual(gt.authorization_history[0].data_flows.map((f: any) => f.key), ["colleagues", "zr_relay"]);
+    assert.deepEqual(gt.authorization_history[0].data_flows.map((f: any) => [f.key, f.when]), [
+      ["colleagues", "on_team_share"],
+      ["zr_relay", "on_team_share"],
+      ["ai_forward", "on_ai_use"],
+    ], "授权记录里落下的去向同样带 when");
     assert.equal(gt.authorization_history[0].current_version, true);
     const aa = await tk.inv("ai_authorization.get", { matter_id: team.matter_id });
     assert.deepEqual([aa.scope, aa.subprocessors.version], ["team", AI_SUBPROCESSORS_TEAM.version]);
     assert.ok(aa.data_flows.some((f: any) => f.key === "zr_relay"));
     assert.equal((await tk.inv("ai_authorization.get")).subprocessors.version, AI_SUBPROCESSORS.version, "不给事项时照旧");
     const est = await tk.inv("runs.estimate", { matter_id: team.matter_id, scenario: "s1.contract_review", document_version_ids: [] });
-    assert.deepEqual(est.data_where.data_flows.map((f: any) => f.key), ["colleagues", "zr_relay"]);
+    assert.deepEqual(est.data_where.data_flows.map((f: any) => f.key), ["colleagues", "zr_relay", "ai_forward"]);
+    assert.deepEqual(est.data_where.preview_rows.filter((r: any) => r.label === "同事电脑" || r.label === "中软" || r.label === "AI").map((r: any) => r.label), ["同事电脑", "中软"], "完整说明加团队共享的两行（AI 那条另有“发给谁”一行，不重复）");
     assert.equal(est.data_where.subprocessors.version, AI_SUBPROCESSORS_TEAM.version);
     // 只有我的事项照旧
     const solo = (await tk.inv("matters.create", { title: "只有我授权", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: REF })).matter;
     assert.deepEqual([solo.basis_notice_version, solo.basis_state], [AI_SUBPROCESSORS.version, "valid"]);
     const gs = (await tk.inv("matters.get", { matter_id: solo.matter_id })).matter;
-    assert.deepEqual(gs.data_flows.map((f: any) => f.text), ["案卷只存这台电脑"]);
+    assert.deepEqual(gs.data_flows.map((f: any) => [f.key, f.when]), [
+      ["local", "always"],
+      ["ai_forward", "on_ai_use"],
+    ]);
+    // 按端点与数据级别：律所私有端点不经中软；不使用模型、客户要求不上云而非私有端点（用不了 AI）没有这一条
+    assert.match(dataFlowsFor("personal", null, { endpoint: "private", level: "L3b" }).at(-1)!.text, /律所自己的 AI（不经中软）/);
+    assert.match(dataFlowsFor("team", 1, { endpoint: "byok", level: "L2" }).at(-1)!.text, /律所自己的 Kimi 账号（不经中软）/);
+    assert.equal(dataFlowsFor("team", 1, { endpoint: "none", level: "L2" }).some((f) => f.key === "ai_forward"), false);
+    assert.equal(dataFlowsFor("personal", null, { endpoint: "standard", level: "L3b" }).some((f) => f.key === "ai_forward"), false);
     assert.equal(gs.authorization_history[0].scope, "personal");
     // 只有我转为团队共享：原授权没覆盖同事之间同步 → 须按团队共享的清单重新确认（模型推理随之拦下）
     const up = await tk.inv("matters.update", { matter_id: solo.matter_id, patch: { collab_scope: "team" } });

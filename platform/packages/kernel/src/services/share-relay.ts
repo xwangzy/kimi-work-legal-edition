@@ -1183,7 +1183,7 @@ export class ShareRelaySync {
    */
   foreignController(matterId: string): string | null {
     // 退出模式时也按已知的控制成员判断（第三轮复核 S11B-33e：恢复收发后中继仍只认控制成员）；
-    // 律所策略**明确**不再允许中继时放行（第四轮复核 S11A-39：不再经中继同步的事项不能永远锁住伦理墙；重新开启前须办理重置，见 D-94）；
+    // 律所策略**明确**不再允许中继时放行（第四轮复核 S11A-39：不再经中继同步的事项不能永远锁住伦理墙；重新开启与首次开通同一流程，见 D-311——取代 D-94 的“须中软重置”约定）；
     // 策略过期、认不出、没收到而回退到最严模板时不放行（第五轮复核 S11A-44：律所并没有关闭中继，放行会让移出在中继上不生效）
     if (!this.d.configured() || this.d.relayExplicitlyOff?.()) return null;
     const row = this.d.db.get<{ controller: string | null; known: number }>(`SELECT controller, known FROM relay_matters WHERE matter_id = ?`, [matterId]);

@@ -28,7 +28,7 @@ import { parseReminderInput, type ReminderService } from "../services/reminders.
 import { syncAlertsView, type ShareRelaySync } from "../services/share-relay.ts";
 import type { DeviceShareConfirm } from "../services/device-share.ts";
 import { readRosterCache, rosterFromReply, rosterOfflineCode, rosterUnsupportedCode, writeRosterCache, type RosterMember } from "../services/team-roster.ts";
-import { carriedRelaxations, daysLeftOf, enableBodyOf, expiringOf, normalizedBody, sameBody, seatProblemOf, shareRelayStateOf, signerCount, type ShareRelayState } from "../services/share-relay-policy.ts";
+import { carriedRelaxations, daysLeftOf, enableBodyOf, expiringOf, normalizedBody, sameBody, seatProblemOf, shareRelayClosedOf, shareRelayStateOf, signerCount, type ShareRelayState } from "../services/share-relay-policy.ts";
 import { recordSuspectReview, sendPreview, summarizeSend, type SendSummary, type SuspectView } from "../services/send-preview.ts";
 import {
   ConsentStatus,
@@ -622,9 +622,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
   /** 事项的数据去向（P2-3）：团队共享事项带“本所同事 n 人”（除本人外在册的事项成员，不含节点服务成员）。 */
   function dataFlowsOf(matterId: string, scope: string | null | undefined): DataFlowEntry[] {
-    if (scope !== CollabScope.team) return dataFlowsFor(scope);
+    // 用 AI 时的去向按事项的模型端点与数据级别（on_ai_use）；同事电脑、中软加密副本是团队共享就已发生的（on_team_share）
+    const m = db.get<{ model_endpoint: string; confidentiality: string; consent_status: string }>(`SELECT model_endpoint, confidentiality, consent_status FROM matters WHERE matter_id = ?`, [matterId]);
+    const ai = m ? { endpoint: m.model_endpoint, level: dataLevelOf(m.confidentiality, m.consent_status) } : null;
+    if (scope !== CollabScope.team) return dataFlowsFor(scope, null, ai);
     const n = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_members WHERE matter_id = ? AND removed_at IS NULL AND user_id <> ? AND user_id <> 'node_service'`, [matterId, keyctx.device.cert.memberId])?.n ?? 0;
-    return dataFlowsFor(scope, n);
+    return dataFlowsFor(scope, n, ai);
   }
 
   /** 律师本人看过的“首次使用 AI 数据去向告知”版本（迁移 0072）。 */
@@ -2035,7 +2038,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
               ...(searchNote ? [{ label: "联网检索", text: searchNote.replace(/^；/, "") }] : []),
               { label: "是否保存", text: retentionNote },
               // 第 73 批（P2-3）：团队共享事项的去向如实写——同事电脑上也有、中软保存加密副本
-              ...(matter.collab_scope === CollabScope.team ? dataFlowsOf(matterId, matter.collab_scope).map((f) => ({ label: f.label, text: f.text })) : []),
+              ...(matter.collab_scope === CollabScope.team ? dataFlowsOf(matterId, matter.collab_scope).filter((f) => f.when === "on_team_share").map((f) => ({ label: f.label, text: f.text })) : []),
               { label: "记录", text: "每一次发送都记在本任务的“数据去向”里" },
             ];
       const dataWhere = {
@@ -4884,6 +4887,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const ttl = ttlDaysParam(p?.ttl_days);
       const st = await shareRelayStatusView(id);
       if (st.state === "allowed") return { ...st, published: false, lawyer_note: "同事之间同步已开通" };
+      // D-311（取代 D-94 的“须中软重置”约定）：关闭后再开通与首次开通同一流程（管理员签名门限）；控制面与中继都只看现行规则，不需要也不拦
       const body = shareRelayBodies().enable;
       if (!body) throw new DomainError("provider_unavailable", "这台电脑上的律所策略认不出：请先同步一次再开通", 502, { reason: "policy_unrecognized" });
       return shareRelaySign(id, "enable", body, ttl);
@@ -6387,9 +6391,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     const pendingSigs = pend ? signerCount(pend.draft.signed_by) : 0;
     const state: ShareRelayState = shareRelayStateOf({ effectiveAllows, fallback: eff?.source === "strictest_fallback", latestAllows: normalizedBody(latest?.body ?? null)?.share_relay === "allow", pendingEnable: !!pend && pendingSigs < threshold });
     const expiresAt = state === "allowed" ? (eff?.expires_at ?? null) : state === "expired" ? (latest?.expires_at ?? null) : null;
+    // 第 73 批：开通后又关闭过（现行规则明确不允许、更早某一版允许过）——只用于显示；再开通与首次开通同一流程（D-311）
+    const closed = shareRelayClosedOf(eff?.source === "control_plane", effectiveAllows, gov?.shareRelayHistory() ?? []);
     return {
       relay_configured: relayConfigured(),
       state,
+      closed: closed.closed,
+      closed_at: closed.closed_at,
       expires_at: expiresAt,
       days_left: daysLeftOf(expiresAt, now),
       expiring: expiringOf(state, expiresAt, now),

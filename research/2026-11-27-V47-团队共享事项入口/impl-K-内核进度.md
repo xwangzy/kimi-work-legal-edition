@@ -124,6 +124,19 @@
 - `packages/kernel/src` 与 `packages/domain`（注释）里“和同事一起办”全部改为“团队共享”（9 句律师可见文字 + 注释），错误码与字段不变；角色名“一起办 / 只看”、开关名“同事之间同步”不变。b73 用例断言同步改并补“不出现旧叫法”的断言。
 - 验证：b73 8/8；回归 614/614；tsc 0 错；build:kernel 已重建。全库 grep `packages/kernel/src`、`packages/domain/src` 已无“和同事一起办”。
 
+## 关闭后再开通（D-94；未提交）
+
+- `governance.shareRelayHistory()`（这台电脑接受过的各版 share_relay 取值与生效时刻）+ 纯函数 `shareRelayClosedOf`；`share_relay_status` 加 `closed / closed_at`。
+- 核实结论：控制面（drafts / publish）与中继（按订阅的 share_relay 核对）都只看现行规则，关闭后再允许照样发布、照样收发——D-94 的“须中软重置”只是流程约定，没有任何服务端拦截。（曾按此在内核加 `reenable_requires_vendor` 拦截，已按 D-311 撤回，见下节。）
+- 用例：从没开通过 `closed:false`；开通 → 关闭后 `closed:true`、`closed_at` 等于关闭那一版的签发时刻；再开通被拒、草稿数与签名审计都没增加；走通用起草能发布（证明服务端不拒）；再关闭后带确认再开通成功。纯函数覆盖“从没开通 / 回退不算 / 正开着 / 多版历史”。
+- 验证：b73 9/9；回归 615/615；tsc 0 错；build:kernel 已重建。已写进 03（W2 第九行）。
+
+## D-311 与 data_flows.when（未提交）
+
+- D-311：撤掉关闭后再开通的拦截（`reenable_requires_vendor`、`vendor_reset_confirmed`、FaultCode 均撤回），保留 `closed / closed_at` 显示字段；`create_draft` 不拦；share-relay.ts 注释改为 D-311。用例改为：关闭后再开通一步成功、`closed` 变回 false、结果句不提“联系中软”。
+- `data_flows` 每条 `when`：`colleagues` / `zr_relay` = `on_team_share`；新增 `ai_forward` = `on_ai_use`（按端点与数据级别；用不了 AI 时没有）；`local` = `always`（两值之外的第三值，已记 03）。授权记录同样带。估价完整说明只加团队共享两行。用例覆盖各条 `when`、三种端点、不使用模型与 L3b 非私有端点没有 AI 一条、授权记录带 `when`。
+- 验证：b73 9/9；回归 615/615；tsc 0 错；build:kernel 已重建（产物里已无 `reenable_requires_vendor`）。已写进 03（W2 第十、十一行）。
+
 ## 未做 / 留给主会话判断
 
 - A4 K6（云端移出团队不吊销设备、本机不自动移出事项与轮换）未做：现在靠成员页 `departed` 标记 + 负责人一键移出（D-308 口径）。

@@ -44,9 +44,15 @@ export function noticeVersionFor(scope: CollabScopeLike): string {
 
 /** 数据去向的一条（开始前确认的授权卡、授权记录、估价的完整说明共用）。 */
 export interface DataFlowEntry {
-  key: "local" | "colleagues" | "zr_relay";
+  key: "local" | "colleagues" | "zr_relay" | "ai_forward";
   label: string;
   text: string;
+  /**
+   * 第 73 批（产品评分 G5 第 3 条）：这条去向什么时候发生——
+   * on_team_share = 律所开通同事之间同步、律师选团队共享时就已发生（同事电脑、中软加密副本），不受单个事项的 AI 授权约束；
+   * on_ai_use = 用 AI 时才发生（受客户授权约束）；always = 存放位置的说明（案卷只存这台电脑），无论用不用 AI。
+   */
+  when: "on_ai_use" | "on_team_share" | "always";
   /** 第 73 批：同事电脑一条带人数（不含本人的在册事项成员；不知道为 null）；其余条目没有。 */
   count?: number | null;
 }
@@ -55,18 +61,38 @@ export interface DataFlowEntry {
  * 事项的数据去向（P2-3）：只有我的事项——案卷只存这台电脑；团队共享事项——同事电脑上也有（经加密同步到事项成员的电脑）、
  * 中软保存加密副本（打不开；本机删除事项不会删除中软上的加密副本）。colleagues = 除本人外的在册事项成员数（不知道为 null）。纯函数。
  */
-export function dataFlowsFor(scope: CollabScopeLike, colleagues: number | null = null): DataFlowEntry[] {
-  if (scope !== "team") return [{ key: "local", label: "案卷", text: "案卷只存这台电脑" }];
-  return [
-    // 还没加同事（0 人）时不写人数（11-27 实拍：“本所同事 0 人”读着像没有去向）
-    {
-      key: "colleagues",
-      label: "同事电脑",
-      count: colleagues,
-      text: colleagues === 0 ? "经加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果" : `经加密同步到事项成员的电脑${colleagues !== null ? `（本所同事 ${colleagues} 人）` : ""}；他们电脑上也有材料与成果`,
-    },
-    { key: "zr_relay", label: "中软", text: "保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本" },
-  ];
+export function dataFlowsFor(scope: CollabScopeLike, colleagues: number | null = null, ai: { endpoint?: string | null; level?: string | null } | null = null): DataFlowEntry[] {
+  const base: DataFlowEntry[] =
+    scope !== "team"
+      ? [{ key: "local", label: "案卷", text: "案卷只存这台电脑", when: "always" }]
+      : [
+          // 还没加同事（0 人）时不写人数（11-27 实拍：“本所同事 0 人”读着像没有去向）
+          {
+            key: "colleagues",
+            label: "同事电脑",
+            count: colleagues,
+            text: colleagues === 0 ? "经加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果" : `经加密同步到事项成员的电脑${colleagues !== null ? `（本所同事 ${colleagues} 人）` : ""}；他们电脑上也有材料与成果`,
+            when: "on_team_share",
+          },
+          { key: "zr_relay", label: "中软", text: "保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本", when: "on_team_share" },
+        ];
+  const f = aiForwardOf(ai);
+  return f ? [...base, f] : base;
+}
+
+/**
+ * 用 AI 时的去向（on_ai_use）：按模型端点说经谁到哪里；不使用模型、或客户要求不上云而不是律所私有端点（用不了 AI）时没有这一条。纯函数。
+ */
+function aiForwardOf(ai: { endpoint?: string | null; level?: string | null } | null): DataFlowEntry | null {
+  if (!ai || !ai.endpoint || ai.endpoint === "none") return null;
+  if (ai.level === "L3b" && ai.endpoint !== "private") return null;
+  const text =
+    ai.endpoint === "private"
+      ? "用 AI 时：任务用到的内容发给律所自己的 AI（不经中软）"
+      : ai.endpoint === "byok"
+        ? "用 AI 时：任务用到的内容先把姓名、证件号、电话等换成代号，直接发给律所自己的 Kimi 账号（不经中软）"
+        : "用 AI 时：任务用到的内容先把姓名、证件号、电话等换成代号，经中软转发给 Kimi 模型（月之暗面）；中软不保存内容";
+  return { key: "ai_forward", label: "AI", text, when: "on_ai_use" };
 }
 
 /** 律师本人“首次使用 AI 数据去向告知”的版本（user_ai_notice）。 */
