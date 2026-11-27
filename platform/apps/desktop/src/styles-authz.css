@@ -65,3 +65,6 @@ button.authz-trail-line:hover { color: var(--text-primary); }
 .authz-scope-list > div { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: var(--sp-2); font-size: var(--fs-caption); line-height: 1.6; }
 .authz-dt-when { display: block; font-size: var(--fs-xs); color: var(--text-label); }
 .authz-always { margin: var(--sp-2) 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+/* 13b：授权卡读不到数据去向时，原因与“重试”在底栏按钮左侧（吸底可见） */
+.authz-wait-note { margin-right: auto; display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); color: var(--text-secondary); }
+.authz-wait-note .btn-link { padding: 0; font-size: var(--fs-caption); }

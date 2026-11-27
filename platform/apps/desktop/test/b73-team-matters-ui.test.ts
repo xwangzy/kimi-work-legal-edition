@@ -66,6 +66,7 @@ import {
   markPrefix,
   CLOUD_UPGRADE_TEXT,
   TEAM_SHARE_UNAVAILABLE_TEXT,
+  TEAM_ROSTER_VISIBILITY_TEXT,
   colleaguesCount,
   colleaguesPendingText,
   NO_SEAT_CONFIRMED_TEXT,
@@ -82,7 +83,7 @@ import { sidebarFoot } from "../src/lib/user-card.ts";
 import { credentialNoSeat, relayErrorText, teamShareLine } from "../src/lib/relay-text.ts";
 import { checklistItems, matterStepText } from "../src/lib/guide-checklist.ts";
 import { authorizationScopeLabel, authorizationStatus } from "../src/lib/authorization.ts";
-import { receiptRestoreText, receiptRows, receiptTitle, receiptWhere } from "../src/lib/deletion-receipt.ts";
+import { receiptRestoreText, receiptRows, receiptTitle, receiptWhere, shortReceiptId } from "../src/lib/deletion-receipt.ts";
 import type { MatterMemberRow, ShareRelayStatus, TeamRosterMember } from "../src/api.ts";
 
 const css0 = () => readFileSync(fileURLToPath(new URL("../src/styles-team-matters.css", import.meta.url)), "utf8");
@@ -282,8 +283,8 @@ test("错误按内核终版 code + detail.reason 分支（03 第 W2 行 ⑥）�
   assert.equal(teamFaultText(err("scope_irreversible", "team_to_personal")), "这个事项已是团队共享，不能改回“只有我”：要结束共享，请移出同事或结案。");
   assert.equal(teamFaultText(err("team_scope_conflict")), TEAM_SCOPE_CONFLICT_TEXT);
   assert.match(teamFaultText(err("roster_unavailable", "offline")), /联网后再试/);
-  assert.equal(teamFaultText(err("roster_unavailable", "not_supported")), "团队共享暂时用不了，不影响只有我的事项。", "11c 43u：律师侧不写云端升级");
-  assert.equal(memberErrorText(err("roster_unavailable", "not_supported")), "团队共享暂时用不了，不影响只有我的事项");
+  assert.equal(teamFaultText(err("roster_unavailable", "not_supported")), "团队共享暂时用不了，不影响只有我的事项；恢复后自动可用，无需操作。", "11c 43u：律师侧不写云端升级");
+  assert.equal(memberErrorText(err("roster_unavailable", "not_supported")), "团队共享暂时用不了，不影响只有我的事项；恢复后自动可用，无需操作");
   assert.match(teamFaultText(err("validation", "relay_not_configured")), /中软还没为本所开通/);
   assert.equal(teamFaultText(err("validation", "not_enabled")), "同事之间同步还没开通：请先开通。");
   assert.deepEqual(teamFaultOf(err("member_not_in_team", "left", { user_id: "usr_t_a" })), { code: "member_not_in_team", reason: "left", userId: "usr_t_a", manager: null, message: "内核原句" });
@@ -398,7 +399,7 @@ test("开通同事之间同步（D-309）：三态 + 待确认 + 过期；到期
   assert.equal(dayOnly("2027-01-05T04:00:00Z", now), "2027 年 1 月 5 日", "跨年写年份");
   // 开通确认框：服务方名字只出现一次；底栏有分隔线；行尾不留孤字（text-wrap: pretty）
   assert.equal(shareRelayEnableLines(1).length, 5);
-  assert.equal(shareRelayEnableLines(1)[4], "同事的电脑一般几分钟内开始收到（最长约 10 分钟）；他们打开团队页会立即刷新。", "产品评分 G4");
+  assert.equal(shareRelayEnableLines(1)[4], "同事电脑一般几分钟内开始收到（最长约 10 分钟）；他们打开团队页即刷新。", "产品评分 G4");
   assert.equal((shareRelayEnableLines(1).join("").match(/中软/g) ?? []).length, 1);
   assert.match(shareRelayEnableLines(2).join(""), /还需另一位管理员在自己的电脑上确认才生效/);
   assert.match(shareRelayEnableLines(1).join(""), /只改这一项，本所规则的其他各项不变/, "以当前生效规则为底稿");
@@ -445,7 +446,7 @@ test("开通同事之间同步（D-309）：三态 + 待确认 + 过期；到期
   assert.equal(carriedLine([]), null);
   assert.equal(carriedLine(null), null);
   assert.equal(relaxationText("support_upload:allow"), "律师可以把问题报告直接发给客服（每次确认；保存 7 天）");
-  assert.match(code("pages/Connections.tsx"), /import \{ relaxationText as relaxationLabel \} from "\.\.\/lib\/team-matters\.ts";/, "设置页与确认框同一套说法");
+  assert.match(code("pages/Connections.tsx"), /import \{ relaxationText as relaxationLabel, TEAM_ROSTER_VISIBILITY_TEXT \} from "\.\.\/lib\/team-matters\.ts";/, "设置页与确认框同一套说法");
   assert.equal(relayExpiringText(8), null);
   assert.equal(relayExpiringText(7), "同事之间同步 7 天后到期");
   assert.equal(relayExpiringText(0), "同事之间同步今天到期");
@@ -759,7 +760,7 @@ test("协调方口径 ②：云端还没有同事名单能力（team.roster 回 
   assert.equal(canOfferShare("team", m, ns), false);
   assert.equal(canOfferShare("team", m, null), true, "名单没回来前照常给，由内核判断");
   assert.equal(canOfferShare("team", m, { reason: "offline" }), true);
-  assert.equal(rosterNote({ available: false, reason: "not_supported", members: [] }), "团队共享暂时用不了，不影响只有我的事项。");
+  assert.equal(rosterNote({ available: false, reason: "not_supported", members: [] }), "团队共享暂时用不了，不影响只有我的事项；恢复后自动可用，无需操作。");
   // 接线
   const rr = code("components/ShareRelayRow.tsx");
   assert.match(rr, /const roster = useRoster\(true\);/);
@@ -875,8 +876,8 @@ test("第二轮复评 T8 / T14 / 跨页：同步状态一套词；规则没生�
 test("第 73 批收尾：被移出的事项页头不给要行动的提示；只读又没有材料时如实说一句", () => {
   const mh = code("components/MatterHeader.tsx");
   assert.match(mh, /\{!removed && <details className="protect">/);
-  assert.match(mh, /\{!removed && matter\.authorization_history !== undefined/);
-  assert.match(mh, /\{!removed && basis && !complete && !refused && level !== "L3b" && \(/);
+  assert.match(mh, /\{!removed && !\(viewer && authzPending\) && matter\.authorization_history !== undefined/);
+  assert.match(mh, /\{!removed && !viewer && basis && !complete && !refused && level !== "L3b" && \(/);
   const mt = code("pages/Matter.tsx");
   assert.match(mt, /removed=\{removedMe\}/);
   assert.match(mt, /\{locked && docs\.length === 0 && <p className="muted mat-empty-locked">这台电脑上没有这个事项的材料。<\/p>\}/);
@@ -986,13 +987,12 @@ test("11c 第三轮：只读事项概览不留伪操作；材料表窄宽度不�
   for (const t of [receiptRestoreText(true), receiptRestoreText(false), ...receiptRows([{ where: "本机（本设备）", status: "deleted", note: "" }]).map((r) => r.where)]) assert.doesNotMatch(t, /密钥|令牌|Agent|签名事件链|同步段|读者/);
   const lc = code("components/MatterLifecycle.tsx");
   assert.match(lc, /<b>\{receiptTitle\(localCopy, title\)\}<\/b>/);
-  assert.match(lc, /<summary>删除清单<\/summary>\s*(\{[^}]*\}\s*)?<table className="data receipt-detail">/, "实现细节原样收进删除清单");
+  assert.match(lc, /<summary>删除清单<\/summary>\s*(\{[^}]*\}\s*)?<p className="muted receipt-full-id">回执编号：<span className="mono">\{r\.receipt_id\}<\/span><\/p>\s*<table className="data receipt-detail">/, "实现细节与完整回执编号原样收进删除清单");
   assert.match(css, /\.receipt table\.data \.receipt-st \{ width: 9em; white-space: nowrap; \}/, "状态列不折行");
   assert.equal(receiptRows([{ where: "电脑与律所的系统备份（系统还原点、卷影副本、NAS 快照等）", status: "pending", note: "" }])[0]!.status, "按备份保留期删除", "待删除写清什么时候删");
   assert.match(mt, /<MatterLifecyclePanel matter=\{matter\} onChanged=\{reload\} deletedTitle=\{known\} \/>/);
   // 4. 小项：04 间距、18 孤字
   assert.match(code("components/NewMatter.tsx"), /className="btn-link nm-more-toggle"/);
-  assert.match(src("styles-team-matters.css"), /\.relay-lines li \{ text-wrap: balance; \}/);
 });
 
 test("11c T8（20b）：续期 / 开通后通知侧栏重读到期提醒", () => {
@@ -1006,4 +1006,26 @@ test("10b 复测 P3-A / P3-B：事项页得知被移出即通知侧栏重取；�
   const ts = code("components/TeamShare.tsx");
   assert.match(ts, /const meNoSeat = roster\?\.members\.some\(\(m\) => m\.is_me && m\.seat === false\) \?\? false;\s*const noSeat = credentialNoSeat\(st\) \|\| shareSync === "no_seat" \|\| meNoSeat;/);
   assert.doesNotMatch(ts, /setInterval\([^)]*refreshShareState/, "仍不轮询");
+});
+
+test("11d 小项：确认框要点不用 text-wrap: balance（不再像手动断行）；43u 律师侧写恢复后自动可用；回执编号正文只写前 8 位", () => {
+  assert.doesNotMatch(src("styles-team-matters.css"), /text-wrap: balance/);
+  assert.match(css0(), /\.acd-lines li, \.relay-lines li \{ text-wrap: pretty; \}/);
+  for (const l of [...shareRelayEnableLines(1), ...removeLocalCopyLines()]) assert.doesNotMatch(l, /\n|<br/, "不手动断行");
+  assert.match(TEAM_SHARE_UNAVAILABLE_TEXT, /恢复后自动可用，无需操作$/);
+  assert.equal(shortReceiptId("drc_4ae4bffa-a563-4e92-83ea-10eac3d8f243"), "4ae4bffa");
+  assert.match(code("components/MatterLifecycle.tsx"), /回执编号 \{shortReceiptId\(r\.receipt_id\)\}/);
+});
+
+test("产品评分第二轮（13b）：读不到数据去向的原因与重试在按钮旁边；只看成员不出授权待办类提示；数据去向说明写同事名单可见范围", () => {
+  const rs = code("components/RunSheet.tsx");
+  assert.match(rs, /<div className="modal-actions modal-actions-sticky">\s*(\{\}\s*)?\{consentBlocked && !scopeReady\.ready && scopeReady\.note && \(\s*<span className="authz-wait-note" role="status">/, "吸底按钮栏里");
+  assert.doesNotMatch(rs, /authz-scope-wait/, "卡片底部不再单放");
+  assert.match(code("pages/Matter.tsx"), /<div className="modal-actions">\s*(\{\}\s*)?\{!complete && !scopeReady\.ready && scopeReady\.note && \(\s*<span className="authz-wait-note"/);
+  const mh = code("components/MatterHeader.tsx");
+  assert.match(mh, /viewer && !refused && level !== "L3b" && authzPending\s*\? \{ icon: Icon\.lock, label: "由负责人记录客户授权", tone: "pill-gray" \}/);
+  assert.match(mh, /viewer \? "尚未记录：由负责人记录客户授权"/);
+  assert.match(code("pages/Matter.tsx"), /removed=\{removedMe\}\s*viewer=\{viewOnly\}/);
+  assert.equal(TEAM_ROSTER_VISIBILITY_TEXT, "团队同事能看到彼此的姓名、角色以及是否已分配 AI 使用名额（不含邮箱、手机号）");
+  assert.match(code("pages/Connections.tsx"), /\.\.\.\(inTeam \? \[\{ name: "团队同事名单", line: TEAM_ROSTER_VISIBILITY_TEXT \}\] : \[\]\)/);
 });

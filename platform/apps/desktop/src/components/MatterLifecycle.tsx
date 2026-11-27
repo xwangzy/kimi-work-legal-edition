@@ -8,7 +8,7 @@ import { api, type DeletionReceiptView, type Matter, type MatterLifecycle } from
 import { fmtTime } from "../lib/labels.ts";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
-import { receiptRestoreText, receiptRows, receiptTitle } from "../lib/deletion-receipt.ts";
+import { receiptRestoreText, receiptRows, receiptTitle, shortReceiptId } from "../lib/deletion-receipt.ts";
 
 const YEAR_CHOICES = [1, 3, 5, 10, 15, 20, 30];
 const COPY_STATUS: Record<string, string> = { deleted: "已删除", pending: "待处理", irrevocable: "不可撤回", kept: "保留（未删除）", none: "不涉及" };
@@ -233,7 +233,7 @@ export function DeletionReceipt({ view, title = null }: { view: DeletionReceiptV
       </div>
       <p className="muted receipt-sub">
         删除于 {fmtTime(r.purged_at)}
-        {r.early ? `（提前删除：${r.reason ?? ""}）` : ""} · 回执编号 {r.receipt_id}
+        {r.early ? `（提前删除：${r.reason ?? ""}）` : ""} · 回执编号 {shortReceiptId(r.receipt_id)}
       </p>
       <table className="data receipt-copies">
         <thead><tr><th>副本在哪里</th><th className="receipt-st">现在</th></tr></thead>
@@ -249,7 +249,8 @@ export function DeletionReceipt({ view, title = null }: { view: DeletionReceiptV
       <p className="receipt-restore">{receiptRestoreText(localCopy)}</p>
       <details>
         <summary>删除清单</summary>
-        {/* 内核签名回执的原话，原样保留供核对 */}
+        {/* 内核签名回执的原话，原样保留供核对；完整回执编号在这里（正文只写前 8 位，11d） */}
+        <p className="muted receipt-full-id">回执编号：<span className="mono">{r.receipt_id}</span></p>
         <table className="data receipt-detail">
           <thead><tr><th>副本所在</th><th className="receipt-st">状态</th><th>说明</th></tr></thead>
           <tbody>

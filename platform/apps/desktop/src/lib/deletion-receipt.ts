@@ -67,3 +67,8 @@ export function receiptRestoreText(localCopy: boolean): string {
     ? "这台电脑上删除的内容无法恢复；负责人那边的事项照旧，需要时请负责人重新把你加进来。"
     : "删除的内容无法恢复；标为“待删除”的副本在对方电脑上线、或运维按事项处理后删除。";
 }
+
+/** 正文里的回执编号只写前 8 位（去掉 drc_ 前缀）；完整编号在“删除清单”与保存的删除证明里（11d）。纯函数。 */
+export function shortReceiptId(id: string): string {
+  return id.replace(/^drc_/, "").slice(0, 8);
+}

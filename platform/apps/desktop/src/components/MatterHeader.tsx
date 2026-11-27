@@ -18,8 +18,10 @@ export function basisComplete(b: MatterBasis | undefined): boolean {
   return BASIS_FIELDS.every((f) => b[f.key] !== "pending");
 }
 
-export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudonym, onParties, onConsentNotice, onClearRefusal, team, onMembers, removed = false }: {
+export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudonym, onParties, onConsentNotice, onClearRefusal, team, onMembers, removed = false, viewer = false }: {
   matter: Matter;
+  /** 产品评分第二轮（13b）：只看成员——客户授权由负责人记录，不出“待记录 / 待重新确认”这类他自己处理不了的提示。 */
+  viewer?: boolean;
   /** 第 73 批收尾：负责人已把我移出——他已不能发起任务、记录授权，页头不再给“客户授权待记录”这类要行动的提示（保护状态胶囊、授权一行、待记录说明都不出）。 */
   removed?: boolean;
   policy?: RunPolicyView | null;
@@ -40,8 +42,12 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
   const complete = matter.basis_complete ?? (!refused && basisComplete(basis));
   const dates = Object.entries(matter.key_dates ?? {}).filter(([, v]) => !!v);
   const fullPseudonym = !!matter.full_pseudonym || level === "L3a";
+  // 只看成员：授权没齐 / 待重新确认 / 待补记时不催他，写“由负责人记录客户授权”
+  const authzPending = !complete || matter.basis_state === "needs_ref" || matter.basis_state === "reconfirm";
   const protect =
-    refused || level === "L3b"
+    viewer && !refused && level !== "L3b" && authzPending
+      ? { icon: Icon.lock, label: "由负责人记录客户授权", tone: "pill-gray" }
+      : refused || level === "L3b"
       ? { icon: Icon.lock, label: "客户要求不上云 · 只用本机功能", tone: "pill-red" }
       : !complete
         ? // 第 56 批：新事项没有授权记录是常态，不写成“AI 暂不可用”的告警口吻——一句话说清状态和什么时候记
@@ -73,7 +79,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
           <div className="protect-pop" role="group" aria-label="本事项的保护状态">
             <div className="protect-line">
               <span className="protect-k">客户授权</span>
-              <span title={complete && matter.basis_ref ? `授权依据出处：${matter.basis_ref}` : undefined}>{refused ? "客户要求不上云（已记录）" : complete ? authorizationLine(matter) : "尚未记录：第一次用 AI 时记录授权依据；在此之前只能用不联网的本机功能"}</span>
+              <span title={complete && matter.basis_ref ? `授权依据出处：${matter.basis_ref}` : undefined}>{refused ? "客户要求不上云（已记录）" : complete ? authorizationLine(matter) : viewer ? "尚未记录：由负责人记录客户授权" : "尚未记录：第一次用 AI 时记录授权依据；在此之前只能用不联网的本机功能"}</span>
               {onEditBasis && !refused && (
                 <button className="btn-link" onClick={onEditBasis}>
                   {complete ? "调整" : "记录授权"}
@@ -115,7 +121,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
       </div>
       {/* D-225：客户授权一行只读，点开看每一次记录（只有 matters.get 带历史时显示） */}
       {/* 还没有任何记录时不再单列一行“尚未记录”（上面的胶囊已经说了；第 56 批走查：同一件事在事项头说了三遍） */}
-      {!removed && matter.authorization_history !== undefined && !refused && (complete || matter.authorization_history.length > 0) && <AuthorizationTrail matter={matter} onReconfirm={onEditBasis} />}
+      {!removed && !(viewer && authzPending) && matter.authorization_history !== undefined && !refused && (complete || matter.authorization_history.length > 0) && <AuthorizationTrail matter={matter} onReconfirm={onEditBasis} />}
       {refused && (
         <div className="mh-note mh-red">
           客户拒绝云端处理（已记录）：不用云端 AI，也不联网检索，只能用律所私有模型（如已部署）或本机能力；补填客户授权情况也不改变这一点。如已取得新的书面同意，核实后再清除这条记录。
@@ -126,7 +132,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
           )}
         </div>
       )}
-      {!removed && basis && !complete && !refused && level !== "L3b" && (
+      {!removed && !viewer && basis && !complete && !refused && level !== "L3b" && (
         // 第 48 批：一句话说结果，待确认的具体项放悬停提示；入口是“记录授权”（与开始任务时同一种确认），告知函为辅
         <div className={`mh-note${basis.engagement === "pending" ? " mh-quiet" : ""}`} title={`待确认：${BASIS_FIELDS.filter((f) => basis[f.key] === "pending").map((f) => f.label).join("、")}`}>
           {/* 第 51 批（D-216）：新事项没有授权记录是常态——第一次用 AI 时“开始前确认”会请律师记录依据与出处；这里说清楚，也可以现在就记 */}

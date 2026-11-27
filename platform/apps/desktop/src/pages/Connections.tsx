@@ -30,7 +30,7 @@ import { AccountSection } from "../components/AccountPanel.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
 import { POLICY_DRAFT_PRESET, SHARE_RELAY_CHANGED, SHARE_RELAY_RELOAD, ShareRelayExpiring, ShareRelayRow } from "../components/ShareRelayRow.tsx";
-import { relaxationText as relaxationLabel } from "../lib/team-matters.ts";
+import { relaxationText as relaxationLabel, TEAM_ROSTER_VISIBILITY_TEXT } from "../lib/team-matters.ts";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
 import { MemberDevicePolicy, TeamAdmin } from "../components/TeamAdmin.tsx";
 import { LeaveTeam, TeamHeader, WorkspaceSection } from "../components/TeamSpace.tsx";
@@ -281,6 +281,8 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
   const [relayUsed, setRelayUsed] = useState(false);
   const [updatesOn, setUpdatesOn] = useState(false);
   const [contentOn, setContentOn] = useState(false);
+  // 产品评分第二轮（13b）：团队空间里同事名单彼此可见的范围如实写（姓名、角色、是否已分配 AI 使用名额；不含邮箱、手机号）
+  const inTeam = useWorkspace().kind === "team";
   useEffect(() => {
     api.exampleRequest().then(setExample).catch(() => setExample(null));
     // 本机经中继收发过：律所关闭开关后，已保存在中软的密文仍在（复核 S11B-10）
@@ -346,6 +348,7 @@ function VisibilityTab({ gate, im, recovery, firm, syncOn }: { gate: any; im: an
     ...(gate?.fetch === "local" ? [{ name: "打开公开网页", line: "网址由这台电脑直接发往该网站，不经中软" }] : []),
     ...(im.length > 0 ? [{ name: "从聊天工具转文件", line: "文字与文件经所用的聊天平台（如企业微信）传递" }] : []),
     ...(syncOn ? [{ name: "团队共享", line: "经律所指定的共享文件夹同步（加密）" }] : []),
+    ...(inTeam ? [{ name: "团队同事名单", line: TEAM_ROSTER_VISIBILITY_TEXT }] : []),
     ...(relayStored ? [{ name: "团队事项的加密副本", line: `中软打不开，只看得到大小、时间和哪几台电脑参与；保存到律所停止使用${relayOn ? "" : "；本所已关闭这一项，已存的仍在"}` }] : []),
     // 第 10 批 S9：期限提醒交中软通知服务——中软只保存提醒时间与接收设备，内容加密
     ...(gate?.notify_configured ? [{ name: "电脑关机时的期限提醒", line: "中软只保存响铃时间和接收电脑，提醒内容加密；响过 7 天后删除" }] : []),

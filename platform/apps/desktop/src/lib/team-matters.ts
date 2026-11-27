@@ -30,10 +30,11 @@ export const NO_SEAT_CONFIRMED_TEXT = "这台电脑已经管理员确认；但�
 export const REMOVED_ME_TEXT = "负责人已把你移出这个事项：之后同事的改动你不会再收到，你的改动也不会再同步给同事；你电脑上已有的内容保留，只能查看。";
 /** 被移出的成员“从我的电脑移除”（第二轮复评 T13，内核 matters.remove_local_copy）：确认框要写清的三件事。纯函数。 */
 export function removeLocalCopyLines(): string[] {
+  // 11d：句子写短，靠 text-wrap: pretty 折行，不手动断行
   return [
-    "删除这台电脑上这个事项的全部内容（材料副本、代号对照、审查意见、事实、成果正文），删除后在这台电脑上无法恢复。",
+    "这台电脑上这个事项的全部内容（材料、代号对照、审查意见、事实、成果）都会删除，无法恢复。",
     "负责人和其他同事电脑上的这个事项、中软那里的加密副本都不受影响。",
-    "删除后生成删除回执，写明删了什么、哪些副本保留；法律保全中的事项不能删除。",
+    "删除后生成删除回执；法律保全中的事项不能删除。",
   ];
 }
 /** 连不上 Kimi Work（离线）时的统一说法开头（第二轮复评 T14：“联 / 连”、服务叫法统一）。 */
@@ -242,8 +243,10 @@ export function markPrefix(sub: string, mark: MatterMark): string {
 
 /** 云端还没有同事名单能力（team.roster 回 not_supported，如连线上 1.6 / 1.7）时团队页那一行的说法（协调方口径）——只给管理员看。 */
 export const CLOUD_UPGRADE_TEXT = "需要中软把云端升级后才能使用";
+/** 团队同事名单彼此可见的范围（设置 → 数据去向说明，13b）。 */
+export const TEAM_ROSTER_VISIBILITY_TEXT = "团队同事能看到彼此的姓名、角色以及是否已分配 AI 使用名额（不含邮箱、手机号）";
 /** 同一情形律师侧的说法（11c T13 43u：律师无事可做，不把运营方升级的事交给律师）。 */
-export const TEAM_SHARE_UNAVAILABLE_TEXT = "团队共享暂时用不了，不影响只有我的事项";
+export const TEAM_SHARE_UNAVAILABLE_TEXT = "团队共享暂时用不了，不影响只有我的事项；恢复后自动可用，无需操作";
 
 /**
  * 我是负责人、但这台电脑现在不能调整成员时的一句（内核 can_manage = false）：最先同步这个事项的是另一位负责人 / 负责人暂时无法确认 / 已结案。纯函数。
@@ -603,7 +606,7 @@ const FALLBACK_REASON_TEXT: Readonly<Record<string, string>> = {
 export function shareRelayEnableLines(threshold: number, signsPending = false): string[] {
   return [
     "团队共享事项的内容加密后经服务方中软在同事电脑之间转送，服务方打不开。",
-    "本机删除事项不会删除服务方那里的加密副本；关闭后，已存的副本保留到律所停止使用。",
+    "服务方存的加密副本保留到律所停止使用，本机删除事项、关闭同步都不删。",
     "没更新软件的电脑会暂时按最严规则运行，直到更新。",
     ...(threshold > 1 && !signsPending ? [`本所规则要 ${threshold} 位管理员分别确认：你确认后，还需另一位管理员在自己的电脑上确认才生效。`] : []),
     "只改这一项，本所规则的其他各项不变；有效期 30 天，到期前 7 天提醒续期。",
@@ -613,7 +616,7 @@ export function shareRelayEnableLines(threshold: number, signsPending = false): 
 }
 
 /** 开通后同事电脑什么时候开始收到（产品评分 G4；控制面缺省 10 分钟同步一次，团队页打开时 team.refresh_share_state 立即刷新）。 */
-export const RELAY_ENABLED_ETA_TEXT = "同事的电脑一般几分钟内开始收到（最长约 10 分钟）；他们打开团队页会立即刷新。";
+export const RELAY_ENABLED_ETA_TEXT = "同事电脑一般几分钟内开始收到（最长约 10 分钟）；他们打开团队页即刷新。";
 
 /** 关闭同事之间同步的确认框（内核没有单独的关闭方法：走起草本所规则，预置“不允许同事之间同步”）。纯函数。 */
 export function shareRelayCloseLines(): string[] {

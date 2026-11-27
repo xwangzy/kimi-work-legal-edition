@@ -324,16 +324,6 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
             endpoint={matter.model_endpoint}
             basis={matter.basis}
           />
-          {!scopeReady.ready && scopeReady.note && (
-            <div className="mm-notice authz-scope-wait" role="status">
-              <span>{scopeReady.note}</span>
-              {scopeReady.retry && (
-                <button type="button" className="btn-link" onClick={() => setAuthzTick((t) => t + 1)}>
-                  重试
-                </button>
-              )}
-            </div>
-          )}
           <div className="authz-exits">
             <span>还没有取得授权？</span>
             <button type="button" className="btn-link" onClick={onClose}>
@@ -379,6 +369,17 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
         </div>
       )}
       <div className="modal-actions modal-actions-sticky">
+        {/* 13b：读不到数据去向时的原因与“重试”放在按钮旁边（吸底，视口内可见），不只在卡片底部 */}
+        {consentBlocked && !scopeReady.ready && scopeReady.note && (
+          <span className="authz-wait-note" role="status">
+            {scopeReady.note}
+            {scopeReady.retry && (
+              <button type="button" className="btn-link" onClick={() => setAuthzTick((t) => t + 1)}>
+                重试
+              </button>
+            )}
+          </span>
+        )}
         <button className="btn-ghost" onClick={onClose}>返回修改</button>
         {blocked && !consentBlocked ? (
           <button className="btn-primary" disabled>

@@ -428,6 +428,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           onParties={() => setTab("parties")}
           team={teamShared && !removedMe ? { view: members, error: membersErr } : null}
           removed={removedMe}
+          viewer={viewOnly}
           onMembers={() => setTab("members")}
           {...(locked
             ? {}
@@ -912,17 +913,18 @@ function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Mat
           basis={basis}
         />
       )}
-      {!complete && !scopeReady.ready && scopeReady.note && (
-        <div className="mm-notice authz-scope-wait" role="status">
-          <span>{scopeReady.note}</span>
-          {scopeReady.retry && (
-            <button type="button" className="btn-link" onClick={() => setAuthzTick((t) => t + 1)}>
-              重试
-            </button>
-          )}
-        </div>
-      )}
       <div className="modal-actions">
+        {/* 13b：读不到数据去向时的原因与“重试”放在按钮旁边 */}
+        {!complete && !scopeReady.ready && scopeReady.note && (
+          <span className="authz-wait-note" role="status">
+            {scopeReady.note}
+            {scopeReady.retry && (
+              <button type="button" className="btn-link" onClick={() => setAuthzTick((t) => t + 1)}>
+                重试
+              </button>
+            )}
+          </span>
+        )}
         <button className="btn-ghost" onClick={onClose}>取消</button>
         <button
           className="btn-primary"
