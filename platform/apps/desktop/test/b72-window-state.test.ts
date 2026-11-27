@@ -48,9 +48,22 @@ test("相交判定与恢复：与某屏工作区相交 ≥ 一半才用保存的
   // 外接屏拔掉 → 相交为 0，回到主屏居中，不跑到屏幕外
   const gone = ws.restoreBounds({ x: 1600, y: 80, width: 1300, height: 820, maximized: false }, [main], main);
   assert.deepEqual(gone.bounds, ws.initialBounds(main));
-  // 一半以上在屏内但尺寸比屏大 → 夹回屏内
+  // 一半以上在屏内但尺寸比屏大 → 不夹成满屏，回到按比例的初始尺寸居中
   const big = ws.restoreBounds({ x: 0, y: 0, width: 2000, height: 1200 }, [main], main);
-  assert.deepEqual(big.bounds, { x: 0, y: 0, width: 1440, height: 875 });
+  assert.deepEqual(big.bounds, ws.initialBounds(main));
+  // 第 72 批 Windows 实机：100% 下记住 1440×888（240,72），换到 150%（逻辑工作区 1280×688）→ 不铺满，按比例 1050×640 居中
+  const hi = { ...WA(0, 0, 1280, 688), scaleFactor: 1.5 };
+  const at150 = ws.restoreBounds({ x: 240, y: 72, width: 1440, height: 888, maximized: false, scale: 1 }, [hi], hi);
+  assert.deepEqual(at150.bounds, ws.initialBounds(hi));
+  assert.deepEqual(at150.bounds, { x: 115, y: 24, width: 1050, height: 640 });
+  assert.notDeepEqual(at150.bounds, { x: 0, y: 0, width: 1280, height: 688 });
+  // 150% 下记住 1050×640（115,24），回到 100%（1920×1032）→ 尺寸保留、重新居中（不停在左上角）
+  const lo = { ...WA(0, 0, 1920, 1032), scaleFactor: 1 };
+  const back = ws.restoreBounds({ x: 115, y: 24, width: 1050, height: 640, maximized: false, scale: 1.5 }, [lo], lo);
+  assert.deepEqual(back.bounds, { x: 435, y: 196, width: 1050, height: 640 });
+  // 同一缩放比例：按记住的位置恢复（不重新居中）
+  const same = ws.restoreBounds({ x: 100, y: 50, width: 1200, height: 800, scale: 1 }, [lo], lo);
+  assert.deepEqual(same.bounds, { x: 100, y: 50, width: 1200, height: 800 });
   // 最大化：只有上次是最大化才恢复；坏数据、没有文件 → 默认窗口化居中
   assert.equal(ws.restoreBounds({ x: 10, y: 10, width: 1200, height: 800, maximized: true }, [main], main).maximized, true);
   assert.equal(ws.restoreBounds(null, [main], main).maximized, false);
@@ -76,27 +89,27 @@ test("记忆：resize / move / maximize 防抖写 window-state.json；最大化�
       return { ...this.b };
     },
   });
-  ws.attachWindowState(win, file, 20);
+  ws.attachWindowState(win, file, 20, () => 1.25);
   win.b = { x: 30, y: 40, width: 1100, height: 700 };
   win.emit("resize");
   win.emit("move");
   await new Promise((r) => setTimeout(r, 60));
-  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { x: 30, y: 40, width: 1100, height: 700, maximized: false });
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { x: 30, y: 40, width: 1100, height: 700, maximized: false, scale: 1.25 });
   // 最大化：记标记，不把满屏尺寸当成还原尺寸
   win.max = true;
   win.b = { x: 0, y: 0, width: 1440, height: 875 };
   win.emit("close");
-  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { x: 30, y: 40, width: 1100, height: 700, maximized: true });
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), { x: 30, y: 40, width: 1100, height: 700, maximized: true, scale: 1.25 });
   assert.deepEqual(ws.readState(join(dir, "nope.json")), null);
 });
 
 test("主进程窗口创建段接入：按 window-state 算尺寸、show:false + ready-to-show（3 秒兜底）、记忆；不主动最大化", () => {
   const main = readFileSync(new URL("../electron/main.cjs", import.meta.url), "utf8");
-  assert.match(main, /const \{ windowOptions, attachWindowState \} = require\("\.\/window-state\.cjs"\);/);
+  assert.match(main, /const \{ windowOptions, attachWindowState, scaleOfWindow \} = require\("\.\/window-state\.cjs"\);/);
   assert.match(main, /const sized = windowOptions\(require\("electron"\)\.screen, stateFile\);/);
   assert.match(main, /minWidth: sized\.minWidth,\s*minHeight: sized\.minHeight,/);
   assert.match(main, /show: false,/);
-  assert.match(main, /win\.once\("ready-to-show", reveal\);\s*setTimeout\(reveal, 3000\);\s*attachWindowState\(win, stateFile\);/);
+  assert.match(main, /win\.once\("ready-to-show", reveal\);\s*setTimeout\(reveal, 3000\);\s*attachWindowState\(win, stateFile, 500, \(\) => scaleOfWindow\(require\("electron"\)\.screen, win\)\);/);
   assert.match(main, /if \(sized\.maximized\) win\.maximize\(\);/);
   assert.doesNotMatch(main, /width: 1440,\s*height: 900,\s*minWidth: 1080/);
 });

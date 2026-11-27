@@ -21,7 +21,7 @@ const trialMode = require("./trial-mode.cjs");
 const { initUpdater } = require("./updater.cjs");
 const { parseSmokeArg, writeSmokeResult, SmokeFailure, sanitizeChildren, childrenFailure } = require("./smoke-io.cjs");
 const { createIdentityRestart } = require("./identity-restart.cjs");
-const { windowOptions, attachWindowState } = require("./window-state.cjs");
+const { windowOptions, attachWindowState, scaleOfWindow } = require("./window-state.cjs");
 const { createHandleStore, classifySaveTarget, resolveFileParams, acceptDroppedPath, insideAppData, safeSuggestedName, openableSaved, OPENABLE } = require("./file-dialogs.cjs");
 
 const DEV_SERVER = process.env.ZR_DESKTOP_DEV_URL ?? `http://127.0.0.1:${process.env.KWL_DEV_WEB_PORT ?? 5173}`;
@@ -1134,7 +1134,7 @@ function createWindow() {
   };
   win.once("ready-to-show", reveal);
   setTimeout(reveal, 3000);
-  attachWindowState(win, stateFile);
+  attachWindowState(win, stateFile, 500, () => scaleOfWindow(require("electron").screen, win));
   win.on("focus", () => win.flashFrame(false));
   // 试用构建：窗口标题始终带“（试用版）”（界面会改写标题以显示待处理数）
   const trial = trialConfig();
