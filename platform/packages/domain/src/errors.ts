@@ -56,7 +56,7 @@ export const FaultCode = {
   /** 第 66 批 K3：进行中的任务正在用这份材料（勾了它，或没限定材料），不能移除（detail.run_ids）。 */
   materialInUse: "material_in_use",
   // 第 73 批（V47，D-307～D-308，契约 02 §2）：团队共享事项
-  /** 选“和同事一起办”的前置不满足（个人空间、这台电脑还没确认、客户要求不上云；detail.reason）。 */
+  /** 选“团队共享”的前置不满足（个人空间、这台电脑还没确认、客户要求不上云；detail.reason）。 */
   teamScopeUnavailable: "team_scope_unavailable",
   /** 加进事项的人不在团队同事名单里，或已停用 / 移出 / 离开团队（detail.user_id、detail.reason）。 */
   memberNotInTeam: "member_not_in_team",
@@ -64,7 +64,7 @@ export const FaultCode = {
   rosterUnavailable: "roster_unavailable",
   /** 团队共享事项不能改回“只有我”。 */
   scopeIrreversible: "scope_irreversible",
-  /** 已和同事一起办的事项不能再设为“客户要求不上云”（L3b）。 */
+  /** 已是团队共享的事项不能再设为“客户要求不上云”（L3b）。 */
   teamScopeConflict: "team_scope_conflict",
   // 通用
   validation: "validation",

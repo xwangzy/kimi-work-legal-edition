@@ -980,9 +980,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (!Object.values(ModelEndpoint).includes(endpoint)) throw validation(`model_endpoint 须为 ${Object.values(ModelEndpoint).join("/")}`);
       const scope = body.collab_scope ?? CollabScope.personal;
       if (!Object.values(CollabScope).includes(scope)) throw validation(`collab_scope 须为 personal/team`);
-      // 第 73 批（D-307，契约 §2.2）：和同事一起办——前置（团队空间、律所根证书、非 L3b）与同时加的同事（只认名单里在用的成员）
+      // 第 73 批（D-307，契约 §2.2）：团队共享——前置（团队空间、律所根证书、非 L3b）与同时加的同事（只认名单里在用的成员）
       const wanted = teamMembersParam(body.members, id);
-      if (wanted.length > 0 && scope !== CollabScope.team) throw validation("只有“和同事一起办”的事项才能同时加同事");
+      if (wanted.length > 0 && scope !== CollabScope.team) throw validation("只有团队共享事项才能同时加同事");
       if (scope === CollabScope.team) await assertTeamScopeAllowed(id, { confidentiality: body.confidentiality ?? "normal", consent_status: body.consent_status ?? ConsentStatus.pending });
       const roster = wanted.length > 0 ? await rosterForMutation(id) : null;
       const adding = wanted.map((w) => ({ ...w, name: roster ? requireRosterActive(roster, w.user_id).name : displayNameOf(w.user_id, null) }));
@@ -1240,13 +1240,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         }
         if (Object.keys(body).length === 0) return { matter: matterOut(matter), note: "“谁能看到”没有变化" };
       }
-      // 第 73 批（D-307 补拦截）：已和同事一起办的事项不能再设为“客户要求不上云”（strict 或记客户拒绝云端处理 → L3b）——
+      // 第 73 批（D-307 补拦截）：已是团队共享的事项不能再设为“客户要求不上云”（strict 或记客户拒绝云端处理 → L3b）——
       // 同事之间同步要经中软转送加密内容，与客户的要求字面冲突；团队共享又不能改回只有我，所以只能另建一个只有我的事项
       if (matter.collab_scope === CollabScope.team && (body.confidentiality !== undefined || body.consent_status !== undefined)) {
         const before = dataLevelOf(matter.confidentiality, matter.consent_status);
         const next = dataLevelOf(body.confidentiality ?? matter.confidentiality, body.consent_status ?? matter.consent_status);
         if (next === "L3b" && before !== "L3b") {
-          throw teamFault("team_scope_conflict", "这个事项已和同事一起办，经中软转送加密内容；客户要求不上云时，请为这部分工作另建一个只有我的事项", 409, { reason: body.consent_status === "refused" ? "consent_refused" : "strict" });
+          throw teamFault("team_scope_conflict", "这个事项已是团队共享，经中软转送加密内容；客户要求不上云时，请为这部分工作另建一个只有我的事项", 409, { reason: body.consent_status === "refused" ? "consent_refused" : "strict" });
         }
       }
       const fields: string[] = [];
@@ -1385,7 +1385,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       return {
         matter: matterOut(after),
         note: `关键口径变更已记录（审计事件已入签名链）；策略事件的签发人角色签名在同步阶段接入${basisReopened ? "。改用有第三方处理者的端点后，“转委托与次处理者”已改为待确认，请核实后补录" : ""}`,
-        ...(toTeam ? { lawyer_note: deps.governance?.shareRelayAllowed() ? "已改为和同事一起办：加进来的同事会收到这个事项（不能再改回只有我）" : "已改为和同事一起办（不能再改回只有我）。所内开通同事之间同步后，加进来的同事才会收到" } : {}),
+        ...(toTeam ? { lawyer_note: deps.governance?.shareRelayAllowed() ? "已改为团队共享：加进来的同事会收到这个事项（不能再改回只有我）" : "已改为团队共享（不能再改回只有我）。所内开通同事之间同步后，加进来的同事才会收到" } : {}),
       };
     },
 
@@ -6120,7 +6120,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   }
 
   /**
-   * 选“和同事一起办”的前置（D-307，契约 §2.2）：团队空间；这台电脑的证书由律所根签发；不是“客户要求不上云”（L3b）。
+   * 选“团队共享”的前置（D-307，契约 §2.2）：团队空间；这台电脑的证书由律所根签发；不是“客户要求不上云”（L3b）。
    * 任一不满足 → team_scope_unavailable（detail.reason：personal_workspace / workspace_unknown / device_not_confirmed / client_no_cloud）。
    * 旧律所体系（不是账号工作空间）没有个人空间之分，只核证书与 L3b。
    */
@@ -6136,14 +6136,14 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         }
         kind = deps.account?.meta?.()?.workspace_kind ?? null;
       }
-      if (kind === "personal") throw teamFault("team_scope_unavailable", "个人空间里的事项只在你自己的电脑上：要和同事一起办，请先切换到团队空间（或把个人工作室升级为团队）", 409, { reason: "personal_workspace" });
+      if (kind === "personal") throw teamFault("team_scope_unavailable", "个人空间里的事项只在你自己的电脑上：要用团队共享，请先切换到团队空间（或把个人工作室升级为团队）", 409, { reason: "personal_workspace" });
       if (kind !== "team") throw teamFault("team_scope_unavailable", "还没确认当前是团队空间：请联网后再试", 409, { reason: "workspace_unknown" });
     }
     if (myIssuer() !== "firm_root") {
-      throw teamFault("team_scope_unavailable", "这台电脑还不能接收团队共享事项：请在 设置 → 团队 里申请，管理员确认后就能和同事一起办", 409, { reason: "device_not_confirmed" });
+      throw teamFault("team_scope_unavailable", "这台电脑还不能接收团队共享事项：请在 设置 → 团队 里申请，管理员确认后就能建团队共享事项", 409, { reason: "device_not_confirmed" });
     }
     if (dataLevelOf(level.confidentiality ?? "normal", level.consent_status ?? null) === "L3b") {
-      throw teamFault("team_scope_unavailable", "客户要求不上云的事项不能和同事一起办：同事之间同步要经中软转送加密内容，与客户的要求不符", 409, { reason: "client_no_cloud" });
+      throw teamFault("team_scope_unavailable", "客户要求不上云的事项不能设为团队共享：同事之间同步要经中软转送加密内容，与客户的要求不符", 409, { reason: "client_no_cloud" });
     }
   }
 
@@ -6234,7 +6234,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   async function rosterForMutation(id: Identity): Promise<Map<string, RosterMember> | null> {
     if (!accountMode()) return null;
     const r = await loadRoster(id, 30_000);
-    if (!r.available && r.reason === "personal_workspace") throw teamFault("team_scope_unavailable", "个人空间里没有同事可加：要和同事一起办，请先切换到团队空间", 409, { reason: "personal_workspace" });
+    if (!r.available && r.reason === "personal_workspace") throw teamFault("team_scope_unavailable", "个人空间里没有同事可加：要用团队共享，请先切换到团队空间", 409, { reason: "personal_workspace" });
     if (!r.available && (r.reason === "not_supported" || r.members.length === 0)) {
       throw teamFault(
         "roster_unavailable",
@@ -6293,7 +6293,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   /** 加人结果的一句律师话（契约 §2.4、D-310 用语；律师层不讲中继、证书、密钥）。 */
   function memberAddedText(name: string, wrapped: number, canReceive: boolean, matterId: string): string {
     const team = db.get<{ collab_scope: string }>(`SELECT collab_scope FROM matters WHERE matter_id = ?`, [matterId])?.collab_scope === CollabScope.team;
-    if (!team) return `已把${name}加进这个事项（这个事项只在你的电脑上：改为和同事一起办后他才会收到）`;
+    if (!team) return `已把${name}加进这个事项（这个事项只在你的电脑上：改为团队共享后他才会收到）`;
     if (!canReceive) return `已把${name}加进这个事项。他的电脑还不能接收：请他在 设置 → 团队 里申请，管理员确认后自动收到`;
     const s = syncStateOf(matterId, true);
     if ((s === "not_configured" || s === "not_allowed") && !config.syncShareDir) return `已把${name}加进这个事项。所内开通同事之间同步后，他才会收到`;

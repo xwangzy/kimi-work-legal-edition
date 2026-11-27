@@ -119,6 +119,11 @@
 - `data_flows` 同事电脑一条 `count`。
 - 验证：b73 8/8；回归 614/614（加跑 backup-purge、keys-chain、a1-lifecycle、matter-lifecycle）；tsc 0 错；build:kernel 已重建。已写进 03（W2 第七行）。
 
+## 叫法统一（未提交）
+
+- `packages/kernel/src` 与 `packages/domain`（注释）里“和同事一起办”全部改为“团队共享”（9 句律师可见文字 + 注释），错误码与字段不变；角色名“一起办 / 只看”、开关名“同事之间同步”不变。b73 用例断言同步改并补“不出现旧叫法”的断言。
+- 验证：b73 8/8；回归 614/614；tsc 0 错；build:kernel 已重建。全库 grep `packages/kernel/src`、`packages/domain/src` 已无“和同事一起办”。
+
 ## 未做 / 留给主会话判断
 
 - A4 K6（云端移出团队不吊销设备、本机不自动移出事项与轮换）未做：现在靠成员页 `departed` 标记 + 负责人一键移出（D-308 口径）。

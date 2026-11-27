@@ -143,13 +143,13 @@ test("旧律所体系：L3b 不能团队共享；团队 → 个人拒绝；字�
 
   // L3b：客户要求不上云（strict）与客户拒绝云端处理（refused）都不能建成团队事项，也不能转成团队事项
   const nBefore = (await inv("matters.list")).matters.length;
-  await assert.rejects(inv("matters.create", { title: "不上云", stance: "原告", consent_status: "not_required", confidentiality: "strict", collab_scope: "team" }), fault("team_scope_unavailable", "client_no_cloud"));
+  await assert.rejects(inv("matters.create", { title: "不上云", stance: "原告", consent_status: "not_required", confidentiality: "strict", collab_scope: "team" }), (e: any) => fault("team_scope_unavailable", "client_no_cloud")(e) && /不能设为团队共享/.test(e.message) && !/和同事一起办/.test(e.message));
   await assert.rejects(inv("matters.create", { title: "拒绝云端", stance: "原告", consent_status: "refused", collab_scope: "team" }), fault("team_scope_unavailable", "client_no_cloud"));
   assert.equal((await inv("matters.list")).matters.length, nBefore, "拒绝时没建出事项");
   const strict = (await inv("matters.create", { title: "不上云个人事项", stance: "原告", consent_status: "not_required", confidentiality: "strict" })).matter;
   await assert.rejects(inv("matters.update", { matter_id: strict.matter_id, patch: { collab_scope: "team" } }), fault("team_scope_unavailable", "client_no_cloud"));
   // 个人事项不能同时加同事
-  await assert.rejects(inv("matters.create", { title: "个人加人", stance: "原告", consent_status: "not_required", members: [{ user_id: usr("bob"), matter_role: "editor" }] }), /只有“和同事一起办”/);
+  await assert.rejects(inv("matters.create", { title: "个人加人", stance: "原告", consent_status: "not_required", members: [{ user_id: usr("bob"), matter_role: "editor" }] }), /只有团队共享事项才能同时加同事/);
   await assert.rejects(inv("matters.create", { title: "角色不对", stance: "原告", consent_status: "not_required", collab_scope: "team", members: [{ user_id: usr("bob"), matter_role: "owner" }] }), /editor（一起办）或 viewer（只看）/);
 
   // V46 10b：把 collab_scope 放在顶层 → 说明要放 patch（原来回“无可更新字段”）
@@ -159,7 +159,7 @@ test("旧律所体系：L3b 不能团队共享；团队 → 个人拒绝；字�
   // 个人 → 团队（负责人）：立即锚定成员链；不可逆
   const up = await inv("matters.update", { matter_id: p1.matter_id, patch: { collab_scope: "team" } });
   assert.equal(up.matter.collab_scope, "team");
-  assert.match(up.lawyer_note, /不能再改回只有我/);
+  assert.match(up.lawyer_note, /^已改为团队共享（不能再改回只有我）/, "叫法统一为“团队共享”");
   assert.match(up.lawyer_note, /所内开通同事之间同步后/, "所内还没开通时如实说明");
   const log = await inv("matters.member_log", { matter_id: p1.matter_id });
   assert.ok(JSON.stringify(log).includes("anchor"), `转成团队即锚定：${JSON.stringify(log).slice(0, 300)}`);
@@ -167,9 +167,9 @@ test("旧律所体系：L3b 不能团队共享；团队 → 个人拒绝；字�
   assert.equal((await inv("matters.get", { matter_id: p1.matter_id })).matter.collab_scope, "team");
   // 同值不算改动
   assert.match((await inv("matters.update", { matter_id: p1.matter_id, patch: { collab_scope: "team" } })).note, /没有变化/);
-  // D-307 补拦截：已和同事一起办的事项不能再设为“客户要求不上云”（strict 或记客户拒绝云端处理）
+  // D-307 补拦截：已是团队共享的事项不能再设为“客户要求不上云”（strict 或记客户拒绝云端处理）
   const pv = (await inv("matters.get", { matter_id: p1.matter_id })).matter.policy_version;
-  await assert.rejects(inv("matters.update", { matter_id: p1.matter_id, patch: { confidentiality: "strict" } }), (e: any) => fault("team_scope_conflict", "strict")(e) && /另建一个只有我的事项/.test(e.message) && !JARGON.test(e.message));
+  await assert.rejects(inv("matters.update", { matter_id: p1.matter_id, patch: { confidentiality: "strict" } }), (e: any) => fault("team_scope_conflict", "strict")(e) && /^这个事项已是团队共享，.*另建一个只有我的事项/.test(e.message) && !JARGON.test(e.message));
   await assert.rejects(inv("matters.update", { matter_id: p1.matter_id, patch: { consent_status: "refused" } }), fault("team_scope_conflict", "consent_refused"));
   const after1 = (await inv("matters.get", { matter_id: p1.matter_id })).matter;
   assert.deepEqual([after1.confidentiality, after1.consent_status, after1.policy_version], ["normal", "not_required", pv], "没改");
