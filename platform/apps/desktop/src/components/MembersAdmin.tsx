@@ -11,6 +11,7 @@ import { memberLabel, memberStatusText, removalLines } from "../lib/offboarding.
 import { Select } from "./Select.tsx";
 import { JOIN_FOOT, twelveDigits, upgradeErrorText } from "../lib/team-admin.ts";
 import { shareReadyText } from "../lib/workspace.ts";
+import { relayReady } from "../lib/team-matters.ts";
 import { Icon } from "./Icons.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 
@@ -313,7 +314,8 @@ export function PendingDevices() {
   useEffect(() => {
     api
       .relayStatus()
-      .then((r) => setRelay(!r ? null : r.blocked === "not_configured" ? false : r.blocked === null ? true : null))
+      // 第 73 批（D-309）：本所规则没允许也如实算“没开通”（原来映射成“不知道”）
+      .then((r) => setRelay(relayReady(r)))
       .catch(() => setRelay(null));
   }, []);
   const load = () =>

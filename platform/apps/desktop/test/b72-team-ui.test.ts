@@ -94,9 +94,9 @@ test("危险操作的后果写清（D-305）：升级四件事（不可撤回在
   assert.equal(up.length, 4);
   assert.match(up[0]!, /同一个工作空间.*「某某律师事务所」.*原地不动/);
   assert.match(up[1]!, /仍只属于你/);
-  // 补测 D6：事项级“开启团队共享”的入口本批不做——不承诺入口
-  assert.doesNotMatch(up.join(""), /在事项里|逐个开启/);
-  assert.match(up[1]!, /团队共享事项需要所内先配置共享通道/);
+  // 第 73 批（D-307）：事项里有了“和同事一起办”的入口——第 2 条改说怎么做（原“不承诺入口 / 需要所内先配置共享通道”的前提已不成立）
+  assert.equal(up[1], "你原有的事项仍只属于你，同事看不到；要一起办，在那件事项里把同事加进来。");
+  assert.doesNotMatch(up.join(""), /配置共享通道/);
   assert.match(up[2]!, /邀请同事/);
   assert.match(up[3]!, /不能撤回/);
   const lv = leaveLines("某某所", "王律师的工作室");
@@ -209,7 +209,9 @@ test("接线：设置按工作空间显示（不再有 inFirm / ADMIN_ROLES 推�
   assert.match(c, /withPolicy=\{!f\.teamTab\}/);
   const team = c.slice(c.indexOf("function TeamTab("), c.indexOf("function BackupTab("));
   assert.match(team, /<MemberDevicePolicy \/>/);
-  assert.match(team, /<PolicyTab \/>/);
+  // 第 73 批：开通 / 续期同事之间同步后重读（key 变化即重挂）；团队策略首行是“同事之间同步”
+  assert.match(team, /<PolicyTab key=\{policyKey\} \/>/);
+  assert.match(team, /<ShareRelayRow \/>\s*\{f\.teamAdmin && \(\s*<SettingRow label="成员新电脑">/);
   assert.match(c, /support=\{f\.supportInBackup \? <DiagnosticsTab /);
   assert.match(c, /<WorkspaceSection ws=\{ws\} \/>/);
   assert.match(c, /\{f\.teamRead && <TeamAdmin canEdit=\{f\.teamAdmin\} myAid=\{ws\.list\?\.current\?\.aid \?\? null\} \/>\}/);
@@ -242,7 +244,7 @@ test("接线：侧栏工作空间菜单走同一条切换流程；旧云端只�
 });
 
 test("接线：团队共享提示、范本库名称、团队管理的危险操作都有确认；邀请码只显示一次", () => {
-  assert.match(code("components/TeamShare.tsx"), /note = null \}: \{ admin\?: boolean; note\?: string \| null \}/);
+  assert.match(code("components/TeamShare.tsx"), /note = null, canEnable = false \}: \{ admin\?: boolean; note\?: string \| null; canEnable\?: boolean \}/);
   assert.match(code("components/FirmTemplates.tsx"), /templatesLabel\(ws\.kind\)/);
   assert.match(code("pages/Methods.tsx"), /\{tplLabel\.short\}/);
   const a = code("components/TeamAdmin.tsx");
@@ -370,7 +372,10 @@ test("补测 D2 / D4 / D9 / D6：团队共享处两条提示不同时出现、�
   assert.doesNotMatch(ma.slice(ma.indexOf("function UpgradeConfirm("), ma.indexOf("export function PendingDevices(")), /r\.check_code/, "升级行不拿本机核对码比");
   assert.match(ma, /<td className="members-nowrap">\{ROLE_LABEL\[r\.role\] \?\? r\.role\}<\/td>\s*<td className="members-nowrap">\{dayTime\(r\.requested_at\)\}<\/td>/);
   assert.match(read("../src/styles-team.css"), /\.members-table \.members-nowrap \{ white-space: nowrap; \}/);
-  assert.doesNotMatch(read("../src/components/TeamSpace.tsx"), /在事项里开启团队共享/);
+  // 第 73 批（D-307）：入口已在事项里（“⋯ → 和同事一起办…”、新建事项“谁能看到”）——不再断言“不承诺入口”，改断言入口在
+  const mt = read("../src/pages/Matter.tsx");
+  assert.match(mt, /canOfferShare\(ws\.kind, matter\) && \(\s*<button role="menuitem" className="menu-item" onClick=\{\(\) => \{ setSharing\(true\); setMoreOpen\(false\); \}\}>\s*<span className="menu-label">和同事一起办…<\/span>/);
+  assert.match(read("../src/components/NewMatter.tsx"), /<ScopeField variant="modal"/);
 });
 
 test("复测 N1～N7：侧栏计数即时与周期重取；横幅按共享通道真实状态；核对码输入框留足宽度；表头与说明两种行都成立；错误写在出错那一行；本机识别码改名", () => {

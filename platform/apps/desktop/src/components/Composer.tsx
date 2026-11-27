@@ -17,6 +17,9 @@ import "../styles-composer.css";
 
 import { ComposerFrame, SendButton, sendOnEnter } from "./ComposerFrame.tsx";
 import { MatterPlace } from "./MatterPlace.tsx";
+import { TeamMark } from "./TeamMatter.tsx";
+import { useWorkspace } from "./WorkspaceSwitch.tsx";
+import { isTeamShared, teamPrefix } from "../lib/team-matters.ts";
 
 export interface ComposerValue {
   goal: string;
@@ -34,7 +37,7 @@ export function Composer(props: {
   /** 事项页内的输入框（没有 matters）：顶部行显示“本事项”与我方立场。 */
   stance?: string | null;
   /** 新建事项（完整弹窗）。第 72 批：从“放进哪个事项”的“更多设置”进来时带 thenSubmit 与已填的三项，建好后接着发起。 */
-  onNewMatter?: (opts?: { thenSubmit?: boolean; initial?: { title: string; stance: string; confidentiality: string } }) => void;
+  onNewMatter?: (opts?: { thenSubmit?: boolean; initial?: { title: string; stance: string; confidentiality: string; scope?: "personal" | "team"; members?: string[] } }) => void;
   /**
    * 第 72 批（D-301）：没选事项也能按发送——在事项芯片处问“放进哪个事项？”，选了已有事项或建好新事项即调用它（归属并接着发起）。
    * 不传时（事项页）沿用原来的“必须已有事项”。
@@ -101,6 +104,8 @@ export function Composer(props: {
     return () => document.removeEventListener("mousedown", close);
   }, [menu]);
   const matter = props.matters?.find((m) => m.matter_id === props.matterId) ?? null;
+  // 第 73 批（D-310）：团队共享事项在芯片与事项菜单里带同一个灰色记号（个人空间不出现）
+  const wsKind = useWorkspace().kind;
   useEffect(() => {
     if (!props.matterId || !pendingFiles) return;
     props.onImport(pendingFiles);
@@ -258,7 +263,8 @@ export function Composer(props: {
         {props.matters ? (
           <button ref={chipRef} className={`ctx-matter${matter ? "" : " ctx-empty"}`} onClick={() => setMenu(menu === "matter" || menu === "place" ? null : "matter")} title={matter ? matter.title : "选择事项"} aria-haspopup="listbox" aria-expanded={menu === "matter"}>
             {/* Kimi“选择项目”同位：没选时就写“选择事项”，选了写事项名 */}
-            <Icon.folder /> {matter ? <span className="ctx-title">{clipTitle(matter.title)}</span> : "选择事项"} <Icon.down />
+            <Icon.folder /> {matter ? <span className="ctx-title">{clipTitle(matter.title)}</span> : "选择事项"}
+            {isTeamShared(matter, wsKind) && <TeamMark />} <Icon.down />
           </button>
         ) : (
           <span className="ctx-matter ctx-static"><Icon.folder /> 事项：{props.matterId ? "本事项" : "未选择事项"}</span>
@@ -437,7 +443,7 @@ export function Composer(props: {
               }}
             >
               <span className="menu-label">{m.title}</span>
-              <span className="menu-desc">{[m.client_name, m.counterparty].filter(Boolean).join(" / ") || stanceLabel(m.stance)}</span>
+              <span className="menu-desc">{teamPrefix([m.client_name, m.counterparty].filter(Boolean).join(" / ") || stanceLabel(m.stance), isTeamShared(m, wsKind))}</span>
             </button>
           ))}
           <button

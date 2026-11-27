@@ -1,0 +1,119 @@
+/*
+ * 第 73 批（V47，D-307～D-310）：团队共享事项——谁能看到、选同事、事项头胶囊、事项成员页、加同事、团队共享记号、同事之间同步。
+ * 黑白灰为主：团队记号一律灰色线性两人图标（currentColor，线宽随 --icon-stroke，不另写 1px 描边）；“电脑还不能接收”用正文次色，不用橙色。
+ * 颜色全部取令牌，浅 / 深两色由令牌切换。
+ */
+
+/* 团队共享记号（侧栏、事项列表、输入框事项芯片） */
+.team-mark { display: inline-flex; align-items: center; flex: none; color: var(--text-secondary); }
+.team-mark svg { width: 14px; height: 14px; }
+
+/* 侧栏事项行：改为 flex，标题省略、尾部记号不被挤掉（Windows 字宽更大时也成立） */
+.sidebar-link.sidebar-link-row { display: flex; align-items: center; }
+.sidebar-link-row .sidebar-link-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-link-row .act-dot { flex: none; }
+.sidebar-link-row .team-mark { margin-left: 6px; }
+
+/* 事项列表名称后的标签、输入框芯片里的记号 */
+.mt-title .tag-team { flex: none; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.mt-title .tag-team svg { width: 12px; height: 12px; }
+.ctx-matter .team-mark { margin-left: -2px; }
+
+/* 谁能看到（两处表单） */
+.scope-field > p { margin: 0; }
+.scope-field .seg-btn { display: inline-flex; align-items: center; gap: 6px; }
+.scope-field .seg-btn svg { width: 14px; height: 14px; flex: none; }
+.scope-field .seg-btn:disabled { color: var(--text-secondary); opacity: 0.55; cursor: not-allowed; }
+.scope-field .seg-btn:disabled:hover { color: var(--text-secondary); }
+.scope-reason .scope-go { padding: 0; font-size: inherit; white-space: nowrap; }
+
+/* 选同事 */
+.cp { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.cp-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.cp-chip { max-width: 180px; padding-right: 6px; }
+.cp-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cp-add { display: inline-flex; align-items: center; gap: 4px; }
+.cp-add svg { width: 14px; height: 14px; }
+.cp-empty { font-size: var(--fs-xs); color: var(--text-secondary); }
+.cp-note { margin: 0; font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.6; }
+.cp-list { display: flex; flex-direction: column; gap: 4px; padding: 4px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); }
+.cp-list .cp-note { padding: 6px 8px; }
+.cp-search { width: 100%; margin: 2px 0; }
+/* 最多 6 行高、内滚（Windows 150% 下浮层不超出窗口） */
+.cp-rows { display: flex; flex-direction: column; max-height: calc(6 * 44px); overflow-y: auto; }
+.cp-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; }
+.cp-row:hover { background: var(--bg-hover); }
+.cp-row.is-on { background: var(--bg-subtle); }
+.cp-row input { flex: none; margin: 0; }
+.cp-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.cp-name { font-size: var(--fs-body); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-text small { font-size: var(--fs-xs); color: var(--text-secondary); }
+.tm-avatar.tm-avatar-sm { width: 24px; height: 24px; font-size: var(--fs-xs); }
+
+/* 事项头“团队共享 · n 人” */
+.team-pill > summary svg { width: 14px; height: 14px; }
+.protect-pop.team-pop { min-width: 260px; max-width: min(360px, 90vw); gap: 2px; padding: 8px 12px 6px; }
+.team-pop-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 36px; }
+.team-pop-who { display: flex; flex-direction: column; min-width: 0; }
+.team-pop-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-body); color: var(--text-primary); }
+.team-pop-name .tag-this { margin-left: 0; background: var(--text-primary); color: var(--bg-surface); }
+.team-pop-who small { font-size: var(--fs-xs); color: var(--text-secondary); }
+.team-pop-role { font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; }
+.team-pop-row.is-off .team-pop-name { color: var(--text-secondary); }
+.team-pop-empty, .team-pop-more { margin: 4px 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.team-pop-foot { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--border-subtle); }
+.team-pop-foot .btn-link { padding: 0; font-size: var(--fs-caption); }
+
+/* 事项成员页 */
+.mm { max-width: 720px; }
+.mm-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-2); }
+.mm-title { display: flex; align-items: center; gap: var(--sp-2); margin: 0; }
+.mm-add { display: inline-flex; align-items: center; gap: 4px; }
+.mm-add svg { width: 14px; height: 14px; }
+.mm-lead { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0 0 var(--sp-3); font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.6; }
+.mm-lead svg { flex: none; width: 14px; height: 14px; margin-top: 3px; }
+.mm-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--sp-2); margin: 0 0 var(--sp-3); padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-caption); color: var(--text-primary); line-height: 1.6; }
+.mm-notice .btn-link { padding: 0; font-size: inherit; white-space: nowrap; }
+.mm-msg { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 var(--sp-3); font-size: var(--fs-body); color: var(--status-success-text); line-height: 1.6; }
+.mm-msg svg { flex: none; width: 16px; height: 16px; margin-top: 3px; }
+.mm-msg.is-warn { color: var(--status-warning-text); }
+.mm-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border-subtle); }
+.mm-row { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
+.mm-main { display: grid; grid-template-columns: minmax(0, 1fr) 132px 64px; align-items: center; gap: var(--sp-3); }
+.mm-who .tm-who-text { row-gap: 2px; }
+.mm-name { font-size: var(--fs-body); color: var(--text-primary); font-weight: var(--fw-medium); }
+.mm-row.is-off .mm-name { color: var(--text-secondary); font-weight: var(--fw-regular); }
+.mm-who .tag-gray { margin-left: 0; }
+.mm-who small.mm-note { line-height: 1.5; font-variant-numeric: normal; }
+.mm-role { min-width: 0; }
+.mm-role-select { width: 100%; }
+.mm-role-text { font-size: var(--fs-body); color: var(--text-label); white-space: nowrap; }
+.mm-acts { text-align: right; white-space: nowrap; }
+.mm-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin: 10px 0 2px 36px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-subtle); }
+.mm-confirm p { flex: 1 1 320px; margin: 0; font-size: var(--fs-body); color: var(--text-primary); line-height: 1.6; }
+.mm-confirm-acts { display: inline-flex; gap: var(--sp-2); flex: none; }
+.mm-row-err { margin: 6px 0 0 36px; }
+.mm-foot { margin: var(--sp-3) 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+
+/* 加同事 / 和同事一起办 */
+.acd { display: flex; flex-direction: column; gap: var(--sp-3); }
+.acd-lines { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-body); line-height: 1.7; color: var(--text-primary); }
+.acd-lines .is-key { font-weight: var(--fw-medium); }
+.acd-k { font-size: var(--fs-caption); color: var(--text-label); }
+.acd-role { display: flex; align-items: center; gap: var(--sp-3); }
+.acd-role .select-trigger { min-width: 160px; }
+.acd-blocked { margin: 0; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-body); line-height: 1.6; }
+.acd-blocked .btn-link { padding: 0; font-size: inherit; }
+.acd-relay { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.6; }
+
+/* 设置 → 团队 → 团队策略首行“同事之间同步”（合伙人在旧内核上两行都没有时，不留空框） */
+.team-policy-sec > .panel:empty { display: none; }
+.relay-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.relay-state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-body); color: var(--text-primary); }
+.relay-state.is-warn { color: var(--status-warning-text); }
+.relay-msg { margin: var(--sp-2) 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.relay-msg.is-ok { color: var(--status-success-text); }
+.relay-lines { margin: 0 0 var(--sp-2); padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-body); line-height: 1.7; }
+.relay-carried { margin: 0 0 var(--sp-2); padding: 8px 12px; border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-caption); color: var(--text-label); line-height: 1.6; }
+.team-expiring { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
+.team-expiring .btn-ghost { flex: none; }

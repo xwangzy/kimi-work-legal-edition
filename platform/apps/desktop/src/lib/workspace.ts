@@ -114,8 +114,8 @@ export function teamNameOk(v: string): boolean {
 export function upgradeLines(name: string): string[] {
   return [
     `还是同一个工作空间，名称改为「${name.trim() || "新的团队名"}」；事项、材料、成果和电脑都原地不动。`,
-    // 第 72 批（补测 D6，主会话决定）：事项级“开启团队共享 / 把同事加进事项”的界面本批不做——不承诺入口
-    "你原有的事项仍只属于你，同事看不到；团队共享事项需要所内先配置共享通道。",
+    // 第 73 批（D-307）：事项里已有“和同事一起办”的入口——改说怎么做（第 72 批“不承诺入口”的前提已不成立）
+    "你原有的事项仍只属于你，同事看不到；要一起办，在那件事项里把同事加进来。",
     "升级后可以邀请同事加入；同事的事项内容只在他们自己的电脑上，你也看不到。",
     "升级不能撤回：之后不能再变回个人工作室。",
   ];
@@ -183,9 +183,12 @@ export function shareIssuerNote(issuer: unknown, kind: WorkspaceKind | null, adm
  * - 管理员确认结果（result，subject 是“陆二平的 Mac 电脑 · 第 1 台”）：“已确认…（16:12）”，B 已开通补“，它现在可接收团队共享事项”，没开通补“；所内开通同事之间同步后，它即可收到团队共享事项”。
  */
 export function shareReadyText(
-  o: { kind: "member" | "member_admin" | "result"; confirmed: boolean; relay: boolean | null; at?: string | null; by?: string | null; subject?: string },
+  o: { kind: "member" | "member_admin" | "result" | "peer"; confirmed: boolean; relay: boolean | null; at?: string | null; by?: string | null; subject?: string; long?: boolean },
   now = Date.now(),
 ): string {
+  // 第 73 批（D-308，A5 §7.3）：同事的电脑（事项成员、选同事）——同一个口径，不另起句库；已可接收时不说（没有要他做的事）。
+  // 所内没开通同步时所有人都收不到，那一句只在列表上方说一次（lib/team-matters.ts syncNotice），这里不带。
+  if (o.kind === "peer") return o.confirmed ? "" : o.long ? "他的电脑还不能接收团队共享事项：请他在“设置 → 团队”里申请，管理员确认后自动收到。" : "电脑还不能接收";
   if (o.kind === "result") {
     const hm = dayTime(o.at ?? new Date(now).toISOString(), now).slice(-5);
     const tail = o.relay === true ? "，它现在可接收团队共享事项" : o.relay === false ? "；所内开通同事之间同步后，它即可收到团队共享事项" : "";
@@ -257,8 +260,8 @@ export function workspaceMenuMeta(w: WorkspaceLike): string | null {
 }
 
 /**
- * 第 72 批（复测 N2）：成员团队页横幅——按共享通道的真实状态写。没配通道：如实说要所内先配置；配了通道：只说团队共享事项经它加密同步
- * （事项级“开启共享 / 加同事”的界面本批不做，不承诺入口）；还没取到状态：只写前半句。纯函数。
+ * 第 72 批（复测 N2）：成员团队页横幅——页顶只留这一句；团队共享的前提与状态归到“团队共享”那一行。
+ * 第 73 批：事项里有了“和同事一起办”，这句仍成立（内容在事项成员各自的电脑上，管理员看不到）。纯函数。
  */
 export function teamPrivacyLine(): string {
   // 设计评分第三轮 C15 / C18：页顶只留这一句；团队共享的前提与状态都归到“团队共享”那一行

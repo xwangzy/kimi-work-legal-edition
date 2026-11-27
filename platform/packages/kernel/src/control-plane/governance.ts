@@ -251,6 +251,21 @@ export class FirmGovernance {
     return { source: "control_plane", version: doc.version, issued_at: doc.issued_at, expires_at: doc.expires_at, body: doc.body, relaxations, signers: signers.members, fallback_reason: null };
   }
 
+  /**
+   * 第 73 批（D-309）：最后一份已接受的律所策略原文（不论是否已过期、签名人是否仍足够）——“续期”按它原样重签；
+   * 开发形态与从未收到时为 null。
+   */
+  latestPolicyDoc(): FirmPolicyDoc | null {
+    if (this.mode === "local_dev") return null;
+    const row = this.d.db.get<{ doc_json: string }>(`SELECT doc_json FROM firm_policies WHERE tenant_id = ? ORDER BY version DESC LIMIT 1`, [this.d.tenantId]);
+    if (!row) return null;
+    try {
+      return JSON.parse(row.doc_json) as FirmPolicyDoc;
+    } catch {
+      return null;
+    }
+  }
+
   /** 开发形态：本机配置项（D-17；只限未配置控制面且从未接入过控制面时）。 */
   private localDevPolicy(): EffectiveFirmPolicy {
     const body = localDevPolicyBody(this.d.env);

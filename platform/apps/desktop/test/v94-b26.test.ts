@@ -139,7 +139,7 @@ test("单机使用（U2-08）：没加入律所时不显示离所交接、本机
   assert.doesNotMatch(c, /const inFirm =/);
   assert.match(c, /\{tab === "team" &&\s*\(!ws\.ready \? null : f\.teamTab \? \(\s*<TeamTab ws=\{ws\} mySafety=\{mySafety\} \/>/);
   const team = c.slice(c.indexOf("function TeamTab("), c.indexOf("function BackupTab("));
-  assert.match(team, /<TeamShare admin=\{f\.teamRead\} note=\{note\} \/>\s*<DepartedMembers \/>\s*<Offboarding \/>/);
+  assert.match(team, /<TeamShare admin=\{f\.teamRead\} note=\{note\} canEnable=\{f\.teamAdmin\} \/>\s*<DepartedMembers \/>\s*<Offboarding \/>/);
   assert.match(team, /<SafetyCode code=\{mySafety\} \/>/);
   assert.doesNotMatch(c, /open=\{envWarn > 0\}/);
   assert.match(c, /复制给 IT 的说明/);

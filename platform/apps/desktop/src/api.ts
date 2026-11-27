@@ -973,7 +973,7 @@ export interface ControlPlaneStatus {
     version: number | null;
     issued_at: string | null;
     expires_at: string | null;
-    body: { max_mode: RunMode; auto_preauthorizations: string[]; fetch_allowlist_extra: string[]; l3a_standard_model: "deny" | "allow"; support_upload?: "deny" | "allow" };
+    body: { max_mode: RunMode; auto_preauthorizations: string[]; fetch_allowlist_extra: string[]; l3a_standard_model: "deny" | "allow"; support_upload?: "deny" | "allow"; share_relay?: "deny" | "allow" };
     relaxations: string[];
     signers: string[];
     fallback_reason: "none_received" | "expired" | "signers_insufficient" | "unrecognized_newer" | null;
@@ -1947,6 +1947,83 @@ export const team = {
     /** 补测 D5：被拒 / 过期的结果“知道了”。 */
     dismiss: () => invoke<DeviceShareStatus>("team.deviceShare.dismiss"),
   },
+};
+/**
+ * 第 73 批（V47，契约 02 §2.1）：律师可读的同事名单（team.roster）。不含邮箱、手机号；含已移出 / 已离开的人（status 标明）。
+ * reason：个人空间 / 联不上 Kimi Work 服务（members 为本机缓存的上一份）/ 服务不支持；"unavailable" 是界面这一侧的“调用没成功”（旧内核、内核重启中）。
+ */
+export interface TeamRosterMember {
+  user_id: string;
+  member_slug: string;
+  name: string;
+  role: "admin" | "partner" | "lawyer" | "assistant" | (string & {});
+  status: "active" | "disabled" | "removed" | "left" | (string & {});
+  /** 这位同事至少有一台经团队确认、在用的电脑（自己：这台电脑是否经团队确认）。 */
+  can_receive: boolean;
+  is_me: boolean;
+}
+export interface TeamRoster {
+  available: boolean;
+  reason?: "personal_workspace" | "offline" | "not_supported" | "unavailable";
+  members: TeamRosterMember[];
+}
+/** 事项角色（内核五种；律师端只露负责人 / 一起办 / 只看，D-308）。 */
+export type MatterRole = "owner" | "editor" | "reviewer" | "issuer" | "viewer";
+/** 事项的同事之间同步状态（契约 02 §2.3；not_allowed 不再映射成 unknown）。 */
+export type MatterSync = "ok" | "not_configured" | "not_allowed" | "unreachable" | "pending" | "unknown";
+export interface MatterMemberRow {
+  user_id: string;
+  name: string | null;
+  matter_role: MatterRole;
+  can_receive: boolean;
+  /** 名单里 status 非 active（已离开 / 被移出团队、停用）。 */
+  departed: boolean;
+  is_me: boolean;
+  added_at?: string;
+}
+export interface MatterMembersView {
+  matter_id: string;
+  collab_scope: "personal" | "team";
+  my_role: MatterRole | null;
+  is_owner: boolean;
+  /** 这台电脑现在能不能调整成员（负责人；经同步服务同步的须是最先同步它的那位负责人；本机无法确认负责人时不能；结案的不加人）。旧内核没有时按 is_owner。 */
+  can_manage?: boolean;
+  /** 最先在同步服务上登记这个事项的负责人（只有他能调整成员）。 */
+  relay_controller?: string | null;
+  members: MatterMemberRow[];
+  sync: MatterSync;
+}
+/** 第 73 批（契约 02 §2.6）：同事之间同步的开通状态（管理员电脑）。 */
+export interface ShareRelayStatus {
+  relay_configured: boolean;
+  state: "allowed" | "not_allowed" | "pending_second_signature" | "expired";
+  expires_at: string | null;
+  days_left: number | null;
+  can_manage: boolean;
+  threshold: number;
+  signatures: number;
+  /** 等签名的开通 / 续期草稿：第二位管理员在自己的电脑上点“开通”或“续期”即签这一份（内核找一致的待签草稿）。 */
+  pending?: { draft_id: string; kind: "enable" | "renew"; digest: string | null; signatures: number; signed_by_me: boolean } | null;
+  /** 开通 / 续期时随这次确认一并带上的其它放宽项（放宽项代码，不含同事之间同步本身）。 */
+  carry_relaxations?: { enable: string[]; renew: string[] | null };
+  expiring?: { days_left: number } | null;
+  fallback_reason?: string | null;
+  policy_version?: number | null;
+}
+/** 第 73 批（契约 02 §2.2～2.5）：事项成员。只有负责人能加 / 改角色 / 移出（内核核验）；改角色 = 同一 user_id 以新角色再加一次（内核 addOrUpdateMember）。 */
+export const matterMembers = {
+  list: (matterId: string) => invoke<MatterMembersView>("matters.members.list", { matter_id: matterId }),
+  add: (matterId: string, userId: string, role: "editor" | "viewer") => invoke<{ matter_id: string; user_id: string; devices_wrapped?: number; note?: string }>("matters.members.add", { matter_id: matterId, user_id: userId, matter_role: role }),
+  setRole: (matterId: string, userId: string, role: "editor" | "viewer") => invoke<{ matter_id: string; user_id: string }>("matters.members.add", { matter_id: matterId, user_id: userId, matter_role: role }),
+  remove: (matterId: string, userId: string) => invoke<{ matter_id: string; removed: string; note?: string }>("matters.members.remove", { matter_id: matterId, user_id: userId }),
+};
+/** 第 73 批（契约 02 §2.1、§2.6）：同事名单与同事之间同步的开通、续期。 */
+export const teamMatters = {
+  /** 调用没成功（旧内核、内核重启中）按“暂时取不到”处理，界面不报错。 */
+  roster: () => invoke<TeamRoster>("team.roster").catch(() => ({ available: false, reason: "unavailable", members: [] }) as TeamRoster),
+  shareRelayStatus: () => invoke<ShareRelayStatus>("firm_policy.share_relay_status").catch(() => null),
+  shareRelayEnable: () => invoke<ShareRelayStatus>("firm_policy.share_relay_enable"),
+  shareRelayRenew: () => invoke<ShareRelayStatus>("firm_policy.share_relay_renew"),
 };
 /** 第 72 批（U-2）：confirmed = 已可接收；pending 带 12 位核对码；restart = 刚换上新证书、客户端即将重新载入。 */
 export interface DeviceShareStatus {

@@ -81,6 +81,8 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/firm\/seats\/acc_[A-Za-z0-9_-]{16}\/(?:assign|release)$/,
   /^\/v1\/firm\/policy\/member-device$/,
   /^\/v1\/me\/onboarding$/,
+  // 第 73 批（V47，D-308）：团队成员可读的同事名单（GET，账号会话 + 设备签名，无请求体；应答只有成员标识、姓名、角色与状态，不含邮箱、手机号、账号编号与设备）
+  /^\/v1\/team\/roster$/,
 ];
 const METHODS = new Set(["GET", "POST", "PUT", "DELETE"]);
 // 第 44 批：x-kwl-session = 账号会话令牌（内核从封装文件读出、只附在控制面请求上）

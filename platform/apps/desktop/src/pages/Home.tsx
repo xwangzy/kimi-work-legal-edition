@@ -143,7 +143,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   const placeThenSubmit = useRef(false);
   /** 上手清单展开与否（null = 还没定，清单取到进度后定一次）；收起时清单放到输入框下方。 */
   const [guideExpanded, setGuideExpanded] = useState<boolean | null>(null);
-  const [newMatterInitial, setNewMatterInitial] = useState<{ title: string; stance: string; confidentiality: string } | null>(null);
+  const [newMatterInitial, setNewMatterInitial] = useState<{ title: string; stance: string; confidentiality: string; scope?: "personal" | "team"; members?: string[] } | null>(null);
   const loadMatters = useCallback(() => {
     api
       .listMatters()

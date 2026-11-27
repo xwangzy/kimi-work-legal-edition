@@ -61,7 +61,8 @@ export function canResyncMembers(admin: boolean, isMatterOwner: boolean | undefi
 export function teamShareLine(st: { blocked: string | null; alerts?: unknown[] | null; stuck?: number | null; stuck_matters?: number | null; policy_fallback?: boolean | null }): string {
   const n = st.alerts?.length ?? 0;
   if (st.blocked === "exit_mode") return "同事之间同步已暂停：这台电脑的许可失效或已被停用";
-  if (st.blocked === "not_allowed") return st.policy_fallback ? "同事之间同步已暂停：这台电脑还没收到最新的律所规则，联网后自动恢复" : "本所没有开启同事之间同步（团队事项仍可经律所共享文件夹同步）";
+  // 第 73 批（D-309）：规则没允许如实说“所内还没开通”（与事项成员页、选同事处同一说法）
+  if (st.blocked === "not_allowed") return st.policy_fallback ? "同事之间同步已暂停：这台电脑还没收到最新的律所规则，联网后自动恢复" : "所内还没开通同事之间同步：开通后团队共享事项才会在同事电脑之间同步";
   if (n > 0) return `有 ${n} 个事项暂停同步，负责人处理后自动恢复`;
   if (st.stuck) return `有 ${st.stuck_matters ?? 1} 个事项的改动暂时发不出去，会自动重试`;
   return "同事之间同步：正常";

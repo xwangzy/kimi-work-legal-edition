@@ -5,12 +5,16 @@
  * - 零事项的新用户直接展开新建表单；
  * - Esc、点外面或“取消”关闭：任务描述原样留在输入框里，不发起。
  * 任务仍必须归属事项（材料、授权、处理方式、成果都挂在事项下，D-203 / D-216）——这里只是把“发送前的拦截提示”变成“发送时的一步确认”。
+ * 第 73 批（D-307、D-310）：团队空间里精简表单在“怎么处理”之后多一行“谁能看到”（与完整弹窗同一组件）；近期事项里团队共享的副标题前缀“团队共享 · ”。
  */
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { Matter } from "../api.ts";
 import { Icon } from "./Icons.tsx";
 import { Select } from "./Select.tsx";
-import { LEVELS, quickCreateMatter, STANCE_GROUPS, STANCE_OPTIONS } from "./NewMatter.tsx";
+import { LEVELS, quickCreateMatter, STANCE_GROUPS, STANCE_OPTIONS, useMatterScope } from "./NewMatter.tsx";
+import { ScopeField, TeamMark } from "./TeamMatter.tsx";
+import { useWorkspace } from "./WorkspaceSwitch.tsx";
+import { createErrorText, isTeamShared, teamPrefix, type CollabScope } from "../lib/team-matters.ts";
 import { stanceLabel } from "../lib/labels.ts";
 import { suggestMatterTitle, suggestStance } from "../lib/matter-place.ts";
 
@@ -47,7 +51,13 @@ function usePlacement(anchor: HTMLElement | null | undefined, deps: unknown[]): 
     };
     place();
     window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
+    // 第 73 批：浮层里展开“选同事”等内容变高时重新放（仍完整显示在视口内）
+    const ro = typeof ResizeObserver === "function" && ref.current ? new ResizeObserver(() => place()) : null;
+    if (ro && ref.current) ro.observe(ref.current);
+    return () => {
+      window.removeEventListener("resize", place);
+      ro?.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchor, ...deps]);
   return [ref, pos];
@@ -62,14 +72,16 @@ export function MatterPlace({ matters, goal, onPlace, onMore, onCancel, anchor, 
   suggestion?: { title: string; onUse: () => void } | null;
   /** 选了已有事项或建好了新事项：归属并接着发起。 */
   onPlace: (m: Matter, created: boolean) => void;
-  /** “更多设置”：带着已填的三项打开完整的新建事项弹窗（建好后同样接着发起）。 */
-  onMore: (initial: { title: string; stance: string; confidentiality: string }) => void;
+  /** “更多设置”：带着已填的三项（第 73 批：连同“谁能看到”与选的同事）打开完整的新建事项弹窗（建好后同样接着发起）。 */
+  onMore: (initial: { title: string; stance: string; confidentiality: string; scope?: CollabScope; members?: string[] }) => void;
   onCancel: () => void;
 }) {
   const [creating, setCreating] = useState(matters.length === 0);
   const [title, setTitle] = useState(() => suggestMatterTitle(goal, STANCES));
   const [stance, setStance] = useState(() => suggestStance(goal, STANCES) ?? "");
   const [level, setLevel] = useState("normal");
+  const sc = useMatterScope(level);
+  const kind = useWorkspace().kind;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
@@ -83,14 +95,14 @@ export function MatterPlace({ matters, goal, onPlace, onMore, onCancel, anchor, 
     setBusy(true);
     setErr("");
     try {
-      onPlace(await quickCreateMatter({ title, stance, confidentiality: level }), true);
+      onPlace(await quickCreateMatter({ title, stance, confidentiality: level }, sc.submit), true);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(sc.submit.collab_scope ? createErrorText(e) : (e as Error).message);
       setBusy(false);
     }
   };
   const levelHint = LEVELS.find((l) => l.v === level)?.hint;
-  const [ref, pos] = usePlacement(anchor, [creating, !!err]);
+  const [ref, pos] = usePlacement(anchor, [creating, !!err, sc.scope, sc.picked.length, sc.avail.show]);
   return (
     <>
       <div className="place-mask" aria-hidden="true" onMouseDown={() => !busy && onCancel()} />
@@ -112,8 +124,9 @@ export function MatterPlace({ matters, goal, onPlace, onMore, onCancel, anchor, 
             <div className="place-scroll place-list">
               {matters.slice(0, RECENT_LIMIT).map((m) => (
                 <button key={m.matter_id} type="button" className="menu-item" onClick={() => onPlace(m, false)}>
-                  <span className="menu-label"><Icon.folder /> {m.title}</span>
-                  <span className="menu-desc">{[m.client_name, m.counterparty].filter(Boolean).join(" / ") || `我方：${stanceLabel(m.stance)}`}</span>
+                  <span className="menu-label"><Icon.folder /> {m.title}{isTeamShared(m, kind) && <TeamMark />}</span>
+                  {/* 第 73 批：团队共享的事项先说一句（发起前知道材料会到同事电脑上） */}
+                  <span className="menu-desc">{teamPrefix([m.client_name, m.counterparty].filter(Boolean).join(" / ") || `我方：${stanceLabel(m.stance)}`, isTeamShared(m, kind))}</span>
                 </button>
               ))}
             </div>
@@ -153,10 +166,11 @@ export function MatterPlace({ matters, goal, onPlace, onMore, onCancel, anchor, 
                 </div>
                 {levelHint && <span className="place-hint">{levelHint}</span>}
               </div>
+              <ScopeField variant="place" scope={sc.scope} onScope={sc.setScope} picked={sc.picked} onPicked={sc.setPicked} avail={sc.avail} relay={sc.relay} />
               {err && <div className="banner banner-red place-err" role="alert">{err}</div>}
             </div>
             <div className="place-actions">
-              <button type="button" className="btn-link" onClick={() => onMore({ title, stance, confidentiality: level })}>更多设置</button>
+              <button type="button" className="btn-link" onClick={() => onMore({ title, stance, confidentiality: level, scope: sc.scope, members: sc.picked })}>更多设置</button>
               <span className="spacer" />
               {/* 第三轮：主按钮为什么不能点，就在按钮旁说一句 */}
               {!stance && !busy && <span className="place-need">选好我方立场后可发起</span>}

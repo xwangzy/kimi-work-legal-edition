@@ -54,7 +54,9 @@ test("节点全链：授权 → 同步 → 转交执行 → 结果回桌面；�
     (e: any) => e.code === "forbidden" || /未授权/.test(e.message),
   );
   // strict 入队即拒
-  const mS = await inv("matters.create", { title: "strict 事项", stance: "受让方", consent_status: "not_required", confidentiality: "strict", collab_scope: "team" });
+  // 第 73 批（D-307）：客户要求不上云（L3b）的事项不能团队共享（内核拒绝建成团队事项）——这里用个人事项照样核对节点门禁
+  await assert.rejects(inv("matters.create", { title: "strict 团队事项", stance: "受让方", consent_status: "not_required", confidentiality: "strict", collab_scope: "team" }), (e: any) => e.code === "team_scope_unavailable");
+  const mS = await inv("matters.create", { title: "strict 事项", stance: "受让方", consent_status: "not_required", confidentiality: "strict" });
   await assert.rejects(() => inv("matters.node_authorize", { matter_id: mS.matter.matter_id }), (e: any) => e.code === "forbidden");
   await assert.rejects(
     () => inv("runs.node_enqueue", { matter_id: mS.matter.matter_id, scenario: "s1.contract_review", idempotency_key: "nt-reject-2" }),

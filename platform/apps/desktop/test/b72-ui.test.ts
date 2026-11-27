@@ -83,7 +83,8 @@ test("就地归属（D-301）五条：未选事项可按发送；发送后浮层
   // “更多设置”进完整弹窗，建好后同样接着发起
   assert.match(h, /if \(placeThenSubmit\.current\) \{\s*placeThenSubmit\.current = false;\s*void submit\(m\);/);
   const mp = src("components/MatterPlace.tsx");
-  assert.match(mp, /onPlace\(await quickCreateMatter\(\{ title, stance, confidentiality: level \}\), true\)/);
+  // 第 73 批：精简表单多带“谁能看到”（团队空间选了一起办时才有内容，个人空间是空对象）
+  assert.match(mp, /onPlace\(await quickCreateMatter\(\{ title, stance, confidentiality: level \}, sc\.submit\), true\)/);
   assert.match(mp, /onClick=\{\(\) => onPlace\(m, false\)\}/);
   // 零事项的新用户直接展开新建表单
   assert.match(mp, /useState\(matters\.length === 0\)/);

@@ -4,6 +4,7 @@
  */
 import { artifactName, ARTIFACT_LABELS, fmtWhen, SCENARIO_LABELS } from "./labels.ts";
 import { SCENARIOS, scenarioOfRun } from "./scenarios.ts";
+import { teamPrefix } from "./team-matters.ts";
 
 export type SearchKind = "matter" | "run" | "deliverable" | "material";
 export interface SearchItem {
@@ -60,9 +61,11 @@ export function searchGroups(
     materials?: { document_version_id: string; matter_id: string; matter_title: string; filename: string; rel_path: string | null; created_at: string }[];
   },
   now = Date.now(),
+  /** 第 73 批（D-310）：团队共享事项的编号（界面按事项列表拼“团队共享 · ”前缀，不改内核）；个人空间传空集。 */
+  teamIds: ReadonlySet<string> = new Set(),
 ): { kind: SearchKind; items: SearchItem[] }[] {
   const groups: { kind: SearchKind; items: SearchItem[] }[] = [
-    { kind: "matter", items: r.matters.map((m) => ({ kind: "matter" as const, title: m.title, sub: m.sub, href: `/matter/${m.matter_id}` })) },
+    { kind: "matter", items: r.matters.map((m) => ({ kind: "matter" as const, title: m.title, sub: teamPrefix(m.sub, teamIds.has(m.matter_id)), href: `/matter/${m.matter_id}` })) },
     {
       kind: "run",
       items: r.runs.map((x) => {

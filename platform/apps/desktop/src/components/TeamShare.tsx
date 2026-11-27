@@ -11,12 +11,14 @@ import { canResyncMembers, relayErrorText, syncAlertAction, syncAlertSummary, sy
 import { fmtTime } from "../lib/labels.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { Icon } from "./Icons.tsx";
+import { relayReady } from "../lib/team-matters.ts";
 
 /**
  * 第 72 批（D-304）：note = 这台电脑由账号直接登记、还不能接收团队共享事项时的一句非阻塞提示（lib/workspace.ts shareIssuerNote）；
  * 有提示时即使本所没开同事之间同步也显示这一行。
+ * 第 73 批（D-309）：本所规则没允许（not_allowed）如实算“所内还没开通”（原来映射成“不知道”）；团队管理员另给“去开通 →”（团队策略首行）。
  */
-export function TeamShare({ admin = false, note = null }: { admin?: boolean; note?: string | null }) {
+export function TeamShare({ admin = false, note = null, canEnable = false }: { admin?: boolean; note?: string | null; canEnable?: boolean }) {
   const [st, setSt] = useState<RelayStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -45,7 +47,7 @@ export function TeamShare({ admin = false, note = null }: { admin?: boolean; not
   const share = useShareConfirm(true);
   const confirmedHere = share.s?.supported === true && share.s.state === "confirmed" && !!share.s.decided_at;
   // 设计评分第四轮：“管理员已确认这台电脑”与“所内已开通同事之间同步”是两个条件——按真实状态写进同一句（lib/workspace.ts shareReadyText）
-  const relay: boolean | null = !st ? null : st.blocked === "not_configured" ? false : st.blocked === null ? true : null;
+  const relay: boolean | null = relayReady(st);
   // note 只说明“这台电脑是直接登录的团队电脑”（管理员自己的这类电脑另有写法）；句子按同步状态重出
   const noteText = note ? shareIssuerNote("account_ca", "team", note === shareIssuerNote("account_ca", "team", true), relay) : null;
   const shareBlock = noteText ? (
@@ -68,6 +70,13 @@ export function TeamShare({ admin = false, note = null }: { admin?: boolean; not
       {relay === false && waiting && <p className="muted share-prereq">所内还没有开通同事之间同步，开通后才能收到团队共享事项。</p>}
     </>
   ) : null;
+  // 规则没允许（不是中软没部署）时，管理员可以就地去开通
+  const enableLink =
+    canEnable && st?.blocked === "not_allowed" && !st.policy_fallback ? (
+      <button type="button" className="btn-link" onClick={() => document.getElementById("row-share-relay")?.scrollIntoView({ behavior: "smooth", block: "center" })}>
+        去开通 →
+      </button>
+    ) : null;
   if (!st || (st.blocked === "not_configured" && alerts.length === 0))
     return noteLine ? (
       <div className="device-row">
@@ -116,7 +125,9 @@ export function TeamShare({ admin = false, note = null }: { admin?: boolean; not
       <div className="device-k">团队共享</div>
       <div>
         {noteLine}
-        <span>{teamShareLine(st)}</span>
+        {/* 上面那句已经写了“所内开通同事之间同步后…”时不再重复 */}
+        {!(relay === false && noteLine) && <span>{teamShareLine(st)}</span>}
+        {enableLink}
         {alerts.map((a) => (
           <div key={`${a.matter_id}-${a.kind}-${a.epoch}`} className="sync-alert">
             {syncAlertSummary(a)}

@@ -1,3 +1,4 @@
+import { relayExpiringText } from "./team-matters.ts";
 /**
  * 侧栏底部用户卡的文字（v9.3 第 15 批；复核 R15B-23）。纯函数。
  * 还没取到内核状态（启动中、内核重启的那几秒）时说“正在连接…”，不说“本机 / 开发形态”——那几个字只属于确实没有激活记录的开发形态。
@@ -20,7 +21,7 @@ export function userCardText(me: UserCardMe | null, foot: { title: string; note:
  * 有入组申请等这台电脑批准（v9.3 B-3 余项）：亮橙点、说“有 N 个入组申请等你批准”（第 47 批：申请也可能是自己账号的新电脑，不再说“同事”），点开直接到“管理 · 成员”；
  * 联网记录需要核对比它更要紧，排在前面。
  */
-export function sidebarFoot(s: { gate: boolean | null; unresolved: number; execOk: boolean | null; pendingJoins: number }): {
+export function sidebarFoot(s: { gate: boolean | null; unresolved: number; execOk: boolean | null; pendingJoins: number; relayExpiring?: number | null }): {
   title: string;
   note: string;
   tone: "dot-off" | "dot-warn" | "dot-ok";
@@ -30,6 +31,9 @@ export function sidebarFoot(s: { gate: boolean | null; unresolved: number; execO
   if (s.unresolved > 0) return { title: "有联网记录需要核对", note: `${s.unresolved} 条因中断无法确认是否发出`, tone: "dot-warn", href: "/connections/backup" };
   // 第 72 批（D-304）：入组申请 = 团队里待确认的电脑，在“设置 · 团队 · 电脑待确认”处理
   if (s.pendingJoins > 0) return { title: `有 ${s.pendingJoins} 台电脑等你确认`, note: "", tone: "dot-warn", href: "/connections/team" };
+  // 第 73 批（D-309）：同事之间同步到期前 7 天提醒管理员续期（只问管理员电脑；到期后全所同事之间同步暂停）
+  const exp = relayExpiringText(s.relayExpiring);
+  if (exp) return { title: exp, note: "到“设置 → 团队”续期", tone: "dot-warn", href: "/connections/team" };
   if (s.execOk === false) return { title: "本机运行 · 代码分析暂不可用", note: "其余功能正常", tone: "dot-warn", href: "/connections/backup" };
   return { title: "本机运行 · 防护正常", note: "", tone: "dot-ok", href: "/connections" };
 }

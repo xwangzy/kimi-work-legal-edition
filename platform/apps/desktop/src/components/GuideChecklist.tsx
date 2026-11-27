@@ -3,7 +3,7 @@
  * - 位置：输入框正上方（首屏主角），首访缺省展开成一排步骤；“收拢”收成一行（进度 + 下一步 + 去做）；
  * - 完整版五步：建事项 → 加材料 → 发起任务 → 复核成果 → 备份这台电脑（有材料后才点亮）；做完按真实数据自动打勾（内核 guide.progress）；
  * - 老律师新电脑（账号级已上手、这台电脑还没有任何事项）：新电脑版三项；
- * - 角色：团队管理员前面多一行“团队”（邀请同事 / 席位 / 本所范本，可整组跳过）；团队成员多一句“事项内容只在你的电脑”；
+ * - 角色：团队管理员前面多一行“团队”（邀请同事 / 席位 / 本所范本，可整组跳过）；团队成员多一句事项内容在哪里（第 73 批 D-310：按事项范围如实说）；
  * - 关闭（×）记本机“已收起”，并记账号级 dismissed（内核与云端支持时）；头像菜单“上手指南”同时恢复清单与讲解（OPEN_GUIDE）；
  * - 第一个任务出了成果即记账号级 completed（换电脑时据此给新电脑版）。账号级状态取不到时只用本机。
  */
@@ -28,6 +28,7 @@ import {
   type OnboardRole,
 } from "../lib/guide-checklist.ts";
 import { Icon } from "./Icons.tsx";
+import { guideScopeNote } from "../lib/team-matters.ts";
 
 type Acct = { supported: boolean; completed_at?: string | null; dismissed_at?: string | null };
 const TEAM_LINKS: { label: string; path: string }[] = [
@@ -230,7 +231,7 @@ export function GuideChecklist({ onNewMatter, expanded: expandedProp = true, onE
           })}
         </ol>
       ) : null}
-      {expanded && role === "team_member" && variant === "full" && <p className="guide-checklist-note">事项内容只在你的电脑上，团队管理员看不到内容。</p>}
+      {expanded && role === "team_member" && variant === "full" && <p className="guide-checklist-note">{guideScopeNote()}</p>}
     </section>
   );
 }

@@ -122,3 +122,10 @@ test("第 72 批（D-305）：工作空间与团队路径只放行内核实际�
     "/v1/auth/workspaces/switch/../../ops/people",
   ]) assert.equal(cpRelayAllowed({ method: "POST", path: p, headers: H, body: "" }), "cp_path_not_allowed", p);
 });
+
+test("第 73 批（V47，D-308）：同事名单只放行 GET /v1/team/roster 这一条（不带查询串、不带子路径）", () => {
+  assert.equal(cpRelayAllowed({ method: "GET", path: "/v1/team/roster", headers: H, body: "" }), null);
+  for (const p of ["/v1/team/roster/", "/v1/team/roster?all=1", "/v1/team/roster/usr_x", "/v1/team/rosters", "/v1/team/roster/../invites", "/v1/firm/roster"]) {
+    assert.equal(cpRelayAllowed({ method: "GET", path: p, headers: H, body: "" }), "cp_path_not_allowed", p);
+  }
+});

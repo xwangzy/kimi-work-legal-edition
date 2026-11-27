@@ -7,6 +7,8 @@ import { api } from "../api.ts";
 import { nav } from "../App.tsx";
 import { ListSkeleton, LoadError } from "./Loading.tsx";
 import { searchGroups, searchLabels, SEARCH_KIND_LABEL, type SearchItem, setMatterFocus } from "../lib/search.ts";
+import { isTeamShared } from "../lib/team-matters.ts";
+import { useWorkspace } from "./WorkspaceSwitch.tsx";
 
 export function SearchPalette({ onClose }: { onClose: () => void }) {
   const [q, setQ] = useState("");
@@ -20,6 +22,20 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
   const listRef = useRef<HTMLDivElement>(null);
   const labels = useMemo(() => searchLabels(), []);
   useEffect(() => inputRef.current?.focus(), []);
+  // 第 73 批（D-310）：团队共享事项的副标题前缀“团队共享 · ”——打开面板时读一次事项列表（本机，不联网）；个人空间不读
+  const kind = useWorkspace().kind;
+  const [teamIds, setTeamIds] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    if (kind === "personal") return;
+    let live = true;
+    api
+      .listMatters()
+      .then((r) => live && setTeamIds(new Set(r.matters.filter((m) => isTeamShared(m, kind)).map((m) => m.matter_id))))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [kind]);
   useEffect(() => {
     if (!q.trim()) {
       setRes(null);
@@ -46,7 +62,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
       clearTimeout(t);
     };
   }, [q, labels, retry]);
-  const groups = useMemo(() => (res ? searchGroups(res) : []), [res]);
+  const groups = useMemo(() => (res ? searchGroups(res, Date.now(), teamIds) : []), [res, teamIds]);
   const flat = groups.flatMap((g) => g.items);
   useEffect(() => setSel(0), [res]);
   useEffect(() => {

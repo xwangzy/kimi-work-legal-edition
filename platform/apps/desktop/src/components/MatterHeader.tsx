@@ -2,8 +2,10 @@
  * 事项头（第 03 篇 §4.4，常显）：客户 / 相对方 / 立场 / 法域 / 关键日期；第二行只放一个“保护状态”胶囊（依据、密级、端点、化名合在一起说，
  * 点开四行；UIUX 增量评审 §3.2）与当事人名单。
  * 依据任一项“待确认”时，该事项只运行不出站的本机能力（第 02 篇 §8.1）。
+ * 第 73 批（D-310）：团队共享事项在第二行末尾多一枚“团队共享 · n 人”胶囊（同一种可展开胶囊，展开列人、底部“事项成员 →”）；个人事项不出。
  */
-import type { Matter, MatterBasis, RunPolicyView } from "../api.ts";
+import type { Matter, MatterBasis, MatterMembersView, RunPolicyView } from "../api.ts";
+import { TeamPill } from "./TeamMatter.tsx";
 import { BASIS_FIELDS, BASIS_VALUE_LABELS, ENDPOINT_LABELS } from "../lib/labels.ts";
 import { jurisdictionLabel, stanceLabel } from "../lib/labels.ts";
 import { Icon } from "./Icons.tsx";
@@ -16,9 +18,12 @@ export function basisComplete(b: MatterBasis | undefined): boolean {
   return BASIS_FIELDS.every((f) => b[f.key] !== "pending");
 }
 
-export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudonym, onParties, onConsentNotice, onClearRefusal }: {
+export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudonym, onParties, onConsentNotice, onClearRefusal, team, onMembers }: {
   matter: Matter;
   policy?: RunPolicyView | null;
+  /** 团队共享事项（第 73 批）：事项成员（还没取到为 null）；不是团队共享事项时不传。 */
+  team?: { view: MatterMembersView | null; error?: string | null } | null;
+  onMembers?: () => void;
   onEditBasis?: () => void;
   onToggleFullPseudonym?: (on: boolean) => void;
   onParties?: () => void;
@@ -104,6 +109,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
             当事人名单
           </button>
         )}
+        {team && onMembers && <TeamPill view={team.view} failed={!!team.error} onMembers={onMembers} />}
       </div>
       {/* D-225：客户授权一行只读，点开看每一次记录（只有 matters.get 带历史时显示） */}
       {/* 还没有任何记录时不再单列一行“尚未记录”（上面的胶囊已经说了；第 56 批走查：同一件事在事项头说了三遍） */}

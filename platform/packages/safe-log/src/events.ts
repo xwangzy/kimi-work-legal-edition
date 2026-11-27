@@ -88,6 +88,11 @@ export const EVENTS = {
   KERNEL_EXIT_MODE_LIFTED: { level: "info", fields: { resumed: "int" } },
   // 第 66 批：云端模型目录没取成或没采用（取不到、验签或格式不过、比本机旧、缓存写不进）；trigger = 登录、定时、网关拒绝等触发原因
   KERNEL_MODEL_CATALOG: { level: "warn", fields: { outcome: ["fetch_failed", "invalid", "stale", "cache_failed"], trigger: "ident" } },
+  // 第 73 批（V47，契约 02 §2.1）：同事名单没取成或没采用（fetch_failed = 连不上；cache_used = 改用本机缓存；invalid = 答复格式不对或不是本租户；
+  // cache_failed = 本机缓存写不进）；reason 只记控制面通道的原因代码，不记姓名、成员标识与人数
+  KERNEL_TEAM_ROSTER: { level: "warn", fields: { outcome: ["fetch_failed", "cache_used", "invalid", "cache_failed"], "reason?": "ident", ...ERR } },
+  // 第 73 批（D-309，契约 §2.6）：管理员开通 / 续期同事之间同步——发布了，还是等别的管理员签名；只记已签名人数与门限
+  KERNEL_SHARE_RELAY_POLICY: { level: "info", fields: { action: ["enable", "renew"], outcome: ["published", "pending_second_signature"], signatures: "int", threshold: "int" } },
   // 第 72 批（A1 §2.4 T1）：一次控制面同步各段用时（register、五份文档、席位令牌）与结果；first = 启动后首轮（含退避重试）
   KERNEL_CP_SYNC: { level: "info", fields: { ms: "ms", register_ms: "ms", "docs_ms?": "ms", "seat_ms?": "ms", ok: "bool", register_ok: "bool", seat: ["accepted", "unchanged", "valid", "skipped", "rejected", "error", "none"], first: "bool" } },
   // 第 72 批：这个内核进程第一次持有有效席位令牌（AI 从此可用）；since_boot_ms = 内核进程启动以来

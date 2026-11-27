@@ -3,6 +3,9 @@
  * 第 48 批（D-202）：客户授权不再每次三选一——律师在设置里声明过“委托合同含 AI 辅助条款”时只占一行，默认按此记录。
  * 第 51 批（D-216）：新建时不再记录客户授权——授权依据要逐案、可核对（合同条款或书面同意的出处），在本事项第一次用 AI 时
  * 由“开始前确认”记录（见 components/Consent.tsx）；新建只定“怎么处理”：一般 / 敏感（全部化名）/ 客户要求不上云（只在本机）。
+ * 第 73 批（D-307）：团队空间里“怎么处理”之后加“谁能看到：只有我 | 和同事一起办”（缺省只有我；一起办可同时选同事，可留空），
+ * 内核 matters.create 一次完成建事项与加人；这台电脑还没经团队确认、或“客户要求不上云”时置灰并说原因。个人空间一处不变。
+ * 弹窗内容区滚动、底部“取消 / 创建事项”吊底（Windows 100% 展开更多设置时已接近满高）。
  */
 import { useEffect, useState } from "react";
 import { api, type Matter, type MatterBasis, type MatterTemplate } from "../api.ts";
@@ -14,6 +17,9 @@ import { Modal } from "./Modal.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
 import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.ts";
+import { createErrorText, pickableColleagues, scopeAvailability, scopeToSubmit, type CollabScope } from "../lib/team-matters.ts";
+import { ScopeField, useRelayState, useRoster } from "./TeamMatter.tsx";
+import { useWorkspace } from "./WorkspaceSwitch.tsx";
 
 // 我方立场（v9.4：补上劳动争议、借贷担保、委托服务、建设工程与二审的立场——S1 评审 §2.4；按业务类型分组提示）
 export const STANCE_GROUPS: [string, string[]][] = [
@@ -34,7 +40,7 @@ export const LEVELS = [
  * 精简新建（第 72 批，D-301）：首页发送时就地新建事项，只问名称、我方立场、处理方式三项；其余与完整弹窗的缺省相同
  * （中国大陆、标准 AI 端点、四项依据待确认——第一次用 AI 时在“开始前确认”逐案记录，D-216）。
  */
-export async function quickCreateMatter(f: { title: string; stance: string; confidentiality: string }): Promise<Matter> {
+export async function quickCreateMatter(f: { title: string; stance: string; confidentiality: string }, team: ReturnType<typeof scopeToSubmit> = {}): Promise<Matter> {
   const basis: MatterBasis = basisForChoice("pending", f.confidentiality === "high");
   const r = await api.createMatter({
     title: f.title.trim(),
@@ -46,13 +52,30 @@ export async function quickCreateMatter(f: { title: string; stance: string; conf
     model_endpoint: "standard",
     basis: { ...basis, subprocessor: basis.subprocessor === "not_applicable" ? "pending" : basis.subprocessor },
     key_dates: {},
+    ...team,
   });
   notifyDataChanged();
   return r.matter;
 }
 
-export function NewMatterDialog({ onClose, onCreated, initial }: { onClose: () => void; onCreated: (m: Matter) => void; /** 第 72 批：从首页“放进哪个事项”的“更多设置”进来时带上已填的三项。 */ initial?: { title?: string; stance?: string; confidentiality?: string } }) {
+/** 两处表单共用：“谁能看到”的状态、可用性与要提交的部分（个人空间 show = false，什么也不提交）。 */
+export function useMatterScope(level: string, initial?: { scope?: CollabScope; members?: string[] }) {
+  const ws = useWorkspace();
+  const [scope, setScope] = useState<CollabScope>(initial?.scope ?? "personal");
+  const [picked, setPicked] = useState<string[]>(initial?.members ?? []);
+  const team = ws.kind === "team";
+  // 这台电脑能共享时先取同事名单（60 秒内共用一份）：点“和同事一起办”时列表已就绪，服务不支持也能立刻置灰
+  const roster = useRoster(team && ws.issuer === "firm_root");
+  const relay = useRelayState(team);
+  const avail = scopeAvailability({ kind: ws.kind, issuer: ws.issuer, level, roster });
+  // 只提交名单里还能加的人（“更多设置”带过来的选择可能已过时）；名单还没取到时原样交给内核核验
+  const ok = roster && roster.members.length > 0 ? new Set(pickableColleagues(roster).map((m) => m.user_id)) : null;
+  return { scope, setScope, picked, setPicked, avail, relay, submit: scopeToSubmit(scope, avail, ok ? picked.filter((id) => ok.has(id)) : picked) };
+}
+
+export function NewMatterDialog({ onClose, onCreated, initial }: { onClose: () => void; onCreated: (m: Matter) => void; /** 第 72 批：从首页“放进哪个事项”的“更多设置”进来时带上已填的三项（第 73 批：连同“谁能看到”与选的同事）。 */ initial?: { title?: string; stance?: string; confidentiality?: string; scope?: CollabScope; members?: string[] } }) {
   const [f, setF] = useState({ title: initial?.title ?? "", client_name: "", counterparty: "", stance: initial?.stance || "原告", jurisdiction: "中国大陆", confidentiality: initial?.confidentiality ?? "normal", model_endpoint: "standard", analysis_as_of: "", stage: "", event_date: "", region: "" });
+  const sc = useMatterScope(f.confidentiality, initial);
   const [more, setMore] = useState(false);
   // 事项类型（v9.4 第 22 批，C1 #20）：选了就预置阶段、待办与常用方法；要起算日的（如收到起诉状之日）推出届满日
   const [templates, setTemplates] = useState<MatterTemplate[]>([]);
@@ -99,11 +122,13 @@ export function NewMatterDialog({ onClose, onCreated, initial }: { onClose: () =
         ...(f.region.trim() ? { region: f.region.trim() } : {}),
         ...(tpl ? { template_id: tpl.id } : {}),
         ...(tpl?.start_fact && tplStart ? { template_start: tplStart } : {}),
+        // 第 73 批：团队空间选了“和同事一起办”时带上协作范围与同事（一个事务里建事项、加人）
+        ...sc.submit,
       });
       notifyDataChanged();
       onCreated(r.matter);
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(sc.submit.collab_scope ? createErrorText(e) : (e as Error).message);
     } finally {
       setBusy(false);
     }
@@ -167,6 +192,8 @@ export function NewMatterDialog({ onClose, onCreated, initial }: { onClose: () =
         </div>
         <p className="authz-note">{LEVELS.find((l) => l.v === f.confidentiality)?.hint}</p>
       </div>
+      {/* 谁能看到（第 73 批）：保密边界，与“怎么处理”同级，放在“更多设置”之前、不折叠；个人空间不出现 */}
+      <ScopeField variant="modal" scope={sc.scope} onScope={sc.setScope} picked={sc.picked} onPicked={sc.setPicked} avail={sc.avail} relay={sc.relay} />
       <button type="button" className="btn-link" onClick={() => setMore((v) => !v)}>{more ? "收起更多设置" : "更多设置（事件时点、地域、使用哪种 AI、分析截止日）"}</button>
       {more && (
         <div className="form-grid">
@@ -193,8 +220,9 @@ export function NewMatterDialog({ onClose, onCreated, initial }: { onClose: () =
         </label>
         </div>
       )}
-      {err && <div className="banner banner-red">{err}</div>}
-      <div className="modal-actions">
+      {/* 第 73 批：底部按钮吊底（与开始面板、发起前确认同一修法），出错的一句写在按钮旁 */}
+      <div className="modal-actions modal-actions-sticky">
+        {err && <div className="banner banner-red" role="alert">{err}</div>}
         <button className="btn-ghost" onClick={onClose}>取消</button>
         <button className="btn-primary" disabled={busy} onClick={() => void submit()}>创建事项</button>
       </div>

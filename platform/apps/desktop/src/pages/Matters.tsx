@@ -10,12 +10,16 @@ import { Icon } from "../components/Icons.tsx";
 import "../styles-matter.css";
 import { fmtRelative, fmtTime, LEVEL_LABELS, matterProgress } from "../lib/labels.ts";
 import { stanceLabel } from "../lib/labels.ts";
+import { isTeamShared } from "../lib/team-matters.ts";
+import { useWorkspace } from "../components/WorkspaceSwitch.tsx";
+import "../styles-team-matters.css";
 
 export function MattersPage() {
   const [matters, setMatters] = useState<Matter[] | null>(null);
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState("");
+  const kind = useWorkspace().kind;
   // 取数三态（第 51 批）：载入中给骨架、失败给重试，不把“没读到”显示成“没有事项”
   const load = () => {
     setErr("");
@@ -42,14 +46,14 @@ export function MattersPage() {
         {err && matters && <div className="banner banner-red">{err}</div>}
         {matters && list.length === 0 && <p className="mt-empty muted">{q ? `没有找到“${q}”。` : "还没有事项。点右上角“新建事项”开始。"}</p>}
         {/* 第 55 批：表格改成列表行——事项名是主角（下面一行小字写客户与相对方），右侧依次是我方立场、进展、最近活动；
-            进展只在有事时出现（等你确认的橙、进行中的蓝、待签发的灰）。密级、依据、协作等系统属性仍收在悬停说明里（v9.2 §4.4；Y4 M-1）。 */}
+            进展只在有事时出现（等你确认的橙、进行中的蓝、待签发的灰）。密级、依据等系统属性仍收在悬停说明里（v9.2 §4.4；Y4 M-1）。
+            第 73 批（D-310）：团队共享改为名称后的可见标签（键盘与读屏都拿得到），悬停里不再重复“协作：…”。 */}
         {list.length > 0 && (
           <div className="mt-list" role="list" aria-label="事项">
             {list.map((m) => {
               const attrs = [
                 `保护：${m.data_level ? (LEVEL_LABELS[m.data_level] ?? m.data_level) : "—"}`,
                 `客户授权：${authorizationLine({ ...m, basis_complete: m.basis_complete ?? basisComplete(m.basis) })}`,
-                `协作：${m.collab_scope === "team" ? "团队" : "个人"}`,
                 `创建：${fmtTime(m.created_at)}`,
               ].join("\n");
               const prog = matterProgress(m.activity);
@@ -60,6 +64,12 @@ export function MattersPage() {
                   <span className="mt-main">
                     <span className="mt-title">
                       <span className="mt-name">{m.title}</span>
+                      {isTeamShared(m, kind) && (
+                        <span className="tag tag-gray tag-team">
+                          <Icon.users />
+                          团队共享
+                        </span>
+                      )}
                       {m.is_sample && <span className="tag tag-trial">示例</span>}
                       {m.lifecycle === "closed" && <span className="tag tag-gray">已结案</span>}
                       {m.legal_hold && <span className="tag tag-warn">保全</span>}

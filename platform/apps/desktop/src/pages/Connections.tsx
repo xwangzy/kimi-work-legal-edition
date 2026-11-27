@@ -29,6 +29,8 @@ import { PersonalUsage } from "./PersonalUsage.tsx";
 import { AccountSection } from "../components/AccountPanel.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
+import { SHARE_RELAY_CHANGED, ShareRelayExpiring, ShareRelayRow } from "../components/ShareRelayRow.tsx";
+import { relaxationText as relaxationLabel } from "../lib/team-matters.ts";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
 import { MemberDevicePolicy, TeamAdmin } from "../components/TeamAdmin.tsx";
 import { LeaveTeam, TeamHeader, WorkspaceSection } from "../components/TeamSpace.tsx";
@@ -776,8 +778,17 @@ function TeamTab({ ws, mySafety }: { ws: WorkspaceState; mySafety: string | null
   }, []);
   const f = ws.features;
   const note = shareIssuerNote(ws.issuer, ws.kind, f.teamAdmin);
+  // 第 73 批（D-309）：开通 / 续期同事之间同步后，下面的“生效策略 / 待确认的规则草稿”重读
+  const [policyKey, setPolicyKey] = useState(0);
+  useEffect(() => {
+    const on = () => setPolicyKey((k) => k + 1);
+    window.addEventListener(SHARE_RELAY_CHANGED, on);
+    return () => window.removeEventListener(SHARE_RELAY_CHANGED, on);
+  }, []);
   return (
     <div className="device team-page">
+      {/* 第 73 批：同事之间同步 7 天内到期时管理员页顶一行提醒（续期在下面“团队策略”首行） */}
+      {f.adminTab && <ShareRelayExpiring />}
       <TeamHeader ws={ws}>
         {firm?.firm_check_code && (
           <details className="quiet-details team-check">
@@ -792,19 +803,21 @@ function TeamTab({ ws, mySafety }: { ws: WorkspaceState; mySafety: string | null
       {f.adminTab && (
         <section className="team-policy-sec" aria-labelledby="sec-policy">
           <h2 className="h-section team-sec-title" id="sec-policy">团队策略</h2>
-          {f.teamAdmin && (
-            <div className="panel device-section">
+          <div className="panel device-section">
+            {/* 第 73 批（D-309）：首行“同事之间同步”——未开通 / 已开通至某日 / 需中软开通；管理员两步开通，到期前 7 天续期 */}
+            <ShareRelayRow />
+            {f.teamAdmin && (
               <SettingRow label="成员新电脑">
                 <MemberDevicePolicy />
               </SettingRow>
-            </div>
-          )}
-          <PolicyTab />
+            )}
+          </div>
+          <PolicyTab key={policyKey} />
         </section>
       )}
       <section className="panel device-section" aria-labelledby="sec-share">
         <h2 className="section-h h-section" id="sec-share">协作与离开</h2>
-        <TeamShare admin={f.teamRead} note={note} />
+        <TeamShare admin={f.teamRead} note={note} canEnable={f.teamAdmin} />
         <DepartedMembers />
         <Offboarding />
         <LeaveTeam ws={ws} />
@@ -1424,18 +1437,9 @@ function pendingActionText(a: { state?: string; last_error: string | null }): st
   return `待发送，联网后自动重试${why ? `（上次失败：${why}）` : ""}`;
 }
 
-/** 放宽项 → 人话（签名前给管理员看清楚放宽了什么）。 */
+/** 放宽项 → 人话（签名前给管理员看清楚放宽了什么）。第 73 批：说法移到 lib/team-matters.ts，开通 / 续期同事之间同步的确认框同一套。 */
 function relaxationText(r: string): string {
-  const [k, ...rest] = r.split(":");
-  const v = rest.join(":");
-  if (k === "max_mode") return `AI 最高档位放宽到“${MODE_TEXT[v] ?? v}”`;
-  if (k === "auto_preauthorization") return v === "search_generalized" ? "“放手做”可以事先同意：去掉当事人名称后的检索" : `“放手做”可以事先同意：${v}`;
-  if (k === "fetch_allowlist") return `官方网站之外还可打开的网站：${v}`;
-  if (k === "l3a_standard_model") return "敏感事项可以用通用 AI 服务（全部化名）";
-  if (k === "support_upload") return "律师可以把问题报告直接发给客服（每次确认；保存 7 天）";
-  if (k === "share_relay") return "同事之间可以经中软同步团队事项（加密，中软打不开）";
-  if (k === "connector") return `登记律所系统接入：${v}`;
-  return r;
+  return relaxationLabel(r);
 }
 
 function policyLine(st: ControlPlaneStatus): string {
@@ -1608,7 +1612,7 @@ function PolicyTab() {
       )}
       {drafts && (
         <>
-          <div className="section-title">待确认的规则草稿</div>
+          <div className="section-title" id="sec-policy-drafts">待确认的规则草稿</div>
           {drafts.length === 0 ? (
             <p className="muted">没有待确认的规则草稿。可以在下方起草新版本。</p>
           ) : (
@@ -1636,7 +1640,7 @@ function PolicyTab() {
               </div>
             ))
           )}
-          <PolicyDraftForm busy={busy} onSubmit={(body, ttl) => act(() => api.policyCreateDraft(body, ttl), "草稿已生成：核对放宽项后确认并发布")} />
+          <PolicyDraftForm busy={busy} base={pol?.source === "control_plane" ? pol.body : null} onSubmit={(body, ttl) => act(() => api.policyCreateDraft(body, ttl), "草稿已生成：核对放宽项后确认并发布")} />
         </>
       )}
     </div>
@@ -1679,13 +1683,14 @@ function DraftContent({ d }: { d: PolicyDraft }) {
 }
 
 /** 管理员起草律所策略（G0 没有 Web 控制台，D-32）：草稿发到控制面，本机重算放宽项、签名、发布。 */
-function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: Record<string, unknown>, ttlDays: number) => void }) {
-  const [maxMode, setMaxMode] = useState("default");
-  const [preSearch, setPreSearch] = useState(false);
-  const [extra, setExtra] = useState("");
-  const [l3a, setL3a] = useState(false);
-  const [support, setSupport] = useState(false);
-  const [relay, setRelay] = useState(false);
+function PolicyDraftForm({ busy, base = null, onSubmit }: { busy: boolean; base?: NonNullable<ControlPlaneStatus["policy"]>["body"] | null; onSubmit: (body: Record<string, unknown>, ttlDays: number) => void }) {
+  // 第 73 批（01 事实 4）：初值取当前生效的本所规则（原来是最严缺省——只想改一项时会把其它放宽项静默收紧）；没有生效规则时才用最严缺省
+  const [maxMode, setMaxMode] = useState<string>(base?.max_mode ?? "default");
+  const [preSearch, setPreSearch] = useState((base?.auto_preauthorizations ?? []).includes("search_generalized"));
+  const [extra, setExtra] = useState((base?.fetch_allowlist_extra ?? []).join("\n"));
+  const [l3a, setL3a] = useState(base?.l3a_standard_model === "allow");
+  const [support, setSupport] = useState(base?.support_upload === "allow");
+  const [relay, setRelay] = useState(base?.share_relay === "allow");
   const [ttl, setTtl] = useState(30);
   const domains = extra
     .split(/[\s,，、]+/)
@@ -1735,7 +1740,7 @@ function PolicyDraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (body: R
             </span>
           </div>
           {(support || relay) && <div className="banner banner-gray">勾选后，没更新软件的电脑会暂时按最严规则运行，直到更新。建议先让全所电脑更新到最新版。</div>}
-          <div className="muted pd-note">放宽的规则须管理员各自在电脑上确认后才生效（团队版 1 人，律所版 2 人）。</div>
+          <div className="muted pd-note">{base ? "初值是现在生效的规则，只改要改的那几项。" : ""}放宽的规则须管理员各自在电脑上确认后才生效（团队版 1 人，律所版 2 人）。</div>
           <button
             className="btn-primary btn-sm"
             disabled={busy}

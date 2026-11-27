@@ -61,7 +61,8 @@ test("探针 14 v0 全链：单聊收文件 → 卡片选项脱敏 → 选择 �
   const { matter } = await inv("matters.create", { title: "股权转让审查（机密客户甲公司）", stance: "受让方", consent_status: "not_required", collab_scope: "team", client_name: "甲公司", key_dates: { analysis_as_of: "2026-10-01" } });
   await inv("matters.node_authorize", { matter_id: matter.matter_id, node_device_id: nodeDeviceId });
   await inv("matters.create", { title: "未授权事项", stance: "受让方", consent_status: "not_required", collab_scope: "team" });
-  await inv("matters.create", { title: "strict 事项", stance: "受让方", consent_status: "not_required", collab_scope: "team", confidentiality: "strict" });
+  // 第 73 批（D-307）：客户要求不上云（L3b）的事项不能团队共享——strict 事项只能是个人事项（同样不该出现在卡片选项里）
+  await inv("matters.create", { title: "strict 事项", stance: "受让方", consent_status: "not_required", confidentiality: "strict" });
   await inv("sync.export", { share_dir: shareDir });
   await node.kernel.invoke("sync.import", { share_dir: shareDir });
   // 绑定发送人（节点库内）

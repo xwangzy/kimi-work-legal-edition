@@ -1,8 +1,9 @@
 /**
  * 事项页（第 03 篇 §4.4 事项头常显；材料、任务、看板、当事人词典、数据去向）。
+ * 第 73 批（D-308、D-310）：团队共享事项——事项头“团队共享 · n 人”胶囊、“⋯ → 事项成员”页；个人事项的负责人在团队空间里有“⋯ → 和同事一起办…”。
  */
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { api, type AiAuthorization, type EgressRecord, type Matter, type MaterialFile, type MaterialImportResult, type MaterialTriage, type MaterialUsage, type MatterBasis, type RunPolicyView } from "../api.ts";
+import { api, matterMembers, type MatterMembersView, type AiAuthorization, type EgressRecord, type Matter, type MaterialFile, type MaterialImportResult, type MaterialTriage, type MaterialUsage, type MatterBasis, type RunPolicyView } from "../api.ts";
 import { triageSuggestion, triageText } from "../lib/material-triage.ts";
 import { nav } from "../App.tsx";
 import { Composer, type ComposerValue } from "../components/Composer.tsx";
@@ -37,10 +38,15 @@ import { filterDocsByName, importResultText, MATERIAL_ORIGIN_LABELS, materialOri
 import { MaterialPicker } from "../components/MaterialPicker.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
+import { AddColleaguesDialog, MatterMembersPanel } from "../components/TeamMatter.tsx";
+import { useWorkspace } from "../components/WorkspaceSwitch.tsx";
+import { canOfferShare, isTeamShared } from "../lib/team-matters.ts";
 import "../styles-materials.css";
 import "../styles-matter.css";
 
-type Tab = "materials" | "facts" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle";
+type Tab = "materials" | "facts" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle" | "members";
+/** “⋯”里的几页（第 73 批：团队共享事项多“事项成员”）。 */
+const MORE_TAB_LABEL: Partial<Record<Tab, string>> = { members: "事项成员", parties: "当事人名单", egress: "数据去向记录", lifecycle: "结案与删除" };
 
 export function MatterPage({ matterId }: { matterId: string }) {
   const [matter, setMatter] = useState<Matter | null>(null);
@@ -108,6 +114,13 @@ export function MatterPage({ matterId }: { matterId: string }) {
   const [usageOpen, setUsageOpen] = useState<string | null>(null);
   const [preview, setPreview] = useState<{ filename: string; text: string | null; error?: string } | null>(null);
   const [showOld, setShowOld] = useState(false);
+  // 第 73 批：事项成员（团队共享事项才取）；个人事项“和同事一起办…”弹窗；改为一起办之后的一句结果
+  const ws = useWorkspace();
+  const [members, setMembers] = useState<MatterMembersView | null>(null);
+  const [membersErr, setMembersErr] = useState<string | null>(null);
+  const [membersTick, setMembersTick] = useState(0);
+  const [sharing, setSharing] = useState(false);
+  const [shareMsg, setShareMsg] = useState<{ text: string; tone: "ok" | "warn" } | null>(null);
 
   const reload = useCallback(() => {
     api
@@ -144,6 +157,22 @@ export function MatterPage({ matterId }: { matterId: string }) {
       .catch(() => setReview(new Map()));
   }, [matterId]);
   useEffect(reload, [reload]);
+  const teamShared = isTeamShared(matter, ws.kind);
+  useEffect(() => {
+    if (!teamShared) {
+      setMembers(null);
+      return;
+    }
+    let live = true;
+    setMembersErr(null);
+    matterMembers
+      .list(matterId)
+      .then((r) => live && setMembers(r))
+      .catch((e) => live && setMembersErr((e as Error).message));
+    return () => {
+      live = false;
+    };
+  }, [matterId, teamShared, membersTick]);
 
   const patch = async (p: Record<string, unknown>, note: string) => {
     try {
@@ -361,6 +390,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
           matter={matter}
           policy={policy}
           onParties={() => setTab("parties")}
+          team={teamShared ? { view: members, error: membersErr } : null}
+          onMembers={() => setTab("members")}
           {...(closed
             ? {}
             : {
@@ -423,16 +454,27 @@ export function MatterPage({ matterId }: { matterId: string }) {
           ).map(([k, l]) => (
             <button key={k} role="tab" aria-selected={tab === k} className={`tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>
           ))}
-          {(tab === "parties" || tab === "egress" || tab === "lifecycle") && (
-            <button role="tab" aria-selected className="tab active">{tab === "parties" ? "当事人名单" : tab === "egress" ? "数据去向记录" : "结案与删除"}</button>
+          {MORE_TAB_LABEL[tab] && (
+            <button role="tab" aria-selected className="tab active">{MORE_TAB_LABEL[tab]}</button>
           )}
           <span className="spacer" />
           <span className="tab-more-wrap" ref={moreRef}>
-            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label="更多：当事人名单、数据去向记录、结案与删除" onClick={() => setMoreOpen((v) => !v)}>
+            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label={`更多：${[teamShared ? "事项成员" : canOfferShare(ws.kind, matter) ? "和同事一起办" : "", "当事人名单", "数据去向记录", "结案与删除"].filter(Boolean).join("、")}`} onClick={() => setMoreOpen((v) => !v)}>
               ⋯
             </button>
             {moreOpen && (
               <div className="popover tab-more-menu" role="menu">
+                {/* 第 73 批：团队共享事项排第一项“事项成员”；个人事项的负责人（团队空间、进行中）有“和同事一起办…” */}
+                {teamShared && (
+                  <button role="menuitem" className="menu-item" onClick={() => { setTab("members"); setMoreOpen(false); }}>
+                    <span className="menu-label">事项成员</span>
+                  </button>
+                )}
+                {!teamShared && canOfferShare(ws.kind, matter) && (
+                  <button role="menuitem" className="menu-item" onClick={() => { setSharing(true); setMoreOpen(false); }}>
+                    <span className="menu-label">和同事一起办…</span>
+                  </button>
+                )}
                 {(
                   [
                     ["parties", "当事人名单"],
@@ -667,6 +709,25 @@ export function MatterPage({ matterId }: { matterId: string }) {
         {tab === "parties" && <PartiesPanel matterId={matterId} onChanged={reload} readOnly={closed} />}
         {tab === "egress" && <MatterEgress matterId={matterId} />}
         {tab === "lifecycle" && <MatterLifecyclePanel matter={matter} onChanged={reload} />}
+        {tab === "members" && (teamShared ? (
+          <MatterMembersPanel key={shareMsg?.text ?? "members"} matter={matter} view={members} error={membersErr} onReload={() => setMembersTick((t) => t + 1)} canEnable={ws.features.teamAdmin} initialMsg={shareMsg} />
+        ) : (
+          <p className="muted">这个事项只有你：要和同事一起办，点右上角“⋯ → 和同事一起办…”。</p>
+        ))}
+        {sharing && (
+          <AddColleaguesDialog
+            mode="share"
+            matter={matter}
+            onClose={() => setSharing(false)}
+            onDone={(text, tone) => {
+              setSharing(false);
+              setShareMsg({ text, tone });
+              setTab("members");
+              reload();
+              notifyDataChanged();
+            }}
+          />
+        )}
       </div>
       {basisOpen && (
         <BasisDialog

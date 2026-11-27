@@ -7,6 +7,8 @@
  * 第 72 批（V46，D-305 第 4 条）：用户卡姓名下一行是当前工作空间（“王律师的工作室 · 个人”“某某律师事务所 · 团队”）；
  * 菜单里列出这个人的全部工作空间（团队带角色）+“加入团队…”，点选即切换（useSwitchFlow：同档案直接进 / 新档案开通 / 满额选择卡）。
  * 云端不支持（旧云端）时卡片与菜单只有原有内容。
+ * 第 73 批（D-310）：事项行改为 flex（长标题省略、尾部记号不被挤掉），团队共享事项尾部一个灰色两人记号 + 读屏“团队共享”；
+ * 同事之间同步到期前 7 天在用户卡状态行提醒管理员续期（D-309）。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { modKeyLabel } from "../lib/platform.ts";
@@ -24,6 +26,8 @@ import { openJoinTeam } from "./TeamSpace.tsx";
 import { planBadge, quotaMenuLine } from "../lib/quota-notice.ts";
 import { runName } from "../lib/labels.ts";
 import { NARROW_QUERY, sidebarState } from "../lib/sidebar-state.ts";
+import { isTeamShared } from "../lib/team-matters.ts";
+import { TeamMark } from "./TeamMatter.tsx";
 /** 第 72 批（C16）：被移出 / 退出团队后在另一个工作空间提示一次（登记在 docs/privacy/residency.json；键须是本文件里的字面量）。 */
 const LEFT_NOTICE_KEY = "kwl.ws.left-notice";
 
@@ -124,6 +128,8 @@ export function Sidebar({ route }: { route: Route }) {
   const [me, setMe] = useState<{ name: string | null; firm: string | null; admin: boolean; email: string | null; edition?: "trial" | "release" | "dev" | null } | null>(null);
   // 有入组申请等这台电脑批准（B-3 余项）：只问管理员电脑；内核 60 秒内复用上次结果
   const [joins, setJoins] = useState(0);
+  // 第 73 批（D-309）：同事之间同步还有几天到期（内核在到期前 7 天给出；只提醒团队管理员）
+  const [relayExpiring, setRelayExpiring] = useState<number | null>(null);
   // 额度（用户卡上的套餐标识、菜单里的额度一行）：要经控制面取，开机取一次，之后每 5 分钟、打开菜单时再取
   const [quota, setQuota] = useState<QuotaStatus | null>(null);
   const loadQuota = () => void api.quotaStatus().then(setQuota).catch(() => {});
@@ -192,6 +198,8 @@ export function Sidebar({ route }: { route: Route }) {
         });
         // 只有管理员能批准入组（控制面只认管理员证书；复核 RB16B-18：合伙人不问）；没有控制面或本机没有有效邀请时内核直接报 0，不联网。
         // 第 72 批：个人空间没有入组（个人账号的证书角色也是管理员）
+        const exp = (s as { share_relay_expiring?: { days_left?: unknown } | null }).share_relay_expiring?.days_left;
+        setRelayExpiring(s.member_role === "firm_admin" && s.workspace_kind === "team" && typeof exp === "number" ? exp : null);
         if (s.member_role === "firm_admin" && s.workspace_kind !== "personal")
           members
             .attention()
@@ -211,7 +219,7 @@ export function Sidebar({ route }: { route: Route }) {
     api.chatList().then((r) => setChats(r.conversations)).catch(() => setChats([]));
   }, [mode, tick, route.page === "chat" ? route.conversationId : null]);
   // 底部状态：正常时不占位（Kimi 用户卡只有头像、姓名、套餐）；出问题时变色并说明（技术细节在“设置 · 备份与安全”）
-  const foot = sidebarFoot({ gate: status.gate, unresolved: status.unresolved, execOk, pendingJoins: joins });
+  const foot = sidebarFoot({ gate: status.gate, unresolved: status.unresolved, execOk, pendingJoins: joins, relayExpiring });
   const { title: footTitle, note: footNote, tone: footTone } = foot;
   const card = userCardText(me, { title: footTitle, note: footNote });
   const activeMatter = route.page === "matter" || route.page === "run" ? route.matterId : null;
@@ -323,7 +331,7 @@ export function Sidebar({ route }: { route: Route }) {
                 {matters.slice(0, 8).map((m) => (
                   <button
                     key={m.matter_id}
-                    className={`sidebar-link${activeMatter === m.matter_id ? " active" : ""}`}
+                    className={`sidebar-link sidebar-link-row${activeMatter === m.matter_id ? " active" : ""}`}
                     onClick={() => nav(m.activity?.waiting_run_id ? `/run/${m.activity.waiting_run_id}/${m.matter_id}` : `/matter/${m.matter_id}`)}
                     title={m.activity?.waiting ? `${m.title}（有任务等你确认）` : m.activity?.running ? `${m.title}（有任务进行中）` : m.title}
                   >
@@ -339,7 +347,8 @@ export function Sidebar({ route }: { route: Route }) {
                         <span className="sr-only">进行中：</span>
                       </>
                     ) : null}
-                    {m.title}
+                    <span className="sidebar-link-text">{m.title}</span>
+                    {isTeamShared(m, ws.kind) && <TeamMark />}
                   </button>
                 ))}
                 {matters.length > 8 && (
