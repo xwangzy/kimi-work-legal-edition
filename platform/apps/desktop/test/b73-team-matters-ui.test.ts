@@ -10,6 +10,11 @@ import {
   addResultText,
   avatarOf,
   canManageMembers,
+  effectiveKind,
+  localOnlyBlocked,
+  TEAM_SCOPE_CONFLICT_TEXT,
+  teamFaultOf,
+  teamFaultText,
   canOfferShare,
   carriedLine,
   manageBlockedText,
@@ -227,17 +232,71 @@ test("个人事项改为一起办（D-307）：负责人、团队空间、进行
   assert.equal(levelOfMatter({ data_level: "L2" }), "normal");
 });
 
-test("错误换成律师层说法：原因码优先；内核原句里的研发用语换掉；讲加密细节的原句不搬给律师", () => {
-  assert.equal(memberErrorText({ code: "member_not_in_team", message: "x" }), "不在团队名单里（可能已离开团队）");
-  assert.equal(memberErrorText({ code: "forbidden", detail: { reason: "scope_irreversible" }, message: "x" }), "团队共享事项不能改回只有我：要结束共享请移出同事或结案");
+test("错误按内核终版 code + detail.reason 分支（03 第 W2 行 ⑥）：四个契约码 + team_scope_conflict + 开通 / 续期的 validation 原因", () => {
+  const err = (code: string, reason?: string, extra: object = {}) => ({ code, message: "内核原句", detail: reason ? { reason, ...extra } : extra });
+  // team_scope_unavailable 四种
+  assert.match(teamFaultText(err("team_scope_unavailable", "personal_workspace")), /^个人空间里的事项只在你自己的电脑上/);
+  assert.match(teamFaultText(err("team_scope_unavailable", "workspace_unknown")), /还没确认当前是团队空间/);
+  assert.match(teamFaultText(err("team_scope_unavailable", "device_not_confirmed")), /^这台电脑还不能接收团队共享事项：请在“设置 → 团队”里申请/);
+  assert.match(teamFaultText(err("team_scope_unavailable", "client_no_cloud")), /^客户要求不上云的事项不能和同事一起办/);
+  assert.equal(teamFaultText(err("team_scope_unavailable", "new_reason")), "内核原句", "认不出的原因用内核原句");
+  // 其余
+  assert.equal(teamFaultText(err("scope_irreversible", "team_to_personal")), "团队共享事项不能改回只有我：要结束共享请移出同事或结案。");
+  assert.equal(teamFaultText(err("team_scope_conflict")), TEAM_SCOPE_CONFLICT_TEXT);
+  assert.match(teamFaultText(err("roster_unavailable", "offline")), /联网后再试/);
+  assert.match(teamFaultText(err("roster_unavailable", "not_supported")), /请联系 Kimi Work 客服/);
+  assert.match(teamFaultText(err("validation", "relay_not_configured")), /中软还没为本所开通/);
+  assert.equal(teamFaultText(err("validation", "not_enabled")), "同事之间同步还没开通：请先开通。");
+  assert.deepEqual(teamFaultOf(err("member_not_in_team", "left", { user_id: "usr_t_a" })), { code: "member_not_in_team", reason: "left", userId: "usr_t_a", message: "内核原句" });
+  // 某位同事没加上：名单类给短语
+  assert.equal(memberErrorText(err("member_not_in_team", "not_in_roster")), "不在团队同事名单里");
+  assert.equal(memberErrorText(err("member_not_in_team", "disabled")), "已停用");
+  assert.equal(memberErrorText(err("member_not_in_team", "removed")), "已被移出团队");
+  assert.equal(memberErrorText(err("member_not_in_team", "left")), "已离开团队");
+  assert.equal(memberErrorText(err("member_not_in_team")), "不在团队名单里（可能已离开团队）");
+  assert.equal(memberErrorText(err("roster_unavailable", "offline")), "暂时取不到同事名单，联网后再试");
+  // 兜底：研发用语换掉、讲加密细节的不搬
   const t = memberErrorText({ code: "forbidden", message: "这个事项经中软共享中继同步：加入成员须由中继上的控制成员（王律师）在其电脑上操作，或请对方先把控制成员移交给你" });
   assert.doesNotMatch(t, /中继|控制成员/);
   assert.match(t, /王律师/);
   assert.equal(memberErrorText({ code: "internal", message: "本机缺少当前纪元事项密钥包裹，无法为新成员补包裹" }), "没有完成：请稍后重试；仍不行请联系 Kimi Work 客服");
   assert.equal(memberErrorText({ code: "x", message: "已按当前密钥纪元补包裹" }), "没有完成：请稍后重试；仍不行请联系 Kimi Work 客服");
-  assert.equal(memberErrorText({ code: "team_scope_unavailable", message: "这台电脑还不能接收团队共享事项" }), "这台电脑还不能接收团队共享事项", "内核给的律师层句子原样用");
-  assert.match(createErrorText({ code: "member_not_in_team", message: "" }), /事项没有建：请重新选同事后再建/, "整体失败、不留建了一半");
-  assert.match(createErrorText({ code: "roster_unavailable", message: "" }), /先选“只有我”建好/);
+  // 建事项整体失败、不留建了一半；写出是哪位同事
+  assert.equal(createErrorText(err("member_not_in_team", "left", { user_id: "usr_t_a" }), (id) => (id === "usr_t_a" ? "陈律师" : null)), "陈律师已离开团队，事项没有建：请重新选同事后再建。");
+  assert.equal(createErrorText(err("member_not_in_team", "not_in_roster")), "选的同事里有人不在团队同事名单里，事项没有建：请重新选同事后再建。");
+  assert.match(createErrorText(err("roster_unavailable", "offline")), /事项没有建：可以先选“只有我”建好/);
+  assert.match(createErrorText(err("team_scope_unavailable", "device_not_confirmed")), /^这台电脑还不能接收团队共享事项/);
+});
+
+test("类型还不知道（刚切到的团队档案 workspace_kind 起初为 null）：按名单推断、入口照常给，由内核判断；这台电脑不知道是否经确认时也交给内核", () => {
+  assert.equal(effectiveKind("team", null), "team");
+  assert.equal(effectiveKind("personal", { available: true }), "personal");
+  assert.equal(effectiveKind(null, { available: true }), "team");
+  assert.equal(effectiveKind(null, { available: false, reason: "offline" }), "team");
+  assert.equal(effectiveKind(null, { available: false, reason: "personal_workspace" }), "personal");
+  assert.equal(effectiveKind(null, { available: false, reason: "not_supported" }), null, "开发形态、试用版仍不出现");
+  assert.equal(effectiveKind(null, null), null);
+  // 推断出团队后“谁能看到”照常出现；证书类型不知道时不置灰（内核 device_not_confirmed 如实显示）
+  assert.deepEqual(scopeAvailability({ kind: effectiveKind(null, { available: true }), issuer: null, level: "normal" }), { show: true, team: true, reason: null, apply: false });
+  assert.equal(canOfferShare(effectiveKind(null, { available: true }), { collab_scope: "personal", my_role: "owner", lifecycle: "active" }), true);
+  const tm = code("components/TeamMatter.tsx");
+  assert.match(tm, /const probe = ws\.ready && ws\.kind === null;\s*const roster = useRoster\(probe\);\s*return \{ ws, kind: effectiveKind\(ws\.kind, probe \? roster : null\) \};/);
+  assert.match(code("components/NewMatter.tsx"), /const \{ ws, kind \} = useTeamKind\(\);/);
+  assert.match(code("pages/Matter.tsx"), /const \{ ws, kind: teamKind \} = useTeamKind\(\);/);
+  // 内核拒的原因如实显示（改范围、开通 / 续期、记为不上云都走同一个说法）
+  assert.match(tm, /setErr\(teamFaultText\(e\)\);/);
+  assert.match(code("components/ShareRelayRow.tsx"), /setMsg\(\{ text: teamFaultText\(e\), ok: false \}\)/);
+});
+
+test("“记为客户要求不上云”在团队共享事项上置灰并说原因（内核 team_scope_conflict 同一说法）", () => {
+  assert.equal(localOnlyBlocked({ collab_scope: "personal" }), null);
+  assert.match(localOnlyBlocked({ collab_scope: "team" })!, /^团队共享事项不能记为客户要求不上云/);
+  assert.match(localOnlyBlocked({ collab_scope: "team" })!, /另建一个“只有我”的事项/);
+  const rs = code("components/RunSheet.tsx");
+  assert.match(rs, /const localOnlyWhy = localOnlyBlocked\(matter\);/);
+  assert.match(rs, /disabled=\{localOnlyBusy \|\| !!localOnlyWhy\}/);
+  assert.match(rs, /<span className="authz-exit-why" id="local-only-why">\s*\{localOnlyWhy\}/);
+  assert.match(rs, /setErr\(teamFaultText\(e\)\);/);
 });
 
 test("团队共享记号（D-310）：个人空间不出现；胶囊“团队共享 · n 人”；菜单、搜索副标题前缀", () => {
@@ -290,10 +349,17 @@ test("开通同事之间同步（D-309）：三态 + 待确认 + 过期；到期
   const mine = shareRelayRow({ ...base, state: "pending_second_signature", threshold: 2, signatures: 1, pending: { draft_id: "d1", kind: "renew", digest: "x", signatures: 1, signed_by_me: true } });
   assert.equal(mine.text, "已发起续期 · 还需 1 位管理员在自己的电脑上确认");
   assert.equal(mine.action, null);
+  const secondRenew = shareRelayRow({ ...base, state: "pending_second_signature", threshold: 2, signatures: 1, pending: { draft_id: "d2", kind: "renew", digest: "x", signatures: 1, signed_by_me: false } });
+  assert.deepEqual(secondRenew.action, { kind: "renew", label: "确认续期…" }, "调同一个 renew 签同一份");
   assert.doesNotMatch(shareRelayEnableLines(2, true).join(""), /还需另一位管理员/, "第二位确认即生效，不再说还需另一位");
   assert.match(shareRelayRenewLines(1).join(""), /规则内容不变/);
   // 所见即所签：一并确认的其它放宽项逐条写出（同事之间同步本身不重复）
   assert.equal(carriedLine(["l3a_standard_model:allow", "max_mode:auto", "share_relay:allow"]), "这次确认的规则里同时仍允许：敏感事项可以用通用 AI 服务（全部化名）；AI 最高档位放宽到“放手做”。");
+  assert.equal(carriedLine(["support_upload:allow"], "renew"), "续期后仍允许：律师可以把问题报告直接发给客服（每次确认；保存 7 天）。");
+  assert.equal(carriedLine(["support_upload:allow"], "restore"), "续期会一并恢复这些放宽项：律师可以把问题报告直接发给客服（每次确认；保存 7 天）。", "已过期续期写明一并恢复的");
+  assert.match(shareRelayRenewLines(1, false, true)[0]!, /按过期前最后一份本所规则原样恢复/);
+  const rr = code("components/ShareRelayRow.tsx");
+  assert.match(rr, /carriedLine\(s\?\.carry_relaxations\?\.renew, expired \? "restore" : "renew"\)/);
   assert.equal(carriedLine([]), null);
   assert.equal(carriedLine(null), null);
   assert.equal(relaxationText("support_upload:allow"), "律师可以把问题报告直接发给客服（每次确认；保存 7 天）");

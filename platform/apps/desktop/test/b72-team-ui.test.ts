@@ -374,7 +374,7 @@ test("补测 D2 / D4 / D9 / D6：团队共享处两条提示不同时出现、�
   assert.match(read("../src/styles-team.css"), /\.members-table \.members-nowrap \{ white-space: nowrap; \}/);
   // 第 73 批（D-307）：入口已在事项里（“⋯ → 和同事一起办…”、新建事项“谁能看到”）——不再断言“不承诺入口”，改断言入口在
   const mt = read("../src/pages/Matter.tsx");
-  assert.match(mt, /canOfferShare\(ws\.kind, matter\) && \(\s*<button role="menuitem" className="menu-item" onClick=\{\(\) => \{ setSharing\(true\); setMoreOpen\(false\); \}\}>\s*<span className="menu-label">和同事一起办…<\/span>/);
+  assert.match(mt, /canOfferShare\(teamKind, matter\) && \(\s*<button role="menuitem" className="menu-item" onClick=\{\(\) => \{ setSharing\(true\); setMoreOpen\(false\); \}\}>\s*<span className="menu-label">和同事一起办…<\/span>/);
   assert.match(read("../src/components/NewMatter.tsx"), /<ScopeField variant="modal"/);
 });
 

@@ -15,7 +15,9 @@ import {
   addResultText,
   avatarOf,
   canManageMembers,
+  effectiveKind,
   manageBlockedText,
+  teamFaultText,
   colleagueMeta,
   filterColleagues,
   levelOfMatter,
@@ -47,7 +49,8 @@ import { Icon } from "./Icons.tsx";
 import { ListSkeleton, LoadError } from "./Loading.tsx";
 import { Modal } from "./Modal.tsx";
 import { Select } from "./Select.tsx";
-import { useWorkspace } from "./WorkspaceSwitch.tsx";
+import { useWorkspace, type WorkspaceState } from "./WorkspaceSwitch.tsx";
+import type { WorkspaceKind } from "../lib/workspace.ts";
 import "../styles-team.css";
 import "../styles-team-matters.css";
 
@@ -80,6 +83,17 @@ export function useRoster(enabled: boolean): TeamRoster | null {
     };
   }, [enabled]);
   return enabled ? r : null;
+}
+
+/**
+ * 工作空间类型（内核终版注意事项 ①）：kernel.status.workspace_kind 起初可能是 null（刚接受邀请切到的团队档案，约 2 分钟内补记）——
+ * null 时取一次同事名单推断（lib/team-matters.ts effectiveKind），入口照常给、由内核最终判断并如实显示原因；知道类型时不多取。
+ */
+export function useTeamKind(): { ws: WorkspaceState; kind: WorkspaceKind | null } {
+  const ws = useWorkspace();
+  const probe = ws.ready && ws.kind === null;
+  const roster = useRoster(probe);
+  return { ws, kind: effectiveKind(ws.kind, probe ? roster : null) };
 }
 
 /** 同事之间同步的状态（relay.status → true 已开通 / false 没开通 / null 不知道；configured：中软是否已为本所开通服务）。 */
@@ -475,7 +489,7 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
   onClose: () => void;
   onDone: (text: string, tone: "ok" | "warn") => void;
 }) {
-  const ws = useWorkspace();
+  const { ws, kind } = useTeamKind();
   const roster = useRoster(true);
   const relay = useRelayState(mode === "share");
   const [picked, setPicked] = useState<string[]>([]);
@@ -484,7 +498,7 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
   const [err, setErr] = useState("");
   const all = pickableColleagues(roster, existing);
   const note = rosterNote(roster);
-  const avail = mode === "share" ? scopeAvailability({ kind: ws.kind, issuer: ws.issuer, level: levelOfMatter(matter), roster }) : { show: true, team: true, reason: null, apply: false };
+  const avail = mode === "share" ? scopeAvailability({ kind, issuer: ws.issuer, level: levelOfMatter(matter), roster }) : { show: true, team: true, reason: null, apply: false };
   const blocked = mode === "share" && ws.ready && !avail.team;
   const effSync: MatterSync | null = mode === "share" ? relay.sync : sync;
   const submit = async () => {
@@ -493,7 +507,8 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
     try {
       if (mode === "share") await api.updateMatter(matter.matter_id, { collab_scope: "team" });
     } catch (e) {
-      setErr(memberErrorText(e));
+      // 内核按 code + detail.reason 拒（personal_workspace / workspace_unknown / device_not_confirmed / client_no_cloud 等）：如实显示
+      setErr(teamFaultText(e));
       setBusy(false);
       return;
     }
@@ -503,8 +518,8 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
       const m = all.find((x) => x.user_id === id);
       const name = m?.name ?? "一位同事";
       try {
-        await matterMembers.add(matter.matter_id, id, role);
-        added.push({ name, can_receive: !!m?.can_receive });
+        const r = await matterMembers.add(matter.matter_id, id, role);
+        added.push({ name: r.name ?? name, can_receive: r.can_receive ?? !!m?.can_receive });
       } catch (e) {
         failed.push({ name, why: memberErrorText(e) });
       }

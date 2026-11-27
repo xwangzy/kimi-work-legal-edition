@@ -1027,10 +1027,11 @@ export const api = {
   sampleStatus: () => invoke<{ installed: boolean; removed: boolean; matter_ids: string[]; litigation_offered: boolean; available?: boolean }>("samples.status", {}),
   removeSample: (matterId: string) => invoke<{ removed: boolean }>("samples.remove", { matter_id: matterId }),
   createMatter: (body: Record<string, unknown>) =>
-    invoke<{ matter: Matter; template_applied?: { template_id: string; todos: number; deadline: { date: string; steps: string[]; warnings: string[]; uncertain: boolean } | null; stance_mismatch?: boolean } }>("matters.create", body),
+    invoke<{ matter: Matter; members_added?: { user_id: string; name: string | null; matter_role: "editor" | "viewer"; devices_wrapped: number; can_receive: boolean; lawyer_note: string }[]; template_applied?: { template_id: string; todos: number; deadline: { date: string; steps: string[]; warnings: string[]; uncertain: boolean } | null; stance_mismatch?: boolean } }>("matters.create", body),
   matterTemplates: () => invoke<{ templates: MatterTemplate[] }>("matters.templates"),
   getMatter: (id: string) => invoke<{ matter: Matter; documents: any[]; run_policy?: RunPolicyView; runs?: any[] }>("matters.get", { matter_id: id }),
-  updateMatter: (id: string, patch: Record<string, unknown>) => invoke<{ matter: Matter }>("matters.update", { matter_id: id, patch }),
+  /** 字段一律放在 patch 里（放顶层内核回 422 patch_missing）；个人 → 团队成功时带 lawyer_note。 */
+  updateMatter: (id: string, patch: Record<string, unknown>) => invoke<{ matter: Matter; lawyer_note?: string }>("matters.update", { matter_id: id, patch }),
   // 数据生命周期（结案 → 保留期 → 删除；法律保全）
   matterLifecycle: (id: string) => invoke<{ lifecycle: MatterLifecycle; retention_years: { min: number; max: number; default: number }; receipt: DeletionReceiptView | null }>("matters.lifecycle", { matter_id: id }),
   closeMatter: (id: string, retentionYears: number) => invoke<{ lifecycle: MatterLifecycle; agent_data_purged: boolean }>("matters.close", { matter_id: id, retention_years: retentionYears }),
@@ -1965,6 +1966,8 @@ export interface TeamRosterMember {
 export interface TeamRoster {
   available: boolean;
   reason?: "personal_workspace" | "offline" | "not_supported" | "unavailable";
+  /** 这份名单的时刻（现取或缓存；没有为 null）。 */
+  fetched_at?: string | null;
   members: TeamRosterMember[];
 }
 /** 事项角色（内核五种；律师端只露负责人 / 一起办 / 只看，D-308）。 */
@@ -2009,21 +2012,52 @@ export interface ShareRelayStatus {
   expiring?: { days_left: number } | null;
   fallback_reason?: string | null;
   policy_version?: number | null;
+  /** 取待签草稿失败的原因代码（管理员电脑）。 */
+  drafts_error?: string;
+}
+/** 开通 / 续期的应答：状态视图 + 是否已发布、草稿编号、一句结果。 */
+export interface ShareRelayActionResult extends ShareRelayStatus {
+  published?: boolean;
+  draft_id?: string;
+  lawyer_note?: string;
 }
 /** 第 73 批（契约 02 §2.2～2.5）：事项成员。只有负责人能加 / 改角色 / 移出（内核核验）；改角色 = 同一 user_id 以新角色再加一次（内核 addOrUpdateMember）。 */
+/** matters.members.add 的应答（内核终版：加 name、can_receive、lawyer_note；note 是技术说明，界面不显示）。 */
+export interface MatterMemberAddResult {
+  matter_id: string;
+  user_id: string;
+  name?: string | null;
+  can_receive?: boolean;
+  devices_wrapped?: number;
+  lawyer_note?: string;
+  note?: string;
+}
 export const matterMembers = {
   list: (matterId: string) => invoke<MatterMembersView>("matters.members.list", { matter_id: matterId }),
-  add: (matterId: string, userId: string, role: "editor" | "viewer") => invoke<{ matter_id: string; user_id: string; devices_wrapped?: number; note?: string }>("matters.members.add", { matter_id: matterId, user_id: userId, matter_role: role }),
-  setRole: (matterId: string, userId: string, role: "editor" | "viewer") => invoke<{ matter_id: string; user_id: string }>("matters.members.add", { matter_id: matterId, user_id: userId, matter_role: role }),
-  remove: (matterId: string, userId: string) => invoke<{ matter_id: string; removed: string; note?: string }>("matters.members.remove", { matter_id: matterId, user_id: userId }),
+  add: (matterId: string, userId: string, role: "editor" | "viewer") => invoke<MatterMemberAddResult>("matters.members.add", { matter_id: matterId, user_id: userId, matter_role: role }),
+  setRole: (matterId: string, userId: string, role: "editor" | "viewer") => invoke<MatterMemberAddResult>("matters.members.add", { matter_id: matterId, user_id: userId, matter_role: role }),
+  remove: (matterId: string, userId: string) => invoke<{ matter_id: string; removed: string; name?: string | null; lawyer_note?: string; note?: string }>("matters.members.remove", { matter_id: matterId, user_id: userId }),
 };
+/**
+ * 团队共享事项的错误原因（内核终版，03 第 W2 行 ⑥）：error.code 是下面四个契约码之一（字符串，不在 domain FaultCode 里）或 validation，
+ * detail.reason 细分；界面按 code + reason 分支（lib/team-matters.ts teamFaultText）。
+ */
+export type TeamFaultReason =
+  | { code: "team_scope_unavailable"; reason: "personal_workspace" | "workspace_unknown" | "device_not_confirmed" | "client_no_cloud" }
+  | { code: "member_not_in_team"; reason: "not_in_roster" | "disabled" | "removed" | "left"; user_id: string }
+  | { code: "roster_unavailable"; reason: "offline" | "not_supported" }
+  | { code: "scope_irreversible"; reason: "team_to_personal" }
+  /** 内核补：已是团队共享的事项不能再设为客户要求不上云。 */
+  | { code: "team_scope_conflict"; reason?: string }
+  | { code: "validation"; reason: "relay_not_configured" | "not_enabled" | "patch_missing" };
 /** 第 73 批（契约 02 §2.1、§2.6）：同事名单与同事之间同步的开通、续期。 */
 export const teamMatters = {
   /** 调用没成功（旧内核、内核重启中）按“暂时取不到”处理，界面不报错。 */
   roster: () => invoke<TeamRoster>("team.roster").catch(() => ({ available: false, reason: "unavailable", members: [] }) as TeamRoster),
   shareRelayStatus: () => invoke<ShareRelayStatus>("firm_policy.share_relay_status").catch(() => null),
-  shareRelayEnable: () => invoke<ShareRelayStatus>("firm_policy.share_relay_enable"),
-  shareRelayRenew: () => invoke<ShareRelayStatus>("firm_policy.share_relay_renew"),
+  /** 第二位管理员在自己电脑上调同一个方法即签同一份待签草稿；ttl_days 1～30，缺省 30。 */
+  shareRelayEnable: (ttlDays?: number) => invoke<ShareRelayActionResult>("firm_policy.share_relay_enable", ttlDays ? { ttl_days: ttlDays } : {}),
+  shareRelayRenew: (ttlDays?: number) => invoke<ShareRelayActionResult>("firm_policy.share_relay_renew", ttlDays ? { ttl_days: ttlDays } : {}),
 };
 /** 第 72 批（U-2）：confirmed = 已可接收；pending 带 12 位核对码；restart = 刚换上新证书、客户端即将重新载入。 */
 export interface DeviceShareStatus {

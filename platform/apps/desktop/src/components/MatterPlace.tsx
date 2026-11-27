@@ -97,7 +97,7 @@ export function MatterPlace({ matters, goal, onPlace, onMore, onCancel, anchor, 
     try {
       onPlace(await quickCreateMatter({ title, stance, confidentiality: level }, sc.submit), true);
     } catch (e) {
-      setErr(sc.submit.collab_scope ? createErrorText(e) : (e as Error).message);
+      setErr(sc.submit.collab_scope ? createErrorText(e, sc.nameOf) : (e as Error).message);
       setBusy(false);
     }
   };

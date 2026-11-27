@@ -18,8 +18,7 @@ import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
 import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.ts";
 import { createErrorText, pickableColleagues, scopeAvailability, scopeToSubmit, type CollabScope } from "../lib/team-matters.ts";
-import { ScopeField, useRelayState, useRoster } from "./TeamMatter.tsx";
-import { useWorkspace } from "./WorkspaceSwitch.tsx";
+import { ScopeField, useRelayState, useRoster, useTeamKind } from "./TeamMatter.tsx";
 
 // 我方立场（v9.4：补上劳动争议、借贷担保、委托服务、建设工程与二审的立场——S1 评审 §2.4；按业务类型分组提示）
 export const STANCE_GROUPS: [string, string[]][] = [
@@ -60,17 +59,19 @@ export async function quickCreateMatter(f: { title: string; stance: string; conf
 
 /** 两处表单共用：“谁能看到”的状态、可用性与要提交的部分（个人空间 show = false，什么也不提交）。 */
 export function useMatterScope(level: string, initial?: { scope?: CollabScope; members?: string[] }) {
-  const ws = useWorkspace();
+  // 类型不知道（刚接受邀请切到的团队档案，内核约 2 分钟内补记）时按名单推断，入口照常给、由内核最终判断（useTeamKind）
+  const { ws, kind } = useTeamKind();
   const [scope, setScope] = useState<CollabScope>(initial?.scope ?? "personal");
   const [picked, setPicked] = useState<string[]>(initial?.members ?? []);
-  const team = ws.kind === "team";
-  // 这台电脑能共享时先取同事名单（60 秒内共用一份）：点“和同事一起办”时列表已就绪，服务不支持也能立刻置灰
-  const roster = useRoster(team && ws.issuer === "firm_root");
+  const team = kind === "team";
+  // 团队空间里先取同事名单（60 秒内共用一份）：点“和同事一起办”时列表已就绪，服务不支持也能立刻置灰
+  const roster = useRoster(team && ws.issuer !== "account_ca");
   const relay = useRelayState(team);
-  const avail = scopeAvailability({ kind: ws.kind, issuer: ws.issuer, level, roster });
+  const avail = scopeAvailability({ kind, issuer: ws.issuer, level, roster });
   // 只提交名单里还能加的人（“更多设置”带过来的选择可能已过时）；名单还没取到时原样交给内核核验
   const ok = roster && roster.members.length > 0 ? new Set(pickableColleagues(roster).map((m) => m.user_id)) : null;
-  return { scope, setScope, picked, setPicked, avail, relay, submit: scopeToSubmit(scope, avail, ok ? picked.filter((id) => ok.has(id)) : picked) };
+  const nameOf = (id: string) => roster?.members.find((m) => m.user_id === id)?.name ?? null;
+  return { scope, setScope, picked, setPicked, avail, relay, nameOf, submit: scopeToSubmit(scope, avail, ok ? picked.filter((id) => ok.has(id)) : picked) };
 }
 
 export function NewMatterDialog({ onClose, onCreated, initial }: { onClose: () => void; onCreated: (m: Matter) => void; /** 第 72 批：从首页“放进哪个事项”的“更多设置”进来时带上已填的三项（第 73 批：连同“谁能看到”与选的同事）。 */ initial?: { title?: string; stance?: string; confidentiality?: string; scope?: CollabScope; members?: string[] } }) {
@@ -128,7 +129,7 @@ export function NewMatterDialog({ onClose, onCreated, initial }: { onClose: () =
       notifyDataChanged();
       onCreated(r.matter);
     } catch (e) {
-      setErr(sc.submit.collab_scope ? createErrorText(e) : (e as Error).message);
+      setErr(sc.submit.collab_scope ? createErrorText(e, sc.nameOf) : (e as Error).message);
     } finally {
       setBusy(false);
     }

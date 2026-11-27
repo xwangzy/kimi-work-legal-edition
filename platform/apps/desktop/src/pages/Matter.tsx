@@ -38,8 +38,7 @@ import { filterDocsByName, importResultText, MATERIAL_ORIGIN_LABELS, materialOri
 import { MaterialPicker } from "../components/MaterialPicker.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
-import { AddColleaguesDialog, MatterMembersPanel } from "../components/TeamMatter.tsx";
-import { useWorkspace } from "../components/WorkspaceSwitch.tsx";
+import { AddColleaguesDialog, MatterMembersPanel, useTeamKind } from "../components/TeamMatter.tsx";
 import { canOfferShare, isTeamShared } from "../lib/team-matters.ts";
 import "../styles-materials.css";
 import "../styles-matter.css";
@@ -115,7 +114,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
   const [preview, setPreview] = useState<{ filename: string; text: string | null; error?: string } | null>(null);
   const [showOld, setShowOld] = useState(false);
   // 第 73 批：事项成员（团队共享事项才取）；个人事项“和同事一起办…”弹窗；改为一起办之后的一句结果
-  const ws = useWorkspace();
+  // 类型不知道（刚切到的团队档案）时按名单推断：“和同事一起办…”照常给，由内核判断并如实显示原因
+  const { ws, kind: teamKind } = useTeamKind();
   const [members, setMembers] = useState<MatterMembersView | null>(null);
   const [membersErr, setMembersErr] = useState<string | null>(null);
   const [membersTick, setMembersTick] = useState(0);
@@ -459,7 +459,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           )}
           <span className="spacer" />
           <span className="tab-more-wrap" ref={moreRef}>
-            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label={`更多：${[teamShared ? "事项成员" : canOfferShare(ws.kind, matter) ? "和同事一起办" : "", "当事人名单", "数据去向记录", "结案与删除"].filter(Boolean).join("、")}`} onClick={() => setMoreOpen((v) => !v)}>
+            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label={`更多：${[teamShared ? "事项成员" : canOfferShare(teamKind, matter) ? "和同事一起办" : "", "当事人名单", "数据去向记录", "结案与删除"].filter(Boolean).join("、")}`} onClick={() => setMoreOpen((v) => !v)}>
               ⋯
             </button>
             {moreOpen && (
@@ -470,7 +470,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                     <span className="menu-label">事项成员</span>
                   </button>
                 )}
-                {!teamShared && canOfferShare(ws.kind, matter) && (
+                {!teamShared && canOfferShare(teamKind, matter) && (
                   <button role="menuitem" className="menu-item" onClick={() => { setSharing(true); setMoreOpen(false); }}>
                     <span className="menu-label">和同事一起办…</span>
                   </button>

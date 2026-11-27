@@ -5,6 +5,17 @@
 - 依据：`01-方案与决策.md` D-307～D-310、`02-接口契约.md` §2～3、`A5-团队共享事项界面落点审计.md`（§6.3 文案、§7.6 版式）。
 - 状态：代码与用例完成；**真实栈截图未拍**（等 W2 内核完成、主会话给实例端口与号码段后补）。
 
+## 对齐内核终版（8665838f 之后，未提交）
+
+按 `03-契约变更记录.md` W2 行与 `impl-K-内核进度.md` 补齐：
+- **`api.ts` 类型**：`TeamRoster.fetched_at`；`matters.create` 应答 `members_added[]`；`matters.members.add / remove` 应答 `name`、`can_receive`、`lawyer_note`（`MatterMemberAddResult`）；`matters.update` 应答 `lawyer_note`（字段一律在 `patch` 里）；`ShareRelayStatus` 加 `drafts_error`，开通 / 续期应答 `ShareRelayActionResult`（`published`、`draft_id`、`lawyer_note`），两个方法收可选 `ttl_days`；错误原因联合类型 `TeamFaultReason`。
+- **错误分支**（`lib/team-matters.ts` `teamFaultOf / teamFaultText / memberErrorText / createErrorText`，按 `code` + `detail.reason`）：`team_scope_unavailable` 四种（personal_workspace / workspace_unknown / device_not_confirmed / client_no_cloud）各一句；`member_not_in_team` 四种（not_in_roster 不在团队同事名单里 / disabled 已停用 / removed 已被移出团队 / left 已离开团队；建事项失败时用 `detail.user_id` 写出是哪位）；`roster_unavailable` offline / not_supported；`scope_irreversible`；`team_scope_conflict`（内核在补）；`validation` 的 relay_not_configured / not_enabled。认不出的原因用内核原句（研发用语兜底替换）。
+- **① 类型还不知道**：`kernel.status.workspace_kind` 为 null 时不再隐藏——`useTeamKind` 取一次同事名单推断（`effectiveKind`：取得到 / 离线缓存 → 团队；名单说个人空间 → 个人；不支持 → 仍不出现，开发形态与试用版不受影响），“谁能看到”与“⋯ → 和同事一起办…”照常给，由内核判断并如实显示原因；这台电脑证书类型不知道时也不置灰（只在确知 account_ca 时置灰）。
+- **② 成员页能否操作只看 `can_manage`**（`canManageMembers`；缺省时才按负责人且进行中）。
+- **③ 第二位管理员**：`pending` 非空且 `signed_by_me:false` → “确认开通… / 确认续期…”，调同一个 enable / renew；过期给“续期…”，确认框写“按过期前最后一份本所规则原样恢复”，并用 `carry_relaxations.renew` 写“续期会一并恢复这些放宽项：…”（生效中续期写“续期后仍允许：…”，开通写“这次确认的规则里同时仍允许：…”）。
+- **④ 记为客户要求不上云**：开始前确认（`RunSheet.tsx`）的出口在团队共享事项上置灰，下一行说原因“团队共享事项不能记为客户要求不上云（同事之间同步要经中软转送加密内容）：可以先只用本机功能；客户确实不同意上云的，请另建一个“只有我”的事项。”；内核拒（team_scope_conflict）时同一说法。
+- 用例：726 / 726（b73 新增 3 条、改 1 条）；tsc 干净。
+
 ## 验证
 
 - `node --test apps/desktop/test/*.test.ts`：**724 / 724 通过**（基线 705；新增 `b73-team-matters-ui.test.ts` 19 条，改 3 个旧文件里锁死旧写法的 5 条断言）。

@@ -53,13 +53,14 @@ export interface ScopeAvailability {
 }
 
 /**
- * “谁能看到”的可用性（D-307）。纯函数。
+ * “谁能看到”的可用性（D-307）。kind 传 effectiveKind 的结果（不知道时按名单推断）。纯函数。
  * 顺序：客户要求不上云（与这件事项的选择相关，就近说）→ 这台电脑还没经团队确认 → 同事名单服务不支持。
  */
 export function scopeAvailability(o: { kind: WorkspaceKind | null; issuer: "firm_root" | "account_ca" | null; level: string; roster?: Pick<TeamRoster, "reason"> | null }): ScopeAvailability {
   if (o.kind !== "team") return { show: false, team: false, reason: null, apply: false };
   if (o.level === "strict") return { show: true, team: false, reason: "客户要求不上云的事项只在这台电脑上，不能和同事一起办。", apply: false };
-  if (o.issuer !== "firm_root") return { show: true, team: false, reason: "这台电脑还不能接收团队共享事项：申请并经管理员确认后，才能和同事一起办。", apply: true };
+  // 只在确知这台电脑是直接登录、还没经团队确认时置灰；不知道（null）时交给内核判断（device_not_confirmed 如实显示）
+  if (o.issuer === "account_ca") return { show: true, team: false, reason: "这台电脑还不能接收团队共享事项：申请并经管理员确认后，才能和同事一起办。", apply: true };
   if (o.roster?.reason === "not_supported") return { show: true, team: false, reason: "暂时不能和同事一起办：Kimi Work 服务还不支持同事名单，请联系 Kimi Work 客服。", apply: false };
   return { show: true, team: true, reason: null, apply: false };
 }
@@ -244,18 +245,39 @@ export function levelOfMatter(m: { data_level?: string | null; confidentiality?:
   return m.data_level === "L3b" || m.confidentiality === "strict" ? "strict" : m.data_level === "L3a" || m.confidentiality === "high" ? "high" : "normal";
 }
 
-/** 加人 / 改范围的错误换成律师层说法：内核原因码优先；内核原句里的研发用语换掉（兜底，内核应给律师可读的句子）。纯函数。 */
-const MEMBER_ERROR_TEXT: Readonly<Record<string, string>> = {
-  member_not_in_team: "不在团队名单里（可能已离开团队）",
-  roster_unavailable: "暂时取不到同事名单，联网后再试",
-  scope_irreversible: "团队共享事项不能改回只有我：要结束共享请移出同事或结案",
+/**
+ * 团队共享事项的错误（内核终版，03 第 W2 行 ⑥）：按 `code` + `detail.reason` 分支；四个契约码不在 domain FaultCode 里，是字符串。
+ * - team_scope_unavailable：personal_workspace / workspace_unknown / device_not_confirmed / client_no_cloud
+ * - member_not_in_team：not_in_roster / disabled / removed / left（另带 user_id）
+ * - roster_unavailable：offline（503）/ not_supported（409）
+ * - scope_irreversible：team_to_personal
+ * - team_scope_conflict：已是团队共享的事项不能再设为客户要求不上云
+ * - validation：relay_not_configured / not_enabled（开通 / 续期）、patch_missing（调用方错误，界面不会发）
+ */
+export type TeamFaultCode = "team_scope_unavailable" | "member_not_in_team" | "roster_unavailable" | "scope_irreversible" | "team_scope_conflict";
+export function teamFaultOf(e: unknown): { code: string | null; reason: string | null; userId: string | null; message: string } {
+  const x = e as { code?: unknown; detail?: { reason?: unknown; user_id?: unknown }; message?: unknown } | null;
+  return {
+    code: typeof x?.code === "string" ? x.code : null,
+    reason: typeof x?.detail?.reason === "string" ? x.detail.reason : null,
+    userId: typeof x?.detail?.user_id === "string" ? x.detail.user_id : null,
+    message: typeof x?.message === "string" ? x.message.trim() : "",
+  };
+}
+
+const SCOPE_UNAVAILABLE_TEXT: Readonly<Record<string, string>> = {
+  personal_workspace: "个人空间里的事项只在你自己的电脑上：要和同事一起办，请先切换到团队空间。",
+  workspace_unknown: "还没确认当前是团队空间（刚加入团队时要等一会儿）：请联网后稍等再试。",
+  device_not_confirmed: "这台电脑还不能接收团队共享事项：请在“设置 → 团队”里申请，管理员确认后就能和同事一起办。",
+  client_no_cloud: "客户要求不上云的事项不能和同事一起办：同事之间同步要经中软转送加密内容，与客户的要求不符。",
 };
-export function memberErrorText(e: unknown): string {
-  const code = (e as { code?: unknown })?.code;
-  const reason = (e as { detail?: { reason?: unknown } })?.detail?.reason;
-  for (const k of [reason, code]) if (typeof k === "string" && MEMBER_ERROR_TEXT[k]) return MEMBER_ERROR_TEXT[k]!;
-  const m = String((e as Error)?.message ?? "").trim();
-  // 内部错误、或原句讲的是加密细节：不把半句技术说明搬给律师
+/** 某位同事加不进来的原因（短语，放在“没有加上：某某（原因）”里）。 */
+const MEMBER_REASON_TEXT: Readonly<Record<string, string>> = { not_in_roster: "不在团队同事名单里", disabled: "已停用", removed: "已被移出团队", left: "已离开团队" };
+const ROSTER_REASON_TEXT: Readonly<Record<string, string>> = { offline: "联不上 Kimi Work 服务，也没有上次的同事名单", not_supported: "Kimi Work 服务还不支持同事名单" };
+export const TEAM_SCOPE_CONFLICT_TEXT = "团队共享事项不能记为客户要求不上云：同事之间同步要经中软转送加密内容，与客户的要求不符。";
+
+/** 内核原句兜底：换掉研发用语；内部错误、讲加密细节的原句不搬给律师。纯函数。 */
+function lawyerize(code: string | null, m: string): string {
   if (!m || code === "internal" || /密钥|纪元|包裹/.test(m)) return "没有完成：请稍后重试；仍不行请联系 Kimi Work 客服";
   return m
     .replace(/(?:在)?中软共享中继上的控制成员|中继上的控制成员|控制成员/g, "负责同步的那位负责人")
@@ -264,13 +286,52 @@ export function memberErrorText(e: unknown): string {
     .replace(/律所策略/g, "律所规则");
 }
 
-/** 建事项（带同事）没成功的一句：整体失败、不留“建了一半”（契约 02 §2.2），说清要怎么做。纯函数。 */
-export function createErrorText(e: unknown): string {
-  const code = (e as { code?: unknown })?.code;
-  const reason = (e as { detail?: { reason?: unknown } })?.detail?.reason;
-  if (code === "member_not_in_team" || reason === "member_not_in_team") return "选的同事里有人已不在团队名单里，事项没有建：请重新选同事后再建。";
-  if (code === "roster_unavailable" || reason === "roster_unavailable") return "暂时取不到同事名单，事项没有建：可以先选“只有我”建好，联网后在事项里加同事。";
-  return memberErrorText(e);
+/** 整句说明（改范围、建事项、开通 / 续期、记为不上云等）。纯函数。 */
+export function teamFaultText(e: unknown): string {
+  const f = teamFaultOf(e);
+  if (f.code === "team_scope_unavailable" && f.reason && SCOPE_UNAVAILABLE_TEXT[f.reason]) return SCOPE_UNAVAILABLE_TEXT[f.reason]!;
+  if (f.code === "scope_irreversible") return "团队共享事项不能改回只有我：要结束共享请移出同事或结案。";
+  if (f.code === "team_scope_conflict") return TEAM_SCOPE_CONFLICT_TEXT;
+  if (f.code === "member_not_in_team") return `这位同事${MEMBER_REASON_TEXT[f.reason ?? ""] ?? "不在团队名单里（可能已离开团队）"}：不能加进事项。`;
+  if (f.code === "roster_unavailable") return `${ROSTER_REASON_TEXT[f.reason ?? ""] ?? "暂时取不到同事名单"}：${f.reason === "not_supported" ? "请联系 Kimi Work 客服。" : "联网后再试。"}`;
+  if (f.reason === "relay_not_configured") return "中软还没为本所开通同事之间同步的服务：请联系 Kimi Work 客服。";
+  if (f.reason === "not_enabled") return "同事之间同步还没开通：请先开通。";
+  return lawyerize(f.code, f.message);
+}
+
+/** 某位同事没加上 / 改角色 / 移出没成功的原因：名单类给短语，其余给整句。纯函数。 */
+export function memberErrorText(e: unknown): string {
+  const f = teamFaultOf(e);
+  if (f.code === "member_not_in_team") return MEMBER_REASON_TEXT[f.reason ?? ""] ?? "不在团队名单里（可能已离开团队）";
+  if (f.code === "roster_unavailable") return f.reason === "not_supported" ? "Kimi Work 服务还不支持同事名单" : "暂时取不到同事名单，联网后再试";
+  return teamFaultText(e);
+}
+
+/** 建事项（带同事）没成功的一句：整体失败、不留“建了一半”（契约 02 §2.2），说清要怎么做；nameOf 用来写出是哪位同事。纯函数。 */
+export function createErrorText(e: unknown, nameOf: (userId: string) => string | null = () => null): string {
+  const f = teamFaultOf(e);
+  if (f.code === "member_not_in_team") {
+    const who = (f.userId && nameOf(f.userId)) || "选的同事里有人";
+    return `${who}${MEMBER_REASON_TEXT[f.reason ?? ""] ?? "已不在团队名单里"}，事项没有建：请重新选同事后再建。`;
+  }
+  if (f.code === "roster_unavailable") return `${ROSTER_REASON_TEXT[f.reason ?? ""] ?? "暂时取不到同事名单"}，事项没有建：可以先选“只有我”建好，之后在事项里加同事。`;
+  return teamFaultText(e);
+}
+
+/**
+ * 工作空间类型（D-307 与内核终版注意事项 ①）：已知就用；不知道（null：刚接受邀请切到的团队档案，内核约 2 分钟内补记）时看同事名单——
+ * 取得到或有离线缓存按团队处理（入口照常给，最终由内核判断并如实显示原因）；名单说是个人空间按个人；名单不支持（开发形态、试用版）仍不出现。纯函数。
+ */
+export function effectiveKind(kind: WorkspaceKind | null, roster: Pick<TeamRoster, "available" | "reason"> | null | undefined): WorkspaceKind | null {
+  if (kind) return kind;
+  if (!roster) return null;
+  if (roster.available || roster.reason === "offline") return "team";
+  return roster.reason === "personal_workspace" ? "personal" : null;
+}
+
+/** “记为客户要求不上云”（开始前确认里的出口）在团队共享事项上置灰的原因（内核 team_scope_conflict 同一说法）；不是团队共享事项为 null。纯函数。 */
+export function localOnlyBlocked(m: { collab_scope?: string | null }): string | null {
+  return m.collab_scope === "team" ? "团队共享事项不能记为客户要求不上云（同事之间同步要经中软转送加密内容）：可以先只用本机功能；客户确实不同意上云的，请另建一个“只有我”的事项。" : null;
 }
 
 /**
@@ -313,11 +374,11 @@ export function shareRelayEnableLines(threshold: number, signsPending = false): 
   ];
 }
 
-/** 续期弹窗：本所规则原样再确认一次（新有效期）；带上的其它放宽项逐条写出（所见即所签）。纯函数。 */
-export function shareRelayRenewLines(threshold: number, signsPending = false): string[] {
+/** 续期弹窗：本所规则原样再确认一次（新有效期）；已过期时是按最后一份规则原样恢复。带上的其它放宽项另行逐条写出（carriedLine，所见即所签）。纯函数。 */
+export function shareRelayRenewLines(threshold: number, signsPending = false, expired = false): string[] {
   return [
-    "按现在的本所规则原样再确认一次，有效期从今天起算 30 天；规则内容不变。",
-    "到期不续，团队共享事项会暂停在同事电脑之间同步，事项内容不受影响。",
+    expired ? "按过期前最后一份本所规则原样恢复，有效期从今天起算 30 天；规则内容与过期前一样。" : "按现在的本所规则原样再确认一次，有效期从今天起算 30 天；规则内容不变。",
+    expired ? "续期之前，团队共享事项暂停在同事电脑之间同步，事项内容不受影响。" : "到期不续，团队共享事项会暂停在同事电脑之间同步，事项内容不受影响。",
     ...(threshold > 1 && !signsPending ? [`本所规则要 ${threshold} 位管理员分别确认：你确认后，还需另一位管理员在自己的电脑上确认才生效。`] : []),
   ];
 }
@@ -337,10 +398,15 @@ export function relaxationText(r: string): string {
   return r;
 }
 
-/** “同时仍允许：…”一行（开通 / 续期时一并确认的其它放宽项；没有时 null）。纯函数。 */
-export function carriedLine(codes: readonly string[] | null | undefined): string | null {
+/**
+ * 开通 / 续期时一并确认的其它放宽项（内核 carry_relaxations；没有时 null）。纯函数。
+ * mode：enable = 开通（“同时仍允许”）；renew = 生效中续期（“续期后仍允许”）；restore = 已过期续期（“一并恢复”——过期期间按最严运行，续期会把它们恢复）。
+ */
+export function carriedLine(codes: readonly string[] | null | undefined, mode: "enable" | "renew" | "restore" = "enable"): string | null {
   const list = (codes ?? []).filter((c) => !c.startsWith("share_relay")).map(relaxationText);
-  return list.length > 0 ? `这次确认的规则里同时仍允许：${list.join("；")}。` : null;
+  if (list.length === 0) return null;
+  const head = mode === "restore" ? "续期会一并恢复这些放宽项" : mode === "renew" ? "续期后仍允许" : "这次确认的规则里同时仍允许";
+  return `${head}：${list.join("；")}。`;
 }
 
 /** 到期提醒（侧栏、团队页顶部）：7 天内。纯函数。 */

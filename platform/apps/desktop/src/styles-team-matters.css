@@ -19,6 +19,10 @@
 .mt-title .tag-team svg { width: 12px; height: 12px; }
 .ctx-matter .team-mark { margin-left: -2px; }
 
+/* 开始前确认：团队共享事项的“记为客户要求不上云”置灰，原因另起一行 */
+.authz-exits .authz-exit-why { flex-basis: 100%; color: var(--text-secondary); line-height: 1.6; }
+.authz-exits .btn-link:disabled { color: var(--text-secondary); opacity: 0.6; cursor: not-allowed; }
+
 /* 谁能看到（两处表单） */
 .scope-field > p { margin: 0; }
 .scope-field .seg-btn { display: inline-flex; align-items: center; gap: 6px; }

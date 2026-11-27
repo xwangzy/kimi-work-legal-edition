@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import { teamMatters, type ShareRelayStatus } from "../api.ts";
 import { dueLabel } from "../lib/workspace.ts";
-import { carriedLine, memberErrorText, relayExpiringText, shareRelayEnableLines, shareRelayRenewLines, shareRelayRow } from "../lib/team-matters.ts";
+import { carriedLine, relayExpiringText, shareRelayEnableLines, shareRelayRenewLines, shareRelayRow, teamFaultText } from "../lib/team-matters.ts";
 import { Modal } from "./Modal.tsx";
 import { SettingRow } from "./SettingRow.tsx";
 import "../styles-team-matters.css";
@@ -52,7 +52,7 @@ export function ShareRelayRow() {
       setMsg({ text: doneText(r, kind === "renew"), ok: true });
       window.dispatchEvent(new Event(SHARE_RELAY_CHANGED));
     } catch (e) {
-      setMsg({ text: memberErrorText(e), ok: false });
+      setMsg({ text: teamFaultText(e), ok: false });
     } finally {
       setBusy(false);
     }
@@ -60,8 +60,10 @@ export function ShareRelayRow() {
   const act = row.action;
   // 我是第二位管理员：确认的是别人发起的那一份，确认后即生效
   const second = !!s?.pending && !s.pending.signed_by_me;
-  const lines = asking === "renew" ? shareRelayRenewLines(s?.threshold ?? 1, second) : shareRelayEnableLines(s?.threshold ?? 1, second);
-  const carried = asking ? carriedLine(asking === "renew" ? s?.carry_relaxations?.renew : s?.carry_relaxations?.enable) : null;
+  const expired = s?.state === "expired";
+  const lines = asking === "renew" ? shareRelayRenewLines(s?.threshold ?? 1, second, expired) : shareRelayEnableLines(s?.threshold ?? 1, second);
+  // 过期续期写明一并恢复的放宽项（内核 carry_relaxations.renew）；开通写明同时仍允许的（carry_relaxations.enable）
+  const carried = asking === "renew" ? carriedLine(s?.carry_relaxations?.renew, expired ? "restore" : "renew") : asking ? carriedLine(s?.carry_relaxations?.enable) : null;
   return (
     <SettingRow label="同事之间同步" id="row-share-relay" hint="团队共享事项加密后在同事电脑之间同步，中软打不开。">
       {s === undefined ? (

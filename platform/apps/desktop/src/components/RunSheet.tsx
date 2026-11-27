@@ -24,6 +24,7 @@ import { SendPoints } from "./SendPoints.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { afterConsentNotice, busyRunOfError, startHintOf, type StartHint } from "../lib/start-block.ts";
 import { StartHintBanner } from "./StartHint.tsx";
+import { localOnlyBlocked, teamFaultText } from "../lib/team-matters.ts";
 
 export interface PendingStart {
   matter: Matter;
@@ -150,6 +151,8 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   // 逐项记录同样须写出处（D-225）
   const canRecord = detail ? detailReady(record.ref) : recordReady(record, need.sensitive);
   const [localOnlyBusy, setLocalOnlyBusy] = useState(false);
+  // 第 73 批（D-307，内核 team_scope_conflict）：团队共享事项不能记为客户要求不上云——置灰并说原因
+  const localOnlyWhy = localOnlyBlocked(matter);
   /** 客户要求不上云：记录后本事项只在这台电脑上处理（不用云端 AI、不联网），关闭确认卡。 */
   const markLocalOnly = async () => {
     setLocalOnlyBusy(true);
@@ -159,7 +162,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
       notifyDataChanged();
       onClose();
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(teamFaultText(e));
     } finally {
       setLocalOnlyBusy(false);
     }
@@ -311,11 +314,16 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
               先只用本机功能
             </button>
             <span aria-hidden="true">·</span>
-            <button type="button" className="btn-link" disabled={localOnlyBusy} aria-busy={localOnlyBusy} onClick={() => void markLocalOnly()}>
+            <button type="button" className="btn-link" disabled={localOnlyBusy || !!localOnlyWhy} aria-busy={localOnlyBusy} aria-describedby={localOnlyWhy ? "local-only-why" : undefined} onClick={() => void markLocalOnly()}>
               <BusyLabel busy={localOnlyBusy} busyText="正在记录…">
                 记为客户要求不上云
               </BusyLabel>
             </button>
+            {localOnlyWhy && (
+              <span className="authz-exit-why" id="local-only-why">
+                {localOnlyWhy}
+              </span>
+            )}
           </div>
         </>
       ) : (
