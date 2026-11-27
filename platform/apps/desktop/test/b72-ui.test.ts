@@ -62,7 +62,7 @@ test("就地归属（D-301）：按描述预填事项名称与立场（只用规
   assert.equal(suggestStance("代理被上诉人写答辩意见", STANCES), "被上诉人", "最长匹配，不认成“上诉人”");
   assert.equal(suggestMatterTitle("起草一份劳动合同解除通知，我们是用人单位", STANCES), "劳动合同解除通知（用人单位）".length > 0 ? suggestMatterTitle("起草一份劳动合同解除通知，我们是用人单位", STANCES) : "");
   assert.match(suggestMatterTitle("起草起诉状，我方是原告", STANCES), /^起诉状起草（原告）$/);
-  assert.equal(suggestMatterTitle("帮我看看这个案子怎么打", STANCES), "帮我看看这个案子怎么打");
+  assert.equal(suggestMatterTitle("帮我看看这个案子怎么打", STANCES), "这个案子怎么打"); // 验收 Q-2：兜底去掉口头起句
   assert.equal(suggestStance("帮我看看", STANCES), null);
   assert.equal(suggestMatterTitle("", STANCES), "");
 });
@@ -157,4 +157,11 @@ test("第 72 批（06 实测）：交接等待的 effect 重跑后轮询照样�
   for (const m of src.matchAll(/await new Promise\(\(r\) => setTimeout\(r, (\d+)\)\);/g)) assert.ok(Number(m[1]) <= 250, `轮询间隔 ${m[1]} ms`);
   const sw = readFileSync(new URL("../src/lib/account-switch.ts", import.meta.url), "utf8");
   assert.match(sw, /await sleep\(250\);/);
+});
+
+test("第 72 批（验收 Q-2）：事项名兜底去口头起句、取冒号前一句、不拆数字与单位", () => {
+  const st = ["原告", "被告", "出借人", "借款人"];
+  assert.equal(suggestMatterTitle("帮我算一下借款逾期利息：借款本金 20 万元，2024 年 3 月 1 日到期", st), "借款逾期利息");
+  assert.equal(suggestMatterTitle("借款本金20万元自二〇二四年三月起至今未还款的逾期利息与违约金一并计算", st).includes("20万元"), true);
+  assert.equal(suggestMatterTitle("审查这份股权转让协议，我方为受让方", ["受让方", "转让方"]), "股权转让协议审查（受让方）");
 });

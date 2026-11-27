@@ -42,6 +42,21 @@ export function suggestMatterTitle(goal: string, stances: readonly string[]): st
       break;
     }
   }
-  if (!core) core = (text.split(/[，,。；;！!？?\n]/)[0] ?? text).slice(0, 18);
+  if (!core) core = fallbackTitle(text);
   return stance && !core.includes(stance) ? `${core}（${stance}）` : core;
+}
+
+// 第 72 批（端到端验收 Q-2）：抽不出“动作 + 对象”时的兜底——去掉口头起句（“帮我算一下……”），取冒号 / 标点前的第一句，
+// 截断时不把数字与单位拆开（原来按 18 字硬截，“借款本金 20 万元”变成“借款本金20”）
+const LEAD = /^(?:请你|请|麻烦你|麻烦|你帮我|帮我|帮忙|帮|我想|我要|想请你|需要)+/;
+const VERB_LEAD = /^(?:算一下|算算|计算一下|看一下|看看|查一下|问一下|写一下|做一下|整理一下|核一下)/;
+const NUM_UNIT = /[\d.万千百亿元%‰年月日天个份人件笔]/;
+function fallbackTitle(text: string): string {
+  const first = (text.split(/[，,。；;！!？?\n：:]/)[0] ?? "").replace(LEAD, "").replace(VERB_LEAD, "");
+  const s = first.length >= 2 ? first : (text.split(/[，,。；;！!？?\n]/)[0] ?? text);
+  if (s.length <= 20) return s;
+  let end = 18;
+  // 截点落在数字或数字后的单位里：往后带完这个数量（至多 26 字）
+  if (/\d/.test(s.slice(Math.max(0, end - 2), end + 1))) while (end < s.length && end < 26 && NUM_UNIT.test(s[end]!)) end++;
+  return s.slice(0, end);
 }
