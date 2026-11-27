@@ -1,0 +1,4 @@
+03:48:57.393 ERR locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator('[data-auth-page] button.btn-link:visible').filter({ hasText: /^\s*注册\s*$/ }).first()
+

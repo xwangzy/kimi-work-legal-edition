@@ -1,0 +1,4 @@
+03:49:28.306 ERR locator.click: Application exited
+Call log:
+  - waiting for locator('[data-auth-page] button.btn-link:visible').filter({ hasText: /^\s*注册\s*$/ }).first()
+

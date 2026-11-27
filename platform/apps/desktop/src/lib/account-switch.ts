@@ -33,7 +33,8 @@ export async function waitForProfileSwitch(
   let restarted = before !== "";
   const since = Date.now();
   while (Date.now() < until) {
-    await sleep(800);
+    // 第 72 批（06 实测：剩下的耗时大头是轮询的量化等待）：800 → 250 ms
+    await sleep(250);
     try {
       const st = await api.kernelStatus();
       if (!restarted && Date.now() - since < 5_000) continue;

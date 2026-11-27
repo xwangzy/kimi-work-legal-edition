@@ -1,0 +1,19 @@
+
+===== #7 b71-300-r1 A=13900072570 B=13900072560 =====
+03:53:59.946 ERR page.waitForFunction: Timeout 30000ms exceeded.
+
+===== #8 b72-300-r1 A=13900072580 B=13900072570 =====
+03:54:33.377 ERR page.waitForFunction: Timeout 30000ms exceeded.
+
+===== #9 b71-300-r2 A=13900072590 B=13900072580 =====
+03:55:06.439 ERR page.waitForFunction: Timeout 30000ms exceeded.
+
+===== #10 b72-300-r2 A=13900072600 B=13900072590 =====
+03:55:39.612 ERR page.waitForFunction: Timeout 30000ms exceeded.
+
+===== #11 b71-300-r3 A=13900072610 B=13900072600 =====
+03:56:12.676 ERR page.waitForFunction: Timeout 30000ms exceeded.
+
+===== #12 b72-300-r3 A=13900072620 B=13900072610 =====
+03:56:45.726 ERR page.waitForFunction: Timeout 30000ms exceeded.
+BATCH300-DONE

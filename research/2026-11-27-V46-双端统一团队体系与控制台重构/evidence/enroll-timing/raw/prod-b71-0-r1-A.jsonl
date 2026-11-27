@@ -1,0 +1,9 @@
+{"t":"2026-11-27T04:26:40Z","lvl":"info","code":"KERNEL_ONBOARDING_ACTIVATED","proc":"kernel","f":{}}
+{"t":"2026-11-27T04:26:40Z","lvl":"info","code":"MAIN_KERNEL_IDENTITY_RESTART","proc":"main","f":{}}
+{"t":"2026-11-27T04:26:40Z","lvl":"info","code":"CHILD_EXIT","proc":"kernel","f":{"proc":"gate","code":0}}
+{"t":"2026-11-27T04:26:40Z","lvl":"info","code":"KERNEL_CLOSED","proc":"kernel","f":{}}
+{"t":"2026-11-27T04:26:40Z","lvl":"info","code":"KERNEL_STARTED","proc":"kernel","f":{"engine":"kap","at_rest":"on","control_plane":"configured"}}
+{"t":"2026-11-27T04:26:40Z","lvl":"info","code":"KERNEL_INDEX_EXCLUDE","proc":"kernel","f":{"outcome":"not_applicable"}}
+{"t":"2026-11-27T04:26:40Z","lvl":"warn","code":"MAIN_KERNEL_EXITED","proc":"main","f":{"code":0}}
+{"t":"2026-11-27T04:26:40Z","lvl":"info","code":"MAIN_KERNEL_READY","proc":"main","f":{}}
+{"t":"2026-11-27T04:26:41Z","lvl":"info","code":"KERNEL_GATE_STARTED","proc":"kernel","f":{"ms":60,"since_boot_ms":311}}

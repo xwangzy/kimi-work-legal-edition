@@ -1,0 +1,18 @@
+
+===== #0 b71-0-r1 A=13900072350 B=13900072340 =====
+03:48:57.393 ERR locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator('[data-auth-page] button.btn-link:visible').filter({ hasText: /^\s*注册\s*$/ }).first()
+
+
+===== #1 b72-0-r1 A=13900072360 B=13900072350 =====
+03:49:12.255 ERR locator.click: Application exited
+Call log:
+  - waiting for locator('[data-auth-page] button.btn-link:visible').filter({ hasText: /^\s*注册\s*$/ }).first()
+
+
+===== #2 b71-0-r2 A=13900072370 B=13900072360 =====
+03:49:28.306 ERR locator.click: Application exited
+Call log:
+  - waiting for locator('[data-auth-page] button.btn-link:visible').filter({ hasText: /^\s*注册\s*$/ }).first()
+

@@ -147,3 +147,14 @@ test("登记过渡页（A1 H6）：不写死“十几秒”，显示阶段与已
   assert.match(a, /if \(restart && !retried\) \{\s*activatePhase\("retrying"\);/);
   assert.match(a, /\{busy \? "正在重新打开…" : "重新打开"\}/);
 });
+
+test("第 72 批（06 实测）：交接等待的 effect 重跑后轮询照样起——handled 只挡“已有结果的交接”，不挡等待轮询；轮询间隔不超过 250 ms", () => {
+  const src = readFileSync(new URL("../src/pages/Activate.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /if \(!handoff \|\| handled\.current\) return;/, "handled 不能挡住等待轮询（StrictMode / 依赖变化重跑 effect 时会无声卡住）");
+  const eff = src.slice(src.indexOf("const waitSince = useRef"), src.indexOf("void poll();"));
+  assert.match(eff, /if \(handoff\.next !== "working"\) \{\s*if \(handled\.current\) return;/, "handled 只在非 working 分支里判断");
+  assert.match(eff, /waitSince\.current \?\?= Date\.now\(\)/, "期限锚定第一次开始的时刻");
+  for (const m of src.matchAll(/await new Promise\(\(r\) => setTimeout\(r, (\d+)\)\);/g)) assert.ok(Number(m[1]) <= 250, `轮询间隔 ${m[1]} ms`);
+  const sw = readFileSync(new URL("../src/lib/account-switch.ts", import.meta.url), "utf8");
+  assert.match(sw, /await sleep\(250\);/);
+});

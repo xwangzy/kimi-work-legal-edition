@@ -83,7 +83,8 @@ async function waitForActivated(onStuck: (text: string) => void, landing = "#/",
   const until = Date.now() + 120_000;
   activatePhase("saving");
   while (Date.now() < until) {
-    await new Promise((r) => setTimeout(r, 1000));
+    // 第 72 批（06 实测：0 ms 下注册约 1.3 s 里约 1 s 是这里每秒一次的轮询量化等待）：1000 → 250 ms
+    await new Promise((r) => setTimeout(r, 250));
     try {
       const st = await api.kernelStatus();
       if (st && !st.onboarding) {
@@ -280,20 +281,29 @@ function Entry({ onPending, legacy, failed, setAside, handoff = null, otherProfi
   const outcome = authOutcome(onPending, setDone, setBlocked, stuck, setHold);
   // 第 68 批（V42，D-294）：从上一个账号的登录页换过来——内核已按那次登录继续登记这台电脑，这里接着显示结果（等批准、要短信确认、电脑数已满等）
   const handled = useRef(false);
+  // 第 72 批（06 实测）：原来 handled 一并挡住了“等待轮询”——effect 只要重跑一次（开发模式 StrictMode 必然重跑；生产里依赖变化也可能），
+  // 第一次起的轮询被清理、第二次又被 handled 挡掉，轮询与 120 秒兜底都没了，界面无声停在“正在为这个账号登记这台电脑…”（内核其实早已就绪）。
+  // 现在 handled 只防“已有结果的交接”被处理两次；等待轮询每次运行都重新起（清理时停），期限锚定第一次开始的时刻，重跑不会延长
+  const waitSince = useRef<number | null>(null);
   useEffect(() => {
-    if (!handoff || handled.current) return;
-    handled.current = true;
-    if (handoff.next !== "working") return outcome(handoff);
+    if (!handoff) return;
+    if (handoff.next !== "working") {
+      if (handled.current) return;
+      handled.current = true;
+      return outcome(handoff);
+    }
     // 还在登记：等内核给出结果（登记成功时内核会按新身份重启，界面随之重新载入）
     setDone("正在为这个账号登记这台电脑…");
     let alive = true;
-    const until = Date.now() + 120_000;
+    waitSince.current ??= Date.now();
+    const until = waitSince.current + 120_000;
     // 第 71 批（V45，根因 R1/R2）：原来只认 handoff 与“已不在待激活”——交接结果是“等批准”（内核已写待批准记录）、入组核对失败（last_failure）、
     // 内核中途重启把交接弄丢（新内核不再有 handoff、也不在重启中）这三种都只能空等 120 秒、再报“请重启应用”。现在逐一认出、立即转到对应的页面
     let lostSince: number | null = null;
     const poll = async () => {
       while (alive && Date.now() < until) {
-        await new Promise((r) => setTimeout(r, 500));
+        // 第 72 批（06 实测：剩下的耗时大头是轮询的量化等待）：500 → 250 ms
+        await new Promise((r) => setTimeout(r, 250));
         try {
           const st = await api.kernelStatus();
           if (st && !st.onboarding) {

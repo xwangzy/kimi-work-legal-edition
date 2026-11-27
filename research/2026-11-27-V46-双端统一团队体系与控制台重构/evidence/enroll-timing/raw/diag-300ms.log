@@ -1,0 +1,43 @@
+
+===== diag-b71-300 A=13900072760 B=13900072750 =====
+04:20:21.968 A +0.1s Kimi Work 法律版 设置账号 第 2 步，共 2 步 139****2760 · 修改 姓名 邮箱 密码 显示 正在注册… 律所名称 / 邀请码 登录只核对账号信息，你的案 ‹正在注册›
+04:20:22.276 A +0.4s Kimi Work 法律版 已为「郎测时的工作室」开通，正在打开… 第一次打开需要十几秒。 登录只核对账号信息，你的案卷不会上传 ‹正在打开›
+04:20:23.355 A +1.5s 正在启动… 第一次打开需要十几秒。 ‹正在启动›
+04:20:23.459 A +1.6s Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 还没有事项，新建一个 任务 还没有任务 郎 郎测时 账号与设置 开通完成，先做好备份
+04:20:24.493 A +2.7s Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 还没有事项，新建一个 任务 还没有任务 郎 郎测时 试用 账号与设置 开通完成，先做
+04:20:36.762 B +0.1s Kimi Work 法律版 登录其他账号 返回 验证码登录 密码登录 手机号或邮箱 密码 显示 正在登录… 忘记密码？ 登录只核对账号信息，你的案卷不会上传 各账号的事项、材料和成 ‹正在登录›
+04:20:37.379 B +0.7s Kimi Work 法律版 正在为「彭测时」登记这台电脑… 各账号的事项、材料和成果分开保存，互不可见。 登录只核对账号信息，你的案卷不会上传 各账号的事项、材料和成果分开保存，互
+04:20:38.249 B +1.6s 
+04:20:38.351 B +1.7s Kimi Work 法律版 正在为这个账号登记这台电脑… 第一次打开需要十几秒。 登录只核对账号信息，你的案卷不会上传
+04:20:51.707 B 诊断 @15.1s kernel.status={"has_onboarding":false,"onboarding_keys":null,"mode":null,"handoff_next":null,"restarting":null,"last_failure":null,"top_keys":["account","activation","app_version","content_key","control_plane","demo_samples","edition","egress_gate","endpoints_configured","firm","firm_name","lawdb_package","local_server","log_level","member_role","model_choices","model_provider","model_routes","note","ocr","onboarding","profile","queue","restored_from_backup_at","sync_configured","tenant_id","user","user_id","version","workspace_dir"],"top_mode":null}
+04:20:51.826 B +15.2s Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 还没有事项，新建一个 任务 还没有任务 彭 彭测时 账号与设置 还没有生成恢复包：这
+04:20:52.448 B +15.8s Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 还没有事项，新建一个 任务 还没有任务 彭 彭测时 试用 账号与设置 还没有生成恢复
+
+===== diag-b72-300 A=13900072770 B=13900072760 =====
+04:21:05.530 A +0.1s Kimi Work 法律版 设置账号 第 2 步，共 2 步 139****2770 · 修改 姓名 邮箱 密码 显示 正在注册… 律所名称 / 邀请码 登录只核对账号信息，你的案 ‹正在注册›
+04:21:05.838 A +0.4s Kimi Work 法律版 已为「鲁测时的工作室」开通，正在打开… 正在保存登录信息…已用 0 秒 登录只核对账号信息，你的案卷不会上传 ‹正在打开›
+04:21:06.935 A +1.5s 
+04:21:07.038 A +1.6s Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 还没有事项，新建一个 任务 还没有任务 鲁 鲁测时 账号与设置 Kimi Work 
+04:21:08.073 A +2.7s Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 还没有事项，新建一个 任务 还没有任务 鲁 鲁测时 试用 账号与设置 Kimi Wo
+04:21:20.349 B +0.1s Kimi Work 法律版 登录其他账号 返回 验证码登录 密码登录 手机号或邮箱 密码 显示 正在登录… 忘记密码？ 登录只核对账号信息，你的案卷不会上传 各账号的事项、材料和成 ‹正在登录›
+04:21:20.656 B +0.4s Kimi Work 法律版 正在为「郎测时」登记这台电脑… 各账号的事项、材料和成果分开保存，互不可见。 登录只核对账号信息，你的案卷不会上传 各账号的事项、材料和成果分开保存，互
+04:21:21.520 B +1.3s 
+04:21:21.623 B +1.4s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 0 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:22.561 B +2.3s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 1 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:23.586 B +3.4s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 2 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:24.618 B +4.4s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 3 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:25.549 B +5.3s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 4 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:26.582 B +6.4s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 5 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:27.615 B +7.4s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 6 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:28.544 B +8.3s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 7 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:29.576 B +9.4s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 8 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:30.613 B +10.4s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 9 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:31.543 B +11.3s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 10 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:32.586 B +12.4s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 11 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:33.617 B +13.4s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 12 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:34.544 B +14.3s Kimi Work 法律版 正在为这个账号登记这台电脑… 正在保存登录信息…已用 13 秒 登录只核对账号信息，你的案卷不会上传 ‹正在保存登录信息›
+04:21:35.276 B 诊断 @15.0s kernel.status={"has_onboarding":false,"onboarding_keys":null,"mode":null,"handoff_next":null,"restarting":null,"last_failure":null,"top_keys":["account","activation","app_version","content_key","control_plane","demo_samples","device_issuer","edition","egress_gate","endpoints_configured","firm","firm_name","lawdb_package","local_server","log_level","member_role","model_choices","model_provider","model_routes","note","ocr","onboarding","profile","queue","restored_from_backup_at","sync_configured","tenant_id","user","user_id","version","workspace_dir","workspace_kind"],"top_mode":null}
+04:21:35.390 B +15.2s Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 任务 我 正在连接… 正在启动… 账号与设置 Kimi Work 法律版 先给我看计 ‹正在连接›
+04:21:35.493 B +15.3s Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 还没有事项，新建一个 任务 还没有任务 郎 郎测时 账号与设置 Kimi Work 
+04:21:36.012 B +15.8s Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 还没有事项，新建一个 任务 还没有任务 郎 郎测时 试用 账号与设置 Kimi Wo
+DIAG-DONE
