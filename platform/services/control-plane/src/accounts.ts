@@ -57,6 +57,8 @@ export interface AccountRecord {
   person?: string;
   /** 第 72 批（A3 R2）：谁停用的——平台停用的，团队侧不能启用。 */
   disabled_by?: "platform" | "team" | null;
+  /** 第 72 批（设计评分 C12）：停用的方式——disabled 停用（可启用）/ removed 被团队移出 / left 本人退出团队；启用时清掉 */
+  disabled_kind?: "disabled" | "removed" | "left" | null;
   /** 第 72 批（契约 §4）：账号级上手状态（只存时间；挂在主账号上，代表这个人）。 */
   onboarding?: { completed_at?: string; dismissed_at?: string };
   /** 第 72 批（契约 §2.1）：主账号上记最近使用的工作空间（账号 aid）；登录缺省进这个。 */

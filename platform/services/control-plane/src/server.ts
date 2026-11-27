@@ -1803,7 +1803,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // member_slug（不敏感，同证书 memberId 的后半）：内核据此精确判断这台电脑上有没有这个工作空间的档案（共用电脑上同团队另一位同事的档案不会被误认）
     return { aid: x.aid, tid: x.tid, member_slug: x.member_slug, kind: t ? kindOf(t) : ("team" as const), name: t?.name ?? x.tid.slice(4), role: x.role, ...(t && kindOf(t) === "team" ? { member_device_policy: policyOf(t) } : {}) };
   };
-  const workspaceItem = (x: AccountRecord, cur: AccountRecord) => ({ ...workspaceOf(x), status: x.status, ...(x.disabled_by ? { disabled_by: x.disabled_by } : {}), current: x.aid === cur.aid });
+  const workspaceItem = (x: AccountRecord, cur: AccountRecord) => ({ ...workspaceOf(x), status: x.status, ...(x.disabled_by ? { disabled_by: x.disabled_by } : {}), ...(x.disabled_kind ? { disabled_kind: x.disabled_kind } : {}), current: x.aid === cur.aid });
   const guideOf = (a: AccountRecord) => {
     const p = primaryOf(a);
     return { completed_at: p.onboarding?.completed_at ?? null, dismissed_at: p.onboarding?.dismissed_at ?? null };
@@ -2224,7 +2224,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   const phoneOfDevice = (t: TenantRecord, dev: DeviceRecord): string => {
     const acc = accountOfMember(t.tid, dev.cert.memberId);
-    if (!acc || !memberActive(acc)) throw new CpError(403, "account_disabled", "账号已停用，请联系管理员");
+    if (!acc) throw new CpError(403, "account_disabled", "账号已停用，请联系管理员");
+    // 第 72 批（设计评分 C16 / 验收 Q-4）：被团队移出 / 本人退出 / 团队停用的成员身份，只要这个人还有别的可用工作空间，
+    // 这台电脑照样能“只填验证码”重新登录（登录后按 C-3 落到他可用的那个空间）；平台停用（personBlocked）与没有别处可去的照旧拒绝
+    if (!memberActive(acc)) {
+      const pr = primaryOf(acc);
+      const elsewhere = acc.disabled_by === "team" && !personBlocked(acc) && workspacesOf(pr).some((x) => x.aid !== acc.aid && memberActive(x) && tenants.has(x.tid));
+      if (!elsewhere) throw new CpError(403, "account_disabled", "账号已停用，请联系管理员");
+    }
     // 第 72 批：关联账号没有手机号——验证码发到这个人（主账号）绑定的手机号（密文的附加数据是主账号 aid）
     const a = primaryOf(acc);
     const ph = a.phone ? openText(sealKey, a.phone.sealed, `kwl-account-phone/1\n${a.aid}`) : null;
@@ -2562,7 +2569,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const t = tenants.get(x.tid);
       const s0 = t?.seatsByUser.get(uidOfAccount(x));
       // 第 72 批（控制台 W-5）：带停用来源，列表上分得清“已移出团队 / 团队停用”（team）与“平台停用”（platform）
-      return { aid: x.aid, tid: x.tid, kind: t ? kindOf(t) : ("team" as const), name: t?.name ?? x.tid.slice(4), role: x.role, status: x.status, ...(x.disabled_by ? { disabled_by: x.disabled_by } : {}), seat: !!s0 && !s0.revoked_at };
+      return { aid: x.aid, tid: x.tid, kind: t ? kindOf(t) : ("team" as const), name: t?.name ?? x.tid.slice(4), role: x.role, status: x.status, ...(x.disabled_by ? { disabled_by: x.disabled_by } : {}), ...(x.disabled_kind ? { disabled_kind: x.disabled_kind } : {}), seat: !!s0 && !s0.revoked_at };
     }),
   });
   const accountRow = (a: AccountRecord) => {
@@ -2580,6 +2587,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       person: primaryOf(a).aid,
       kind: t ? kindOf(t) : null,
       disabled_by: a.disabled_by ?? null,
+      disabled_kind: a.disabled_kind ?? null,
       name: a.name,
       status: a.status,
       disabled_reason: a.disabled_reason,
@@ -3397,6 +3405,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           a.status = "disabled";
           // 第 72 批（A3 R2）：记下是平台停用的——团队管理员不能启用
           a.disabled_by = "platform";
+          a.disabled_kind = "disabled";
           a.disabled_reason = typeof b.reason === "string" ? b.reason : null;
           // 安全审查 P2-2：停用主账号 = 停用这个人——撤他全部工作空间的会话
           const ids = a.person ? new Set([a.aid]) : personAids(a);
@@ -3409,6 +3418,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         return w("account.enable", (a, _b, who) => {
           a.status = "active";
           a.disabled_by = null;
+          a.disabled_kind = null;
           a.disabled_reason = null;
           a.failed = { count: 0, first_at: null, locked_until: null };
           // 安全审查 P2-5：解锁作用于凭证所在的主账号（关联账号没有自己的失败计数），并在主账号所在租户记审计
@@ -5841,6 +5851,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     x.status = "disabled";
     // 安全审查 P0-1：已被平台停用的保持 platform（否则“移出 → 启用”就绕过了平台停用）
     if (x.disabled_by !== "platform") x.disabled_by = "team";
+    // 设计评分 C12：记下是被移出还是本人退出（成员列表与“用户”页据此分开显示；启用时清掉）
+    if (x.disabled_by !== "platform") x.disabled_kind = reason === "team_left" ? "left" : "removed";
     const seat = releaseSeat(t, uidOfAccount(x)) ? 1 : 0;
     const n = revokeSessions((y) => y.aid === x.aid, reason);
     const inv = revokeInvitesBy(t, x);
@@ -6027,6 +6039,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         disabled_reason: x.disabled_reason,
         // 第 72 批（契约 §3.4）：谁停用的、这个人的打码手机号、席位、同时登录（devices 已是逐台清单，摘要另起名 devices_summary，见契约变更记录）
         disabled_by: x.disabled_by ?? null,
+        disabled_kind: x.disabled_kind ?? null,
         person_phone_masked: phoneOfPerson(x)?.masked ?? null,
         seat: ((s0) => (s0 && !s0.revoked_at ? { sid: s0.sid, assigned_at: s0.assigned_at } : null))(t.seatsByUser.get(uidOfAccount(x))),
         devices_summary: { signed_in: signedInDevices(x).length, limit: deviceLimitOf(x) },
@@ -6135,6 +6148,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         mark("account.disable", x.aid, { seat_released: seatReleased });
         x.status = "disabled";
         if (x.disabled_by !== "platform") x.disabled_by = "team";
+        if (x.disabled_by !== "platform") x.disabled_kind = "disabled";
         x.disabled_reason = typeof b.reason === "string" ? b.reason : null;
         const n = revokeSessions((y) => y.aid === x.aid, "firm_admin_disabled");
         // 停用的成员：设备进暂停名单，网关下一次订阅（≤ 15 秒）即拒绝
@@ -6152,6 +6166,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         mark("account.enable", x.aid, { seat_reassigned: reseat ? 1 : 0 });
         x.status = "active";
         x.disabled_by = null;
+        x.disabled_kind = null;
         x.disabled_reason = null;
         x.failed = { count: 0, first_at: null, locked_until: null };
         if (reseat) assignSeat(t, x);

@@ -454,13 +454,18 @@ test("契约 §3.4 / §6.4 / X7：移出团队——会话失效、席位释放�
   assert.equal((await bTeam.dev!.call("POST", "/v1/seat-token", {}, bTeam.session)).status, 200, "移出前能取席位令牌");
   const rm = await post(`/v1/firm/members/${bTeam.aid}/remove`, {}, A.session);
   assert.equal(rm.status, 200, JSON.stringify(rm.json));
-  assert.deepEqual([rm.json.seat_released, rm.json.member.status, rm.json.member.disabled_by], [1, "disabled", "team"]);
+  assert.deepEqual([rm.json.seat_released, rm.json.member.status, rm.json.member.disabled_by, rm.json.member.disabled_kind], [1, "disabled", "team", "removed"]);
   const me1 = await get("/v1/auth/me", bTeam.session);
   assert.deepEqual([me1.status, me1.json.error.code], [401, "session_team_removed"], "旧会话失效，且如实说是被移出（U-1）");
   const st = await bTeam.dev!.call("POST", "/v1/seat-token", {}, bTeam.session);
   assert.notEqual(st.status, 200, "旧设备取不到席位令牌");
   assert.equal((await post("/v1/auth/workspaces/switch", { aid: bTeam.aid }, B.session)).status, 404, "切换到已移出的团队 404");
   assert.ok(cp.ops.tenant(A.tid)!.devices.get(bTeam.dev!.cert.deviceId), "设备记录保留（离所交接后再移除）");
+  // 设计评分 C16 / 验收 Q-4：被移出的人还有个人空间——原电脑“只填验证码”重新登录不在“账号已停用”这一步被拒（测试账号没绑手机号，走到手机号这一步即 phone_unbound）
+  const rs = await bTeam.dev!.call("POST", "/v1/auth/sms/send", { purpose: "login", relogin: true, client: { version: "0.11.0", platform: "darwin" } });
+  assert.deepEqual([rs.status, rs.json.error?.code], [409, "phone_unbound"], JSON.stringify(rs.json));
+  const rl = await bTeam.dev!.call("POST", "/v1/auth/login", { relogin: true, sms_code: "123456", client: { version: "0.11.0", platform: "darwin" }, account_switch: true });
+  assert.deepEqual([rl.status, rl.json.error?.code], [409, "phone_unbound"], JSON.stringify(rl.json));
   // 乙登录（last_workspace 已清）：回个人空间
   const li = await post("/v1/auth/login", { email: "yi-b72@example.cn", password: PW, client: { platform: "web" } });
   assert.equal(li.json.account.aid, B.aid);
@@ -471,7 +476,7 @@ test("契约 §3.4 / §6.4 / X7：移出团队——会话失效、席位释放�
   assert.equal(sw.status, 200, JSON.stringify(sw.json));
   const lv = await post("/v1/teams/leave", { client: { platform: "web" } }, sw.json.session_token);
   assert.equal(lv.status, 200, JSON.stringify(lv.json));
-  assert.deepEqual([lv.json.account.aid, lv.json.workspaces.find((w: any) => w.aid === dTeam).status], [D.aid, "disabled"]);
+  assert.deepEqual([lv.json.account.aid, lv.json.workspaces.find((w: any) => w.aid === dTeam).status, lv.json.workspaces.find((w: any) => w.aid === dTeam).disabled_kind], [D.aid, "disabled", "left"]);
   // 第 72 批（U-1）：退出团队后旧会话如实说“已退出这个团队”，不说成“登录已过期”
   const me2 = await get("/v1/auth/me", sw.json.session_token);
   assert.deepEqual([me2.status, me2.json.error.code], [401, "session_team_left"]);
