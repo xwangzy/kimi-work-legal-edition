@@ -4,7 +4,7 @@
  * - D-299 第 6 条（A1 M7）：模型目录信封的纪元——纪元不同按签发时刻比（云端路由状态重建后版本号从头数起），旧纪元的旧信封重放仍不采用；
  *   原因 same_upstream 收下并说明；内置口径 K2.6 进任务入口、内置本机型号 K3 → kimi-k3.1-pro；
  * - 问答“记住所选”走 models.select("qa")，没带 route 时 chat.send 用它；
- * - A1 S3：闸门运行时摘要按元数据记一次（主进程交来 / 本进程算过），文件变了就重算；
+ * - A1 S3（安全审查 09 P2-6 改）：每次拉起闸门都完整核验摘要；第一次用内核启动时就在工作线程里开始算的那份，摘要不符拒绝拉起；
  * - A1 S7：关闭本机端点不被空闲长连接拖住；
  * - A1 H2：首次同步是否“成了”的判定；
  * - 契约 §7 纯函数：工作空间列表（local_profile）、邀请码、团队名称、账号元数据。
@@ -12,8 +12,8 @@
 process.env.ZR_INTERNAL_SECRET = process.env.ZR_INTERNAL_SECRET ?? "b72-kernel-secret-0123456789abcdef";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import { createHash, generateKeyPairSync } from "node:crypto";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -23,7 +23,7 @@ import { buildRoutes } from "@zr-legal/model-broker";
 import { BUILTIN_CATALOG, catalogNewer, catalogReasonText, ModelCatalogService, sanitizeCatalog } from "../src/services/model-catalog.ts";
 import { isModelGone, kernelRouteOf, MODEL_GONE_TEXT, reviewFailureReason } from "../src/executor/executor.ts";
 import { gateUpstreamsFromEnv } from "../src/egress/kernel-gate.ts";
-import { attestRuntime, forgetRuntimeStamps, rememberRuntime, runtimeAlreadyVerified, runtimeStampOf, sanitizeRuntimeStamp } from "../src/egress/runtime-stamp.ts";
+import { sha256OfFileStream, startEarlyDigest, takeEarlyDigest } from "../src/egress/runtime-digest.ts";
 import { closeServerPromptly } from "../src/index.ts";
 import { firstSyncDone } from "../src/control-plane/client.ts";
 import { accountMetaOf, inviteCodeOf, readAccountMeta, teamNameOf, workspaceItems, writeAccountMeta } from "../src/services/workspaces.ts";
@@ -154,38 +154,73 @@ test("kernel.status：开发形态的工作空间类型未知为 null；这台�
   assert.equal(st.device_issuer, "firm_root");
 });
 
-// ─── S3：闸门运行时摘要按元数据记一次 ───
+// ─── S3（安全审查 09 P2-6 改）：每次拉起闸门都完整核验摘要；第一次用内核启动时就在工作线程里开始算的那份 ───
 
-test("闸门运行时：主进程交来的核对结果在元数据不变时免重算；文件一变（大小、修改时刻、变更时刻）就作废、重算", () => {
-  forgetRuntimeStamps();
+test("预先算摘要：在工作线程里算、与主线程同步工作并行；结果与流式计算一致；只给一次、只认同一文件、算完太久不算新鲜", async () => {
   const dir = mkdtempSync(join(tmpdir(), "kwl-b72-rt-"));
   const bin = join(dir, "kwl-egress-node");
-  writeFileSync(bin, "node-binary-v1");
-  const sha = "a".repeat(64);
-  const meta = runtimeStampOf(bin)!;
-  assert.ok(meta && /^\d+$/.test(meta.ino) && /^\d+$/.test(meta.ctime_ns));
-  assert.equal(sanitizeRuntimeStamp({ path: bin, sha256: "xyz", ...meta }), null, "摘要格式不对不收");
-  assert.equal(runtimeAlreadyVerified(bin, sha), null, "没交过");
-  assert.equal(attestRuntime({ path: bin, sha256: sha, ...meta }), true);
-  assert.equal(runtimeAlreadyVerified(bin, sha), "attested");
-  assert.equal(runtimeAlreadyVerified(bin, "b".repeat(64)), null, "期望摘要不同不认");
-  // 改了内容（大小变）→ 作废
-  writeFileSync(bin, "node-binary-v2-tampered");
-  assert.equal(runtimeAlreadyVerified(bin, sha), null);
-  assert.equal(runtimeAlreadyVerified(bin, sha), null, "作废后不再认");
-  // 本进程算过：算前算后元数据一致才记
-  const before2 = runtimeStampOf(bin);
-  rememberRuntime(bin, sha, before2);
-  assert.equal(runtimeAlreadyVerified(bin, sha), "cached");
-  // 只改修改时刻（同大小、同 inode）也作废
-  utimesSync(bin, new Date(Date.now() - 86_400_000), new Date(Date.now() - 86_400_000));
-  assert.equal(runtimeAlreadyVerified(bin, sha), null);
-  // 算的过程中文件变了：不记
-  const stale = runtimeStampOf(bin)!;
-  writeFileSync(bin, "node-binary-v3-changed-during-hash");
-  rememberRuntime(bin, sha, stale);
-  assert.equal(runtimeAlreadyVerified(bin, sha), null);
-  forgetRuntimeStamps();
+  writeFileSync(bin, Buffer.alloc(24 << 20, 7));
+  const want = createHash("sha256").update(readFileSync(bin)).digest("hex");
+  const early = startEarlyDigest(bin)!;
+  // 主线程上 600 毫秒的同步工作（相当于开库、迁移、法规库验签）：流式计算在这段时间里拿不到事件循环，工作线程照样算完
+  const blockUntil = Date.now() + 600;
+  while (Date.now() < blockUntil) {
+    // 忙等
+  }
+  const r = await early.result;
+  assert.equal(r.where, "worker");
+  assert.equal(r.digest, want);
+  assert.ok(r.finishedAt <= blockUntil, `工作线程应在主线程忙的时候就算完（算完 ${r.finishedAt}，主线程空出来 ${blockUntil}）`);
+  assert.equal(await sha256OfFileStream(bin), want);
+  assert.equal(await takeEarlyDigest(early, join(dir, "other")), null, "别的文件不认");
+  assert.deepEqual(await takeEarlyDigest(early, bin), { digest: want, fresh: true });
+  assert.equal(await takeEarlyDigest(early, bin), null, "只给一次：之后每次拉起都现算");
+  const late = startEarlyDigest(bin)!;
+  await late.result;
+  assert.deepEqual(await takeEarlyDigest(late, bin, 30_000, () => Date.now() + 31_000), { digest: want, fresh: false }, "算完超过 30 秒：调用方现算");
+  assert.equal(startEarlyDigest(null), null);
+});
+
+test("闸门：第一次拉起等预先算的摘要（early），之后每次拉起都现算（hashed），从不免算；摘要不符拒绝拉起", { timeout: 120_000 }, async () => {
+  const digest = createHash("sha256").update(readFileSync(process.execPath)).digest("hex");
+  const gateHashEvents = (k: TestKernel) => {
+    const logs = join(k.kernel.config.workspaceDir, "logs");
+    return readdirSync(logs)
+      .flatMap((f) => readFileSync(join(logs, f), "utf8").split("\n"))
+      .filter((l) => l.includes("KERNEL_GATE_HASH"))
+      .map((l) => JSON.parse(l).f as { how: string; ok: boolean });
+  };
+  const ok = await makeKernel({ ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", KWL_GATE_NODE: process.execPath, KWL_GATE_NODE_SHA256: digest }, "b72-gate-ok");
+  try {
+    const h1 = await ok.kernel.gate.ensure();
+    assert.deepEqual(gateHashEvents(ok).map((e) => [e.how, e.ok]), [["early", true]], "第一次拉起：等预先算的那份");
+    await h1.close();
+    await ok.kernel.gate.ensure();
+    assert.deepEqual(gateHashEvents(ok).map((e) => [e.how, e.ok]), [["early", true], ["hashed", true]], "重拉闸门：现算，不免算");
+  } finally {
+    await ok.kernel.close();
+  }
+  const bad = await makeKernel({ ZR_MODEL_PROVIDER: "mock", ZR_KERNEL_TCP: "off", KWL_GATE_NODE: process.execPath, KWL_GATE_NODE_SHA256: "0".repeat(64) }, "b72-gate-bad");
+  try {
+    await assert.rejects(bad.kernel.gate.ensure(), /运行时摘要不符/);
+    await assert.rejects(bad.kernel.gate.ensure(), /运行时摘要不符/, "第二次（现算）同样拒绝");
+    assert.deepEqual(gateHashEvents(bad).map((e) => [e.how, e.ok]), [["early", false], ["hashed", false]]);
+  } finally {
+    await bad.kernel.close();
+  }
+});
+
+test("闸门拉起的顺序（静态）：先等运行时核对放行，再核验摘要，核验之后同步进到 spawn（中间没有 await）", () => {
+  const src = readFileSync(new URL("../src/egress/kernel-gate.ts", import.meta.url), "utf8");
+  const body = src.slice(src.indexOf("private async startInner()"), src.indexOf("/** 闸门意外退出"));
+  const ready = body.indexOf('await runtimeReady("gate")');
+  const verify = body.indexOf("if (digest !== want) throw");
+  const spawn = body.indexOf("return startEgressGateReady(");
+  assert.ok(ready >= 0 && verify > ready && spawn > verify, "顺序：放行 → 核验 → 拉起");
+  assert.doesNotMatch(body.slice(verify, spawn), /\bawait\b/, "核验与拉起之间不插入异步步骤");
+  const host = readFileSync(new URL("../src/egress/gate-host.ts", import.meta.url), "utf8");
+  assert.match(host, /export function startEgressGateReady\(o: StartGateOptions\): Promise<GateHandle> \{\s*return startEgressGateNow\(o\);/);
+  assert.match(host, /function startEgressGateNow\(o: StartGateOptions\): Promise<GateHandle> \{\s*const child = spawnNodeChild\(/, "进去第一句就是 spawn");
 });
 
 // ─── S7：关闭本机端点不被空闲长连接拖住 ───

@@ -8,7 +8,8 @@
  * - 去向记录写入事项账本并上签名事件链；模型请求的用量写入计量账本（与 broker 同一请求 ID，INSERT OR IGNORE 去重）；
  * - 闸门新识别的令牌条目写回事项令牌表（按事项密钥重算校验）。
  */
-import { rememberRuntime, runtimeAlreadyVerified, runtimeStampOf } from "./runtime-stamp.ts";
+import { takeEarlyDigest, type EarlyDigest } from "./runtime-digest.ts";
+import { runtimeReady } from "../executor/child-env.ts";
 import { createHash } from "node:crypto";
 import { createReadStream, mkdirSync, readFileSync, statSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
@@ -20,7 +21,7 @@ import type { KernelDb } from "../db.ts";
 import { appendAuditEvent, type LedgerSigner } from "../ledger-signer.ts";
 import { canonicalJson, sha256B64 } from "@zr-legal/keys";
 import { errFields, slog } from "@zr-legal/safe-log";
-import { createGateAuthorizer, egressRowFromGate, startEgressGate, type GateHandle, type GateProbeResult } from "./gate-host.ts";
+import { createGateAuthorizer, egressRowFromGate, startEgressGateReady, type GateHandle, type GateProbeResult } from "./gate-host.ts";
 import type { MatterTokenStore } from "./matter-tokens.ts";
 import type { EgressApprovalStore } from "../services/egress-approvals.ts";
 import type { FirmGovernance } from "../control-plane/governance.ts";
@@ -37,6 +38,11 @@ export interface KernelGateDeps {
    * 不符即不拉起（失败关闭）。产品构建随包运行时并必须给出；G0 开发形态可不给（D-19 如实登记）。
    */
   runtimeSha256?: string;
+  /**
+   * 第 72 批（A1 S3，安全审查 09 P2-6）：内核启动一开始就在工作线程里开始算的闸门 Node 摘要（runtime-digest.ts）；第一次拉起闸门时等它，
+   * 之后每次拉起照旧现算。没有 = 拉起时现算。
+   */
+  runtimeDigestEarly?: EarlyDigest | null;
   /** 任务令牌验证密钥（内核进程内存）。 */
   secret: string;
   revoked: { rids: ReadonlySet<string>; jtis: ReadonlySet<string> };
@@ -151,6 +157,11 @@ async function sha256OfFile(file: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** 第 72 批：闸门 Node 的实际路径（内核启动时预先算摘要要用同一个文件）。 */
+export function gateRuntimePath(runtime?: string): string | null {
+  return resolveExecutable(runtime ?? process.execPath);
 }
 
 function resolveExecutable(cmd: string): string | null {
@@ -397,26 +408,25 @@ export class KernelGate {
   }
 
   private async startInner(): Promise<GateHandle> {
+    // 随包运行时核对通过之前不拉起（复核 B4-R15）。第 72 批：先等这一步再核验摘要——核验通过后同步走到 spawn，中间不再有异步等待
+    await runtimeReady("gate");
+    if (this.closed) throw new Error("出站闸门已关闭");
     if (this.d.runtimeSha256) {
       const bin = resolveExecutable(this.d.runtime ?? process.execPath);
       const want = this.d.runtimeSha256.toLowerCase();
       const th = Date.now();
-      // 第 72 批（A1 S3）：本次应用启动里已核对过（主进程按随包清单核对、或本进程算过）且文件元数据没变 → 不再整份重算；
-      // 否则照旧整份算，不一致照旧拒绝拉起（runtime-stamp.ts 写明安全取舍）
-      const seen = bin ? runtimeAlreadyVerified(bin, want) : null;
-      let digest: string | null;
-      if (seen) digest = want;
-      else {
-        const before = bin ? runtimeStampOf(bin) : null;
-        // 第 64 批：流式计算（约 100 MB 的 Node 可执行文件）——此前同步整读整算，内核事件循环要卡住这段时间，界面的调用（含登录页）都得等
-        digest = bin ? await sha256OfFile(bin) : null;
-        if (bin && digest === want) rememberRuntime(bin, want, before);
-        // 摘要计算期间内核可能已在关闭：不再对账、不再拉起（免算的一支没有等待，不会在这里错过关闭）
-        if (this.closed) throw new Error("出站闸门已关闭");
-      }
-      slog.event("KERNEL_GATE_HASH", { ms: Date.now() - th, how: seen ?? "hashed", ok: digest === want });
+      // 第 72 批（A1 S3，安全审查 09 P2-6）：每次拉起都完整核验摘要（不按文件元数据免算）。第一次拉起用内核启动时就在工作线程里开始算的那一份
+      // （只用一次、同一文件、算完 30 秒内）；之后每次、以及预先那份不新鲜时现算
+      const pre = bin ? await takeEarlyDigest(this.d.runtimeDigestEarly, bin) : null;
+      const how = pre?.fresh ? "early" : pre ? "early_stale" : "hashed";
+      // 第 64 批：流式计算（约 100 MB 的 Node 可执行文件）——此前同步整读整算，内核事件循环要卡住这段时间，界面的调用（含登录页）都得等
+      const digest = pre?.fresh ? pre.digest : bin ? await sha256OfFile(bin) : null;
+      // 摘要计算期间内核可能已在关闭：不再对账、不再拉起
+      if (this.closed) throw new Error("出站闸门已关闭");
+      slog.event("KERNEL_GATE_HASH", { ms: Date.now() - th, how, ok: digest === want });
       if (digest !== want) throw new Error(`出站闸门运行时摘要不符（${bin ?? this.d.runtime}）：不拉起闸门，模型与联网步骤不可用`);
     }
+    // ↓ 从这里到 startEgressGateReady 里的 spawn 全是同步代码（核验与拉起之间不插入异步步骤）
     const { db, secret, revoked, tokens } = this.d;
     // 上一个闸门进程留下的未补全预写：结果不明，进入对账（复核 S4-21）
     this.sweepUnresolved();
@@ -443,7 +453,7 @@ export class KernelGate {
     });
     const approvals = this.d.approvals;
     const t0 = Date.now();
-    return startEgressGate({
+    return startEgressGateReady({
       entryPath: this.d.entryPath,
       socketPath: this.d.socketPath,
       upstreams: this.upstreams,

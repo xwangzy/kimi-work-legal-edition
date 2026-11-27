@@ -67,6 +67,8 @@ test("主进程：先放行闸门（scope gate）再全量；记录核对耗时�
   const main = src("electron/main.cjs");
   assert.match(main, /verifyRuntimeDigests\(path\.join\(process\.resourcesPath, "runtime"\), manifest, \{\s*first,\s*onFirst: \(\) => \{\s*gateVerifiedOk = true;/);
   assert.match(main, /else if \(gateVerifiedOk\) kernel\.postMessage\(\{ type: "kernel\.runtime_verified", scope: "gate" \}\);/);
+  // 第 72 批（安全审查 09 P2-6）：不再把闸门 Node 的元数据交给内核免算摘要（内核每次拉起闸门前都完整核验）
+  assert.doesNotMatch(main, /gate_node|gateNodeStamp/);
   assert.match(main, /slog\.event\("MAIN_RUNTIME_VERIFIED", \{ scope: "gate"/);
   assert.match(main, /if \(process\.platform === "darwin"\) return \{ titleBarStyle: "hidden", trafficLightPosition: \{ x: 18, y: 14 \} \};/);
   assert.match(main, /if \(process\.platform === "win32"\) return \{ titleBarStyle: "hidden", titleBarOverlay: \{ \.\.\.WINDOW_CHROME\[dark \? "dark" : "light"\], height: TITLEBAR_HEIGHT \} \};/);

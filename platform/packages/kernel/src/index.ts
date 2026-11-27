@@ -29,6 +29,7 @@ import { createApi } from "./api/index.ts";
 import { parseWithPipeline } from "./services/parse-pipeline.ts";
 import { runChildSelftest, type ChildSelftestResult } from "./services/child-selftest.ts";
 import { resolveIdentity, taskTokenKey, type Identity } from "./identity.ts";
+import { startEarlyDigest } from "./egress/runtime-digest.ts";
 import { accountMetaOf, readAccountMeta, writeAccountMeta, type AccountMeta } from "./services/workspaces.ts";
 import { applyStagedJoin, applyStagedRecovery, configureSecretSealing, ensureFirmIdentity, ensureDevice, getFirmRootPrivateKey, keysDirOf } from "./devices.ts";
 import { onboardingStateText } from "./account-session.ts";
@@ -54,7 +55,7 @@ import { startLocalServer, localServerPort, type LocalServers } from "./local-se
 import { legalToolManifests, setLegalToolLock } from "./tools/registry.ts";
 import { MatterTokenStore } from "./egress/matter-tokens.ts";
 import { createHash, randomUUID } from "node:crypto";
-import { KernelGate } from "./egress/kernel-gate.ts";
+import { gateRuntimePath, KernelGate } from "./egress/kernel-gate.ts";
 import { aiAuthorizedOf, dataLevelOf, GATE_KNOWN_ONLY_SCOPE } from "./egress/gate-host.ts";
 import { EgressApprovalStore } from "./services/egress-approvals.ts";
 import { screenSearchQuery } from "@zr-legal/egress-gate";
@@ -150,6 +151,10 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   cleanupRestoreStaging(config.dataRoot);
   if (config.onboarding && reconcilePendingRestore(config.dataRoot, (f) => canOpenLedger(f, config.dbKey), validActivation) === "promoted") config = loadConfig(opts);
   const env = config.env;
+  // 第 72 批（A1 S3，安全审查 09 P2-6）：闸门 Node 的摘要在内核启动一开始就在工作线程里开始算（与下面开库、迁移、法规库、方法模板这些主线程同步工作并行），
+  // 第一次拉起闸门时只等这份结果；每次拉起照旧完整核验（kernel-gate.ts startInner）
+  const gateRuntime: string | undefined = env.KWL_GATE_NODE ? env.KWL_GATE_NODE : (process as any).versions?.electron ? "node" : undefined;
+  const gateDigestEarly = env.KWL_GATE_NODE_SHA256 ? startEarlyDigest(gateRuntimePath(gateRuntime)) : null;
   // 统一脱敏日志（v9.2 §3.6）：内核单写数据根下 logs/；记录编号按本机盐 hash（盐与日志分开存放）
   const logSink = new FileSink({ dir: join(config.workspaceDir, "logs"), salt: loadOrCreateSalt(join(config.workspaceDir, ".log-salt")) });
   slog.setSink(logSink);
@@ -385,8 +390,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     env,
     socketPath: defaultGatePath(config),
     entryPath: env.ZR_EGRESS_GATE_ENTRY ?? gateEntry,
-    ...(env.KWL_GATE_NODE ? { runtime: env.KWL_GATE_NODE } : (process as any).versions?.electron ? { runtime: "node" } : {}),
-    ...(env.KWL_GATE_NODE_SHA256 ? { runtimeSha256: env.KWL_GATE_NODE_SHA256 } : {}),
+    ...(gateRuntime ? { runtime: gateRuntime } : {}),
+    ...(env.KWL_GATE_NODE_SHA256 ? { runtimeSha256: env.KWL_GATE_NODE_SHA256, runtimeDigestEarly: gateDigestEarly } : {}),
     secret: taskTokenKey(),
     revoked: { rids: revokedRids, jtis: revokedJtis },
     tokens,

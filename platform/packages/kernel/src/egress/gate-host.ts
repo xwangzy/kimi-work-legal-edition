@@ -355,6 +355,14 @@ export async function startEgressGate(o: StartGateOptions): Promise<GateHandle> 
   return startEgressGateNow(o);
 }
 
+/**
+ * 第 72 批（A1 S3，安全审查 09 P2-6）：调用方已经等过 runtimeReady("gate") 并刚核验完闸门 Node 的摘要——同步进到 spawn，
+ * 核验与拉起之间不再插入任何异步步骤（startEgressGate 里那一次 await 即使已就绪也要让出一个微任务）。只给 KernelGate 用。
+ */
+export function startEgressGateReady(o: StartGateOptions): Promise<GateHandle> {
+  return startEgressGateNow(o);
+}
+
 function startEgressGateNow(o: StartGateOptions): Promise<GateHandle> {
   const child = spawnNodeChild(o.entryPath, [], { execPath: o.runtime ?? process.execPath, execArgv: [], stdio: ["ignore", "ignore", "pipe", "ipc"], env: { PATH: process.env.PATH ?? "", ...windowsSystemEnv(), ...parentHeartbeatEnv() }, ...HIDE_WINDOW });
   startParentHeartbeat(child);

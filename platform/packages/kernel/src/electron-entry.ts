@@ -11,7 +11,6 @@
  */
 import { createKernel } from "./index.ts";
 import { markRuntimeVerified } from "./executor/child-env.ts";
-import { attestRuntime } from "./egress/runtime-stamp.ts";
 import { slog } from "@zr-legal/safe-log";
 
 interface RpcRequest {
@@ -98,9 +97,6 @@ port.on("message", async (raw) => {
   if (type === "kernel.runtime_verified") {
     // 第 64 批：scope = "gate" 只放行出站闸门（它自己的 Node 与入口已核对）；不带 scope = 全部
     markRuntimeVerified((raw as { scope?: unknown }).scope === "gate" ? "gate" : "all");
-    // 第 72 批（A1 S3）：主进程核对闸门闭包时取的闸门 Node 元数据——之后拉起闸门时元数据不变即不再整份重算摘要
-    // （同一段同步代码里记下：等放行的闸门启动在微任务里才继续，先于它生效）
-    if ((raw as { gate_node?: unknown }).gate_node) attestRuntime((raw as { gate_node?: unknown }).gate_node);
     return;
   }
   // 安装冒烟（第 52 批）：随包子进程逐个真拉起。只认主进程的专用消息（渲染进程的调用一律经主进程拼成 {id, method}，带不出 type），

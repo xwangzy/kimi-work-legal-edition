@@ -108,8 +108,9 @@ export const EVENTS = {
   // 闸门拉不起来（第 50 批）：只记封闭枚举的原因码；调用方照旧报 gate_unavailable
   // 第 64 批：闸门拉起（ms = 本次启动耗时，含等待运行时核对与进程拉起；since_boot_ms = 内核进程启动以来）
   KERNEL_GATE_STARTED: { level: "info", fields: { ms: "ms", since_boot_ms: "ms" } },
-  // 第 72 批（A1 S3、§2.4 T1）：拉起闸门前核对它的 Node 用了多久；how = attested（主进程本次启动已核对、元数据未变）/ cached（本进程算过）/ hashed（整份重算）
-  KERNEL_GATE_HASH: { level: "info", fields: { ms: "ms", how: ["attested", "cached", "hashed"], ok: "bool" } },
+  // 第 72 批（A1 S3、§2.4 T1；安全审查 09 P2-6）：拉起闸门前完整核验它的 Node 摘要用了多久（每次都核）；how = early（等内核启动时就在工作线程里开始算的那份）/
+  // early_stale（那份算完太久，现算）/ hashed（现算）
+  KERNEL_GATE_HASH: { level: "info", fields: { ms: "ms", how: ["early", "early_stale", "hashed"], ok: "bool" } },
   KERNEL_GATE_START_FAILED: { level: "error", fields: { reason: ["closed", "runtime_digest", "runtime_missing", "spawn_denied", "start_timeout", "exited_early", "listen_failed", "tls_relaxed", "other"], ...ERR } },
   // 第 52 批：随包子进程自检（安装冒烟逐个真拉起闸门、解析进程、Agent 宿主、W 执行域；值为 ok 或原因码）
   KERNEL_CHILD_SELFTEST: { level: "info", fields: { gate: "ident", parse: "ident", kap: "ident", w: "ident" } },

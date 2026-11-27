@@ -194,29 +194,11 @@ let runtimeVerifiedOk = !app.isPackaged;
  */
 let gateVerifiedOk = !app.isPackaged;
 const runtimeVerifyStartedAt = Date.now();
-/**
- * 第 72 批（A1 S3）：闸门 Node 已按随包清单核对过——核对前后元数据一致时记下（路径、摘要、大小、修改 / 变更时刻、inode、设备），
- * 随 kernel.runtime_verified 交给内核：内核拉起闸门前元数据不变即不再整份重算（每次应用启动只算一次）；变了照旧重算、不符照旧拒绝。
- */
-let gateNodeStamp = null;
-function fileStamp(p) {
-  try {
-    const st = require("node:fs").statSync(p, { bigint: true });
-    if (!st.isFile()) return null;
-    return { size: String(st.size), mtime_ns: String(st.mtimeNs), ctime_ns: String(st.ctimeNs), ino: String(st.ino), dev: String(st.dev) };
-  } catch {
-    return null;
-  }
-}
-function sameStamp(a, b) {
-  return !!a && !!b && a.size === b.size && a.mtime_ns === b.mtime_ns && a.ctime_ns === b.ctime_ns && a.ino === b.ino && a.dev === b.dev;
-}
 function sendRuntimeVerified() {
   if (!kernel) return;
-  const extra = gateVerifiedOk && gateNodeStamp ? { gate_node: gateNodeStamp } : {};
   try {
-    if (runtimeVerifiedOk) kernel.postMessage({ type: "kernel.runtime_verified", ...extra });
-    else if (gateVerifiedOk) kernel.postMessage({ type: "kernel.runtime_verified", scope: "gate", ...extra });
+    if (runtimeVerifiedOk) kernel.postMessage({ type: "kernel.runtime_verified" });
+    else if (gateVerifiedOk) kernel.postMessage({ type: "kernel.runtime_verified", scope: "gate" });
   } catch {
     // 内核正在退出：重新就绪时再发
   }
@@ -224,16 +206,10 @@ function sendRuntimeVerified() {
 function verifyRuntimeInBackground(manifest) {
   if (!app.isPackaged || !manifest) return Promise.resolve([]);
   const first = gateClosure(manifest);
-  // 闸门 Node 的绝对路径与清单摘要（内核比对的就是这一份：KWL_GATE_NODE / KWL_GATE_NODE_SHA256）
-  const gateNodeAbs = restart.runtimeEnv && restart.runtimeEnv.KWL_GATE_NODE;
-  const gateNodeSha = restart.runtimeEnv && restart.runtimeEnv.KWL_GATE_NODE_SHA256;
-  const gateNodeBefore = !runtimeDigests && gateNodeAbs ? fileStamp(gateNodeAbs) : null;
   runtimeDigests ??= verifyRuntimeDigests(path.join(process.resourcesPath, "runtime"), manifest, {
     first,
     onFirst: () => {
       gateVerifiedOk = true;
-      const after = gateNodeAbs ? fileStamp(gateNodeAbs) : null;
-      if (gateNodeSha && sameStamp(gateNodeBefore, after)) gateNodeStamp = { path: gateNodeAbs, sha256: String(gateNodeSha).toLowerCase(), ...after };
       slog.event("MAIN_RUNTIME_VERIFIED", { scope: "gate", files: first.length, ms: Date.now() - runtimeVerifyStartedAt });
       sendRuntimeVerified();
     },
