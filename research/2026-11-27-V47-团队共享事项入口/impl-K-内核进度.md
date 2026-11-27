@@ -106,6 +106,12 @@
 - **P3-3 只看**：`requireMatterWriter` 只看成员 → “你在这个事项里是“只看”：不能加材料或发起任务，请找负责人某某”（`reason: viewer_read_only`、`owner_name`）；`matters.get.matter.can_write`。旧用例 member-gates（2 处）、v94-b25（1 处）按新句改；member-gates 补 `can_write` 断言。
 - 验证：b73 8/8；回归 609/609（含 b51 / b56 授权、matter-archive、v94-b25、member-gates、e2e、w1*、gate、approvals、send-preview 等）；tsc 0 错；build:kernel 已重建。已写进 03（W2 第五行）。
 
+## 实拍小口径两项（未提交）
+
+- `seat_revoked` 系列（中继凭据 `credential_seat_revoked`、控制面席位一步 `seat_revoked` 且没有席位令牌）也映射为 `sync: "no_seat"`：判定收成纯函数 `seatProblemOf`（share-relay-policy.ts），单元用例覆盖四个码与“已重新取得令牌 / 连不上”反例；端到端用例里运营收回 A 的名额后 A 的事项成员 `sync` 为 `no_seat`。
+- 团队共享事项 0 位同事时 `data_flows` 不写“0 人”：“经加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果”。
+- 验证：b73 8/8；回归 609/609；tsc 0 错；build:kernel 已重建。已写进 03（W2 第六行）。
+
 ## 未做 / 留给主会话判断
 
 - A4 K6（云端移出团队不吊销设备、本机不自动移出事项与轮换）未做：现在靠成员页 `departed` 标记 + 负责人一键移出（D-308 口径）。

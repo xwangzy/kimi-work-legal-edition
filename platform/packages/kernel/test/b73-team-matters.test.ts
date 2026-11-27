@@ -25,7 +25,7 @@ import type { Kernel } from "../src/index.ts";
 import type { ProfileHandoff } from "../src/profiles.ts";
 import { rosterFromReply, rosterOfflineCode, rosterUnsupportedCode, rosterUserId } from "../src/services/team-roster.ts";
 import { AI_SUBPROCESSORS, AI_SUBPROCESSORS_TEAM, dataFlowsFor } from "../src/services/ai-authorization.ts";
-import { carriedRelaxations, daysLeftOf, enableBodyOf, expiringOf, sameBody, shareRelayStateOf, signerCount } from "../src/services/share-relay-policy.ts";
+import { carriedRelaxations, daysLeftOf, enableBodyOf, expiringOf, sameBody, seatProblemOf, shareRelayStateOf, signerCount } from "../src/services/share-relay-policy.ts";
 
 /** 律师层的报错不讲这些词（D-310；第 73 批补四项第 2 条）。 */
 const JARGON = /中继|控制成员|纪元|包裹|证书|密钥/;
@@ -94,6 +94,12 @@ test("开通同事之间同步的底稿：当前生效规则只改 share_relay�
   assert.equal(expiringOf("allowed", "2026-12-05T00:00:00Z", now), null);
   assert.equal(expiringOf("not_allowed", "2026-12-01T00:00:00Z", now), null);
   assert.equal(signerCount([{ member_id: "a" }, { member_id: "a" }, { member_id: "b" }]), 2, "门限按成员计");
+  // 没有席位：没分配到（no_seat）与名额被释放 / 收回（seat_revoked）同样算（11-27 实拍）
+  for (const c of ["credential_no_seat", "credential_seat_revoked"]) assert.equal(seatProblemOf(c, null, true), true, c);
+  for (const st of ["no_seat", "seat_revoked"]) assert.equal(seatProblemOf(null, st, false), true, st);
+  assert.equal(seatProblemOf(null, "seat_revoked", true), false, "席位令牌已重新取得");
+  assert.equal(seatProblemOf("credential_cp_unreachable", "cp_unreachable", false), false, "连不上不是没有席位");
+  assert.equal(seatProblemOf("credential_backoff", "accepted", true), false);
   assert.equal(shareRelayStateOf({ effectiveAllows: true, fallback: false, latestAllows: true, pendingEnable: true }), "allowed");
   assert.equal(shareRelayStateOf({ effectiveAllows: false, fallback: false, latestAllows: false, pendingEnable: true }), "pending_second_signature");
   assert.equal(shareRelayStateOf({ effectiveAllows: false, fallback: true, latestAllows: true, pendingEnable: false }), "expired");
@@ -394,6 +400,19 @@ test("P2-1：没有席位的成员——同事之间同步用不了如实报 no_
     const mA = (await kA3.inv("matters.create", { title: "有席位的团队事项", stance: "原告", consent_status: "not_required", collab_scope: "team" })).matter;
     await kA3.inv("relay.sync");
     assert.equal((await kA3.inv("matters.members.list", { matter_id: mA.matter_id })).sync, "ok");
+    // 管理员收回 A 的名额（seat_revoked 系列）：同样说“没有席位”，不说“连不上”
+    c.cp.ops.revokeSeat(`ten_${F3}`, `usr_${F3}_test-lawyer`);
+    await c.feed.refresh();
+    await kA3.inv("control_plane.sync");
+    let stA: any = null;
+    for (let i = 0; i < 3 && stA?.credential_error !== "credential_seat_revoked"; i++) {
+      await importText(kA3.inv, mA.matter_id, `收回后-${i}.txt`, "收回名额之后写的");
+      await kA3.inv("relay.sync");
+      stA = await kA3.inv("relay.status");
+    }
+    const seatStep = (await kA3.inv("kernel.status")).control_plane.last_sync?.steps?.seat;
+    assert.ok(stA.credential_error === "credential_seat_revoked" || seatStep === "seat_revoked", JSON.stringify({ stA, seatStep }));
+    assert.equal((await kA3.inv("matters.members.list", { matter_id: mA.matter_id })).sync, "no_seat");
   } finally {
     await bk.close().catch(() => {});
     await kA3.kernel.close().catch(() => {});
@@ -417,7 +436,9 @@ test("P2-3：团队共享事项的客户授权按团队共享的次处理者清�
     const gt = (await tk.inv("matters.get", { matter_id: team.matter_id })).matter;
     assert.equal(gt.subprocessors.version, AI_SUBPROCESSORS_TEAM.version);
     assert.deepEqual(gt.data_flows.map((f: any) => f.key), ["colleagues", "zr_relay"]);
-    assert.match(gt.data_flows[0].text, /经加密同步到事项成员的电脑（本所同事 0 人）/);
+    assert.equal(gt.data_flows[0].text, "经加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果", "还没加同事：不写“0 人”");
+    assert.match(dataFlowsFor("team", 2)[0]!.text, /经加密同步到事项成员的电脑（本所同事 2 人）/);
+    assert.doesNotMatch(dataFlowsFor("team", null)[0]!.text, /人）/);
     assert.equal(gt.authorization_history[0].scope, "team");
     assert.deepEqual(gt.authorization_history[0].data_flows.map((f: any) => f.key), ["colleagues", "zr_relay"]);
     assert.equal(gt.authorization_history[0].current_version, true);

@@ -28,7 +28,7 @@ import { parseReminderInput, type ReminderService } from "../services/reminders.
 import { syncAlertsView, type ShareRelaySync } from "../services/share-relay.ts";
 import type { DeviceShareConfirm } from "../services/device-share.ts";
 import { readRosterCache, rosterFromReply, rosterOfflineCode, rosterUnsupportedCode, writeRosterCache, type RosterMember } from "../services/team-roster.ts";
-import { carriedRelaxations, daysLeftOf, enableBodyOf, expiringOf, normalizedBody, sameBody, shareRelayStateOf, signerCount, type ShareRelayState } from "../services/share-relay-policy.ts";
+import { carriedRelaxations, daysLeftOf, enableBodyOf, expiringOf, normalizedBody, sameBody, seatProblemOf, shareRelayStateOf, signerCount, type ShareRelayState } from "../services/share-relay-policy.ts";
 import { recordSuspectReview, sendPreview, summarizeSend, type SendSummary, type SuspectView } from "../services/send-preview.ts";
 import {
   ConsentStatus,
@@ -6295,7 +6295,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     if (st.blocked === "not_allowed") return st.policy_fallback ? "unknown" : "not_allowed";
     if (st.blocked) return "unknown";
     // 第 73 批（P2-1）：没有席位——申领同事之间同步的凭据被拒（credential_no_seat），或控制面同步时席位一步答 no_seat 而本机没有席位令牌
-    if (sr.credentialError() === "credential_no_seat" || (deps.controlPlane?.lastSync?.steps.seat === "no_seat" && !deps.governance?.seatToken())) return "no_seat";
+    // 管理员释放 / 收回了名额（seat_revoked）同样按没有席位说（11-27 实拍：原来只认 no_seat，显示“暂时连不上”）
+    if (seatProblemOf(sr.credentialError(), deps.controlPlane?.lastSync?.steps.seat, !!deps.governance?.seatToken())) return "no_seat";
     const failedAfterOk = (err: string | null | undefined, errAt: string | null | undefined, okAt: string | null | undefined) => !!err && !!errAt && (!okAt || errAt > okAt) && /timeout|connect|unreachable|gate_|tls_|http_5\d\d|relay_error|credential_/.test(err);
     if (failedAfterOk(st.push_last_error, st.push_last_error_at, st.push_last_ok_at) || failedAfterOk(st.pull_last_error, st.pull_last_error_at, st.pull_last_ok_at)) return "unreachable";
     // 团队共享事项：有还没发出的段（退避 / 卡住），或这台电脑还没经中继收发过它（刚建、刚转成团队共享）

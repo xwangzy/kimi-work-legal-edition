@@ -56,7 +56,12 @@ export interface DataFlowEntry {
 export function dataFlowsFor(scope: CollabScopeLike, colleagues: number | null = null): DataFlowEntry[] {
   if (scope !== "team") return [{ key: "local", label: "案卷", text: "案卷只存这台电脑" }];
   return [
-    { key: "colleagues", label: "同事电脑", text: `经加密同步到事项成员的电脑${colleagues !== null ? `（本所同事 ${colleagues} 人）` : ""}；他们电脑上也有材料与成果` },
+    // 还没加同事（0 人）时不写人数（11-27 实拍：“本所同事 0 人”读着像没有去向）
+    {
+      key: "colleagues",
+      label: "同事电脑",
+      text: colleagues === 0 ? "经加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果" : `经加密同步到事项成员的电脑${colleagues !== null ? `（本所同事 ${colleagues} 人）` : ""}；他们电脑上也有材料与成果`,
+    },
     { key: "zr_relay", label: "中软", text: "保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本" },
   ];
 }

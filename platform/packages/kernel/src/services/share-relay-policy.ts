@@ -69,3 +69,13 @@ export function shareRelayStateOf(o: { effectiveAllows: boolean; fallback: boole
   if (o.fallback && o.latestAllows) return "expired";
   return "not_allowed";
 }
+
+/**
+ * 第 73 批（P2-1）：同事之间同步用不了是不是因为没有席位（没分配到，或管理员释放 / 收回了名额）。纯函数。
+ * credentialError：中继凭据最近一次申领失败的原因（credential_no_seat / credential_seat_revoked）；
+ * seatStep：最近一次控制面同步时席位这一步的结果（no_seat / seat_revoked）；hasSeatToken：本机此刻有没有席位令牌。
+ */
+export function seatProblemOf(credentialError: string | null, seatStep: string | null | undefined, hasSeatToken: boolean): boolean {
+  if (credentialError === "credential_no_seat" || credentialError === "credential_seat_revoked") return true;
+  return (seatStep === "no_seat" || seatStep === "seat_revoked") && !hasSeatToken;
+}
