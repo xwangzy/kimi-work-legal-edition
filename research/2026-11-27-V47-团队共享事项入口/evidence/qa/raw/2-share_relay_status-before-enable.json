@@ -1,0 +1,20 @@
+{
+ "relay_configured": true,
+ "state": "not_allowed",
+ "expires_at": null,
+ "days_left": null,
+ "expiring": null,
+ "can_manage": true,
+ "threshold": 1,
+ "signatures": 0,
+ "pending": null,
+ "carry_relaxations": {
+  "enable": [
+   "fetch_allowlist:www.example.com",
+   "support_upload:allow"
+  ],
+  "renew": null
+ },
+ "fallback_reason": null,
+ "policy_version": 2
+}

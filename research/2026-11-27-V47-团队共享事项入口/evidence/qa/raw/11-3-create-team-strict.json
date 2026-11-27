@@ -1,0 +1,7 @@
+{
+ "code": "team_scope_unavailable",
+ "message": "客户要求不上云的事项不能和同事一起办：同事之间同步要经中软转送加密内容，与客户的要求不符",
+ "detail": {
+  "reason": "client_no_cloud"
+ }
+}

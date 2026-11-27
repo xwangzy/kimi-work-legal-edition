@@ -1,0 +1,9 @@
+PILL before: 0
+MORE MENU: 和同事一起办… 当事人名单 数据去向记录 结案与删除
+MODAL: 和同事一起办「云帆物流仓储合同审查」 加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果；内容加密后在你们的电脑之间同步，中软打不开。 改为和同事一起办后，正在等你确认的任务需要重新确认一次。 之后不能改回“只有我”：要结束共享，把同事逐个移出，或结案。 同时加哪些同事（可以先不选） 林 林书棠 律师 陆 陆予安 律师 沈 沈知秋 律师 加入后是 一起办 取消 开始一起办
+PRIMARY: 开始一起办（1）
+2026-11-27T13:26:42.197Z GO
+2026-11-27T13:26:42.211Z INVOKE matters.update {"matter_id":"mat_20450114-0f60-43b1-a4d1-3f9ff4aa7b0b","patch":{"collab_scope":"team"}} → {"ok":true,"result":{"matter":{"matter_id":"mat_20450114-0f60-43b1-a4d1-3f9ff4aa7b0b","tenant_id":"ten_qa9jia","title":"云帆物流仓储合同审查","client_name":"云帆物流有限公司","counterparty":null,"stance":"原告","jurisdiction":"中国大陆","key_dates":{},"confidentiality":"normal","model_endpoint":"standard","collab_scope":"team","consent_status":"pending","policy_version":2,"status":"active","created_by":"usr_qa9jia_qa9jia","created_at":"2026-11-27T13:26:18.579Z","node_allowed":0,"full_pseudonym":false,"basis":{"engagement":"pending","personal_info":"pending","sensitive":"not_applicable","subprocessor":"pending"},"lifecycle":"active","closed_at":null,"retention_until":null,"legal_hold":false,"legal_hold_reason":null,
+2026-11-27T13:26:42.215Z INVOKE matters.members.add {"matter_id":"mat_20450114-0f60-43b1-a4d1-3f9ff4aa7b0b","user_id":"usr_qa9jia_u06a843","matter_role":"editor"} → {"ok":true,"result":{"matter_id":"mat_20450114-0f60-43b1-a4d1-3f9ff4aa7b0b","user_id":"usr_qa9jia_u06a843","name":"林书棠","epoch":1,"devices_wrapped":1,"can_receive":true,"lawyer_note":"已把林书棠加进这个事项：同步后他的电脑就能打开","note":"已按当前密钥纪元为对方 active 设备补包裹（对方设备方可解事项密钥）；变更已记入成员链"}}
+MODAL2: (closed)
+MAIN: 事项 ›云帆物流仓储合同审查 云帆物流仓储合同审查 发起任务 设提醒 客户 云帆物流有限公司 相对方 — 立场 原告 法域 中国大陆 客户授权待记录 · 第一次用 AI 时记录 当事人名单 团队共享 · 2 人 记录之前只用本机功能（读材料、比对、核对法条），不发给 AI、不联网。现在记录生成告知函（草稿） 概览 材料（0） 事实 AI 记录（0） 成果 事项成员 ⋯ 事项成员 2 加同事 加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果；内容加密后在你们的电脑之间同步，中软打不开。 这个事项还在等第一次同步：联网时会自动同步给同事。 已改为和同事一起办。已加入林书棠。林书棠的电脑下次同步时收到。 顾 顾明远 我 负责人 林 林书棠 一起办 移出

@@ -1,0 +1,4 @@
+MODAL: 把同事加进「星河科技股权转让纠纷」 选同事 陆 陆予安 律师 沈 沈知秋 律师 加入后是 一起办 取消 加入（0）
+2026-11-27T13:29:55.204Z ADD GO
+2026-11-27T13:29:55.220Z INVOKE matters.members.add {"matter_id":"mat_284f312b-27f1-4918-b339-6b31581dd82c","user_id":"usr_qa9jia_u8f38e8","matter_role":"editor"} → {"ok":true,"result":{"matter_id":"mat_284f312b-27f1-4918-b339-6b31581dd82c","user_id":"usr_qa9jia_u8f38e8","name":"陆予安","epoch":2,"devices_wrapped":1,"can_receive":true,"lawyer_note":"已把陆予安加进这个事项：同步后他的电脑就能打开","note":"已按当前密钥纪元为对方 active 设备补包裹（对方设备方可解事项密钥）；变更已记入成员链"}}
+MEMBERS: 事项成员 3 加同事 加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果；内容加密后在你们的电脑之间同步，中软打不开。 已加入陆予安。陆予安的电脑下次同步时收到。 顾 顾明远 我 负责人 林 林书棠 一起办 移出 陆 陆予安 一起办 移出

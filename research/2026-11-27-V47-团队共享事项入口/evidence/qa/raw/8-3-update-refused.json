@@ -1,0 +1,7 @@
+{
+ "code": "team_scope_conflict",
+ "message": "这个事项已和同事一起办，经中软转送加密内容；客户要求不上云时，请为这部分工作另建一个只有我的事项",
+ "detail": {
+  "reason": "consent_refused"
+ }
+}

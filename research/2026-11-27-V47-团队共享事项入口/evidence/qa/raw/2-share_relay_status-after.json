@@ -1,0 +1,23 @@
+{
+ "relay_configured": true,
+ "state": "allowed",
+ "expires_at": "2026-12-27T13:09:19.690Z",
+ "days_left": 30,
+ "expiring": null,
+ "can_manage": true,
+ "threshold": 1,
+ "signatures": 0,
+ "pending": null,
+ "carry_relaxations": {
+  "enable": [
+   "fetch_allowlist:www.example.com",
+   "support_upload:allow"
+  ],
+  "renew": [
+   "fetch_allowlist:www.example.com",
+   "support_upload:allow"
+  ]
+ },
+ "fallback_reason": null,
+ "policy_version": 3
+}

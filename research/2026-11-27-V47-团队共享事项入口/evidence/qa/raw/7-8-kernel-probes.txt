@@ -1,0 +1,32 @@
+## 甲 改回只有我
+{
+ "code": "scope_irreversible",
+ "message": "团队共享事项不能改回只有我：要结束共享请移出同事或结案",
+ "detail": {
+  "reason": "team_to_personal"
+ }
+}
+## 乙（非负责人）改范围
+{
+ "code": "forbidden",
+ "message": "只有事项负责人能改“谁能看到”"
+}
+## 乙（非负责人）加人
+{
+ "code": "forbidden",
+ "message": "只有事项负责人能加人或移出同事"
+}
+## 乙 移出甲
+{
+ "code": "forbidden",
+ "message": "只有事项负责人能加人或移出同事"
+}
+## 甲 加名单外的人
+{
+ "code": "member_not_in_team",
+ "message": "这位不在团队同事名单里：只能加团队里的同事",
+ "detail": {
+  "user_id": "usr_qa9jia_nobody",
+  "reason": "not_in_roster"
+ }
+}

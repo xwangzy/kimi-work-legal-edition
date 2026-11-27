@@ -1,0 +1,8 @@
+2026-11-27T13:31:03.914Z INVOKE team.refresh_share_state {} → {"ok":false,"error":{"code":"not_found","message":"未知内核方法 team.refresh_share_state"}}
+2026-11-27T13:31:03.943Z INVOKE team.refresh_share_state {} → {"ok":false,"error":{"code":"not_found","message":"未知内核方法 team.refresh_share_state"}}
+ROW: 陆 陆予安 139****3604 律师 无 1 / 2 台 正常 
+MENU: 分配席位 可以用 AI 停用 暂时不能登录，可随时重新启用 移出团队… 离开团队；之后可重新启用或重新邀请
+DIALOG: 把陆予安移出团队？ 陆予安不再是团队成员：他的所有电脑在 2 分钟内退出这个团队，席位释放。 他电脑上的事项和成果留在他的电脑上，不会被删除，管理员也看不到。 移出前，请先请陆予安在自己电脑的“设置 → 团队 → 离所交接”里把负责的事项交接好。 他的个人空间和他加入的其他团队不受影响。之后可在成员列表里重新启用，或重新邀请。 陆予安已交接完，或团队决定不再等 取消 移出团队
+2026-11-27T13:31:10.549Z KICK GO
+2026-11-27T13:31:10.565Z INVOKE team.members.remove {"aid":"acc_xZzUF4DPttms-Ca_"} → {"ok":true,"result":{"supported":true,"ok":true,"sessions_revoked":1,"seat_released":0,"invites_revoked":0,"member":{"aid":"acc_xZzUF4DPttms-Ca_","email":"q***@kwl-local.example","name":"陆予安","role":"lawyer","status":"disabled","disabled_reason":null,"disabled_by":"team","disabled_kind":"removed","person_phone_masked":"139****3604","seat":null,"devices_summary":{"signed_in":0,"limit":2},"locked_s"
+AFTER: 成员 3 席位（AI 使用名额）3 / 3 已分配，已满 邀请成员 事项内容只在成员自己的电脑上，这里只管谁能用、能用几台。 已把陆予安移出团队 成员 角色 席位 电脑 状态 顾 顾明远 我 139****3601 管理员 有 1 / 2 台 正常 林 林书棠 139****3602 律师 有 1 / 2 台 正常 沈 沈知秋 139****3603 律师 有 1 / 2 台 正常 已停用、已移出的成员（1） 邀请 没有未使用的邀请。点上面的“邀请成员”生成邀请码。 已处理的邀请（3） 电脑待确认 成员申请接收团队共享事项后，在这里确认他的电脑。 没有待确认的电脑。 团队策略 同事之间同步 团队共享事项加密后在同事电脑之间同步，中软打不开。 已开通 · 12 月 27 日 21:09 前有效 成员新电脑 直接登录 须管理员确认 成员在新电脑上用手机号验证码登录后即可使用（推荐）。这台电脑要接收团队共享事项时，成员申请一次、你在“设置 → 团队 → 电脑待确认”里核对确认一次即可。 生效策略 本所规则第 3 版（已由 1 名管理员确认）· 12 月 27 日 21:09 前有效 AI 最多能
