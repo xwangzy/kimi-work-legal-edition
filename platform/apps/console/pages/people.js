@@ -194,7 +194,8 @@ function wsTable(ws, p, reload) {
     caption: "工作空间",
     columns: [
       // 评审（K9）：编号不进主列；胶囊与用户列表同款；团队身份名与本人不同时写出“团队内名”
-      { key: "name", label: "工作空间", sortable: false, render: (w) => h("div", { class: "cell-2" }, wsChip(w), kindOf(w) === "team" && w.acc.name && w.acc.name !== p.name ? h("small", {}, `团队内名：${w.acc.name}`) : null) },
+      // 评审第二轮（K9）：表格里不用列表页的整段胶囊——只放“名称 + 类型小标”，角色与状态只在各自列
+      { key: "name", label: "工作空间", sortable: false, render: (w) => h("div", { class: "cell-2" }, h("b", { title: `客户编号 ${w.tid}` }, wsLabel(w), h("span", { class: ["kind-tag", kindOf(w) === "personal" && "neutral"] }, kindOf(w) === "personal" ? "个人" : "团队")), kindOf(w) === "team" && w.acc.name && w.acc.name !== p.name ? h("small", {}, `团队内名：${w.acc.name}`) : null) },
       { key: "role", label: "角色", sortable: false, render: (w) => (kindOf(w) === "personal" ? h("span", { class: "muted" }, "本人") : roleText(w.role)) },
       { key: "status", label: "状态", sortable: false, render: (w) => (w.status !== "disabled" && w.dd?.tenant?.status === "pending" ? stateCell("待开通", "info", "还没在客户端登录过：在电脑上用这个账号登录一次即可开通") : wsStatusCell(w)) },
       { key: "seat", label: "席位", title: SEAT_NOTE, sortable: false, render: (w) => (kindOf(w) === "personal" ? h("span", { class: "muted", title: "个人空间不占席位" }, "—") : w.status === "disabled" ? h("span", { class: "muted" }, "—") : w.seat ? stateCell("已占席", "ok") : stateCell("未占席", "neutral", UNSEATED_TIP)) },
@@ -212,7 +213,7 @@ export function wsActions(w, p, reload) {
   return [
     { label: team ? "打开组织详情" : "个人空间的订阅与用量", onClick: () => go(`tenants/${encodeURIComponent(w.tid)}`), disabled: !can("tenant.read"), title: needs("tenant.read") },
     team && !off && !w.seat ? { label: "分配席位…", onClick: () => assignSeat(w, p, reload), disabled: !can("device.revoke"), title: needs("device.revoke") } : null,
-    team && w.seat ? { label: "收回席位…", danger: true, onClick: () => revokeSeatOf(w, p, seatRec, reload), disabled: !can("device.revoke") || !seatRec, title: needs("device.revoke") } : null,
+    team && w.seat ? { label: "释放席位…", danger: true, onClick: () => revokeSeatOf(w, p, seatRec, reload), disabled: !can("device.revoke") || !seatRec, title: needs("device.revoke") } : null,
     off ? null : { label: "电脑数上限…", onClick: () => limitsOf(w, p, reload), disabled: !can("account.manage"), title: needs("account.manage") },
     off
       ? { label: "启用这个身份…", onClick: () => enableWs(w, p, reload), disabled: !canSupport() || wsStatus(w) === "team", title: wsStatus(w) === "team" ? "团队管理员移出的成员，由团队管理员重新邀请或启用" : canSupport() ? undefined : needs("account.support") }
@@ -232,14 +233,14 @@ async function assignSeat(w, p, reload) {
 }
 async function revokeSeatOf(w, p, seatRec, reload) {
   const ok = await confirmAction({
-    title: "收回席位",
+    title: "释放席位",
     danger: true,
     lead: h("p", {}, `${p.name ?? ""} · ${w.name ?? w.tid}`),
     consequences: ["这名成员不能再用 AI（本机功能照常）；", "席位空出可分给别人；用量记录保留。"],
-    confirmLabel: "收回",
+    confirmLabel: "释放",
     run: () => api.post(`${api.T(w.tid)}/seats/${api.seg(w.dd?.uid ?? seatRec.sid)}/revoke`),
   });
-  if (ok) (toast("已收回席位"), reload());
+  if (ok) (toast("已释放席位"), reload());
 }
 async function limitsOf(w, p, reload) {
   const acc = w.acc;
@@ -275,7 +276,7 @@ async function disableWs(w, p, reload) {
     ],
     fields: [
       { name: "reason", label: "停用原因（记入审计，本人可见）", type: "textarea", required: true, maxlength: 100 },
-      seatRec && canRevoke ? { name: "seat", label: "同时收回席位", type: "checkbox", value: true, hint: "离职时勾上：席位空出可分给别人" } : null,
+      seatRec && canRevoke ? { name: "seat", label: "同时释放席位", type: "checkbox", value: true, hint: "离职时勾上：席位空出可分给别人" } : null,
       devs.length && canRevoke ? { name: "devices", label: `同时移除这个工作空间里的 ${devs.length} 台电脑`, type: "checkbox", value: false, hint: "停用后这些电脑已不能用 AI；只有电脑丢失或要回收时才需要移除" } : null,
     ].filter(Boolean),
     typeToConfirm: w.name && team ? w.name : (p.name ?? w.aid),
@@ -285,7 +286,7 @@ async function disableWs(w, p, reload) {
       await api.post(`${api.A(w.aid)}/disable`, { reason: v.reason });
       const done = ["已停用"];
       const bad = [];
-      if (v.seat && seatRec) await api.post(`${api.T(w.tid)}/seats/${api.seg(w.dd?.uid ?? seatRec.sid)}/revoke`).then(() => done.push("已收回席位"), (e) => bad.push(`收回席位：${e.message}`));
+      if (v.seat && seatRec) await api.post(`${api.T(w.tid)}/seats/${api.seg(w.dd?.uid ?? seatRec.sid)}/revoke`).then(() => done.push("已释放席位"), (e) => bad.push(`释放席位：${e.message}`));
       if (v.devices) for (const x of devs) await api.post(`${api.T(w.tid)}/devices/${api.seg(x.device_id)}/revoke`).then(() => {}, (e) => bad.push(`${x.name ?? x.device_id}：${e.message}`));
       if (v.devices && bad.length < devs.length) done.push("已移除电脑");
       return { done, bad };

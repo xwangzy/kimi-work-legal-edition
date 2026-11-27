@@ -906,8 +906,8 @@ dialog { color: var(--text-primary); }
 
 /* 深色（G7）：主按钮与次按钮拉开、分段选中态看得见、用量条轨道看得见、提醒色描边不发灰 */
 /* 主 Agent 拍板：主按钮与律师客户端同一令牌（深色 = 浅底深字），不改成 Kimi 蓝；拉开主次靠次按钮改为透明底 + 明显描边 */
-:root[data-theme="dark"] .btn:not(.primary):not(.danger) { background: transparent; border-color: var(--border-hover); }
-:root[data-theme="dark"] .btn:not(.primary):not(.danger):hover:not(:disabled) { background: var(--bg-hover); }
+:root[data-theme="dark"] .btn:not(.primary):not(.danger):not(.danger-solid) { background: transparent; border-color: var(--border-hover); }
+:root[data-theme="dark"] .btn:not(.primary):not(.danger):not(.danger-solid):hover:not(:disabled) { background: var(--bg-hover); }
 :root[data-theme="dark"] .seg.active { background: var(--bg-active); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--border-hover); }
 :root[data-theme="dark"] .meter-bar { background: var(--border-default); }
 :root[data-theme="dark"] .panel.tone-warn, :root[data-theme="dark"] .seat-card.tone-warn { border-color: var(--status-warning-solid); }
@@ -953,3 +953,8 @@ button.banner { width: 100%; text-align: left; font: inherit; font-size: var(--f
 .facts dd .btn { margin-left: var(--sp-2); }
 .toolbar.inset { padding: var(--sp-3) var(--sp-5) 0; }
 .usage-line { margin: 0; font-size: var(--fs-caption); }
+/* 评审第二轮：危险主按钮一个样子——浅 / 深都是红底；禁用时明确降透明度并去掉指针 */
+.btn.danger-solid:disabled { opacity: 0.45; cursor: not-allowed; }
+/* 短说明统一平衡折行，避免“撤销。”“确认。”这类短尾行 */
+.muted.small, .stat-sub, .consequences li, .modal-note, .quota-note, .setting-row p, .setting-row small, .seat-card-text p, .field small { text-wrap: balance; }
+.kind-tag.neutral { color: var(--status-neutral-text); background: var(--status-neutral-bg); }

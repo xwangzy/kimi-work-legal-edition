@@ -47,11 +47,12 @@ function summary(box) {
         "div",
         { class: "kpis" },
         stat("AI 调用", `${fmt.int(t.requests)} 次`, `近 ${st.days} 日`),
-        stat("实际消耗", `${fmt.tokens(tokensOf(t) || t.tokens)} token`, `输入 ${fmt.tokens(t.tokens_in)}（缓存 ${fmt.tokens(t.tokens_cached)}）· 输出 ${fmt.tokens(t.tokens_out)}`),
+        st.sec === "me" ? null : stat("实际消耗", `${fmt.tokens(tokensOf(t) || t.tokens)} token`, `输入 ${fmt.tokens(t.tokens_in)}（缓存 ${fmt.tokens(t.tokens_cached)}）· 输出 ${fmt.tokens(t.tokens_out)}`),
         stat("计费金额", fmt.cny(t.value_cny), "按价目计的用量价值（元）"),
         st.sec === "me" ? stat("用到的模型", fmt.int((d.by_model ?? []).filter((m) => Number(m.requests) > 0).length), "有调用的模型") : stat("活跃成员", fmt.int((d.by_member ?? []).filter((m) => Number(m.requests) > 0).length), "有请求的成员"),
       ),
-      panel("按日", daily.length ? trendChart({ labels: daily.map((x) => x.day), series: [{ name: "输入 token", values: daily.map((x) => Number(x.tokens_in) || 0), kind: "bar", stack: true }, { name: "输出 token", values: daily.map((x) => Number(x.tokens_out) || 0), kind: "bar", stack: true, cls: "s2" }], format: (v) => fmt.tokens(v), tick: (l) => l.slice(5), height: 220 }) : emptyBlock("这段时间没有用量"), { sub: "实际消耗（token），北京时间日" }),
+      // 评审第二轮（K16b）：个人用户主视图只给次数，token 留在“逐请求明细”
+      st.sec === "me" ? panel("按日调用", daily.length ? trendChart({ labels: daily.map((x) => x.day), series: [{ name: "AI 调用", values: daily.map((x) => Number(x.requests) || 0), kind: "bar" }], format: (v) => `${fmt.int(v)} 次`, tick: (l) => l.slice(5), height: 170 }) : h("p", { class: "muted small" }, "这段时间没有调用")) : panel("按日", daily.length ? trendChart({ labels: daily.map((x) => x.day), series: [{ name: "输入 token", values: daily.map((x) => Number(x.tokens_in) || 0), kind: "bar", stack: true }, { name: "输出 token", values: daily.map((x) => Number(x.tokens_out) || 0), kind: "bar", stack: true, cls: "s2" }], format: (v) => fmt.tokens(v), tick: (l) => l.slice(5), height: 220 }) : emptyBlock("这段时间没有用量"), { sub: "实际消耗（token），北京时间日" }),
       h(
         "div",
         { class: st.sec === "me" ? "stack" : "grid-2" },

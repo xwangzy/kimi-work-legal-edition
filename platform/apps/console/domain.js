@@ -83,7 +83,9 @@ export const CREATED_VIA = { self: "自助注册", founder_code: "开通码", in
 export const FIRM_DEVICE_FLAG = { stale_30d: ["30 天没在线", "neutral"], old_client: ["低于最低版本", "neutral"], rejected_after_logout: ["未登录", "neutral"] };
 export const DEVICE_FLAG = { stale: ["30 天没在线", "neutral"], outdated: ["低于最低版本", "neutral"], suspended: ["未登录", "neutral"] };
 /** 没上报版本时不断言“低于最低版本”，写“版本未知”（客户端列已写“未上报版本”） */
-export const flagBadge = (f, d) => ((f === "outdated" || f === "old_client") && (!(d?.client_version ?? d?.version) || (d?.client_version ?? d?.version) === "legacy") ? badge("版本未知", "neutral", "这台电脑没上报客户端版本") : badge(...pick(f in FIRM_DEVICE_FLAG ? FIRM_DEVICE_FLAG : DEVICE_FLAG, f)));
+export const flagBadge = (f, d) => ((f === "outdated" || f === "old_client") && (!(d?.client_version ?? d?.version) || (d?.client_version ?? d?.version) === "legacy") ? null : badge(...pick(f in FIRM_DEVICE_FLAG ? FIRM_DEVICE_FLAG : DEVICE_FLAG, f)));
+/** 这台电脑有没有要显示的标记（没上报版本的“低于最低版本”不算，客户端列已写“未上报版本”） */
+export const shownFlags = (d) => (d?.flags ?? []).filter((f) => f !== "suspended" && f !== "rejected_after_logout" && flagBadge(f, d) !== null);
 /** 电脑状态（第 71 批）：登录中 / 已退出登录（资料还在那台电脑上，可再登录）/ 已移除（不能再用这个账号） */
 export const DEVICE_STATE = { signed_in: ["登录中", "ok"], signed_out: ["已退出登录", "neutral"], pending: ["待批准登录", "warn"], revoked: ["已移除", "neutral"] };
 /** 接口给了 state 用它；旧云端没有就按吊销时间与会话推断 */
@@ -188,7 +190,7 @@ export function alertList(alerts, { onAck, compact } = {}) {
       // 第 72 批评审（跨页 7）：新电脑登录告警的正文是写给律师本人的，运营 / 管理员看到的改成第三人称与可做的事（原文放悬停）
       const ip = a.kind === "new_device" ? /（[^（）]*）/.exec(String(a.message ?? ""))?.[0] ?? "" : "";
       const person = a.member_name ?? a.email ?? null;
-      const msg = a.kind === "new_device" ? `${person ? `${person}在` : "有成员在"}一台新电脑上登录${ip}。若本人否认，可在“电脑”里移除这台电脑，并提醒本人改密码。` : a.message ?? "";
+      const msg = a.kind === "new_device" ? `${person ? `${person}${/[A-Za-z0-9]$/.test(person) ? " " : ""}在` : "有成员在"}一台新电脑上登录${ip}。若本人否认，可在“电脑”里移除这台电脑，并提醒本人改密码。` : a.message ?? "";
       return h(
         "li",
         { class: `alert lv-${tone}` },
@@ -297,16 +299,16 @@ export function deviceTable(rows, { state, after, showTenant = true, showMember 
   const isTeam = typeof team === "function" ? team : () => !!team;
   // 第 72 批（D-306）：行与“成员”列进用户详情（一个人）；用户详情按工作空间分组列电脑
   const openRow = onRow === false ? undefined : onRow ?? ((d) => d.aid && go(`ops/people/${encodeURIComponent(d.aid)}?section=devices`));
-  const anyFlag = rows.some((d) => (d.flags ?? []).some((f) => f !== "suspended"));
+  const anyFlag = rows.some((d) => shownFlags(d).length);
   const cols = [
     { key: "name", label: "电脑", value: (d) => deviceLabel(d), render: (d) => deviceCell(d) },
     showMember ? { key: "member", label: memberLabel, value: (d) => d.member_name ?? d.email ?? "", render: (d) => (d.aid ? h("button", { type: "button", class: "link plain", title: d.email ?? undefined, onclick: () => go(`ops/people/${encodeURIComponent(d.aid)}`) }, d.member_name ?? d.email ?? d.aid) : h("span", { class: "muted" }, "未建账号")) } : null,
     showTenant ? { key: "tenant_name", label: "工作空间", value: (d) => wsNameOf(d), render: (d) => h("button", { type: "button", class: "link plain", title: `打开${wsNameOf(d) === "个人空间" ? "个人空间" : "组织"}详情`, onclick: () => go(`ops/tenants/${encodeURIComponent(d.tid)}`) }, wsNameOf(d)) } : null,
     { key: "platform", label: "系统", value: (d) => platformText(d.platform) },
-    { key: "client_version", label: "客户端", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.client_version && d.client_version !== "legacy" ? mono(d.client_version) : h("span", { class: "muted" }, versionText(d.client_version))) },
+    { key: "client_version", label: "客户端", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.client_version && d.client_version !== "legacy" ? h("span", {}, d.client_version) : h("span", { class: "muted" }, versionText(d.client_version))) },
     { key: "last_seen_on", label: "最近在线", value: (d) => d.last_seen_on ?? "", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.last_active_at ? h("span", { title: fmt.full(d.last_active_at) }, fmt.ago(d.last_active_at)) : h("span", { title: fmt.full(d.last_seen_on) }, d.last_seen_on ? fmt.ago(d.last_seen_on) : "从未在线")) },
     { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)], render: (d) => (isTeam(d) && unconfirmed(d) ? confirmCell(d, confirmHint) : deviceStateCell(d)) },
-    anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => ((d.flags ?? []).filter((f) => f !== "suspended").length ? h("span", { class: "badges" }, d.flags.filter((f) => f !== "suspended").map((f) => flagBadge(f, d))) : "") } : null,
+    anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => (shownFlags(d).length ? h("span", { class: "badges" }, shownFlags(d).map((f) => flagBadge(f, d))) : "") } : null,
     { key: "_act", label: "", sortable: false, class: "act", render: (d) => rowMenu(deviceActions(d, after), { aria: `操作：${deviceLabel(d)}` }) },
   ].filter(Boolean);
   return dataTable({ columns: cols, rows, state: state ?? { sort: "state", asc: true }, onRow: openRow, empty: empty ?? "没有电脑", rowClass: (d) => (deviceState(d) === "revoked" ? "dim" : d.pending ? "pending-row" : isTeam(d) && unconfirmed(d) ? "flagged" : "") });
@@ -354,7 +356,7 @@ export function inviteTable(all, { state, onRevoke, revokeTitle } = {}) {
     rowClass: (x) => (x.status === "open" ? "" : "dim"),
     caption: "团队邀请",
     columns: [
-      { key: "name", label: "被邀请人", render: (x) => h("div", { class: "cell-2" }, h("b", {}, x.name ?? "—"), h("small", {}, x.phone_hint ?? "未填手机号")) },
+      { key: "name", label: "被邀请人", render: (x) => ((dup) => h("div", { class: "cell-2" }, h("b", {}, x.name ?? "—", dup > 1 ? h("span", { class: "kind-tag neutral", title: "同一个名字有多份待接受的邀请：对方用任意一份都能加入，用不上的可以撤销" }, `同名 ${dup} 份`) : null), h("small", {}, x.phone_hint ?? "未填手机号")))(x.status === "open" ? all.filter((y) => y.status === "open" && y.name === x.name).length : 0) },
       { key: "role", label: "角色", value: (x) => roleText(x.role) },
       { key: "status", label: "状态", value: (x) => x.status, render: (x) => stateCell(...(INVITE_STATUS[x.status] ?? [x.status, "neutral"])) },
       { key: "created_at", label: "发出", value: (x) => x.created_at ?? "", render: (x) => h("div", { class: "cell-2" }, fmt.time(x.created_at), h("small", {}, x.created_by === "platform" ? "平台代发" : "团队管理员")) },

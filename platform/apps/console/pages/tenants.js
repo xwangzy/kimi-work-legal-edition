@@ -3,7 +3,7 @@
  *   列表   同一菜单两个页签：团队客户（一行 = 组织：成员 / 席位、套餐、用量、到期，点开组织详情）与
  *          个人客户（一行 = 一个人的个人空间：姓名、打码手机号、套餐、本期用量、电脑数、到期，点开用户详情）；类型取显式字段 kind。
  *          地址 ?kind=team|personal；旧 ?type=firm|personal|all 照认。
- *   组织详情 概览 / 成员与席位（运营代发团队邀请、分配 / 收回席位、停用）/ 电脑 / 用量与账单 / 订阅与开通 / 操作记录；
+ *   组织详情 概览 / 成员与席位（运营代发团队邀请、分配 / 释放席位、停用）/ 电脑 / 用量与账单 / 订阅与开通 / 操作记录；
  *          旧 ?tab=people|plan|quota|bill|onboarding 照认（people&view=devices → 电脑）。个人空间仍可打开（订阅、加量、操作记录）。
  * 以下为第 71 批的说明（仍适用的部分）：
  * 客户（律所 / 个人客户 / 租户）。第 71 批（V45）按“以客户为主轴”重构（research/2026-11-26-V45…/03-控制台信息架构分析.md §5）：
@@ -467,7 +467,8 @@ function paneOverview(pane, d, reload, o) {
   add(
     pane,
     // 第二轮（04）：全为 0 时收成一行“无待办”，不占首屏三张空卡
-    live.length ? h("div", { class: "stack-sm" }, live.map((x) => h("button", { type: "button", class: ["banner", x.tone === "info" ? "info" : "warn", x.onClick && "clickable"], onclick: x.onClick, disabled: !x.onClick }, icon("info"), h("span", { class: "spacer" }, h("b", {}, `${x.label} ${fmt.int(x.count)}`), `：${x.hint}`), x.onClick ? h("span", { class: "link" }, "查看") : null))) : h("p", { class: "no-todo" }, stateCell("没有待办", "ok"), h("span", { class: "muted small" }, o.personal ? "没有待开通、告警或待结算的预留额度" : "没有待开通、待批准的电脑、告警或待结算的预留额度")),
+    // 评审第二轮（K3）：有未确认告警时不写“没有待办”（下方告警卡就是待办）；没有任何待办时才写这一行
+    live.length ? h("div", { class: "stack-sm" }, live.map((x) => h("button", { type: "button", class: ["banner", x.tone === "info" ? "info" : "warn", x.onClick && "clickable"], onclick: x.onClick, disabled: !x.onClick }, icon("info"), h("span", { class: "spacer" }, h("b", {}, `${x.label} ${fmt.int(x.count)}`), `：${x.hint}`), x.onClick ? h("span", { class: "link" }, "查看") : null))) : Number(t.alerts_open) > 0 ? null : h("p", { class: "no-todo" }, stateCell("没有待办", "ok"), h("span", { class: "muted small" }, o.personal ? "没有待开通的事项和未确认的告警" : "没有待开通、待批准的电脑和未确认的告警")),
     Number(t.alerts_open) > 0 ? panel("未确认的告警", alertsBox) : null,
     o.personal ? personCard(d, reload, o) : null,
     h("div", { class: "grid-2" }, quotaPanel(t, d), daily),
@@ -515,7 +516,7 @@ function drawMembers(box, d, accs, reload, people = new Map()) {
   const batch = h("div");
   const tableBox = h("div");
   const STATUS = [
-    ["", "全部", () => true],
+    ["", "全部（含已移出）", () => true],
     ["active", "正常", (m) => m.acc?.status === "active" && !m.acc?.locked],
     ["locked", "已锁定", (m) => !!m.acc?.locked],
     ["disabled", "已停用 / 移出", (m) => m.acc?.status === "disabled"],
@@ -569,7 +570,7 @@ function drawMembers(box, d, accs, reload, people = new Map()) {
                 return h("div", { class: "cell-2", title: `同时登录上限 ${fmt.int(m.acc.device_limit)} 台（${LIMIT_SOURCE[m.acc.device_limit_source] ?? "上限"}）；已登记 ${fmt.int(m.acc.devices)} 台` }, h("span", { class: full ? "tone-text-warn" : "" }, `${fmt.int(on)} / ${fmt.int(m.acc.device_limit)} 台在线${full ? " · 已满" : ""}`), m.pend ? h("small", { class: "tone-text-warn" }, `${m.pend} 台待批准`) : null);
               },
             },
-            { key: "seat", label: "席位", title: `${SEAT_NOTE}；${UNSEATED_TIP}`, value: (m) => (m.seated ? 1 : 0), render: (m) => (m.acc?.status === "disabled" && !m.seated ? h("span", { class: "muted" }, "—") : m.seated ? stateCell("已占席", "ok") : m.seat?.revoked_at ? stateCell(`已收回 ${fmt.date(m.seat.revoked_at)}`, "neutral", UNSEATED_TIP) : stateCell("未占席", "neutral", UNSEATED_TIP)) },
+            { key: "seat", label: "席位", title: `${SEAT_NOTE}；${UNSEATED_TIP}`, value: (m) => (m.seated ? 1 : 0), render: (m) => (m.acc?.status === "disabled" && !m.seated ? h("span", { class: "muted" }, "—") : m.seated ? stateCell("已占席", "ok") : m.seat?.revoked_at ? stateCell(`已释放 ${fmt.date(m.seat.revoked_at)}`, "neutral", UNSEATED_TIP) : stateCell("未占席", "neutral", UNSEATED_TIP)) },
             { key: "use", label: "占本期额度", num: true, title: "本期用量 ÷ 本期总额度", value: (m) => Number(m.use?.used_ratio_of_firm) || 0, render: (m) => (m.use ? fmt.pct(m.use.used_ratio_of_firm) : "0%") },
             { key: "_act", label: "", sortable: false, class: "act", render: (m) => rowMenu(memberOpsActions(t, m, reload), { aria: `操作：${m.name ?? m.email ?? "成员"}` }) },
           ],
@@ -589,7 +590,7 @@ async function revokeInviteOps(t, x, reload) {
   if (ok) (toast("已撤销邀请"), reload());
 }
 /**
- * 成员行能做的事（运营；D-306 第 2 条）：打开用户详情、改角色、分配 / 收回席位、平台停用 / 启用、移出团队。
+ * 成员行能做的事（运营；D-306 第 2 条）：打开用户详情、改角色、分配 / 释放席位、平台停用 / 启用、移出团队。
  * 改角色与移出走 POST /v1/ops/tenants/{tid}/members/{aid}/role|remove（account.manage；移出是危险操作要复核），约束同本所：最后一名管理员不能降级或移出。
  */
 export function memberOpsActions(t, m, reload) {
@@ -599,7 +600,7 @@ export function memberOpsActions(t, m, reload) {
     m.aid ? { label: "打开用户详情", onClick: () => go(`people/${encodeURIComponent(m.aid)}`) } : null,
     m.pend ? { label: "查看待批准的电脑", onClick: () => go(`tenants/${encodeURIComponent(t.tid)}?tab=devices&dstatus=pending`) } : null,
     m.aid && !m.seated && !off ? { label: "分配席位…", onClick: () => assignSeatOps(t, m, reload), disabled: !can("device.revoke"), title: needs("device.revoke") } : null,
-    m.seated ? { label: "收回席位…", danger: true, onClick: () => revokeSeat(t, m, reload), disabled: !can("device.revoke"), title: needs("device.revoke") } : null,
+    m.seated ? { label: "释放席位…", danger: true, onClick: () => revokeSeat(t, m, reload), disabled: !can("device.revoke"), title: needs("device.revoke") } : null,
     acc && off ? { label: "启用…", onClick: () => enableMember(acc, reload), disabled: !canSupport() || wsStatus(acc) === "team", title: wsStatus(acc) === "team" ? "团队管理员移出的成员，由团队管理员处理" : canSupport() ? undefined : needs("account.support") } : null,
     acc && !off ? { label: "改角色…", onClick: () => changeRoleOps(t, m, reload), disabled: !can("account.manage"), title: needs("account.manage") } : null,
     acc && !off ? { label: "停用（平台停用）…", danger: true, onClick: () => disableMember(t, m, reload), disabled: !can("account.manage"), title: needs("account.manage") } : null,
@@ -640,7 +641,7 @@ async function disableMember(t, m, reload) {
     title: `停用 ${m.name ?? ""} · ${t.name ?? t.tid}`,
     danger: true,
     consequences: ["这名成员在本团队的全部登录立即失效：名下电脑约 15 秒内暂停 AI（本机功能照常）；", "记为“平台停用”：团队管理员不能自行启用；", "这个人的个人空间与别的团队不受影响；用量与审计记录保留。"],
-    fields: [{ name: "reason", label: "停用原因（记入审计，本人可见）", type: "textarea", required: true, maxlength: 100 }, seatLive ? { name: "seat", label: "同时收回席位", type: "checkbox", value: true, hint: "席位空出可分给别人" } : null].filter(Boolean),
+    fields: [{ name: "reason", label: "停用原因（记入审计，本人可见）", type: "textarea", required: true, maxlength: 100 }, seatLive ? { name: "seat", label: "同时释放席位", type: "checkbox", value: true, hint: "席位空出可分给别人" } : null].filter(Boolean),
     confirmLabel: "停用",
     run: async (v) => {
       await api.post(`${api.A(m.aid)}/disable`, { reason: v.reason });
@@ -673,7 +674,7 @@ export async function inviteMember(t, reload) {
     fields: [
       { name: "name", label: "姓名", required: true, maxlength: 40, hint: "成员在团队里显示的名字" },
       { name: "role", label: "角色", type: "select", options: [["lawyer", ROLE.lawyer], ["assistant", ROLE.assistant], ["partner", ROLE.partner], ["admin", ROLE.admin]], value: "lawyer" },
-      { name: "phone_hint", label: "手机号（选填）", type: "tel", placeholder: "如 13900001234", hint: "只存打码，便于对上人；不发短信" },
+      { name: "phone_hint", label: "手机号（选填）", type: "tel", placeholder: "如 13900001234", hint: "只保存脱敏后的号码（如 139****1234），用来核对是谁；不会发短信" },
     ],
     consequences: ["席位不在发邀请时占用：接受后有空席即可用 AI，席位已满时能加入但用不了 AI；", "邀请码只显示这一次，请当面或经安全渠道交给本人。"],
     confirmLabel: "生成邀请码",
@@ -710,14 +711,14 @@ function paneDevices(pane, d, reload) {
 export async function revokeSeat(t, m, reload) {
   const key = m.uid ?? m.seat?.sid;
   const ok = await confirmAction({
-    title: "收回席位",
+    title: "释放席位",
     danger: true,
     lead: h("p", {}, `${t.name ?? t.tid} · ${m.name ?? m.email ?? `席位 ${m.seat?.sid ?? ""}`}`),
     consequences: ["这名成员的席位令牌不再续签，到期后不能用 AI；本机功能照常；", "席位空出可分给别人；用量记录保留。"],
-    confirmLabel: "收回",
+    confirmLabel: "释放",
     run: () => api.post(`${api.T(t.tid)}/seats/${api.seg(key)}/revoke`),
   });
-  if (ok) (toast("已收回席位"), reload?.());
+  if (ok) (toast("已释放席位"), reload?.());
   return ok;
 }
 async function batchLimit(ids, accs, reload) {
@@ -1033,7 +1034,7 @@ const ACTION_LABEL = {
   "account.role": "改角色",
   "account.reset_sms": "给本人发重置短信",
   "account.workspace_switch": "切换工作空间",
-  "seat.revoke": "收回席位",
+  "seat.revoke": "释放席位",
   "seat_token.issue": "领取用 AI 的凭证",
   "plan.change": "改套餐或席位",
   "quota.boost": "加量",

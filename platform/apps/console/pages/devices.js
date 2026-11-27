@@ -5,7 +5,7 @@
  * 接口：GET /v1/ops/devices?tid（account.read；应答 devices + pending）；行尾“让它退出登录”“移除这台电脑”。
  */
 import * as api from "../api.js";
-import { DEVICE_FLAG, deviceState, deviceTable, pageHead, pendingRow, tenantOptions, unconfirmed, versionText, wsKindOfTid } from "../domain.js";
+import { DEVICE_FLAG, deviceState, deviceTable, shownFlags, pageHead, pendingRow, tenantOptions, unconfirmed, versionText, wsKindOfTid } from "../domain.js";
 import { clear, errorBlock, fold, h, hbars, loadingBlock, matches, searchInput, segmented } from "../ui.js";
 
 const st = { tid: "", status: "live", flag: "", q: "", table: { sort: "state", asc: true } };
@@ -47,9 +47,9 @@ export function render(page, r) {
   const draw = () => {
     const sf = STATUS.find(([id]) => id === st.status)?.[2] ?? (() => true);
     const ofStatus = rows.filter(sf);
-    const list = ofStatus.filter((d) => (!st.flag || (d.flags ?? []).includes(st.flag)) && matches(st.q, d.device_id, d.name, d.member_name, d.email, d.tenant_name, d.client_version));
+    const list = ofStatus.filter((d) => (!st.flag || shownFlags(d).includes(st.flag)) && matches(st.q, d.device_id, d.name, d.member_name, d.email, d.tenant_name, d.client_version));
     clear(tools, h("span", { class: "seg-label" }, "状态"), segmented(STATUS.map(([id, label, f]) => ({ id, label, count: rows.filter(f).length })), st.status, (v) => ((st.status = v), draw()), "状态"));
-    clear(tools2.querySelector(".flag-group") ?? tools2.appendChild(h("span", { class: "flag-group" })), h("span", { class: "seg-label" }, "标记"), segmented([{ id: "", label: "不限", count: ofStatus.length }, ...Object.entries(DEVICE_FLAG).filter(([f]) => f !== "suspended").map(([f, [label]]) => ({ id: f, label, count: ofStatus.filter((d) => (d.flags ?? []).includes(f)).length }))], st.flag, (v) => ((st.flag = v), draw()), "异常标记"));
+    clear(tools2.querySelector(".flag-group") ?? tools2.appendChild(h("span", { class: "flag-group" })), h("span", { class: "seg-label" }, "标记"), segmented([{ id: "", label: "不限", count: ofStatus.length }, ...Object.entries(DEVICE_FLAG).filter(([f]) => f !== "suspended").map(([f, [label]]) => ({ id: f, label, count: ofStatus.filter((d) => shownFlags(d).includes(f)).length }))], st.flag, (v) => ((st.flag = v), draw()), "异常标记"));
     clear(box, deviceTable(list, { state: st.table, after: fetchRows, memberLabel: "用户", team: (d) => wsKindOfTid(d.tid, d.tenant_name) === "team", confirmHint: "由团队管理员在管理员电脑上确认", empty: rows.length ? "没有符合条件的电脑" : "还没有登记的电脑。律师在客户端登录后，电脑会出现在这里。" }));
     const versions = {};
     for (const d of rows) if (!["revoked", "pending"].includes(deviceState(d))) versions[versionText(d.client_version)] = (versions[versionText(d.client_version)] ?? 0) + 1;

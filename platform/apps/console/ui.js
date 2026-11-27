@@ -238,6 +238,22 @@ export function loadingBlock(text = "正在读取…") {
 export function emptyBlock(text, hint) {
   return h("div", { class: "state state-empty" }, h("b", {}, text), hint ? h("p", {}, hint) : null);
 }
+/**
+ * 第 72 批评审第二轮：读取失败不把原始异常（前端代码错误、浏览器报错）给客户看——只有控制面给了中文说明的（带 status 或 code）才原样显示；
+ * 其余写人话 + 错误编号，原始错误连同编号写进浏览器控制台日志，便于报障时对上。
+ */
+const fromServer = (e) => !!e && (Number.isInteger(e.status) || (typeof e.code === "string" && e.code !== "")) && !(e instanceof TypeError || e instanceof ReferenceError || e instanceof SyntaxError || e instanceof RangeError);
+export function errorRef(e) {
+  if (e && typeof e === "object" && e.__ref) return e.__ref;
+  const ref = `W${Date.now().toString(36).slice(-5).toUpperCase()}${Math.floor(Math.random() * 36 * 36).toString(36).toUpperCase().padStart(2, "0")}`;
+  try {
+    if (e && typeof e === "object") Object.defineProperty(e, "__ref", { value: ref });
+  } catch {
+    /* 冻结对象：不记编号也照常显示 */
+  }
+  console.error(`[控制台错误 ${ref}]`, e);
+  return ref;
+}
 /** 错误块：404 + not_found = 接口未就绪；403 = 没有权限（空状态，不是报错）；其余如实显示服务端说明。 */
 export function errorBlock(e, retry) {
   const notReady = e?.code === "not_ready";
@@ -250,11 +266,13 @@ export function errorBlock(e, retry) {
       // 控制面的说明已经指了去找谁（“请联系系统管理员”“只有本所管理员…”）时不再重复补一句
       h("p", {}, ((m) => (/管理员/.test(m) ? `${m}。` : `${m}。需要的话请找系统管理员调整角色。`))(String(e.message || "你的角色没有这项权限").replace(/[。.]+$/, ""))),
     );
-  const title = notReady ? "接口未就绪" : e?.code === "network" ? "连不上控制面" : "读取失败";
+  const title = notReady ? "接口未就绪" : e?.code === "network" ? "连不上控制面" : "暂时读不出来";
   const mark = notReady ? h("span", { class: "state-icon", "aria-hidden": "true" }, icon("clock")) : null;
   const detail = notReady
     ? `控制面还没有提供 ${e.method ?? "GET"} ${e.pathOnly ?? ""}（HTTP 404）。服务端接口就绪后点“重试”；本页不显示任何替代数据。`
-    : errText(e);
+    : fromServer(e)
+      ? errText(e)
+      : `这一块暂时读不出来，请稍后重试；仍不行请联系平台（错误编号 ${errorRef(e)}）。`;
   return h(
     "div",
     { class: ["state", notReady ? "state-notready" : "state-error"], role: "alert" },

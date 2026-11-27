@@ -47,21 +47,28 @@ function draw(head, box, d, reload) {
   };
   const pending = Number(c.pending_joins) || 0;
   const todoVal = h("span", {}, fmt.int(pending));
-  const todoSub = h("span", {}, pending > 0 ? "到管理员电脑“设置 → 管理”处理" : "没有待处理的电脑");
+  const todoSub = h("span", {}, pending > 0 ? "在管理员电脑上处理" : "没有待处理的电脑");
   const todoStat = stat("电脑待处理", todoVal, todoSub, { tone: pending > 0 ? "warn" : undefined, title: "待批准登录 + 待确认共享（要接收团队共享事项的电脑）" });
   api.get("/v1/firm/devices").then((r) => {
     const n = pending + (r.devices ?? []).filter((x) => x.issuer === "account_ca" && x.state !== "revoked").length;
     clear(todoVal, fmt.int(n));
-    clear(todoSub, n > 0 ? "到管理员电脑“设置 → 管理”处理" : "没有待处理的电脑");
+    clear(todoSub, n > 0 ? "在管理员电脑上处理" : "没有待处理的电脑");
     if (n > 0) todoStat.classList.add("tone-warn");
   }, () => {});
   const joinBanner = h("div", { class: "banner warn soft" }, icon("info"), h("span", { class: "spacer" }, `有 ${pending} 台新电脑等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。`), btn("查看成员", () => go("firm/members"), { size: "sm" }));
   const seatSub = h("span", {}, "能用 AI 的名额");
+  // 评审第二轮（K14）：成员数与 7 日活跃只算当前有效成员（已移出 / 停用的不算），拿到成员清单后改写
+  const memVal = h("span", {}, fmt.int(c.members));
+  const memSub = h("span", {}, `近 7 日登录 ${fmt.int(c.active_7d)} 人`);
   const devVal = h("span", {}, `${fmt.int(c.devices)} 台`);
   const devSub = h("span", {}, "只有登录中的电脑占名额");
   // 姓名与未占席人数在成员接口里：拿到后补上（拿不到就保持上面的通用写法）
   api.get("/v1/firm/members").then((m) => {
     const p = m.pending_joins ?? [];
+    const act = (m.members ?? []).filter((x) => x.status !== "disabled");
+    const since = Date.now() - 7 * 86_400_000;
+    clear(memVal, fmt.int(act.length));
+    clear(memSub, `近 7 日登录 ${fmt.int(act.filter((x) => x.last_login_at && Date.parse(x.last_login_at) >= since).length)} 人`);
     if (p.length) clear(joinBanner.querySelector(".spacer"), p.map((x, i) => [i ? "、" : null, h("b", {}, `${x.member_name ?? "成员"}的新电脑`), `（申请于 ${fmt.time(x.created_at)}）`]), "等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。");
     const n = (m.members ?? []).filter((x) => x.seat_used === false).length;
     const sn = seatNote(n, seats.total, seats.used);
@@ -97,7 +104,7 @@ function draw(head, box, d, reload) {
       h(
         "div",
         { class: "kpis kpis-2" },
-        stat("成员", fmt.int(c.members), `7 日活跃 ${fmt.int(c.active_7d)}`),
+        stat("成员", memVal, memSub),
         stat("席位", `已用 ${fmt.int(seats.used)} / 共 ${fmt.int(seats.total)}`, seatSub, { title: "席位：能用 AI 的名额" }),
         stat("电脑", devVal, devSub),
         // 评审（K14 第 2 条）：待处理 = 待批准登录 + 待确认共享，数字大于 0 时写去哪儿处理

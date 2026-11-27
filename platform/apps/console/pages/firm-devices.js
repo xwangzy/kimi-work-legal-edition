@@ -8,7 +8,7 @@
  *   标“待确认（可接收团队共享事项前）”，确认沿用入组批准，在管理员电脑上完成。控制面的电脑行带 issuer 时才显示（见 03 契约变更记录 W-1）。
  */
 import * as api from "../api.js";
-import { confirmCell, deviceCell, deviceState, deviceStateCell, FIRM_DEVICE_FLAG, flagBadge, pageHead, pendingRow, platformText, unconfirmed, versionText } from "../domain.js";
+import { CONFIRM_TIP, confirmCell, deviceCell, shownFlags, deviceState, deviceStateCell, FIRM_DEVICE_FLAG, flagBadge, pageHead, pendingRow, platformText, unconfirmed, versionText } from "../domain.js";
 import { badge } from "../ui.js";
 import { readOnly } from "./firm-overview.js";
 import { clear, confirmAction, dataTable, fmt, h, hbars, load, matches, mono, panel, rowMenu, searchInput, segmented, toast } from "../ui.js";
@@ -51,13 +51,13 @@ export function render(page) {
   const draw = (reload) => {
     const sf = STATUS.find(([id]) => id === st.status)?.[2] ?? (() => true);
     const ofStatus = rows.filter(sf);
-    const list = ofStatus.filter((d) => (!st.flag || (d.flags ?? []).includes(st.flag)) && matches(st.q, d.device_id, d.name, d.member, d.version, d.platform));
+    const list = ofStatus.filter((d) => (!st.flag || shownFlags(d).includes(st.flag)) && matches(st.q, d.device_id, d.name, d.member, d.version, d.platform));
     clear(tools, h("span", { class: "seg-label" }, "状态"), segmented(STATUS.map(([id, label, f]) => ({ id, label, count: rows.filter(f).length })), st.status, (v) => ((st.status = v), draw(reload)), "状态"));
-    clear(tools2, searchInput({ placeholder: "电脑名称、成员、版本", value: st.q, onInput: (v) => ((st.q = v), draw(reload)) }), h("span", { class: "seg-label" }, "标记"), segmented([{ id: "", label: "不限", count: ofStatus.length }, ...Object.entries(FIRM_DEVICE_FLAG).filter(([f]) => f !== "rejected_after_logout").map(([f, [label]]) => ({ id: f, label, count: ofStatus.filter((d) => (d.flags ?? []).includes(f)).length }))], st.flag, (v) => ((st.flag = v), draw(reload)), "异常标记"));
+    clear(tools2, searchInput({ placeholder: "电脑名称、成员、版本", value: st.q, onInput: (v) => ((st.q = v), draw(reload)) }), h("span", { class: "seg-label" }, "标记"), segmented([{ id: "", label: "不限", count: ofStatus.length }, ...Object.entries(FIRM_DEVICE_FLAG).filter(([f]) => f !== "rejected_after_logout").map(([f, [label]]) => ({ id: f, label, count: ofStatus.filter((d) => shownFlags(d).includes(f)).length }))], st.flag, (v) => ((st.flag = v), draw(reload)), "异常标记"));
     const versions = {};
     for (const d of rows) if (!["revoked", "pending"].includes(deviceState(d))) versions[versionText(d.version)] = (versions[versionText(d.version)] ?? 0) + 1;
     const vs = Object.entries(versions).sort((a, b) => b[1] - a[1]);
-    const anyFlag = list.some((d) => (d.flags ?? []).length);
+    const anyFlag = list.some((d) => shownFlags(d).length);
     clear(
       box,
       dataTable({
@@ -70,10 +70,10 @@ export function render(page) {
           { key: "name", label: "电脑", value: (d) => d.name || d.member || "", render: (d) => deviceCell(d) },
           { key: "member", label: "成员", value: (d) => d.member ?? "" },
           { key: "platform", label: "系统", value: (d) => platformText(d.platform) },
-          { key: "version", label: "客户端", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.version && d.version !== "legacy" ? mono(d.version) : h("span", { class: "muted" }, versionText(d.version))) },
+          { key: "version", label: "客户端", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.version && d.version !== "legacy" ? h("span", {}, d.version) : h("span", { class: "muted" }, versionText(d.version))) },
           { key: "last_seen_at", label: "最近在线", value: (d) => d.last_seen_at ?? "", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.last_active_at ? h("span", { title: fmt.full(d.last_active_at) }, fmt.ago(d.last_active_at)) : h("span", { title: fmt.full(d.last_seen_at) }, d.last_seen_at ? fmt.ago(d.last_seen_at) : "从未在线")) },
           { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)] - (unconfirmed(d) ? 0.5 : 0), render: (d) => (unconfirmed(d) ? confirmCell(d, "到你电脑上的 Kimi Work：设置 → 管理 → 确认新电脑") : deviceStateCell(d)) },
-          anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => ((d.flags ?? []).length ? h("span", { class: "badges" }, d.flags.map((f) => flagBadge(f, d))) : "") } : null,
+          anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => (shownFlags(d).length ? h("span", { class: "badges" }, shownFlags(d).map((f) => flagBadge(f, d))) : "") } : null,
           {
             key: "_act",
             label: "",

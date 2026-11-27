@@ -46,7 +46,7 @@ export function render(page) {
       ),
     );
     const STATUS = [
-      ["", "全部", () => true],
+      ["", "全部（含已移出）", () => true],
       ["active", "正常", (m) => m.status === "active" && !(Number(m.locked_s) > 0)],
       ["locked", "已锁定", (m) => Number(m.locked_s) > 0 && m.status !== "disabled"],
       ["disabled", "已停用 / 移出", (m) => m.status === "disabled"],
@@ -148,7 +148,7 @@ async function invite(reload, seats) {
     fields: [
       { name: "name", label: "姓名", required: true, maxlength: 40, hint: "成员在团队里显示的名字" },
       { name: "role", label: "角色", type: "select", options: [["lawyer", ROLE.lawyer], ["assistant", ROLE.assistant], ["partner", ROLE.partner], ["admin", ROLE.admin]], value: "lawyer" },
-      { name: "phone_hint", label: "手机号（选填）", type: "tel", placeholder: "如 13900001234", hint: "只保存打码后的号码，用来核对是谁；不会发短信" },
+      { name: "phone_hint", label: "手机号（选填）", type: "tel", placeholder: "如 13900001234", hint: "只保存脱敏后的号码（如 139****1234），用来核对是谁；不会发短信" },
     ],
     consequences: [full ? `当前席位已满（${seats.used} / ${seats.total}）：对方加入后暂时用不了 AI，需要先腾出或加席位；` : "对方加入后有空席即可用 AI（席位不在发邀请时占用）；", "邀请码只显示这一次，请当面或经安全渠道交给本人。"],
     confirmLabel: "生成邀请码",

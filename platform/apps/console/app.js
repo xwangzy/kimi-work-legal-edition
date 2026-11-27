@@ -23,7 +23,7 @@ import * as api from "./api.js";
 import { initAuth, setMeta, showLogin, showReset } from "./auth.js";
 import { reauthDialog } from "./reauth.js";
 import { canAny, ctx, go, isFirmManager, isPersonalSpace, KIND_LABEL, PLATFORM_ROLES, roleLabel, ROLE, SECTIONS, workspaceKind } from "./domain.js";
-import { $, btn, clear, closeDrawer, errorBlock, fmt, h, icon, toast } from "./ui.js";
+import { $, btn, clear, closeDrawer, errorBlock, errorRef, fmt, h, icon, toast } from "./ui.js";
 import * as meOverview from "./pages/me-overview.js";
 import * as meSecurity from "./pages/me-security.js";
 import * as meDevices from "./pages/me-devices.js";
@@ -449,8 +449,8 @@ function route() {
   try {
     item.mod.render(page, { ...r, page: r.page });
   } catch (e) {
-    page.append(h("div", { class: "state state-error" }, h("b", {}, "页面出错"), h("p", {}, String(e?.message ?? e))));
-    console.error(e);
+    // 评审第二轮：不把原始异常给客户看；原始错误连同编号进浏览器控制台日志
+    page.append(h("div", { class: "state state-error" }, h("b", {}, "这一页暂时打不开"), h("p", {}, `请刷新后重试；仍不行请联系平台（错误编号 ${errorRef(e)}）。`)));
   }
   if (seq === renderSeq) $("#refreshed").textContent = `${fmt.clock().slice(0, 5)} 刷新`;
 }
