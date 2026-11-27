@@ -25,6 +25,8 @@ import type { ProfileHandoff } from "../src/profiles.ts";
 import { rosterFromReply, rosterOfflineCode, rosterUnsupportedCode, rosterUserId } from "../src/services/team-roster.ts";
 import { carriedRelaxations, daysLeftOf, enableBodyOf, expiringOf, sameBody, shareRelayStateOf, signerCount } from "../src/services/share-relay-policy.ts";
 
+/** 律师层的报错不讲这些词（D-310；第 73 批补四项第 2 条）。 */
+const JARGON = /中继|控制成员|纪元|包裹|证书|密钥/;
 const fault = (code: string, reason?: string) => (e: any) => {
   assert.equal(e?.code, code, `${e?.code}：${e?.message}`);
   if (reason) assert.equal(e?.detail?.reason, reason, JSON.stringify(e?.detail));
@@ -154,6 +156,14 @@ test("旧律所体系：L3b 不能团队共享；团队 → 个人拒绝；字�
   assert.equal((await inv("matters.get", { matter_id: p1.matter_id })).matter.collab_scope, "team");
   // 同值不算改动
   assert.match((await inv("matters.update", { matter_id: p1.matter_id, patch: { collab_scope: "team" } })).note, /没有变化/);
+  // D-307 补拦截：已和同事一起办的事项不能再设为“客户要求不上云”（strict 或记客户拒绝云端处理）
+  const pv = (await inv("matters.get", { matter_id: p1.matter_id })).matter.policy_version;
+  await assert.rejects(inv("matters.update", { matter_id: p1.matter_id, patch: { confidentiality: "strict" } }), (e: any) => fault("team_scope_conflict", "strict")(e) && /另建一个只有我的事项/.test(e.message) && !JARGON.test(e.message));
+  await assert.rejects(inv("matters.update", { matter_id: p1.matter_id, patch: { consent_status: "refused" } }), fault("team_scope_conflict", "consent_refused"));
+  const after1 = (await inv("matters.get", { matter_id: p1.matter_id })).matter;
+  assert.deepEqual([after1.confidentiality, after1.consent_status, after1.policy_version], ["normal", "not_required", pv], "没改");
+  assert.equal((await inv("matters.update", { matter_id: p1.matter_id, patch: { confidentiality: "high" } })).matter.confidentiality, "high", "敏感（L3a）照常可设");
+  assert.equal((await inv("matters.update", { matter_id: strict.matter_id, patch: { consent_status: "refused" } })).matter.consent_status, "refused", "只有我的事项照常可记客户拒绝");
 
   // 旧律所体系没有云端同事名单
   assert.deepEqual(await inv("team.roster"), { available: false, reason: "not_supported", fetched_at: null, members: [] });
@@ -210,12 +220,59 @@ test("旧律所体系：建团队事项同时加同事；事项成员视图与�
   await assert.rejects(kB.inv("matters.members.add", { matter_id: mid, user_id: usr("carol") }), (e: any) => e.code === "forbidden");
   const pB = (await kB.inv("matters.create", { title: "B 的个人事项", stance: "原告", consent_status: "not_required" })).matter;
   await kB.inv("matters.members.add", { matter_id: pB.matter_id, user_id: usr("test-lawyer"), matter_role: "editor" });
-  // 负责人：团队 → 个人不允许；移出有结果说明
+  await assert.rejects(kB.inv("matters.members.add", { matter_id: mid, user_id: usr("carol") }), (e: any) => /只有事项负责人能加人或移出同事/.test(e.message) && !JARGON.test(e.message));
+  // 负责人：团队 → 个人不允许
   await assert.rejects(inv("matters.update", { matter_id: mid, patch: { collab_scope: "personal" } }), fault("scope_irreversible"));
+
+  // 律师层的报错（补四项第 2 条）：B 升为共同负责人，但同事名单由最先同步它的 A 管理——B 加人 / 移出被拒，说“由谁管理、请他来”
+  await inv("matters.members.add", { matter_id: mid, user_id: usr("bob"), matter_role: "owner" });
+  await inv("relay.sync");
+  await kB.inv("relay.sync");
+  const lB2 = await kB.inv("matters.members.list", { matter_id: mid });
+  assert.deepEqual([lB2.my_role, lB2.is_owner, lB2.can_manage, lB2.relay_controller], ["owner", true, false, usr("test-lawyer")], JSON.stringify(lB2));
+  for (const call2 of [() => kB.inv("matters.members.add", { matter_id: mid, user_id: usr("carol") }), () => kB.inv("matters.members.remove", { matter_id: mid, user_id: usr("test-lawyer") })]) {
+    await assert.rejects(call2(), (e: any) => {
+      assert.equal(e.code, "forbidden");
+      assert.match(e.message, /^这个事项的同事名单由.+管理：请他来加人或移出$/);
+      assert.doesNotMatch(e.message, JARGON);
+      assert.deepEqual([e.detail?.reason, e.detail?.controller_user_id], ["relay_controller_other", usr("test-lawyer")]);
+      assert.equal(typeof e.detail?.controller_name, "string");
+      return true;
+    });
+  }
+  // A 负责同步，不能把自己改成一起办 / 只看
+  await assert.rejects(inv("matters.members.add", { matter_id: mid, user_id: usr("test-lawyer"), matter_role: "viewer" }), (e: any) => {
+    assert.equal(e.code, "forbidden");
+    assert.match(e.message, /负责这个事项与同事之间的同步，不能改成只看：请联系管理员/);
+    assert.doesNotMatch(e.message, JARGON);
+    assert.equal(e.detail?.reason, "relay_controller_role_change");
+    return true;
+  });
+  // 本机确认不了负责人（同步告警）时：一句人话
+  kA!.kernel.db.run(`INSERT INTO sync_alerts (matter_id, kind, epoch, detail, first_at, last_at) VALUES (?,?,0,'test',?,?)`, [mid, "owner_unverifiable", new Date().toISOString(), new Date().toISOString()]);
+  await assert.rejects(inv("matters.members.add", { matter_id: mid, user_id: usr("carol") }), (e: any) => {
+    assert.match(e.message, /暂时确认不了这个事项的负责人是谁，现在不能加人/);
+    assert.doesNotMatch(e.message, JARGON);
+    assert.equal(e.detail?.reason, "owner_unverifiable");
+    return true;
+  });
+  kA!.kernel.db.run(`DELETE FROM sync_alerts WHERE matter_id = ? AND kind = 'owner_unverifiable'`, [mid]);
+
+  // 负责人移出有结果说明（先把 B 改回一起办）
+  await inv("matters.members.add", { matter_id: mid, user_id: usr("bob"), matter_role: "editor" });
   const rm = await inv("matters.members.remove", { matter_id: mid, user_id: usr("bob") });
   assert.match(rm.lawyer_note, /拿不到此后的新内容；已同步到他电脑上的不会被收回/);
+  assert.doesNotMatch(rm.lawyer_note, JARGON);
   assert.ok(rm.new_epoch >= 2, "移出即轮换");
   assert.deepEqual((await inv("matters.members.list", { matter_id: mid })).members.map((m: any) => m.user_id), [usr("test-lawyer")]);
+
+  // 补四项第 1 条：律所规则回退（签名的管理员电脑被停用 → 签名人不足门限）不是“所内没开通”——sync 回 unknown
+  await inv("devices.revoke", { device_id: `dev_${FIRM}_bob`, reason: "用例：签名人不足" });
+  const rs = await inv("relay.status");
+  assert.deepEqual([rs.blocked, rs.policy_fallback], ["not_allowed", true], JSON.stringify(rs));
+  assert.equal((await inv("matters.members.list", { matter_id: mid })).sync, "unknown");
+  const sf = await inv("firm_policy.share_relay_status");
+  assert.deepEqual([sf.state, sf.fallback_reason], ["expired", "signers_insufficient"], JSON.stringify(sf));
 });
 
 // ───────────────────────── 三、账号体系（真实控制面 + 同事名单） ─────────────────────────
@@ -327,7 +384,10 @@ test("账号体系：个人空间与未确认电脑不能选团队；同事名�
   const mid = made.matter.matter_id as string;
   assert.deepEqual(made.members_added.map((x: any) => [x.user_id, x.name, x.matter_role, x.devices_wrapped, x.can_receive]), [[userA, "甲律师", "viewer", 0, false]]);
   assert.match(made.members_added[0].lawyer_note, /还不能接收：请他在 设置 → 团队 里申请/);
+  assert.doesNotMatch(made.members_added[0].lawyer_note, JARGON);
   const l1 = await call(kb, "matters.members.list", { matter_id: mid });
+  // 所内真的还没开通（生效规则来自控制面、没有放开同事之间同步）→ not_allowed，不是 unknown
+  assert.equal((await call(kb, "relay.status")).policy_fallback, false);
   assert.deepEqual([l1.collab_scope, l1.is_owner, l1.can_manage, l1.sync], ["team", true, true, "not_allowed"], JSON.stringify(l1));
   assert.deepEqual(l1.members.map((m: any) => [m.name, m.matter_role, m.can_receive, m.departed, m.is_me]), [
     ["乙律师", "owner", true, false, true],

@@ -98,7 +98,7 @@ test("S11A-44：策略过期回退（律所并未关中继）时不放行非控�
   LOG("A 本机成员表：", JSON.stringify(aMembers));
   LOG("被移出的 bob 读到 A 的新内容：", leaked);
   // 第五轮处置：策略回退时仍按控制成员锁定（只有律所明确关闭中继才放行），本机与中继上的成员一致
-  assert.match(r, /律所策略已过期或尚未收到/);
+  assert.match(r, /同事之间同步暂停了（所内的规则需要更新）/);
   assert.equal(kC.kernel.db.get(`SELECT removed_at FROM matter_members WHERE matter_id = ? AND user_id = ?`, [mid, usr("bob")]).removed_at, null);
   void leaked;
 });

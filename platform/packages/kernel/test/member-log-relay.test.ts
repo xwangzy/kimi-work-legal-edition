@@ -68,7 +68,7 @@ test("控制成员移交：对方须是在册负责人且经中继同步过；�
   await kB.inv("relay.sync");
   await imp(kB, m, "乙.txt", "乙");
   await kB.inv("relay.sync");
-  await assert.rejects(kB.inv("matters.members.add", { matter_id: m, user_id: usr("test-lawyer"), matter_role: "editor" }), /中软共享中继/);
+  await assert.rejects(kB.inv("matters.members.add", { matter_id: m, user_id: usr("test-lawyer"), matter_role: "editor" }), /这个事项的同事名单由.+管理：请他来加人或移出/);
   const r = await kA.inv("matters.relay_handoff", { matter_id: m, to_user: usr("bob") });
   assert.equal(r.controller, usr("bob"));
   assert.equal(cloud.relay.server.tenant(TID)!.controller(m), usr("bob"));
@@ -76,7 +76,7 @@ test("控制成员移交：对方须是在册负责人且经中继同步过；�
   await syncAll();
   assert.equal((await kB.inv("matters.member_log", { matter_id: m })).control_to, usr("bob"), "bob 的设备从链上得知");
   // 原控制成员 A 不能再在中继上调整成员；bob 可以
-  await assert.rejects(kA.inv("matters.members.remove", { matter_id: m, user_id: usr("carol") }), /须由中继上的控制成员/);
+  await assert.rejects(kA.inv("matters.members.remove", { matter_id: m, user_id: usr("carol") }), /这个事项的同事名单由.+管理：请他来加人或移出/);
   await kB.inv("matters.members.remove", { matter_id: m, user_id: usr("carol") });
   await imp(kB, m, "丙-移出后.txt", "carol 被移出之后写的");
   await syncAll();

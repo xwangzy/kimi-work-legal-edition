@@ -116,7 +116,7 @@ test("③ S11A-35（中继，移交；第 12 批）：负责人加新人为负�
   // 第 12 批：控制成员降级之前须先移交中继控制成员——对方须先经中继同步过该事项
   await kA.inv("matters.members.add", { matter_id: mid, user_id: usr("erin"), matter_role: "owner" });
   await kA.inv("relay.sync");
-  await assert.rejects(kA.inv("matters.members.add", { matter_id: mid, user_id: usr("test-lawyer"), matter_role: "editor" }), /先把控制成员移交/);
+  await assert.rejects(kA.inv("matters.members.add", { matter_id: mid, user_id: usr("test-lawyer"), matter_role: "editor" }), /负责这个事项与同事之间的同步，不能改成一起办/);
   const e1 = await kE.inv("relay.sync");
   const e2 = await kE.inv("relay.sync");
   await kE.inv("relay.sync");

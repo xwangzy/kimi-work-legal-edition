@@ -174,5 +174,5 @@ test("离所交接：个人事项导出归档、团队事项交负责人与中�
   await imp(kB, m1, "移出后.txt", "carol 离所之后");
   assert.ok((await kB.inv("relay.sync")).push.uploaded > 0, "新纪元的内容照常发出");
   // 没交接的事项：中继上的控制成员已离所，bob 调整不了成员——如实说明须找中软客服办理（D-94 残余）
-  await assert.rejects(kB.inv("matters.members.add", { matter_id: m2, user_id: usr("test-lawyer") }), /电脑已全部停用.*中软客服/);
+  await assert.rejects(kB.inv("matters.members.add", { matter_id: m2, user_id: usr("test-lawyer") }), /电脑都已停用.*中软客服/);
 });

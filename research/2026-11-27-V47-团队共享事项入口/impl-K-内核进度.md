@@ -1,7 +1,7 @@
 # impl-K 内核进度（第 73 批，W2）
 
 - 范围：`packages/kernel/**`、`packages/egress-gate/**`（白名单）、`packages/safe-log/**`（事件登记）、`docs/privacy/**`；产物经 `npm run build:kernel` 重建。未提交（按要求不 commit）。
-- 状态：契约 2.1～2.6 全部实现；新用例 `packages/kernel/test/b73-team-matters.test.ts` 5/5（含 W1 的真实 `/v1/team/roster`）；回归 544/544；`npx tsc -b tsconfig.check.json` 干净；`npm run build:kernel` 已跑。
+- 状态：契约 2.1～2.6 全部实现（已随 8665838f 提交）；之后按协调方“补四项”再改（未提交，见文末“补四项”）；新用例 `packages/kernel/test/b73-team-matters.test.ts` 5/5（含 W1 的真实 `/v1/team/roster`）；回归 544/544；`npx tsc -b tsconfig.check.json` 干净；`npm run build:kernel` 已跑。
 - 契约只加不改的细节已写进 `03-契约变更记录.md` 第三行（W3 请据此补 `api.ts` 类型）。
 
 ## 改了什么（文件）
@@ -78,9 +78,20 @@
   5. `matters.update` 一律带 `patch`（`api.ts updateMatter` 已是）。
 - **W1**：无阻塞。内核按 03 第二行的码分支：`team_only` → personal_workspace；`not_found` / 404 → not_supported；session_* / account_disabled → 抛出（账号层提示重新登录）。
 
+## 补四项（8665838f 之后，未提交）
+
+1. **sync 的回退口径**：`relay.status` 为 not_allowed 且 `policy_fallback` → `unknown`；真没开通（生效规则来自控制面、没放开）→ `not_allowed`。用例：律所版两位管理员签名开通后停用 B 的电脑（签名人不足门限 → 规则回退）→ `relay.status {blocked: not_allowed, policy_fallback: true}`、成员视图 `sync: unknown`、`share_relay_status {state: expired, fallback_reason: signers_insufficient}`；账号体系里真没开通时 `policy_fallback:false`、`sync: not_allowed`。
+2. **律师层报错**（错误码不变，只改 message，原因进 `detail.reason`，带 `controller_user_id` / `controller_name`）：
+   - 中继控制成员是别人：“这个事项的同事名单由某某管理：请他来加人或移出”（relay_controller_other）；规则回退：“这个事项的同事之间同步暂停了（所内的规则需要更新）：请先联网同步一次再加人…”（relay_policy_stale）；还在确认：“正在确认这个事项的同事名单由谁管理…”（relay_controller_pending）；管理者已不是负责人 / 电脑都已停用：“…请联系中软客服办理交接”（relay_controller_not_owner / relay_controller_departed）；状态异常（relay_state_broken）。
+   - 对方负责同步不能降角色：“某某负责这个事项与同事之间的同步，不能改成只看（一起办）：请联系管理员”（relay_controller_role_change；律师端没有移交入口，`matterRelayHandoff` 界面无调用方）。
+   - 同步告警：“这台电脑暂时确认不了这个事项的负责人是谁，现在不能加人：负责人的电脑同步一次后会自动恢复；负责人都已离所的，请联系中软客服”（owner_unverifiable）。
+   - 非负责人加人 / 移出：“只有事项负责人能加人或移出同事”；成员事件在链上不成立（member-log.ts）：“这次调整同事没有生效：多半是你的负责人身份已被另一位负责人取消，请同步后再看”（conflict，`detail: {reason: member_event_invalid, why}`）；本机缺当前加密信息（内部错误）也改成人话。
+   - 用例逐条断言不出现“中继 / 控制成员 / 纪元 / 包裹 / 证书 / 密钥”；旧用例里按旧原句断言的 5 处（share-relay、share-relay-r4-gate、share-relay-r5-policy-fallback、member-log-relay、member-offboarding）改按新句。
+3. **D-307 补拦截**：团队共享事项 `matters.update` 设 strict 或记客户拒绝云端（变成 L3b）→ 409 `team_scope_conflict`（reason strict / consent_refused），message “这个事项已和同事一起办，经中软转送加密内容；客户要求不上云时，请为这部分工作另建一个只有我的事项”（团队共享不可改回，所以不写“全部移出后”）；拒绝在任何写入之前（策略版本不变）；设敏感（L3a）照常；只有我的事项照常可记拒绝；原本就是 L3b 的旧团队事项改别的字段不拦。**W3 注意**：RunSheet“记为客户要求不上云”在团队共享事项上会收到这个错误。
+4. **FaultCode**：`packages/domain/src/errors.ts` 只加五项（teamScopeUnavailable / memberNotInTeam / rosterUnavailable / scopeIrreversible / teamScopeConflict），内核 `teamFault` 去掉类型断言、按 `Extract<FaultCode, …>` 收窄。
+- 验证：b73 5/5；回归 535/535（两组合并：b44/b66/b68/b72/b73、onboarding*、member-*、device-recovery、share-relay*、control-plane、cp-*、egress、privacy-residency、firm-node、im、sync、r12b*、b47/b48/b51/b56/b62/b63/b64/b70/b71、matter-*、w1*、kernel-probes、node-authz 等 + egress-gate / safe-log 全部）；`npx tsc -b tsconfig.check.json` 0 错；`npm run build:kernel` 已重建。
+
 ## 未做 / 留给主会话判断
 
-- 四个契约错误码没有加进 `packages/domain/src/errors.ts` 的 FaultCode（不在 W2 范围），内核用类型断言原样给出；要收口可在 domain 补四项（纯类型、不影响运行）。
-- 已是团队共享的事项事后改成 strict / 记“客户拒绝云端”（L3b）内核没有拦（契约只要求建与转）：这类事项仍会经中继同步密文，与 D-307 的理由同样冲突。建议另定：拦下、或改为提示负责人移出全部同事。
 - A4 K6（云端移出团队不吊销设备、本机不自动移出事项与轮换）未做：现在靠成员页 `departed` 标记 + 负责人一键移出（D-308 口径）。
 - 名单缓存在离开团队后仍留在该账号档案的工作区里（封装），残余已写进 residency 第 29 类。

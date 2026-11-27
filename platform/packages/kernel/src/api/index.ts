@@ -1205,6 +1205,15 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         }
         if (Object.keys(body).length === 0) return { matter: matterOut(matter), note: "“谁能看到”没有变化" };
       }
+      // 第 73 批（D-307 补拦截）：已和同事一起办的事项不能再设为“客户要求不上云”（strict 或记客户拒绝云端处理 → L3b）——
+      // 同事之间同步要经中软转送加密内容，与客户的要求字面冲突；团队共享又不能改回只有我，所以只能另建一个只有我的事项
+      if (matter.collab_scope === CollabScope.team && (body.confidentiality !== undefined || body.consent_status !== undefined)) {
+        const before = dataLevelOf(matter.confidentiality, matter.consent_status);
+        const next = dataLevelOf(body.confidentiality ?? matter.confidentiality, body.consent_status ?? matter.consent_status);
+        if (next === "L3b" && before !== "L3b") {
+          throw teamFault("team_scope_conflict", "这个事项已和同事一起办，经中软转送加密内容；客户要求不上云时，请为这部分工作另建一个只有我的事项", 409, { reason: body.consent_status === "refused" ? "consent_refused" : "strict" });
+        }
+      }
       const fields: string[] = [];
       const values: unknown[] = [];
       const simple = ["title", "client_name", "counterparty", "stance", "jurisdiction", "confidentiality"] as const;
@@ -4580,9 +4589,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       // 成员链（第 12 批）：先补写到期的吊销标记、刷新投影（下面的负责人检查读投影）
       refreshChain(chainDeps(id), matter.matter_id);
-      requireMatterOwner(db, matter.matter_id, id);
-      requireRelayController(matter.matter_id, "加入成员");
-      requireNoSyncAlert(matter.matter_id, "加入成员");
+      requireMatterOwner(db, matter.matter_id, id, "只有事项负责人能加人或移出同事");
+      requireRelayController(matter.matter_id, "加人");
+      requireNoSyncAlert(matter.matter_id, "加人");
       // 结案或已删除的事项不再加入成员（复核 C-A05；须先重新打开）
       requireActiveMatter(db, matter.matter_id);
       const userId = String(p?.user_id ?? "");
@@ -4590,7 +4599,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const matterRole = String(p?.matter_role ?? "editor");
       if (!["owner", "editor", "reviewer", "issuer", "viewer"].includes(matterRole)) throw validation("matter_role 非法");
       // 中继控制成员降为非负责人之前须先移交（第 12 批：否则此后谁都不能在中继上调整成员、轮换密钥）
-      if (matterRole !== "owner" && deps.shareRelay?.controllerOf(matter.matter_id) === userId) throw forbidden("对方是这个事项在中软共享中继上的控制成员：请先把控制成员移交给另一位负责人，再调整其角色");
+      if (matterRole !== "owner" && deps.shareRelay?.controllerOf(matter.matter_id) === userId) {
+        const nm = displayNameOf(userId) ?? userId;
+        const roleText = matterRole === "viewer" ? "只看" : matterRole === "editor" ? "一起办" : "非负责人";
+        // 律师端没有移交入口（matters.relay_handoff 只在内核）：请管理员协助
+        throw new DomainError("forbidden", `${nm}负责这个事项与同事之间的同步，不能改成${roleText}：请联系管理员`, 403, { reason: "relay_controller_role_change", controller_user_id: userId, controller_name: nm });
+      }
       // 第 73 批（D-308，契约 §2.4）：账号工作空间里只认团队同事名单里在用的成员（连不上用缓存；缓存也没有 → roster_unavailable），存名单里的真实姓名
       const roster = await rosterForMutation(id);
       const name = roster ? requireRosterActive(roster, userId).name : displayNameOf(userId, null);
@@ -4624,9 +4638,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       // 成员链（第 12 批）：先补写到期的吊销标记、刷新投影（下面的负责人检查读投影）
       refreshChain(chainDeps(id), matter.matter_id);
-      requireMatterOwner(db, matter.matter_id, id);
-      requireRelayController(matter.matter_id, "移出成员");
-      requireNoSyncAlert(matter.matter_id, "移出成员");
+      requireMatterOwner(db, matter.matter_id, id, "只有事项负责人能加人或移出同事");
+      requireRelayController(matter.matter_id, "移出同事");
+      requireNoSyncAlert(matter.matter_id, "移出同事");
       const userId = String(p?.user_id ?? "");
       const target = db.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matter.matter_id, userId]);
       if (!target) throw notFound("事项成员");
@@ -5339,8 +5353,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (rotate) refreshChain(chainDeps(id), matter.matter_id);
       // 团队事项的新纪元只认负责人签发的包裹（D-93）：非负责人轮换不会传播，还会与负责人下次轮换撞纪元号（第二轮复核 S11A-20）
       if (rotate) requireMatterOwner(db, matter.matter_id, id, "轮换事项密钥需要事项负责人角色（团队事项的新纪元只认负责人签发的包裹）");
-      if (rotate) requireRelayController(matter.matter_id, "轮换事项密钥");
-      if (rotate) requireNoSyncAlert(matter.matter_id, "轮换事项密钥");
+      if (rotate) requireRelayController(matter.matter_id, "重新加密这个事项");
+      if (rotate) requireNoSyncAlert(matter.matter_id, "重新加密这个事项");
       const revokeDeviceIds: string[] = Array.isArray(p?.revoke_device_ids) ? p.revoke_device_ids.map(String) : [];
       let rotatedEpoch = epoch;
       db.tx(() => {
@@ -5975,9 +5989,9 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
   // ─── 第 73 批（V47，D-307～D-309，契约 02 §2）：团队共享事项的前置条件、同事名单与成员视图 ───
 
-  /** 契约错误码（不在 @zr-legal/domain 的 FaultCode 里；界面按 code 分辨）：team_scope_unavailable / member_not_in_team / roster_unavailable / scope_irreversible。 */
-  function teamFault(code: "team_scope_unavailable" | "member_not_in_team" | "roster_unavailable" | "scope_irreversible", msg: string, status = 409, detail?: Record<string, unknown>): DomainError {
-    return new DomainError(code as unknown as FaultCode, msg, status, detail);
+  /** 本批契约错误码（@zr-legal/domain FaultCode 第 73 批的五项；界面按 code 分辨，原因在 detail.reason）。 */
+  function teamFault(code: Extract<FaultCode, "team_scope_unavailable" | "member_not_in_team" | "roster_unavailable" | "scope_irreversible" | "team_scope_conflict">, msg: string, status = 409, detail?: Record<string, unknown>): DomainError {
+    return new DomainError(code, msg, status, detail);
   }
 
   /** 账号体系（第 44 批起）的工作空间：登录过（本机有会话）或记下过工作空间类型。旧律所体系（开通码 / 本机开发形态）不是。 */
@@ -6159,7 +6173,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     if (devices.length > 0) {
       // 解出当前纪元事项密钥（本机设备包裹行），为对方每台 active 设备补包裹
       const myWrapped = db.get<{ wrapped_key: string }>(`SELECT wrapped_key FROM matter_keys WHERE matter_id = ? AND epoch = ? AND wrapped_for = ?`, [matterId, epoch, keyctx.device.deviceId]);
-      if (!myWrapped) throw new DomainError("internal", "本机缺少当前纪元事项密钥包裹，无法为新成员补包裹", 500);
+      if (!myWrapped) throw new DomainError("internal", "这台电脑还没拿到这个事项的最新内容，暂时不能加人：同步一次后再试", 500, { reason: "own_wrap_missing" });
       const matterKey = unwrapMatterKey(myWrapped.wrapped_key, keyctx.device.keys.encPrivateKeyPem);
       for (const d of devices) {
         db.run(`INSERT OR IGNORE INTO matter_keys (matter_id, epoch, wrapped_for, wrapped_key) VALUES (?,?,?,?)`, [matterId, epoch, d.device_id, wrapMatterKey(matterKey, d.enc_pub_pem)]);
@@ -6185,9 +6199,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   function syncStateOf(matterId: string, team: boolean): "ok" | "not_configured" | "not_allowed" | "unreachable" | "pending" | "unknown" {
     const sr = deps.shareRelay;
     if (!sr) return "not_configured";
-    const st = sr.status() as { blocked: string | null; push_last_ok_at?: string | null; push_last_error?: string | null; push_last_error_at?: string | null; pull_last_ok_at?: string | null; pull_last_error?: string | null; pull_last_error_at?: string | null };
+    const st = sr.status() as { blocked: string | null; policy_fallback?: boolean; push_last_ok_at?: string | null; push_last_error?: string | null; push_last_error_at?: string | null; pull_last_ok_at?: string | null; pull_last_error?: string | null; pull_last_error_at?: string | null };
     if (st.blocked === "not_configured") return "not_configured";
-    if (st.blocked === "not_allowed") return "not_allowed";
+    // 第 73 批（W3 提请，03 第四行）：律所规则过期 / 没收到而回退（不是所内没开通）→ unknown；只有真正没开通才回 not_allowed
+    if (st.blocked === "not_allowed") return st.policy_fallback ? "unknown" : "not_allowed";
     if (st.blocked) return "unknown";
     const failedAfterOk = (err: string | null | undefined, errAt: string | null | undefined, okAt: string | null | undefined) => !!err && !!errAt && (!okAt || errAt > okAt) && /timeout|connect|unreachable|gate_|tls_|http_5\d\d|relay_error|credential_/.test(err);
     if (failedAfterOk(st.push_last_error, st.push_last_error_at, st.push_last_ok_at) || failedAfterOk(st.pull_last_error, st.pull_last_error_at, st.pull_last_ok_at)) return "unreachable";
@@ -6488,7 +6503,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
    */
   function requireNoSyncAlert(matterId: string, what: string): void {
     if (!db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ? AND kind = 'owner_unverifiable'`, [matterId])) return;
-    throw forbidden(`这台电脑暂时无法确认这个事项的负责人：${what}暂不可用；在用的负责人同步一次后自动恢复，若负责人都已离所请联系中软客服`);
+    // 第 73 批（D-310）：律师层的话——说清现在不能做什么、等什么会好、实在不行找谁
+    throw new DomainError("forbidden", `这台电脑暂时确认不了这个事项的负责人是谁，现在不能${what}：负责人的电脑同步一次后会自动恢复；负责人都已离所的，请联系中软客服`, 403, { reason: "owner_unverifiable" });
   }
 
   function hasActiveDevice(tenantId: string, userId: string): boolean {
@@ -6550,21 +6566,29 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     return { ...base, status: !otherOwner ? "needs_owner" : relayController ? "needs_handoff" : "ok", relay_controller: relayController };
   }
 
+  /**
+   * 经中软同步的事项，成员调整与轮换只能由最先同步它的负责人（中继上的“控制成员”）在其电脑上做。
+   * 第 73 批（D-310）：报错原句给律师看——只说“这个事项的同步由谁管理、请他来调整”，不讲中继、控制成员、策略、密钥；
+   * 机器可判的原因在 detail.reason（relay_policy_stale / relay_controller_pending / relay_state_broken / relay_controller_not_owner /
+   * relay_controller_departed / relay_controller_other），另带 manager_user_id 与 manager_name（知道是谁时）。
+   */
   function requireRelayController(matterId: string, what: string): void {
     const ctl = deps.shareRelay?.foreignController(matterId);
     if (!ctl) return;
-    if (ctl === "~") throw forbidden(`这个事项经中软共享中继同步，而本机的律所策略已过期或尚未收到：${what}请先联网更新律所策略后再试（策略回退期间改动成员，在中继上不会生效）`);
-    if (ctl === "?") throw forbidden(`这个事项经中软共享中继同步，正在向中继确认最先同步它的负责人：${what}请稍后再试（可先点“立即同步”）`);
+    const deny = (msg: string, reason: string, extra: Record<string, unknown> = {}) => new DomainError("forbidden", msg, 403, { reason, ...extra });
+    if (ctl === "~") throw deny(`这个事项的同事之间同步暂停了（所内的规则需要更新）：请先联网同步一次再${what}；暂停期间在这里调整同事不会生效`, "relay_policy_stale");
+    if (ctl === "?") throw deny(`正在确认这个事项的同事名单由谁管理：请稍后再${what}（可先点“立即同步”）`, "relay_controller_pending");
     const row = db.get<{ matter_role: string; removed_at: string | null }>(`SELECT matter_role, removed_at FROM matter_members WHERE matter_id = ? AND user_id = ?`, [matterId, ctl]);
-    const name = db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE user_id = ?`, [ctl])?.display_name ?? ctl;
+    const name = displayNameOf(ctl) ?? ctl;
+    const who = { controller_user_id: ctl, controller_name: name };
     // 第三轮复核 S11A-31：控制成员已不是在册负责人（移交、被移出）或根本不是本事项成员（被抢先登记）时，如实说明须找中软客服
-    if (!row) throw forbidden(`这个事项在中软共享中继上的状态异常（登记者不是本事项成员）：${what}暂时不能经中继同步，请联系中软客服重置该事项`);
-    if (row.removed_at || row.matter_role !== "owner") throw forbidden(`这个事项经中软共享中继同步，中继上的控制成员（${name}）已不是负责人：${what}暂时不能经中继同步，请联系中软客服办理交接`);
+    if (!row) throw deny(`这个事项的同事名单状态异常，现在不能${what}：请联系中软客服处理这个事项`, "relay_state_broken");
+    if (row.removed_at || row.matter_role !== "owner") throw deny(`这个事项的同事名单由${name}管理，而他已不是负责人，现在不能${what}：请联系中软客服办理交接`, "relay_controller_not_owner", who);
     // B-10：控制成员没交接就离所了（他的电脑已全部停用）——别让负责人去找一个找不到的人
     const tenantId = db.get<{ tenant_id: string }>(`SELECT tenant_id FROM devices WHERE device_id = ?`, [keyctx.device.deviceId])?.tenant_id ?? "";
     const ctlDevices = db.all<{ status: string }>(`SELECT status FROM devices WHERE tenant_id = ? AND member_id = ? AND role <> 'node'`, [tenantId, ctl]);
-    if (ctlDevices.length > 0 && ctlDevices.every((d) => d.status !== "active")) throw forbidden(`这个事项经中软共享中继同步，中继上的控制成员（${name}）的电脑已全部停用（多为离所时没有交接）：${what}暂时不能经中继同步，请联系中软客服办理交接`);
-    throw forbidden(`这个事项经中软共享中继同步：${what}须由中继上的控制成员（${name}）在其电脑上操作，或请对方先把控制成员移交给你`);
+    if (ctlDevices.length > 0 && ctlDevices.every((d) => d.status !== "active")) throw deny(`这个事项的同事名单由${name}管理，而他的电脑都已停用（多为离所时没有交接），现在不能${what}：请联系中软客服办理交接`, "relay_controller_departed", who);
+    throw deny(what === "加人" || what === "移出同事" ? `这个事项的同事名单由${name}管理：请他来加人或移出` : `这个事项的同事名单由${name}管理：请他在自己的电脑上${what}`, "relay_controller_other", who);
   }
 
   /**

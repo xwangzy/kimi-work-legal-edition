@@ -792,7 +792,8 @@ export function writeEvent(deps: ChainDeps, matterId: string, kind: EventKind, b
   const st = chainView(deps, matterId).status.get(id);
   if (st?.s !== "valid") {
     db.run(`DELETE FROM member_events WHERE event_id = ?`, [id]);
-    throw new DomainError("conflict", `这次成员变更在成员链上不成立（${st ? st.why : "unknown"}）：多为本机的负责人身份已被其他负责人的变更取消，请同步后再看`, 409);
+    // 第 73 批（D-310）：律师层的话；链上不成立的原因代码放 detail
+    throw new DomainError("conflict", "这次调整同事没有生效：多半是你的负责人身份已被另一位负责人取消，请同步后再看", 409, { reason: "member_event_invalid", why: st ? st.why : "unknown" });
   }
   return e;
 }
