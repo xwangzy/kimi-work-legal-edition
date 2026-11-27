@@ -228,6 +228,8 @@ export class UsageBook {
   private readonly byUpstreamDay = new Map<string, DayMap>();
   /** 第 69 批（V43）：成员 × 用途（键：租户 \0 成员 \0 qa|task）——“套餐与用量”每日柱与“用在哪”。 */
   private readonly byMemberKindDay = new Map<string, DayMap>();
+  /** 第 72 批（验收 Q-1）：每台设备最近一条计量的时刻（键：租户 \0 设备）——电脑“最近使用”取真实活动。 */
+  private readonly lastByDevice = new Map<string, string>();
   /** 小时桶：tid → 小时序号 → {tokens, value}；成员同理（滚动窗口用，保留 8 天）。 */
   private readonly hourT = new Map<string, Map<number, { tokens: number; value: number }>>();
   private readonly hourM = new Map<string, Map<number, { tokens: number; value: number }>>();
@@ -296,6 +298,11 @@ export class UsageBook {
     bump(this.byMemberModelDay, `${r.tid}\u0000${r.uid ?? ""}\u0000${r.alias ?? ""}`, r.day, a);
     bump(this.byUpstreamDay, `${r.tid}\u0000${r.upstream_model ?? ""}`, r.day, a);
     bump(this.byMemberKindDay, `${r.tid}\u0000${r.uid ?? ""}\u0000${r.qa ? "qa" : "task"}`, r.day, a);
+    if (r.dev) {
+      const dk = `${r.tid}\u0000${r.dev}`;
+      const prev = this.lastByDevice.get(dk);
+      if (!prev || r.at > prev) this.lastByDevice.set(dk, r.at);
+    }
     const h = hourIndex(Date.parse(r.at));
     const tok = a.tokens_in + a.tokens_out;
     for (const [m, k] of [[this.hourT, r.tid], [this.hourM, `${r.tid}\u0000${r.uid ?? ""}`]] as const) {
@@ -314,6 +321,11 @@ export class UsageBook {
     if (!d) return s;
     for (const [day, a] of d) if (day >= from && day <= to) addAgg(s, a);
     return s;
+  }
+
+  /** 第 72 批（验收 Q-1）：这台设备最近一条计量记录的时刻（ISO；没有为 null）。 */
+  deviceLastAt(tid: string, dev: string): string | null {
+    return this.lastByDevice.get(`${tid}\u0000${dev}`) ?? null;
   }
 
   tenant(tid: string, from: string, to: string): Agg {

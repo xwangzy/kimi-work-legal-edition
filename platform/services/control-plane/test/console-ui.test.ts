@@ -376,3 +376,14 @@ test("第 72 批（W-3）：组织详情“成员与席位”运营可改角色�
   const platformOff = labels({ aid: "acc_cccccccccccccccc", name: "丙", role: "lawyer", seated: false, acc: { aid: "acc_cccccccccccccccc", status: "disabled", disabled_by: "platform" } });
   assert.deepEqual(platformOff, ["打开用户详情", "启用…"]);
 });
+
+test("第 72 批（验收 Q-5）：成员数、未占席、“另在 N 个团队”只算有效身份", async () => {
+  const { unseatedOf, activeMembersOf, activeTeamsOf } = await mod("apps/console/pages/tenants.js");
+  // 云端 member_count 只算有效身份：1 名成员、1 席在用 → 没有未占席（被移出的乙不再算“未占席的成员”）
+  assert.equal(unseatedOf({ member_count: 1, accounts: 2, seats_used: 1 }), 0);
+  assert.equal(activeMembersOf({ member_count: 1, accounts: 2 }), 1);
+  assert.equal(activeMembersOf({ accounts: 2 }), 2, "旧云端没有 member_count 时退回账号数");
+  const p = { workspaces: [{ kind: "personal", status: "active" }, { kind: "team", name: "甲所", status: "disabled", disabled_by: "team" }, { kind: "team", name: "乙所", status: "active" }] };
+  assert.deepEqual(activeTeamsOf(p).map((w: { name: string }) => w.name), ["乙所"]);
+  assert.deepEqual(activeTeamsOf({ workspaces: [{ kind: "team", status: "disabled" }] }), []);
+});

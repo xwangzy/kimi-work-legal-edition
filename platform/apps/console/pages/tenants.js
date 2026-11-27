@@ -34,6 +34,8 @@ const st = { dstatus: "", kind: "team", filter: "all", q: "", table: { sort: "us
 const DAY = 86_400_000;
 
 /** 个人客户：第 72 批起取显式字段 kind；旧云端给 personal（第 71 批 I-1）；都没给时按“自助注册且只有 1 个账号”近似 */
+/** 一个人有效的团队身份（个人客户行“另在 N 个团队”） */
+export const activeTeamsOf = (p) => (p?.workspaces ?? []).filter((w) => kindOf(w) === "team" && w.status !== "disabled");
 export const isPersonal = (t) => (t?.kind === "personal" || t?.kind === "team" ? t.kind === "personal" : typeof t?.personal === "boolean" ? t.personal : t?.created_via === "self" && Number(t?.accounts) <= 1);
 /** 两个页签（D-306 第 1 条）；旧地址的 ?type= 照认 */
 const KINDS = [
@@ -90,13 +92,19 @@ async function personsByTid() {
 }
 
 /** 席位口径（第 71 批第二轮，G1；第 72 批说法统一为“席位 = 能用 AI 的名额”，见 domain.js）：账号多于席位时写清后果。个人客户不讲席位 */
-const unseatedOf = (t) => Math.max(0, (Number(t.accounts) || 0) - (Number(t.seats_used) || 0));
+/**
+ * 第 72 批（验收 Q-5）：成员数、未占席只算有效身份——被移出 / 停用的成员不算“成员”，也不算“未占席”。
+ * member_count 由云端按有效身份给（旧云端没有时退回 accounts）；云端另给 members_removed 时作次要信息显示。
+ */
+export const activeMembersOf = (t) => Number(t.member_count ?? t.accounts) || 0;
+const removedOf = (t) => Number(t.members_removed) || 0;
+export const unseatedOf = (t) => Math.max(0, activeMembersOf(t) - (Number(t.seats_used) || 0));
 function seatCell(t) {
   if (isPersonal(t)) return h("div", { class: "cell-2" }, "个人", h("small", {}, `${fmt.int(t.devices)} 台电脑`));
   const n = unseatedOf(t);
   const sn = seatNote(n, t.seats, t.seats_used);
-  const members = Number(t.member_count ?? t.accounts) || 0;
-  return h("div", { class: "cell-2", title: sn ? `${SEAT_NOTE}。${sn.text}` : SEAT_NOTE }, `${fmt.int(members)} 名成员 · 已用 ${fmt.int(t.seats_used)} / 共 ${fmt.int(t.seats)} 席`, sn ? h("small", { class: sn.full ? "tone-text-warn" : "" }, sn.full ? `席位已满 · ${n} 人用不了 AI` : `${n} 人未占席 · 还有 ${sn.free} 个空席`) : h("small", {}, `${fmt.int(t.devices)} 台电脑`));
+  const removed = removedOf(t) ? ` · 另有 ${fmt.int(removedOf(t))} 人已移出` : "";
+  return h("div", { class: "cell-2", title: sn ? `${SEAT_NOTE}。${sn.text}` : SEAT_NOTE }, `${fmt.int(activeMembersOf(t))} 名成员 · 已用 ${fmt.int(t.seats_used)} / 共 ${fmt.int(t.seats)} 席`, sn ? h("small", { class: sn.full ? "tone-text-warn" : "" }, `${sn.full ? `席位已满 · ${n} 人用不了 AI` : `${n} 人未占席 · 还有 ${sn.free} 个空席`}${removed}`) : h("small", {}, `${fmt.int(t.devices)} 台电脑${removed}`));
 }
 
 function drawList(box, rows, people) {
@@ -162,7 +170,8 @@ function drawList(box, rows, people) {
         key: "name",
         label: "用户",
         value: (t) => personOf(t)?.name ?? t.name ?? t.tid,
-        render: (t) => ((p) => (p ? h("div", { class: "cell-2" }, h("b", {}, p.name ?? "—", (p.workspaces ?? []).some((w) => kindOf(w) === "team") ? h("span", { class: "kind-tag", title: (p.workspaces ?? []).filter((w) => kindOf(w) === "team").map((w) => `${w.name} · ${ROLE[w.role] ?? w.role}`).join("、") }, `另在 ${(p.workspaces ?? []).filter((w) => kindOf(w) === "team").length} 个团队`) : null), h("small", {}, p.phone_masked ?? p.email_masked ?? "未绑定手机号")) : h("div", { class: "cell-2" }, h("b", {}, t.name ?? t.tid), mono(t.tid))))(personOf(t)),
+        // 验收 Q-5：“另在 N 个团队”只算有效的团队身份（被移出 / 停用的不算）
+        render: (t) => ((p, teams) => (p ? h("div", { class: "cell-2" }, h("b", {}, p.name ?? "—", teams.length ? h("span", { class: "kind-tag", title: teams.map((w) => `${w.name} · ${ROLE[w.role] ?? w.role}`).join("、") }, `另在 ${teams.length} 个团队`) : null), h("small", {}, p.phone_masked ?? p.email_masked ?? "未绑定手机号")) : h("div", { class: "cell-2" }, h("b", {}, t.name ?? t.tid), mono(t.tid))))(personOf(t), activeTeamsOf(personOf(t))),
       },
       statusCol,
       { key: "plan", label: "套餐", class: "nowrap", value: (t) => t.plan?.label ?? "", render: (t) => t.plan?.label ?? t.plan?.id ?? "—" },
@@ -278,7 +287,7 @@ function drawDetail(head, body, d, reload) {
   const usedTone = t.paused || Number(t.used_ratio) >= 1 ? "danger" : Number(t.used_ratio) >= 0.8 ? "warn" : undefined;
   const liveDevs = (d.devices ?? []).filter((x) => deviceState(x) !== "revoked");
   const signedIn = liveDevs.filter((x) => deviceState(x) === "signed_in").length;
-  const unseated = (d.members ?? []).filter((m) => m.aid && !(m.seat && !m.seat.revoked_at)).length;
+  const unseated = unseatedOf(t);
   setCrumbs([[personal ? "个人客户" : "团队客户", `ops/tenants?kind=${personal ? "personal" : "team"}`], [t.name ?? t.tid]]);
   const tabs = TABS.filter(([id]) => !(personal && TEAM_ONLY_TABS.has(id)));
   if (!tabs.some(([id]) => id === st.tab)) st.tab = "overview";
@@ -331,7 +340,7 @@ function drawDetail(head, body, d, reload) {
     ),
   );
   const tabBox = h("div");
-  const drawTabs = () => clear(tabBox, tabBar(tabs.map(([id, label]) => ({ id, label, count: id === "members" ? (d.members ?? []).filter((m) => m.aid).length : id === "devices" ? liveDevs.length + (d.join_requests ?? []).length : undefined })), st.tab, (id) => setTab(id)));
+  const drawTabs = () => clear(tabBox, tabBar(tabs.map(([id, label]) => ({ id, label, count: id === "members" ? t.member_count ?? (d.members ?? []).filter((m) => m.aid).length : id === "devices" ? liveDevs.length + (d.join_requests ?? []).length : undefined })), st.tab, (id) => setTab(id)));
   const pane = h("div", { class: "stack" });
   const drawPane = () => {
     clear(pane);
@@ -350,7 +359,7 @@ function drawDetail(head, body, d, reload) {
 async function changePlan(t, reload, d) {
   // 第 72 批（契约 §1 PlanSpec.audience）：只列适用于这类客户的套餐（缺省 any）
   const plans = (await planOptions()).plans.filter((p) => !p.audience || p.audience === "any" || p.audience === (isPersonal(t) ? "personal" : "team"));
-  const unseated = (d?.members ?? []).filter((m) => m.aid && !(m.seat && !m.seat.revoked_at)).length;
+  const unseated = unseatedOf(t);
   const cur = plans.find((p) => p.id === t.plan?.id);
   const fee = (p, seats) => (p?.seat_price_cny ? fmt.cny(Number(p.seat_price_cny) * seats) : null);
   const need = Number(t.seats_used || 0) + unseated;

@@ -123,8 +123,10 @@ function draw(head, body, d, accs, reload, params) {
   const live = all.filter((x) => deviceState(x) !== "revoked");
   const signedIn = live.filter((x) => deviceState(x) === "signed_in");
   const locked = !!a.locked && a.status !== "disabled";
-  const nTeam = ws.filter((w) => kindOf(w) === "team").length;
-  const nPersonal = ws.length - nTeam;
+  // 验收 Q-5：团队数只算有效身份；被移出 / 停用的另写一句
+  const nTeam = ws.filter((w) => kindOf(w) === "team" && w.status !== "disabled").length;
+  const nOff = ws.filter((w) => w.status === "disabled").length;
+  const nPersonal = ws.filter((w) => kindOf(w) === "personal").length;
   const sessions = ws.flatMap((w) => (w.sessions ?? []).map((s) => ({ ...s, ws: w })));
   setCrumbs([["用户", "ops/people"], [p.name || a.email || p.aid]]);
 
@@ -157,7 +159,7 @@ function draw(head, body, d, accs, reload, params) {
       h(
         "div",
         { class: "head-stats" },
-        h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "工作空间"), h("span", { class: "stat-value num" }, `${ws.length} 个`), h("span", { class: "stat-sub" }, [nPersonal ? "个人空间 1" : "没有个人空间", nTeam ? `团队 ${nTeam}` : null].filter(Boolean).join(" · "))),
+        h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "工作空间"), h("span", { class: "stat-value num" }, `${ws.length} 个`), h("span", { class: "stat-sub" }, [nPersonal ? "个人空间 1" : "没有个人空间", nTeam ? `团队 ${nTeam}` : null, nOff ? `已移出 / 停用 ${nOff}` : null].filter(Boolean).join(" · "))),
         h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "电脑"), h("span", { class: "stat-value num" }, `${signedIn.length} 台在线`), h("span", { class: "stat-sub" }, `共登记 ${live.length} 台 · 各工作空间分别计同时登录上限`)),
         h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "最近登录"), h("span", { class: "stat-value num" }, p.last_login_at ? fmt.ago(p.last_login_at) : "从未"), h("span", { class: "stat-sub" }, fmt.full(p.last_login_at))),
         h("div", { class: "head-stat stat" }, h("span", { class: "stat-label" }, "登录会话"), h("span", { class: "stat-value num" }, `${fmt.int(sessions.length)} 个`), h("span", { class: "stat-sub" }, `桌面 ${sessions.filter((s) => s.kind === "desktop").length} · 网页 ${sessions.filter((s) => s.kind !== "desktop").length}（网页不占电脑名额）`)),
@@ -368,11 +370,12 @@ function diagnosis({ p, a, ws, locked, enable, reload }) {
     }
     const on = (w.devices ?? []).filter((x) => deviceState(x) === "signed_in");
     const lim = Number(w.acc.device_limit) || 0;
+    // 验收 Q-6（D-298 / D-303）：满额不是故障——新电脑登录时会出选择页，本人可选一台退出；这里是中性提示，运营也可代为让一台退出
     if (lim && on.length >= lim)
       row(
-        "bad",
-        `${L}同时登录的电脑已满（${on.length} / ${lim} 台）：在这个工作空间里登录新电脑会被拒`,
-        btn("让一台退出登录…", () => pickOne(on, "让哪台电脑退出登录？", "可逆：那台电脑上的资料保留，之后可以再登录").then((x) => x && signoutDevice({ ...x, aid: x.aid ?? w.aid, tid: x.tid ?? w.tid }, reload)), { size: "sm", kind: "primary", disabled: !canSupport() }),
+        "info",
+        `${L}已达同时登录上限（${on.length} / ${lim} 台）：在新电脑登录时可选一台退出`,
+        btn("让一台退出登录…", () => pickOne(on, "让哪台电脑退出登录？", "可逆：那台电脑上的资料保留，之后可以再登录").then((x) => x && signoutDevice({ ...x, aid: x.aid ?? w.aid, tid: x.tid ?? w.tid }, reload)), { size: "sm", disabled: !canSupport() }),
         btn("改电脑数上限", () => limitsOf(w, p, reload), { size: "sm", disabled: !can("account.manage") }),
         btn("移除一台…", () => pickOne(on, "移除哪台电脑？", "不可逆：那台电脑不能再用这个账号").then((x) => x && revokeDevice({ ...x, tid: x.tid ?? w.tid }, reload)), { size: "sm", kind: "ghost", class: "text-danger", disabled: !can("device.revoke") }),
       );

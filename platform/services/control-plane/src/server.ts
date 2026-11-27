@@ -572,6 +572,12 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     return { q: t.quota, ctx };
   };
   const nonces = new Map<string, number>();
+  /**
+   * 第 72 批（验收 Q-1）：真实活动（只在内存，不进状态比对——不为它整份写盘）：会话最近一次核对、设备最近一次签名请求。
+   * 随下一次正常落盘（状态有变，或 30 秒的 nonce 周期写入）一并写出、启动时读回。电脑“最近使用”= 会话核对 / 设备签名请求 / 网关计量三者最近者。
+   */
+  const sessionSeen = new Map<string, number>();
+  const deviceSeen = new Map<string, number>();
   const auditLog = o.auditLog ?? createAuditLog();
   /** 写一条审计；写不进去即整个操作失败（调用方回滚）。 */
   const audit = (e: AuditEntry): void => {
@@ -609,7 +615,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       sms,
       registration: reg.dump(),
     });
-  const snapshot = (state = stateOnly()): string => JSON.stringify({ ...(JSON.parse(state) as object), nonces: [...nonces], sms_stats: smsStats.dump() });
+  const snapshot = (state = stateOnly()): string => {
+    // 会话已清掉的活动记录一并清掉
+    for (const sid of sessionSeen.keys()) if (!sessions.has(sid)) sessionSeen.delete(sid);
+    return JSON.stringify({ ...(JSON.parse(state) as object), nonces: [...nonces], sms_stats: smsStats.dump(), activity: { sessions: [...sessionSeen], devices: [...deviceSeen] } });
+  };
   /** 由快照重建内存状态（启动读回与失败回滚共用）；null = 空状态。 */
   const applySnapshot = (raw: string | null, withNonces: boolean): void => {
     migratedOnLoad = false;
@@ -669,6 +679,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (st.v !== 1) throw new Error(`控制面状态版本不认识：${st.v}`);
     feedVersion = st.feedVersion;
     if (withNonces) for (const [k, exp] of st.nonces ?? []) nonces.set(k, exp);
+    // 第 72 批（验收 Q-1）：真实活动只在启动读回时载入（失败回滚不撤：与 nonce 同样处理）
+    if (withNonces) {
+      sessionSeen.clear();
+      deviceSeen.clear();
+      const act = (st as { activity?: { sessions?: unknown; devices?: unknown } }).activity;
+      for (const [k, v] of Array.isArray(act?.sessions) ? (act!.sessions as [string, number][]) : []) if (typeof k === "string" && typeof v === "number") sessionSeen.set(k, v);
+      for (const [k, v] of Array.isArray(act?.devices) ? (act!.devices as [string, number][]) : []) if (typeof k === "string" && typeof v === "number") deviceSeen.set(k, v);
+    }
     for (const t of st.tenants) {
       // 第 9 批之前保存的状态没有额度字段：按空池读回（运营须重新注入点数）
       // 第 13 批之前保存的状态没有开通码与入组申请：按空读回（这些租户不要求开通码，行为与之前相同）
@@ -1458,6 +1476,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       throw new CpError(401, v.reason, "设备签名无效、设备未登记或已吊销", v.reason === "device_auth_stale" ? { server_time: iso() } : undefined);
     }
     const t = tenantOf(v.tid);
+    // 第 72 批（验收 Q-1）：设备最近一次签名请求（只在内存）
+    deviceSeen.set(`${v.tid}\u0000${v.deviceId}`, now());
     return { t, dev: t.devices.get(v.deviceId)! };
   };
 
@@ -1481,8 +1501,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 第 71 批（D-298）：会话第一次绑到这台电脑（换账号打开已有档案时登录不带签名，在这里才绑）也要占名额——别的电脑同时登录已满时不绑，
       // 告诉客户端回登录页由本人选一台退出登录（code 归入要重新登录的一类）
       if (me.s.kind === "desktop" && deviceRoomOf(me.a, dev.cert.deviceId) !== "ok") throw new CpError(401, "session_device_limit", `这个账号同时登录的电脑已达上限（${deviceLimitOf(me.a)} 台）：请重新登录，并选一台电脑退出登录`);
-      me.s.device_id = dev.cert.deviceId;
-      feedVersion += 1;
+      bindSession(me.s, dev.cert.deviceId);
     }
   };
 
@@ -1869,6 +1888,29 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   const accountDevices = (a: AccountRecord): DeviceRecord[] => [...(tenants.get(a.tid)?.devices.values() ?? [])].filter((d) => d.cert.memberId === uidOfAccount(a));
   const liveSessionsOf = (aid: string) => [...sessions.values()].filter((x) => x.aid === aid && sessionLive(x, now()));
+  /** 第 72 批（验收 Q-1）：会话最近活动 = 内存里的最近核对与持久的 last_seen_at 取最近者。 */
+  const sessionSeenAt = (x: SessionRecord): number => Math.max(sessionSeen.get(x.sid) ?? 0, Date.parse(x.last_seen_at) || 0);
+  const sessionViewOf = (x: SessionRecord, cur: string | null) => ({ ...sessionView(x, cur), last_seen_at: new Date(sessionSeenAt(x)).toISOString() });
+  /**
+   * 第 72 批（验收 Q-1）：电脑“最近使用” = 这台电脑最近一次真实活动——它上面的会话核对（aid 给了只看这个账号的）、设备签名请求、网关计量里这台的最近一条，取最近者。
+   * 原来只取会话 last_seen_at（按小时才续写，网关调用也不更新），正在用的电脑会显示成很久没用、被“预选最久没用的”选中而打断任务。
+   */
+  const deviceLastActive = (tid: string, deviceId: string, aid: string | null): string | null => {
+    let best = deviceSeen.get(`${tid}\u0000${deviceId}`) ?? 0;
+    const u = book.deviceLastAt(tid, deviceId);
+    if (u) best = Math.max(best, Date.parse(u) || 0);
+    for (const x of sessions.values()) if (x.device_id === deviceId && (aid ? x.aid === aid : accounts.get(x.aid)?.tid === tid)) best = Math.max(best, sessionSeenAt(x));
+    return best > 0 ? new Date(best).toISOString() : null;
+  };
+  /**
+   * 第 72 批（验收 Q-7）：把会话绑到一台电脑——同一账号在这台电脑上的其它桌面会话以 replaced 收回（一台电脑一个账号只留一个有效桌面会话；
+   * 原来只在“登录时直接绑”收回，经 onboarding / 登记 / 席位令牌之后才绑的会话会在同一台电脑上越积越多）。
+   */
+  const bindSession = (x: SessionRecord, deviceId: string): void => {
+    x.device_id = deviceId;
+    if (x.kind === "desktop") for (const y of sessions.values()) if (y !== x && y.aid === x.aid && y.device_id === deviceId && y.kind === "desktop" && !y.revoked_at) Object.assign(y, { revoked_at: iso(), revoked_reason: "replaced" });
+    feedVersion += 1;
+  };
   /**
    * 第 71 批（V45，D-298）：电脑数上限的口径是“同时登录的电脑”——未移除、且有有效桌面会话的电脑才占名额。
    * 已退出登录的电脑（会话被撤销或过期）不占名额，资料仍在那台电脑上，回来重新登录即可。except = 正在判定的这台不算。
@@ -1917,7 +1959,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           client_version: d.client_version ?? null,
           last_seen_on: d.client_seen_on ?? null,
           platform: last?.client.platform ?? null,
-          last_seen_at: last?.last_seen_at ?? null,
+          last_seen_at: deviceLastActive(a.tid, d.cert.deviceId, a.aid),
           session: ss.some((x) => sessionLive(x, t0) && x.kind === "desktop") ? ("active" as const) : ("none" as const),
           // 第 71 批（V45，D-298）：登录中（占名额）/ 已退出登录（资料还在那台电脑上，可再登录）/ 已移除（不能再用这个账号）
           state: d.revoked_at ? ("revoked" as const) : ss.some((x) => sessionLive(x, t0) && x.kind === "desktop") ? ("signed_in" as const) : ("signed_out" as const),
@@ -2021,6 +2063,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (a.person && personBlocked(a)) throw new AuthError(403, "account_disabled", "账号已停用，请联系管理员");
     // 续期：空闲到期往后推；按小时落盘（不让每个请求都整份重写状态）
     const t0 = now();
+    // 第 72 批（验收 Q-1）：会话最近一次核对按 2 分钟粒度记在内存（不进状态比对、随下一次正常落盘写出）；持久字段 last_seen_at 仍按小时续写（连带空闲期续期）
+    if (t0 - (sessionSeen.get(x.sid) ?? 0) >= 120_000 || t0 - (sessionSeen.get(x.sid) ?? 0) < 0) sessionSeen.set(x.sid, t0);
     if (t0 - Date.parse(x.last_seen_at) > 3600_000) {
       x.last_seen_at = iso(t0);
       x.idle_expires_at = iso(Math.min(t0 + SESSION_IDLE_MS[x.kind], Date.parse(x.abs_expires_at)));
@@ -2421,7 +2465,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       // 第 72 批（契约 §8）：显式类型、成员数、在用席位
       kind: kindOf(t),
       member_device_policy: policyOf(t),
-      member_count: tAccounts.length,
+      // 验收 Q-5：成员数只算有效的成员身份（与客户端、本所成员页同口径）；被团队移出 / 退出团队的另计
+      member_count: tAccounts.filter((x) => x.status === "active").length,
+      members_removed: tAccounts.filter((x) => x.status === "disabled" && x.disabled_by === "team").length,
       seat_used: [...t.seatsByUser.values()].filter((x) => !x.revoked_at).length,
     };
   };
@@ -2493,7 +2539,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 第 71 批（第二轮，07）：成员姓名与系统（最近一次桌面登录上报的），界面用来显示“某某的 Mac”这类派生名
     const lastDesk = [...sessions.values()].filter((x) => x.device_id === d.cert.deviceId && x.kind === "desktop" && accounts.get(x.aid)?.tid === t.tid).sort((x, y) => y.last_seen_at.localeCompare(x.last_seen_at))[0];
     // 第 72 批（D-304）：issuer——firm_root（律所根签发，可接收团队共享事项）/ account_ca（账号签发钥直接登记，团队共享前待管理员确认）
-    return { tid: t.tid, tenant_name: t.name ?? t.tid.replace(/^ten_/, ""), issuer: certIssuerOf(d.cert), device_id: a ? d.cert.deviceId : `fp:${certFingerprint(d.cert)}`, name: d.name ?? null, member_name: a?.name ?? null, platform: lastDesk?.client.platform ?? null, uid: a ? d.cert.memberId : null, aid: a?.aid ?? null, email: a?.email ?? null, role: d.cert.role, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, last_active_at: lastDesk?.last_seen_at ?? null, registered_at: d.registered_at, revoked_at: d.revoked_at, session: live ? "active" : "none", state, flags };
+    return { tid: t.tid, tenant_name: t.name ?? t.tid.replace(/^ten_/, ""), issuer: certIssuerOf(d.cert), device_id: a ? d.cert.deviceId : `fp:${certFingerprint(d.cert)}`, name: d.name ?? null, member_name: a?.name ?? null, platform: lastDesk?.client.platform ?? null, uid: a ? d.cert.memberId : null, aid: a?.aid ?? null, email: a?.email ?? null, role: d.cert.role, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, last_active_at: deviceLastActive(t.tid, d.cert.deviceId, null), registered_at: d.registered_at, revoked_at: d.revoked_at, session: live ? "active" : "none", state, flags };
   };
   const cmpVer = (x: string, y: string): number => {
     const px = x.split(/[.-]/).map((n) => Number(n) || 0);
@@ -3250,7 +3296,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         // 第四轮（05）：“未占席”——律所客户里没占席位的账号（能登录，但用不了 AI）；个人客户不算
         const unseatedAcc = (a: AccountRecord): boolean => {
           const t = tenants.get(a.tid);
-          if (!t || personalOf(t)) return false;
+          // 验收 Q-5：停用 / 已移出的成员不算“未占席”
+          if (!t || personalOf(t) || a.status !== "active") return false;
           const s = t.seatsByUser.get(uidOfAccount(a));
           return !(s && !s.revoked_at);
         };
@@ -3335,7 +3382,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
               // 第 71 批（第二轮，09）：律所管理员（有效的）——诊断里写出该找谁批准新电脑；手机号只给打码
               firm_admins: t && a.role !== "admin" ? [...accounts.values()].filter((y) => y.tid === t.tid && y.role === "admin" && y.status === "active").map((y) => ({ aid: y.aid, name: y.name, email: emailOf(y), phone: phoneOfPerson(y)?.masked ?? null })) : [],
               devices: t ? accountDevices(a).map((d) => deviceRow(t, d)) : [],
-              sessions: [...sessions.values()].filter((x) => x.aid === aid && sessionLive(x, now())).map((x) => sessionView(x, null)),
+              sessions: [...sessions.values()].filter((x) => x.aid === aid && sessionLive(x, now())).map((x) => sessionViewOf(x, null)),
               usage: t ? accountUsage(a) : null,
               alerts: alerts.filter((x) => x.aid === aid).slice(0, 50).map(alertView),
             };
@@ -4659,7 +4706,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           .map((d) => ({ device_id: d.cert.deviceId, name: d.name ?? null, registered_at: d.registered_at, revoked_at: d.revoked_at, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, platform: sumById.get(d.cert.deviceId)?.platform ?? null, last_seen_at: sumById.get(d.cert.deviceId)?.last_seen_at ?? null, current: d.cert.deviceId === s.device_id, issuer: certIssuerOf(d.cert), session: liveSessionsOf(a.aid).some((x) => x.device_id === d.cert.deviceId) ? "active" : "none", state: sumById.get(d.cert.deviceId)?.state ?? (d.revoked_at ? "revoked" : "signed_out"), signed_out_at: sumById.get(d.cert.deviceId)?.signed_out_at ?? null }))
           .sort((x, y) => (x.state === "signed_in" ? 0 : x.state === "signed_out" ? 1 : 2) - (y.state === "signed_in" ? 0 : y.state === "signed_out" ? 1 : 2)),
         devices_signed_in: signedInDevices(a).length,
-        sessions: liveSessionsOf(a.aid).map((x) => sessionView(x, s.sid)),
+        sessions: liveSessionsOf(a.aid).map((x) => sessionViewOf(x, s.sid)),
         // 第 66 批（V40）：个人账号（新电脑直接登录；第 68 批起台数按云端配置）与最近 5 次登录（时刻、类型、设备编号、平台、粗粒度网段）
         personal: personalAuto(t),
         recent_logins: (a.logins ?? []).slice(0, 5),
@@ -4757,10 +4804,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const dev = await optionalDevice(req, path, raw);
       const own = dev && tenantOf(a.tid).devices.has(dev.cert.deviceId) && dev.cert.memberId === uidOfAccount(a) ? dev : null;
       const onb = onboardingOf(a, own, true);
-      if (own && onb.state === "ready") {
-        s.device_id = own.cert.deviceId;
-        feedVersion += 1;
-      }
+      if (own && onb.state === "ready") bindSession(s, own.cert.deviceId);
       // 仍满（让出 / 移除之后又被别的电脑占上）：再给一张一次性票据
       s.limit_unbind = onb.state === "device_limit" ? 1 : 0;
       return send(res, 200, { ok: true, kind: "member", session: { sid: s.sid, kind: s.kind, idle_expires_at: s.idle_expires_at }, account: viewOf(a), onboarding: { ...onb, ...guideOf(a) }, ...workspaceFields(a) });
@@ -4828,7 +4872,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       t.devices.set(deviceId, { cert, registered_at: iso(at), revoked_at: null, client_version: c.version && CLIENT_VERSION_RE.test(c.version) ? c.version : "legacy", client_seen_on: dayOf(at) });
       t.directoryVersion += 1;
       feedVersion += 1;
-      s.device_id = deviceId;
+      bindSession(s, deviceId);
       noteLogin(a, req, "enroll", deviceId, b.client);
       addAlert({ kind: "new_device", level: "info", tid: t.tid, aid: a.aid, provider: null, pct: null, message: `${emailOf(a) ?? a.name} 在一台新电脑上登录（${c.platform === "win32" ? "Windows" : c.platform === "darwin" ? "macOS" : (c.platform ?? "未知平台")}，网段 ${net}）；不是本人操作请立即在“登录过的电脑”里移除它并修改密码` });
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "account", id: a.aid }, action: "device.auto_enroll", target: deviceId }, written: false, extra: rotated.map((id) => ({ tid: t.tid, actor: { kind: "account" as const, id: a.aid }, action: "device.auto_revoke", target: id })) });
@@ -4957,6 +5001,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const v = verifyDeviceRequest(req.headers, { method, path, body: raw }, { publicKeyFor: (rt, rd) => (rt === tid && rd === cert.deviceId ? cert.signPublicKeyPem : null), now: now(), seenNonce });
       // 时钟偏差同样附控制面当前时间（复核 S6-C02：每次同步第一步就是登记）
       if (!v.ok) throw new CpError(401, v.reason, "登记请求的设备签名无效", v.reason === "device_auth_stale" ? { server_time: iso() } : undefined);
+      deviceSeen.set(`${tid}\u0000${cert.deviceId}`, now());
       auditCtx.set(res, { entry: { tid: t.tid, actor: { kind: "device", id: cert.deviceId, fp: certFingerprint(cert) }, action: "device.register", target: cert.deviceId }, written: false });
       // 第 66 批：存量律所的律所公钥包由创始电脑登记时补传（须律所根签名；已有的不覆盖）
       storeFirmBundle(t, b.firm_bundle);
@@ -5001,8 +5046,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           const me = sessionOf(req, true)!;
           // 第 71 批（D-298）：同时登录已满时不绑（席位那一步由账号闸回 session_device_limit，客户端回登录页选一台退出）
           if (me.a.tid === t.tid && uidOfAccount(me.a) === cert.memberId && me.s.device_id === null && me.s.kind === "desktop" && deviceRoomOf(me.a, cert.deviceId) === "ok") {
-            me.s.device_id = cert.deviceId;
-            feedVersion += 1;
+            bindSession(me.s, cert.deviceId);
           }
         } catch {
           // 会话无效不影响登记本身（席位令牌那一步再要求登录）
@@ -6011,7 +6055,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         plan: { id: plan.id, label: plan.label, unit: plan.quota_unit, seat_quota: plan.seat_quota, period: plan.period, device_limit: plan.device_limit },
         seats: { total: t.seats, used: [...t.seatsByUser.values()].filter((x) => !x.revoked_at).length },
         quota: { unit: view.unit, period: view.period, ...view.firm, burst: view.burst, history: view.history, boosts: view.boosts ?? [] },
-        counts: { members: tAcc.length, active_7d: tAcc.filter((x) => x.last_login_at && x.last_login_at >= since7).length, devices: [...t.devices.values()].filter((d) => !d.revoked_at).length, pending_joins: [...t.joinRequests.values()].filter((j) => j.status === "pending").length },
+        counts: { members: tAcc.filter((x) => x.status === "active").length, members_removed: tAcc.filter((x) => x.status === "disabled" && x.disabled_by === "team").length, active_7d: tAcc.filter((x) => x.last_login_at && x.last_login_at >= since7).length, devices: [...t.devices.values()].filter((d) => !d.revoked_at).length, pending_joins: [...t.joinRequests.values()].filter((j) => j.status === "pending").length },
         alerts: alerts.filter((x) => x.tid === t.tid && !x.acked_at).slice(0, 50).map((x) => ({ id: x.id, at: x.at, kind: x.kind, level: x.level, pct: x.pct, message: x.message })),
       });
     }
@@ -6156,7 +6200,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const last = [...sessions.values()].filter((x) => x.device_id === d.cert.deviceId && !isStaffId(x.aid) && accounts.get(x.aid)?.tid === t.tid).sort((x, y) => y.last_seen_at.localeCompare(x.last_seen_at))[0];
         // 第 71 批（G2）：状态三态——有有效桌面登录 = 登录中；没有 = 已退出登录；吊销 = 已移除
         const signedIn = !d.revoked_at && [...sessions.values()].some((x) => x.device_id === d.cert.deviceId && x.kind === "desktop" && accounts.get(x.aid)?.tid === t.tid && sessionLive(x, now()));
-        return { device_id: d.cert.deviceId, issuer: certIssuerOf(d.cert), name: d.name ?? null, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, last_active_at: last?.last_seen_at ?? null, registered_at: d.registered_at, revoked: !!d.revoked_at, state: d.revoked_at ? "revoked" : signedIn ? "signed_in" : "signed_out", flags };
+        return { device_id: d.cert.deviceId, issuer: certIssuerOf(d.cert), name: d.name ?? null, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, last_active_at: deviceLastActive(t.tid, d.cert.deviceId, null), registered_at: d.registered_at, revoked: !!d.revoked_at, state: d.revoked_at ? "revoked" : signedIn ? "signed_in" : "signed_out", flags };
       });
       return send(res, 200, { devices: list.sort((x, y) => (y.last_seen_at ?? "").localeCompare(x.last_seen_at ?? "")) });
     }
