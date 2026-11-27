@@ -1,0 +1,82 @@
+2026-11-28T00:36:46+08:00
+[relay-config] 已从签名服务配置导出中继席位公钥：/etc/kwl/public/seat-relay-public-keys.json（seat-relay-stg-b73d；只含公钥）
+[relay-config] /etc/kwl/relay.json：端口 8446，证书 /etc/kwl/tls/cp.crt，控制面 https://192.168.64.2:8443（连 127.0.0.1）（新建）
+[relay-setup] ufw 已放行 8446/tcp
+[relay-setup] 云主机的安全组也要放行 8446/tcp（对所有来源，与 8443/8444/8445 相同）
+[relay-setup] kwl@relay 已就绪（https 0.0.0.0:8446，/readyz 200）
+[relay-setup] 纯公网 IP 部署：/etc/kwl/public/client-inputs/ 已重新生成（说明文件带上 relay_base 与中继钉住值）
+[relay-setup] 交给客户端团队（写进 client-release-spec 后重新出包，或分发带中继地址的签名地址配置 / release.json）：
+[relay-setup]   relay_base         https://192.168.64.2:8446
+[relay-setup]   relay 当前钉住值    sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=（与控制面相同；备用钉住也照控制面的 control_plane_backup_pins 给 relay_backup_pins）
+[relay-setup] 律所开通：管理员在客户端“设置 → 团队 → 团队策略”开通“同事之间同步”（团队版一人签、律所版两人签；最长 30 天，到期前续期）
+relay-setup.sh exit=0  耗时 1.338053099 秒
+== /etc/kwl/relay.json
+{
+  "role": "relay",
+  "listen": {
+    "host": "0.0.0.0",
+    "port": 8446
+  },
+  "tls": {
+    "cert_file": "/etc/kwl/tls/cp.crt",
+    "key_file": "/etc/kwl/tls/cp.key"
+  },
+  "service_secret_file": "/etc/kwl/secrets/service-secret",
+  "control_plane": {
+    "url": "https://192.168.64.2:8443",
+    "keys_file": "/etc/kwl/public/cp-public-keys.json",
+    "connect_address": "127.0.0.1"
+  },
+  "seat_keys_file": "/etc/kwl/public/seat-relay-public-keys.json",
+  "data_dir": "/var/lib/kwl"
+}
+-rw-r--r-- 1 root root 148 Nov 28 00:36 /etc/kwl/public/seat-relay-public-keys.json
+-rw-r----- 1 root kwl  489 Nov 28 00:36 /etc/kwl/relay.json
+{
+  "seat-relay-stg-b73d": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA+d0RN6A8R1S/LTbJhq/r52iv2L825WzrZjx0ryUNMNI=\n-----END PUBLIC KEY-----\n"
+}
+== ufw
+Status: active
+8446/tcp                   ALLOW       Anywhere                  
+8446/tcp (v6)              ALLOW       Anywhere (v6)             
+== client-inputs
+{
+  "$comment": "纯公网 IP 部署（demo-ca）交给客户端团队的说明文件：在本目录执行 make-release-config --spec client-release-spec.json（相对路径按当前目录）。各服务（含共享中继）共用一张证书，钉住值相同。演示 CA 只许内部测试包（D-212）。",
+  "control_plane_base": "https://192.168.64.2:8443",
+  "gateway_base": "https://192.168.64.2:8444/v1",
+  "search_base": "https://192.168.64.2:8445/v1/search",
+  "relay_base": "https://192.168.64.2:8446",
+  "cloud_ca_file": "demo-ca.crt",
+  "backup_pins": ["tls-backup.pub.pem"],
+  "pins": { "control_plane": ["sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs="], "gateway": ["sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs="], "search": ["sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs="], "relay": ["sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs="] },
+  "cp_public_keys_file": "cp-public-keys.json",
+  "seat_public_keys_file": "seat-public-keys.json",
+  "test_build": true
+}
+control_plane https://192.168.64.2:8443  sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=  sha256/CuY15zNCXLZjWTdFbR+Yd7Zdr8KFHSyRMP+ihlmPpGk=
+gateway       https://192.168.64.2:8444  sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=  sha256/CuY15zNCXLZjWTdFbR+Yd7Zdr8KFHSyRMP+ihlmPpGk=
+search        https://192.168.64.2:8445  sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=  sha256/CuY15zNCXLZjWTdFbR+Yd7Zdr8KFHSyRMP+ihlmPpGk=
+relay         https://192.168.64.2:8446  sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=  sha256/CuY15zNCXLZjWTdFbR+Yd7Zdr8KFHSyRMP+ihlmPpGk=
+== verify-capabilities
+✓ device_auto_enroll
+✓ device_signout
+✓ account_switch
+✓ workspaces
+✓ team_invites
+✓ team_member_auto_enroll
+✓ onboarding_state
+✓ catalog_epoch
+✓ device_share_confirm
+✓ team_roster
+✓ 共享中继 kwl@relay（:8446）readyz 200
+✓ 共享中继与控制面同一把证书公钥（客户端 relay_pins = 控制面钉住集）
+verify exit=0
+== healthcheck
+✓ control-plane：healthz 200，readyz 200
+✓ cp-signer：active（mTLS，只许控制面调用，不做 HTTP 探测）
+✓ gateway：healthz 200，readyz 200
+✓ relay：healthz 200，readyz 200
+✓ search：healthz 200，readyz 200
+healthcheck exit=0
+Started kwl@relay.service - Kimi Work 法律版云端服务 relay.
+[cloud-serve] relay 已就绪（https 0.0.0.0:8446）

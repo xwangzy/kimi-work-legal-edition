@@ -1,0 +1,68 @@
++ date -Is
+2026-11-28T00:33:22+08:00
++ systemctl disable --now kwl@control-plane kwl@cp-signer kwl@gateway kwl@search kwl-cert-renew.timer
+Removed "/etc/systemd/system/multi-user.target.wants/kwl@search.service".
+Removed "/etc/systemd/system/multi-user.target.wants/kwl@control-plane.service".
+Removed "/etc/systemd/system/multi-user.target.wants/kwl@gateway.service".
+Removed "/etc/systemd/system/multi-user.target.wants/kwl@cp-signer.service".
+Removed "/etc/systemd/system/timers.target.wants/kwl-cert-renew.timer".
+++ date +%Y%m%d%H%M
++ ts=b62-old-202611280033
++ for d in /opt/kwl /etc/kwl /var/lib/kwl /var/www/kwl-console /var/www/kwl-console.old /var/lib/kwl-upgrade /var/lib/kwl-acme /var/backups/kwl
++ '[' -e /opt/kwl ']'
++ mv /opt/kwl /opt/kwl.b62-old-202611280033
++ for d in /opt/kwl /etc/kwl /var/lib/kwl /var/www/kwl-console /var/www/kwl-console.old /var/lib/kwl-upgrade /var/lib/kwl-acme /var/backups/kwl
++ '[' -e /etc/kwl ']'
++ mv /etc/kwl /etc/kwl.b62-old-202611280033
++ for d in /opt/kwl /etc/kwl /var/lib/kwl /var/www/kwl-console /var/www/kwl-console.old /var/lib/kwl-upgrade /var/lib/kwl-acme /var/backups/kwl
++ '[' -e /var/lib/kwl ']'
++ mv /var/lib/kwl /var/lib/kwl.b62-old-202611280033
++ for d in /opt/kwl /etc/kwl /var/lib/kwl /var/www/kwl-console /var/www/kwl-console.old /var/lib/kwl-upgrade /var/lib/kwl-acme /var/backups/kwl
++ '[' -e /var/www/kwl-console ']'
++ mv /var/www/kwl-console /var/www/kwl-console.b62-old-202611280033
++ for d in /opt/kwl /etc/kwl /var/lib/kwl /var/www/kwl-console /var/www/kwl-console.old /var/lib/kwl-upgrade /var/lib/kwl-acme /var/backups/kwl
++ '[' -e /var/www/kwl-console.old ']'
++ mv /var/www/kwl-console.old /var/www/kwl-console.old.b62-old-202611280033
++ for d in /opt/kwl /etc/kwl /var/lib/kwl /var/www/kwl-console /var/www/kwl-console.old /var/lib/kwl-upgrade /var/lib/kwl-acme /var/backups/kwl
++ '[' -e /var/lib/kwl-upgrade ']'
++ mv /var/lib/kwl-upgrade /var/lib/kwl-upgrade.b62-old-202611280033
++ for d in /opt/kwl /etc/kwl /var/lib/kwl /var/www/kwl-console /var/www/kwl-console.old /var/lib/kwl-upgrade /var/lib/kwl-acme /var/backups/kwl
++ '[' -e /var/lib/kwl-acme ']'
++ mv /var/lib/kwl-acme /var/lib/kwl-acme.b62-old-202611280033
++ for d in /opt/kwl /etc/kwl /var/lib/kwl /var/www/kwl-console /var/www/kwl-console.old /var/lib/kwl-upgrade /var/lib/kwl-acme /var/backups/kwl
++ '[' -e /var/backups/kwl ']'
++ mv /var/backups/kwl /var/backups/kwl.b62-old-202611280033
++ '[' -d /etc/systemd/system/kwl@.service.d ']'
++ mv /etc/systemd/system/kwl@.service.d /root/kwl@.service.d.b62-old-202611280033
++ for f in /etc/systemd/system/kwl@.service /etc/systemd/system/kwl-cert-renew.service /etc/systemd/system/kwl-cert-renew.timer
++ '[' -f /etc/systemd/system/kwl@.service ']'
+++ basename /etc/systemd/system/kwl@.service
++ mv /etc/systemd/system/kwl@.service /root/kwl@.service.b62-old-202611280033
++ for f in /etc/systemd/system/kwl@.service /etc/systemd/system/kwl-cert-renew.service /etc/systemd/system/kwl-cert-renew.timer
++ '[' -f /etc/systemd/system/kwl-cert-renew.service ']'
+++ basename /etc/systemd/system/kwl-cert-renew.service
++ mv /etc/systemd/system/kwl-cert-renew.service /root/kwl-cert-renew.service.b62-old-202611280033
++ for f in /etc/systemd/system/kwl@.service /etc/systemd/system/kwl-cert-renew.service /etc/systemd/system/kwl-cert-renew.timer
++ '[' -f /etc/systemd/system/kwl-cert-renew.timer ']'
+++ basename /etc/systemd/system/kwl-cert-renew.timer
++ mv /etc/systemd/system/kwl-cert-renew.timer /root/kwl-cert-renew.timer.b62-old-202611280033
++ '[' -f /etc/nginx/sites-enabled/kwl-console.conf ']'
++ rm -f /etc/nginx/sites-enabled/kwl-console.conf
++ '[' -f /etc/nginx/sites-available/kwl-console.conf ']'
++ mv /etc/nginx/sites-available/kwl-console.conf /root/kwl-console.conf.b62-old-202611280033
++ ls /etc/nginx/sites-enabled
++ systemctl daemon-reload
++ systemctl reload nginx
++ sed -i 's/^127.0.0.1 cp.kwl.test gw.kwl.test search.kwl.test console.kwl.test cp-signer.internal$/# b73 drill: removed old line (cp.kwl.test …)/' /etc/hosts
++ tail -3 /etc/hosts
+ff02::3 ip6-allhosts
+# b73 drill: removed old line (cp.kwl.test …)
+192.168.5.2	host.lima.internal
++ ls -d /opt/kwl.b62-old-202611280033 /etc/kwl.b62-old-202611280033 /var/lib/kwl-acme.b62-old-202611280033 /var/lib/kwl-upgrade.b62-old-202611280033 /var/lib/kwl.b62-old-202611280033 /var/lib/kwl.before-restore.1795071916 /var/lib/kwl.before-restore.1795309574
+/etc/kwl.b62-old-202611280033
+/opt/kwl.b62-old-202611280033
+/var/lib/kwl-acme.b62-old-202611280033
+/var/lib/kwl-upgrade.b62-old-202611280033
+/var/lib/kwl.b62-old-202611280033
+/var/lib/kwl.before-restore.1795071916
+/var/lib/kwl.before-restore.1795309574

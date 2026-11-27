@@ -83,10 +83,18 @@ echo "升级完成：$(git describe --tags --always)。上一版本 ${PREV:0:12}
 if [ ${#VERIFY_ARGS[@]} -eq 0 ] && ! systemctl is-enabled --quiet kwl@relay 2>/dev/null; then
   echo "提示：共享中继 kwl@relay 还没有开通（同事之间同步要它）：sudo bash deploy/scripts/relay-setup.sh（运维手册 5.3；之后要发带中继地址的客户端）"
 fi
-bash deploy/scripts/verify-capabilities.sh ${VERIFY_ARGS[@]+"${VERIFY_ARGS[@]}"} || {
+# 第 73 批虚机演练：缺项说明只列真缺的那几项（原先不论缺什么都把“补签发钥”也打出来）
+# set -e 下失败的命令替换会直接退出脚本：用 && / || 取退出码
+VERIFY_OUT=$(bash deploy/scripts/verify-capabilities.sh ${VERIFY_ARGS[@]+"${VERIFY_ARGS[@]}"} 2>&1) && VERIFY_RC=0 || VERIFY_RC=$?
+printf '%s\n' "$VERIFY_OUT"
+if [ "$VERIFY_RC" != 0 ]; then
   echo "✖✖ 升级已完成、服务正常运行，但能力核对有缺项（见上面的 ✖ 行），逐项处理后再跑 sudo bash deploy/scripts/verify-capabilities.sh："
-  echo "   缺 device_auto_enroll（个人账号换电脑会退化成等批准）：按运维手册 5.2 执行 node scripts/add-account-device-ca.mjs，再 sudo systemctl restart kwl@cp-signer kwl@control-plane"
-  [ "$CA_FAILED" = 1 ] && echo "   （本次补钥步骤就已失败，原因见上文）"
-  echo "   共享中继没有配置 / 没有启用 / 没就绪：按运维手册 5.3 执行 sudo bash deploy/scripts/relay-setup.sh（有意不开同事之间同步时核对加 --no-relay）"
+  if printf '%s' "$VERIFY_OUT" | grep -q "缺 device_auto_enroll\|缺 team_member_auto_enroll\|缺 device_share_confirm"; then
+    echo "   缺账号设备签发钥（个人账号换电脑会退化成等批准）：按运维手册 5.2 执行 node scripts/add-account-device-ca.mjs，再 sudo systemctl restart kwl@cp-signer kwl@control-plane"
+    [ "$CA_FAILED" = 1 ] && echo "   （本次补钥步骤就已失败，原因见上文）"
+  fi
+  if printf '%s' "$VERIFY_OUT" | grep -q "✖ 共享中继"; then
+    echo "   共享中继没有配置 / 没有启用 / 没就绪：按运维手册 5.3 执行 sudo bash deploy/scripts/relay-setup.sh（有意不开同事之间同步时加 --no-relay）"
+  fi
   exit 3
-}
+fi

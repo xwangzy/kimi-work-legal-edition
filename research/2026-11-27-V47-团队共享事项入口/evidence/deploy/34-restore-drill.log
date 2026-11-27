@@ -1,0 +1,45 @@
+## 00:49:33 备份（00:49:02）之后，乙再加一份材料 → 中继多一段
+{
+ "document_version_id": "docv_3c92a7fc-6617-4b62-802f-683a154ea721",
+ "parse_version_id": "psv_ef3a0eca-38f4-4610-a4a2-6bde043e28cc",
+ "quality_flags": [
+  "plain_text"
+ ],
+ "chars": 46,
+ "marking_notice": null,
+ "sha256": "407507b422220232a72400ca6268eb9d4108c2806100c76b49db01dcaa60db28",
+ "note"
+2026-11-28T00:49:35+08:00
+恢复前：中继段数 4；备份里的段数 3
+回滚到 1f74db0
+/var/backups/kwl/kwl-20261128-004902.tar.gz: OK
+保留恢复前的 control-plane/usage
+保留恢复前的 control-plane/audit.jsonl
+保留恢复前的 control-plane/ops
+保留恢复前的 gateway/meter.ack
+保留恢复前的 cp-signer/ledger.jsonl
+保留恢复前的 relay
+保留恢复前的 obs
+恢复前的数据目录留在 /var/lib/kwl.before-restore.1795798175（确认无误后手工删除）
+
+added 14 packages in 80ms
+✓ control-plane：healthz 200，readyz 200
+✓ cp-signer：active（mTLS，只许控制面调用，不做 HTTP 探测）
+✓ gateway：healthz 200，readyz 200
+✓ relay：healthz 200，readyz 200
+✓ search：healthz 200，readyz 200
+回滚完成：v1.7.0
+rollback.sh --restore exit=0  耗时 10.427508616 秒
+v1.7.0
+恢复后：中继段数 4（应等于恢复前，不是备份里的）
+/var/lib/kwl.before-restore.1795798175
+✓ device_auto_enroll
+✓ device_signout
+✓ account_switch
+✓ workspaces
+✓ team_invites
+✓ team_member_auto_enroll
+✓ onboarding_state
+✓ catalog_epoch
+✓ device_share_confirm
+verify(1.7.0) exit=0

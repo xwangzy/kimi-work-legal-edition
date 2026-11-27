@@ -1,0 +1,75 @@
+2026-11-28T00:36:26+08:00
+v1.8.0
+v1.7.0
+当前 v1.7.0 → 目标 v1.8.0
+已备份：/var/backups/kwl/kwl-20261128-003627.tar.gz（24K，代码 1f74db0247bc）
+
+added 14 packages in 92ms
+统一云端控制台已打包：/var/www/kwl-console.new
+  api.js                     13816 B  e7a822c3c9a2e4d2
+  app.js                     27513 B  5bca223a64ad97b4
+  auth.js                    13924 B  ebade8b2135d8d7d
+  console.css                84090 B  d5de71def6f385c8
+  domain.js                  33920 B  89ab5ae4f348f591
+  index.html                  7068 B  502dce7a2e661245
+  pages/alerts.js             2485 B  17cfdd41345d0e9d
+  pages/billing.js           10746 B  7389ba1e99361124
+  pages/devices.js            5935 B  93f76f0e4173c0bc
+  pages/firm-billing.js       3649 B  073ffea9e6e91688
+  pages/firm-devices.js       8620 B  0602e9ed1cd27683
+  pages/firm-members.js      26275 B  caee98dbbdc379c4
+  pages/firm-overview.js      9395 B  4d6a27ccb2427199
+  pages/firm-usage.js        11003 B  940cf32f9babd4e2
+  pages/me-devices.js         9279 B  50b4e08116ef2be7
+  pages/me-overview.js       10601 B  acf87113a394ace9
+  pages/me-security.js        6670 B  6f931634fcaa1f59
+  pages/overview.js          15520 B  247e4dd358629254
+  pages/people.js            35332 B  0158965f0f6ea177
+  pages/plans.js             14880 B  f670c525a8971af9
+  pages/pricing.js           25908 B  0e24cbcd2a7709d1
+  pages/registration.js      53378 B  0c0050de7790c48d
+  pages/routing.js           28281 B  5584436871ccae04
+  pages/staff.js             11018 B  371177b77025f54b
+  pages/system.js             5965 B  934f7cdfb4ddb9a0
+  pages/tenants.js           86815 B  b111662a3c2c403d
+  pages/usage.js             21354 B  d32c25fff6274e59
+  reauth.js                   2501 B  1549bac4fce509da
+  seal-key.js                 6465 B  1af57381c7faae83
+  tokens.css                 18242 B  b87641a5b8472bff
+  ui.js                      60462 B  d5aa0d1993268d16
+页内 CSP connect-src：'self' https://192.168.64.2:8443
+部署：把整个目录拷到 Web 服务器，另放 config.json（字段见 apps/console/config.example.json：control_plane_base、deployment、label）。
+[add-account-device-ca] 已有账号设备签发钥 acct-ca-stg-b73d，不改
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+重启 kwl@cp-signer
+重启 kwl@control-plane
+重启 kwl@gateway
+重启 kwl@search
+✓ control-plane：healthz 200，readyz 200
+✓ cp-signer：active（mTLS，只许控制面调用，不做 HTTP 探测）
+✓ gateway：healthz 200，readyz 200
+✓ search：healthz 200，readyz 200
+升级完成：v1.8.0。上一版本 1f74db0247bc 记在 /var/lib/kwl-upgrade/previous
+提示：共享中继 kwl@relay 还没有开通（同事之间同步要它）：sudo bash deploy/scripts/relay-setup.sh（运维手册 5.3；之后要发带中继地址的客户端）
+✓ device_auto_enroll
+✓ device_signout
+✓ account_switch
+✓ workspaces
+✓ team_invites
+✓ team_member_auto_enroll
+✓ onboarding_state
+✓ catalog_epoch
+✓ device_share_confirm
+✓ team_roster
+✖ 共享中继没有配置（/etc/kwl/relay.json 不在）：sudo bash deploy/scripts/relay-setup.sh（运维手册 5.3）
+✖✖ 升级已完成、服务正常运行，但能力核对有缺项（见上面的 ✖ 行），逐项处理后再跑 sudo bash deploy/scripts/verify-capabilities.sh：
+   缺 device_auto_enroll（个人账号换电脑会退化成等批准）：按运维手册 5.2 执行 node scripts/add-account-device-ca.mjs，再 sudo systemctl restart kwl@cp-signer kwl@control-plane
+   共享中继没有配置 / 没有启用 / 没就绪：按运维手册 5.3 执行 sudo bash deploy/scripts/relay-setup.sh（有意不开同事之间同步时核对加 --no-relay）
+upgrade.sh exit=3  耗时 8.679410896 秒
+v1.8.0
+1f74db0247bce49dbf47e9266c511d337ca5eee7
+total 32
+-rw------- 1 root root 23313 Nov 28 00:36 kwl-20261128-003627.tar.gz
+-rw-r--r-- 1 root root    41 Nov 28 00:36 kwl-20261128-003627.tar.gz.commit
+-rw-r--r-- 1 root root   110 Nov 28 00:36 kwl-20261128-003627.tar.gz.sha256

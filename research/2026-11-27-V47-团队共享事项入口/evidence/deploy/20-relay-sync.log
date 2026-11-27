@@ -1,0 +1,689 @@
+## 00:40:27 [5791] workspace.upgrade {"name":"周砚秋律师团队"}
+{
+ "ok": true,
+ "workspace": {
+  "aid": "acc_zWRW5vEWo_XL1MlT",
+  "tid": "ten_ab73drill",
+  "member_slug": "ab73drill",
+  "kind": "team",
+  "name": "周砚秋律师团队",
+  "role": "admin",
+  "member_device_policy": "auto"
+ }
+}
+## 00:40:27 [5791] team.invites.create {"name":"陈知微","role":"lawyer"}
+{
+ "supported": true,
+ "ok": true,
+ "invite": {
+  "id": "tiv_f-8J5yGJ4yWDCuey",
+  "name": "陈知微",
+  "role": "lawyer",
+  "phone_hint": null,
+  "created_by": "team",
+  "created_at": "2026-11-27T16:40:27.670Z",
+  "expires_at": "2026-12-04T16:40:27.670Z",
+  "status": "open",
+  "accepted_by": null,
+  "accepted_at": null
+ },
+ "code": "EB7S-GSK4-WQ3Z-UK2H"
+}
+## 00:40:42 [5792] teams.join {"code":"EB7S-GSK4-WQ3Z-UK2H"}
+{
+ "ok": true,
+ "switched": true,
+ "enrolling": true,
+ "account": {
+  "email": "b-b73drill@example.cn",
+  "name": "陈知微",
+  "role": "lawyer"
+ },
+ "firm": {
+  "name": "周砚秋律师团队"
+ }
+}
+## 00:40:56 [5792] team.deviceShare.request 
+{
+ "supported": true,
+ "state": "pending",
+ "issuer": "account_ca",
+ "request_id": "jr_efbPMoqs-nqI6x9C",
+ "requested_at": "2026-11-27T16:40:56.878Z",
+ "check_code": "519 438 600 154"
+}
+## 00:40:56 [5792] team.roster 
+{
+ "available": true,
+ "fetched_at": "2026-11-27T16:40:56.935Z",
+ "members": [
+  {
+   "user_id": "usr_ab73drill_u74fa48",
+   "member_slug": "u74fa48",
+   "name": "陈知微",
+   "role": "lawyer",
+   "status": "active",
+   "seat": true,
+   "can_receive": false,
+   "is_me": true
+  },
+  {
+   "user_id": "usr_ab73drill_ab73drill",
+   "member_slug": "ab73drill",
+   "name": "周砚秋",
+   "role": "admin",
+   "status": "active",
+   "seat": true,
+   "can_receive": true,
+   "is_me": false
+  }
+ ]
+}
+## 00:41:03 [5791] members.list 
+{
+ "invitations": [],
+ "join_requests": [
+  {
+   "id": "jr_efbPMoqs-nqI6x9C",
+   "kind": "upgrade",
+   "device_name": "Mac 电脑 · 第 1 台",
+   "name": "陈知微",
+   "role": "lawyer",
+   "requested_at": "2026-11-27T16:40:56.878Z",
+   "check_code": null,
+   "via": "upgrade",
+   "account_email": null,
+   "local_invite": true,
+   "verified": true
+  }
+ ],
+ "firm_check_code": "073 436 521 783"
+}
+## 00:41:09 [5791] members.approve {"join_request_id":"jr_efbPMoqs-nqI6x9C","check_code":"519438600154"}
+{
+ "ok": true,
+ "status": "approved",
+ "kind": "upgrade"
+}
+## 00:41:14 [5792] team.deviceShare.status 
+{
+ "supported": true,
+ "state": "confirmed",
+ "issuer": "firm_root",
+ "requested_at": "2026-11-27T16:40:56.878Z",
+ "decided_at": "2026-11-27T16:41:09.462Z",
+ "decided_by_name": "周砚秋"
+}
+## 00:41:20 [5791] firm_policy.share_relay_status 
+{
+ "relay_configured": true,
+ "state": "not_allowed",
+ "closed": false,
+ "closed_at": null,
+ "expires_at": null,
+ "days_left": null,
+ "expiring": null,
+ "can_manage": true,
+ "threshold": 1,
+ "signatures": 0,
+ "pending": null,
+ "carry_relaxations": {
+  "enable": [],
+  "renew": null
+ },
+ "fallback_reason": null,
+ "policy_version": 1
+}
+## 00:41:21 [5791] firm_policy.share_relay_enable 
+{
+ "relay_configured": true,
+ "state": "allowed",
+ "closed": false,
+ "closed_at": null,
+ "expires_at": "2026-12-27T16:41:21.066Z",
+ "days_left": 30,
+ "expiring": null,
+ "can_manage": true,
+ "threshold": 1,
+ "signatures": 0,
+ "pending": null,
+ "carry_relaxations": {
+  "enable": [],
+  "renew": []
+ },
+ "fallback_reason": null,
+ "policy_version": 2,
+ "published": true,
+ "draft_id": "drf_2fc25917cbbf7c23",
+ "lawyer_note": "已开通同事之间同步，有效到 2026-12-27"
+}
+## 00:41:21 [5791] relay.status 
+{
+ "blocked": null,
+ "configured": true,
+ "allowed": true,
+ "credential_error": null,
+ "removed_matters": 0,
+ "policy_fallback": false,
+ "alerts": [],
+ "push_last_ok_at": null,
+ "push_last_error": null,
+ "push_last_error_at": null,
+ "pull_last_ok_at": null,
+ "pull_last_error": null,
+ "pull_last_error_at": null,
+ "pending_upload": 0,
+ "stuck": 0,
+ "stuck_matters": 0,
+ "stuck_errors": [],
+ "waiting_blob": 0,
+ "waiting_key": 0,
+ "deferred": 0,
+ "retrying": 0,
+ "dropped_total": 0,
+ "chain_last_error": null,
+ "matters": 0
+}
+## 00:41:37 [5791] matters.create {"title":"虚机中继演练：云帆物流运输合同纠纷","client_name":"云帆物流有限公司","counterparty":null,"stance":"原告","jurisdiction":"中国大陆","confidentiality":"normal","model_endpoint":"standard","basis":{"engagement":"pending","personal_info":"pending","sensitive":"not_applicable","subprocessor":"pending"},"key_dates":{},"collab_scope":"team","members":[{"user_id":"usr_ab73drill_u74fa48","matter_role":"editor"}]}
+{
+ "matter": {
+  "matter_id": "mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec",
+  "tenant_id": "ten_ab73drill",
+  "title": "虚机中继演练：云帆物流运输合同纠纷",
+  "client_name": "云帆物流有限公司",
+  "counterparty": null,
+  "stance": "原告",
+  "jurisdiction": "中国大陆",
+  "key_dates": {},
+  "confidentiality": "normal",
+  "model_endpoint": "standard",
+  "collab_scope": "team",
+  "consent_status": "pending",
+  "policy_version": 1,
+  "status": "active",
+  "created_by": "usr_ab73drill_ab73drill",
+  "created_at": "2026-11-27T16:41:37.411Z",
+  "node_allowed": 0,
+  "full_pseudonym": false,
+  "basis": {
+   "engagement": "pending",
+   "personal_info": "pending",
+   "sensitive": "not_applicable",
+   "subprocessor": "pending"
+  },
+  "lifecycle": "active",
+  "closed_at": null,
+  "retention_until": null,
+  "legal_hold": false,
+  "legal_hold_reason": null,
+  "purged_at": null,
+  "stage": null,
+  "event_date": null,
+  "region": null,
+  "template_id": null,
+  "basis_source": null,
+  "folder_root": null,
+  "folder_linked_at": null,
+  "folder_synced_at": null,
+  "basis_ref": null,
+  "basis_notice_version": null,
+  "data_level": "L2",
+  "basis_complete": false,
+  "basis_state": "pending",
+  "basis_reconfirm": false,
+  "purge_eligible": false
+ },
+ "members_added": [
+  {
+   "user_id": "usr_ab73drill_u74fa48",
+   "name": "陈知微",
+   "matter_role": "editor",
+   "devices_wrapped": 1,
+   "can_receive": true,
+   "lawyer_note": "已把陈知微加进这个事项：同步后他的电脑就能打开"
+  }
+ ]
+}
+## 00:41:46 [5791] relay.sync 
+{
+ "push": {
+  "ran": true,
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "pull": {
+  "ran": true,
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "status": {
+  "blocked": null,
+  "configured": true,
+  "allowed": true,
+  "credential_error": null,
+  "removed_matters": 0,
+  "policy_fallback": false,
+  "alerts": [],
+  "push_last_ok_at": "2026-11-27T16:41:46.089Z",
+  "push_last_error": null,
+  "push_last_error_at": null,
+  "pull_last_ok_at": "2026-11-27T16:41:46.094Z",
+  "pull_last_error": null,
+  "pull_last_error_at": null,
+  "pending_upload": 0,
+  "stuck": 0,
+  "stuck_matters": 0,
+  "stuck_errors": [],
+  "waiting_blob": 0,
+  "waiting_key": 0,
+  "deferred": 0,
+  "retrying": 0,
+  "dropped_total": 0,
+  "chain_last_error": null,
+  "matters": 1
+ }
+}
+## 00:41:46 [5792] team.refresh_share_state 
+{
+ "refreshed": false,
+ "sync": "not_allowed"
+}
+## 00:41:46 [5792] relay.sync 
+{
+ "push": {
+  "ran": false,
+  "reason": "not_allowed",
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "pull": {
+  "ran": false,
+  "reason": "not_allowed",
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "status": {
+  "blocked": "not_allowed",
+  "configured": true,
+  "allowed": false,
+  "credential_error": null,
+  "removed_matters": 0,
+  "policy_fallback": false,
+  "alerts": [],
+  "push_last_ok_at": null,
+  "push_last_error": null,
+  "push_last_error_at": null,
+  "pull_last_ok_at": null,
+  "pull_last_error": null,
+  "pull_last_error_at": null,
+  "pending_upload": 0,
+  "stuck": 0,
+  "stuck_matters": 0,
+  "stuck_errors": [],
+  "waiting_blob": 0,
+  "waiting_key": 0,
+  "deferred": 0,
+  "retrying": 0,
+  "dropped_total": 0,
+  "chain_last_error": null,
+  "matters": 0
+ }
+}
+## 00:42:49 [5792] matters.list 
+{
+ "matters": []
+}
+## 00:42:57 [5791] relay.status 
+{
+ "blocked": null,
+ "configured": true,
+ "allowed": true,
+ "credential_error": null,
+ "removed_matters": 0,
+ "policy_fallback": false,
+ "alerts": [],
+ "push_last_ok_at": "2026-11-27T16:42:56.505Z",
+ "push_last_error": null,
+ "push_last_error_at": null,
+ "pull_last_ok_at": "2026-11-27T16:42:56.938Z",
+ "pull_last_error": null,
+ "pull_last_error_at": null,
+ "pending_upload": 0,
+ "stuck": 0,
+ "stuck_matters": 0,
+ "stuck_errors": [],
+ "waiting_blob": 0,
+ "waiting_key": 0,
+ "deferred": 0,
+ "retrying": 0,
+ "dropped_total": 0,
+ "chain_last_error": null,
+ "matters": 1
+}
+## 00:42:57 [5792] control_plane.sync 
+{
+ "report": {
+  "at": "2026-11-27T16:42:57.529Z",
+  "ok": true,
+  "steps": {
+   "register": "ok",
+   "pending_actions": "sent:0",
+   "license": "accepted",
+   "salt": "unchanged",
+   "directory": "unchanged",
+   "policy": "accepted",
+   "connectors": "unchanged",
+   "seat": "valid",
+   "summaries": "pushed:0"
+  },
+  "ms": {
+   "register": 4,
+   "docs": 11,
+   "seat": 0,
+   "total": 15
+  }
+ },
+ "status": {
+  "mode": "control_plane",
+  "unconfigured": false,
+  "admin_threshold": 1,
+  "admin_threshold_pinned": true,
+  "policy": {
+   "source": "control_plane",
+   "version": 2,
+   "issued_at": "2026-11-27T16:41:21.066Z",
+   "expires_at": "2026-12-27T16:41:21.066Z",
+   "body": {
+    "max_mode": "default",
+    "auto_preauthorizations": [],
+    "fetch_allowlist_extra": [],
+    "l3a_standard_model": "deny",
+    "share_relay": "allow"
+   },
+   "relaxations": [
+    "share_relay:allow"
+   ],
+   "signers": [
+    "usr_ab73drill_ab73drill"
+   ],
+   "fallback_reason": null
+  },
+  "license": {
+   "state": "valid",
+   "edition": "team",
+   "seats": 3,
+   "expires_at": "2026-12-11T16:40:10.957Z"
+  },
+  "seat": {
+   "has_token": true,
+   "sid": "seat_ten_ab73drill_2",
+   "expires_at": "2026-12-01T16:40:43.000Z"
+  },
+  "directory": {
+   "version": 5,
+   "devices": 2,
+   "revoked_devices": 0,
+   "expires_at": "2026-12-27T16:42:57.526Z",
+   "stale": false
+  },
+  "connectors": [],
+  "exit_mode": null,
+  "key_changes": [],
+  "pending_actions": [],
+  "alerts": []
+ }
+}
+## 00:42:57 [5792] relay.status 
+{
+ "blocked": null,
+ "configured": true,
+ "allowed": true,
+ "credential_error": null,
+ "removed_matters": 0,
+ "policy_fallback": false,
+ "alerts": [],
+ "push_last_ok_at": null,
+ "push_last_error": null,
+ "push_last_error_at": null,
+ "pull_last_ok_at": null,
+ "pull_last_error": null,
+ "pull_last_error_at": null,
+ "pending_upload": 0,
+ "stuck": 0,
+ "stuck_matters": 0,
+ "stuck_errors": [],
+ "waiting_blob": 0,
+ "waiting_key": 0,
+ "deferred": 0,
+ "retrying": 0,
+ "dropped_total": 0,
+ "chain_last_error": null,
+ "matters": 0
+}
+## 00:43:04 [5792] relay.sync 
+{
+ "push": {
+  "ran": true,
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "pull": {
+  "ran": true,
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 1,
+  "applied": 1,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "status": {
+  "blocked": null,
+  "configured": true,
+  "allowed": true,
+  "credential_error": null,
+  "removed_matters": 0,
+  "policy_fallback": false,
+  "alerts": [],
+  "push_last_ok_at": "2026-11-27T16:43:04.453Z",
+  "push_last_error": null,
+  "push_last_error_at": null,
+  "pull_last_ok_at": "2026-11-27T16:43:04.470Z",
+  "pull_last_error": null,
+  "pull_last_error_at": null,
+  "pending_upload": 0,
+  "stuck": 0,
+  "stuck_matters": 0,
+  "stuck_errors": [],
+  "waiting_blob": 0,
+  "waiting_key": 0,
+  "deferred": 0,
+  "retrying": 0,
+  "dropped_total": 0,
+  "chain_last_error": null,
+  "matters": 1
+ }
+}
+## 00:43:04 乙收到事项（B 拿到开通后 0 秒）
+## 00:43:04 [5792] matters.list 
+{
+ "matters": [
+  {
+   "matter_id": "mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec",
+   "title": "虚机中继演练：云帆物流运输合同纠纷",
+   "client_name": "云帆物流有限公司",
+   "counterparty": null,
+   "stance": "原告",
+   "jurisdiction": "中国大陆",
+   "confidentiality": "normal",
+   "model_endpoint": "standard",
+   "collab_scope": "team",
+   "consent_status": "pending",
+   "basis": {
+    "engagement": "pending",
+    "personal_info": "pending",
+    "sensitive": "not_applicable",
+    "subprocessor": "pending"
+   },
+   "basis_source": null,
+   "basis_ref": null,
+   "basis_notice_version": null,
+   "full_pseudonym": false,
+   "key_dates": {},
+   "status": "active",
+   "created_at": "2026-11-27T16:41:37.411Z",
+   "stage": null,
+   "event_date": null,
+   "region": null,
+   "lifecycle": "active",
+   "closed_at": null,
+   "retention_until": null,
+   "legal_hold": false,
+   "legal_hold_reason": null,
+   "purged_at": null,
+   "data_level": "L2",
+   "basis_complete": false,
+   "basis_state": "pending",
+   "basis_reconfirm": false,
+   "purge_eligible": false,
+   "basis_recorded_at": null,
+   "basis_recorded_by": null,
+   "removed_me": false,
+   "activity": {
+    "waiting": 0,
+    "running": 0,
+    "waiting_run_id": null,
+    "pending_review": 0,
+    "last_at": "2026-11-27T16:41:37.411Z"
+   }
+  }
+ ]
+}
+## 00:43:14 [5791] matters.members.list {"matter_id":"mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec"}
+{
+ "matter_id": "mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec",
+ "collab_scope": "team",
+ "my_role": "owner",
+ "is_owner": true,
+ "can_manage": true,
+ "removed_me": false,
+ "relay_controller": "usr_ab73drill_ab73drill",
+ "members": [
+  {
+   "user_id": "usr_ab73drill_ab73drill",
+   "name": "周砚秋",
+   "matter_role": "owner",
+   "can_receive": true,
+   "seat": true,
+   "departed": false,
+   "is_me": true,
+   "added_at": "2026-11-27T16:41:37.411Z"
+  },
+  {
+   "user_id": "usr_ab73drill_u74fa48",
+   "name": "陈知微",
+   "matter_role": "editor",
+   "can_receive": true,
+   "seat": true,
+   "departed": false,
+   "is_me": false,
+   "added_at": "2026-11-27T16:41:37.414Z"
+  }
+ ],
+ "sync": "ok"
+}
+## 00:43:35 [5792] materials.import {"matter_id":"mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec","filename":"乙补充-运输单据说明.txt","data_base64":"5LmZ6KGl5YWF55qE6L+Q6L6T5Y2V5o2u6K+05piO77yaMjAyNiDlubQgMTAg5pyIIDEyIOaXpeS6pOi0p++8jOetvuaUtuS6uuW8oOafkO+8iOa8lOe7g+eUqOaWh+Wtl++8ieOAggo=","mime":"text/plain"}
+{
+ "document_version_id": "docv_560b160b-dc4c-4e1b-b958-68f2ff679b95",
+ "parse_version_id": "psv_9a45a4f9-a5e3-43e5-91a6-48b3dc1971f5",
+ "quality_flags": [
+  "plain_text"
+ ],
+ "chars": 44,
+ "marking_notice": null,
+ "sha256": "69efe778b4e23384eee5fe18402436b2501dca25c3710c11cef89560387f68a9",
+ "note": "导入副本进入内容寻址块（不可变）；纠错请上传新版本"
+}
+## 00:43:35 [5792] relay.sync 
+{
+ "push": {
+  "ran": true,
+  "exported": 1,
+  "uploaded": 1,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "pull": {
+  "ran": true,
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "status": {
+  "blocked": null,
+  "configured": true,
+  "allowed": true,
+  "credential_error": null,
+  "removed_matters": 0,
+  "policy_fallback": false,
+  "alerts": [],
+  "push_last_ok_at": "2026-11-27T16:43:35.382Z",
+  "push_last_error": null,
+  "push_last_error_at": null,
+  "pull_last_ok_at": "2026-11-27T16:43:35.385Z",
+  "pull_last_error": null,
+  "pull_last_error_at": null,
+  "pending_upload": 0,
+  "stuck": 0,
+  "stuck_matters": 0,
+  "stuck_errors": [],
+  "waiting_blob": 0,
+  "waiting_key": 0,
+  "deferred": 0,
+  "retrying": 0,
+  "dropped_total": 0,
+  "chain_last_error": null,
+  "matters": 1
+ }
+}
+## 00:44:38 [5791] materials.list {"matter_id":"mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec"}
+{
+ "code": "not_found",
+ "message": "未知内核方法 materials.list"
+}
+## 00:44:55 [5791] matters.get → documents（文件名）
+[{"filename":"乙补充-运输单据说明.txt","added_by":null,"created_at":"2026-11-27T16:43:35.308Z"}]
+## 00:44:55 [5792] matters.get → documents（文件名）
+[{"filename":"乙补充-运输单据说明.txt","added_by":null,"created_at":"2026-11-27T16:43:35.308Z"}]

@@ -1,0 +1,16 @@
+2026-11-28T00:50:30+08:00
+== 虚机 relay-setup 重新生成的 client-inputs → make-release-config（在线取钉住，客户端同一份校验代码核对）
+[make-release-config] control_plane：192.168.64.2:8443 证书 CN=KWL demo server 192.168.64.2 IP Address:192.168.64.2，到 Nov 27 16:34:04 2027 GMT，钉住 sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=
+[make-release-config] gateway：192.168.64.2:8444 证书 CN=KWL demo server 192.168.64.2 IP Address:192.168.64.2，到 Nov 27 16:34:04 2027 GMT，钉住 sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=
+[make-release-config] search：192.168.64.2:8445 证书 CN=KWL demo server 192.168.64.2 IP Address:192.168.64.2，到 Nov 27 16:34:04 2027 GMT，钉住 sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=
+[make-release-config] relay：192.168.64.2:8446 证书 CN=KWL demo server 192.168.64.2 IP Address:192.168.64.2，到 Nov 27 16:34:04 2027 GMT，钉住 sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=
+[make-release-config] 已写 /private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal/0d6e0c1f-ceda-4025-9dcf-13a576f15bc5/scratchpad/b73-w1/deploy/release-vm.json（4 个上游；测试包）。下一步：node scripts/package-desktop.mjs --sign env（或推到 main 由 Windows CI 构建）
+control_plane_base "https://192.168.64.2:8443"
+control_plane_pins ["sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=","sha256/CuY15zNCXLZjWTdFbR+Yd7Zdr8KFHSyRMP+ihlmPpGk="]
+gateway_base "https://192.168.64.2:8444/v1"
+gateway_pins ["sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=","sha256/CuY15zNCXLZjWTdFbR+Yd7Zdr8KFHSyRMP+ihlmPpGk="]
+search_base "https://192.168.64.2:8445/v1/search"
+search_pins ["sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=","sha256/CuY15zNCXLZjWTdFbR+Yd7Zdr8KFHSyRMP+ihlmPpGk="]
+relay_base "https://192.168.64.2:8446"
+relay_pins ["sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=","sha256/CuY15zNCXLZjWTdFbR+Yd7Zdr8KFHSyRMP+ihlmPpGk="]
+test_build true cloud_ca_pem true

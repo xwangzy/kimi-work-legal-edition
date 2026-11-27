@@ -1,0 +1,217 @@
+## 00:46:40 虚机：systemctl stop kwl@relay（模拟带 relay_base 但中继没起 / 端口不通）
+## 00:46:46 [5792] relay.sync 
+{
+ "push": {
+  "ran": true,
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "pull": {
+  "ran": true,
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": [
+   "relay_connect_failed"
+  ]
+ },
+ "status": {
+  "blocked": null,
+  "configured": true,
+  "allowed": true,
+  "credential_error": null,
+  "removed_matters": 0,
+  "policy_fallback": false,
+  "alerts": [],
+  "push_last_ok_at": "2026-11-27T16:46:46.102Z",
+  "push_last_error": null,
+  "push_last_error_at": null,
+  "pull_last_ok_at": "2026-11-27T16:46:33.769Z",
+  "pull_last_error": "relay_connect_failed",
+  "pull_last_error_at": "2026-11-27T16:46:46.181Z",
+  "pending_upload": 0,
+  "stuck": 0,
+  "stuck_matters": 0,
+  "stuck_errors": [],
+  "waiting_blob": 0,
+  "waiting_key": 0,
+  "deferred": 0,
+  "retrying": 0,
+  "dropped_total": 0,
+  "chain_last_error": null,
+  "matters": 1
+ }
+}
+## 00:46:46 [5792] relay.status 
+{
+ "blocked": null,
+ "configured": true,
+ "allowed": true,
+ "credential_error": null,
+ "removed_matters": 0,
+ "policy_fallback": false,
+ "alerts": [],
+ "push_last_ok_at": "2026-11-27T16:46:46.102Z",
+ "push_last_error": null,
+ "push_last_error_at": null,
+ "pull_last_ok_at": "2026-11-27T16:46:33.769Z",
+ "pull_last_error": "relay_connect_failed",
+ "pull_last_error_at": "2026-11-27T16:46:46.181Z",
+ "pending_upload": 0,
+ "stuck": 0,
+ "stuck_matters": 0,
+ "stuck_errors": [],
+ "waiting_blob": 0,
+ "waiting_key": 0,
+ "deferred": 0,
+ "retrying": 0,
+ "dropped_total": 0,
+ "chain_last_error": null,
+ "matters": 1
+}
+## 00:46:46 [5792] matters.members.list {"matter_id":"mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec"}
+{
+ "matter_id": "mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec",
+ "collab_scope": "team",
+ "my_role": "editor",
+ "is_owner": false,
+ "can_manage": false,
+ "removed_me": false,
+ "relay_controller": "usr_ab73drill_ab73drill",
+ "members": [
+  {
+   "user_id": "usr_ab73drill_ab73drill",
+   "name": "周砚秋",
+   "matter_role": "owner",
+   "can_receive": true,
+   "seat": true,
+   "departed": false,
+   "is_me": false,
+   "added_at": "2026-11-27T16:43:04.468Z"
+  },
+  {
+   "user_id": "usr_ab73drill_u74fa48",
+   "name": "陈知微",
+   "matter_role": "editor",
+   "can_receive": true,
+   "seat": true,
+   "departed": false,
+   "is_me": true,
+   "added_at": "2026-11-27T16:43:04.469Z"
+  }
+ ],
+ "sync": "unreachable"
+}
+## 00:46:46 [5791] firm_policy.share_relay_status 
+{
+ "relay_configured": true,
+ "state": "allowed",
+ "closed": false,
+ "closed_at": null,
+ "expires_at": "2026-12-27T16:41:21.066Z",
+ "days_left": 30,
+ "expiring": null,
+ "can_manage": true,
+ "threshold": 1,
+ "signatures": 0,
+ "pending": null,
+ "carry_relaxations": {
+  "enable": [],
+  "renew": []
+ },
+ "fallback_reason": null,
+ "policy_version": 2
+}
+MEMBERS: 事项 ›虚机中继演练：云帆物流运输合同纠纷 虚机中继演练：云帆物流运输合同纠纷 发起任务 设提醒 客户 云帆物流有限公司 相对方 — 立场 原告 法域 中国大陆 客户授权待记录 · 第一次用 AI 时记录 当事人名单 团队共享 · 2 人 记录之前只用本机功能（读材料、比对、核对法条），不发给 AI、不联网。现在记录生成告知函（草稿） 概览 材料（1） 事实 AI 记录（0） 成果 事项成员 ⋯ 事项成员 2 加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果，内容在你们的电脑之间加密同步。 暂时连不上 Kimi Work：改动先留在这台电脑上，连上后自动同步给同事。 周 周砚秋 负责人 陈 陈知微 我 一起办 要加人或移出，请找负责人周砚秋。
+## 00:47:16 虚机：systemctl start kwl@relay
+## 00:47:19 [5792] relay.sync 
+{
+ "push": {
+  "ran": true,
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "pull": {
+  "ran": true,
+  "exported": 0,
+  "uploaded": 0,
+  "downloaded": 0,
+  "applied": 0,
+  "held": 0,
+  "dropped": 0,
+  "errors": []
+ },
+ "status": {
+  "blocked": null,
+  "configured": true,
+  "allowed": true,
+  "credential_error": null,
+  "removed_matters": 0,
+  "policy_fallback": false,
+  "alerts": [],
+  "push_last_ok_at": "2026-11-27T16:47:19.907Z",
+  "push_last_error": null,
+  "push_last_error_at": null,
+  "pull_last_ok_at": "2026-11-27T16:47:19.914Z",
+  "pull_last_error": null,
+  "pull_last_error_at": "2026-11-27T16:47:16.141Z",
+  "pending_upload": 0,
+  "stuck": 0,
+  "stuck_matters": 0,
+  "stuck_errors": [],
+  "waiting_blob": 0,
+  "waiting_key": 0,
+  "deferred": 0,
+  "retrying": 0,
+  "dropped_total": 0,
+  "chain_last_error": null,
+  "matters": 1
+ }
+}
+## 00:47:19 [5792] matters.members.list {"matter_id":"mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec"}
+{
+ "matter_id": "mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec",
+ "collab_scope": "team",
+ "my_role": "editor",
+ "is_owner": false,
+ "can_manage": false,
+ "removed_me": false,
+ "relay_controller": "usr_ab73drill_ab73drill",
+ "members": [
+  {
+   "user_id": "usr_ab73drill_ab73drill",
+   "name": "周砚秋",
+   "matter_role": "owner",
+   "can_receive": true,
+   "seat": true,
+   "departed": false,
+   "is_me": false,
+   "added_at": "2026-11-27T16:43:04.468Z"
+  },
+  {
+   "user_id": "usr_ab73drill_u74fa48",
+   "name": "陈知微",
+   "matter_role": "editor",
+   "can_receive": true,
+   "seat": true,
+   "departed": false,
+   "is_me": true,
+   "added_at": "2026-11-27T16:43:04.469Z"
+  }
+ ],
+ "sync": "ok"
+}
+事项成员 2 加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果，内容在你们的电脑之间加密同步。 周 周砚秋 负责人 陈 陈知微 我 一起办 要加人或移出，请找负责人周砚秋。

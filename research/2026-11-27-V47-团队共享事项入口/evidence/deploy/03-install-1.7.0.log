@@ -1,0 +1,65 @@
+2026-11-28T00:34:03+08:00
+v1.7.0
+提示：--tls demo-ca 的证书由本机演示 CA 签发，只有内置了这个 CA 的内部测试包能连（偏离 D-212）；对外试点用 --tls acme
+
+added 14 packages in 202ms
+[ip-config] /etc/kwl/control-plane.json：console.origins=["https://192.168.64.2"]（从样例新建：其余必改项见部署手册第 6 节）
+[ip-config] /etc/kwl/gateway.json：control_plane.url=https://192.168.64.2:8443，connect_address=127.0.0.1（从样例新建）
+[ip-config] /etc/kwl/search.json：control_plane.url=https://192.168.64.2:8443，connect_address=127.0.0.1（从样例新建）
+[ip-config] /var/www/kwl-console/config.json：control_plane_base=https://192.168.64.2:8443
+统一云端控制台已打包：/var/www/kwl-console.new
+  api.js                     13816 B  e7a822c3c9a2e4d2
+  app.js                     27513 B  5bca223a64ad97b4
+  auth.js                    13924 B  ebade8b2135d8d7d
+  console.css                84090 B  d5de71def6f385c8
+  domain.js                  33920 B  89ab5ae4f348f591
+  index.html                  7068 B  502dce7a2e661245
+  pages/alerts.js             2485 B  17cfdd41345d0e9d
+  pages/billing.js           10746 B  7389ba1e99361124
+  pages/devices.js            5935 B  93f76f0e4173c0bc
+  pages/firm-billing.js       3649 B  073ffea9e6e91688
+  pages/firm-devices.js       8620 B  0602e9ed1cd27683
+  pages/firm-members.js      26275 B  caee98dbbdc379c4
+  pages/firm-overview.js      9395 B  4d6a27ccb2427199
+  pages/firm-usage.js        11003 B  940cf32f9babd4e2
+  pages/me-devices.js         9279 B  50b4e08116ef2be7
+  pages/me-overview.js       10601 B  acf87113a394ace9
+  pages/me-security.js        6670 B  6f931634fcaa1f59
+  pages/overview.js          15520 B  247e4dd358629254
+  pages/people.js            35332 B  0158965f0f6ea177
+  pages/plans.js             14880 B  f670c525a8971af9
+  pages/pricing.js           25908 B  0e24cbcd2a7709d1
+  pages/registration.js      53378 B  0c0050de7790c48d
+  pages/routing.js           28281 B  5584436871ccae04
+  pages/staff.js             11018 B  371177b77025f54b
+  pages/system.js             5965 B  934f7cdfb4ddb9a0
+  pages/tenants.js           86815 B  b111662a3c2c403d
+  pages/usage.js             21354 B  d32c25fff6274e59
+  reauth.js                   2501 B  1549bac4fce509da
+  seal-key.js                 6465 B  1af57381c7faae83
+  tokens.css                 18242 B  b87641a5b8472bff
+  ui.js                      60462 B  d5aa0d1993268d16
+页内 CSP connect-src：'self' https://192.168.64.2:8443
+部署：把整个目录拷到 Web 服务器，另放 config.json（字段见 apps/console/config.example.json：control_plane_base、deployment、label）。
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+[tls-ip] 新生成服务私钥 /etc/kwl/tls/ip/server.key（只此一份；以后续期都复用它，钉住值不变）
+[tls-ip] 新生成备用密钥：私钥 /root/kwl-offline/tls-backup/server.backup.key ——拷到离线介质（U 盘 / 密钥管理系统）后，从服务器删除：shred -u /root/kwl-offline/tls-backup/server.backup.key
+-----
+[tls-ip] 新建演示 CA：/etc/kwl/demo-ca/demo-ca.crt（私钥 /etc/kwl/demo-ca/demo-ca.key 0600，只在本机）
+[tls-ip] 证书已装到 /etc/kwl/tls/{cp,gw,search,console}.crt（到 Nov 27 16:34:04 2027 GMT）
+Created symlink /etc/systemd/system/timers.target.wants/kwl-cert-renew.timer → /etc/systemd/system/kwl-cert-renew.timer.
+[tls-ip] 续期定时器已启用：systemctl list-timers kwl-cert-renew.timer
+[tls-ip] 模式 demo-ca，地址 192.168.64.2。钉住值（三个服务相同）：
+[tls-ip]   当前  sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=
+[tls-ip]   备份  sha256/CuY15zNCXLZjWTdFbR+Yd7Zdr8KFHSyRMP+ihlmPpGk=
+[tls-ip] 交给客户端团队的材料：/etc/kwl/public/client-inputs/（说明文件、公钥表、备用公钥、演示 CA 证书；不含私钥）
+[tls-ip] ⚠ 备用私钥还在服务器上：/root/kwl-offline/tls-backup/server.backup.key——拷到离线介质后 shred -u 删除
+nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+nginx: configuration file /etc/nginx/nginx.conf test is successful
+安装完成：代码 /opt/kwl/app（v1.7.0），配置放 /etc/kwl/<角色>.json，密钥放 /etc/kwl/secrets/，数据 /var/lib/kwl。
+下一步：按部署手册写配置与密钥，再 systemctl enable --now kwl@cp-signer kwl@control-plane kwl@gateway
+
+real	0m0.876s
+user	0m0.321s
+sys	0m0.096s

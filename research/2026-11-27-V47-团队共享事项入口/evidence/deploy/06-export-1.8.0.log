@@ -1,0 +1,18 @@
+2026-11-28T00:36:06+08:00
+083115ea
+已导出到 /private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal/0d6e0c1f-ceda-4025-9dcf-13a576f15bc5/scratchpad/b73-w1/deploy/cloud-git：238 个文件（改动 23、删除 0）；源提交 083115ea2ce335966103b6d5c3eb069e6f6d76c1
+已在目标仓库提交：0c94a9e
+0c94a9e sync: 自 monorepo 083115ea2ce3 导出（kwl-cp/2）
+1f74db0 sync: 自 monorepo 10d66a014a14 导出（kwl-cp/2）——云端 1.7.0 终版（第 72 批：成员名单带主账号编号、确认人回传、设计令牌）
+d05f2d1 sync: 自 monorepo 3e3fb4a273bf 导出（kwl-cp/2）——云端 1.7.0（第 72 批：一个人多个工作空间、团队邀请与就地升级、团队共享事后确认、模型真实映射、控制台人与组织两主轴）
+v1.8.0
+v1.7.0
+v1.6.0
+  "version": "1.8.0",
+ .../control-plane/test/b73-relay-deploy.test.ts    | 161 ++++++++++++
+ .../control-plane/test/b73-team-roster.test.ts     | 283 +++++++++++++++++++++
+ 23 files changed, 877 insertions(+), 74 deletions(-)
+v1.7.0
+v1.8.0
+0c94a9e sync: 自 monorepo 083115ea2ce3 导出（kwl-cp/2）
+1f74db0 sync: 自 monorepo 10d66a014a14 导出（kwl-cp/2）——云端 1.7.0 终版（第 72 批：成员名单带主账号编号、确认人回传、设计令牌）

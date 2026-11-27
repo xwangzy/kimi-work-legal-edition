@@ -1,0 +1,46 @@
+== 虚机：中继数据目录
+/var/lib/kwl/relay
+/var/lib/kwl/relay/instance
+/var/lib/kwl/relay/t
+/var/lib/kwl/relay/t/ten_ab73drill
+/var/lib/kwl/relay/t/ten_ab73drill/journal.jsonl
+/var/lib/kwl/relay/t/ten_ab73drill/m
+44K	/var/lib/kwl/relay
+== 虚机：中继访问日志（白名单字段）
+access-2026-11-27.jsonl
+== 访问日志里 role=relay 的行（白名单字段，不含内容）
+{"at":"2026-11-27T16:36:48.385Z","role":"relay","method":"GET","path":"/readyz","status":200,"latency_ms":0,"client_request_id":null,"net":"127.0.0.0/24"}
+{"at":"2026-11-27T16:37:06.218Z","role":"relay","method":"GET","path":"/readyz","status":200,"latency_ms":0,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:41:41.484Z","role":"relay","method":"POST","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/have","status":200,"latency_ms":1,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:41:41.486Z","role":"relay","method":"PUT","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/chunks/b45b62eebf8b4c67df3f342b9593707b4d9d44e654cd4bb549ff01faa44697a1","status":200,"latency_ms":2,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:41:41.489Z","role":"relay","method":"POST","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/segments","status":200,"latency_ms":2,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:41:46.095Z","role":"relay","method":"GET","path":"/v1/relay/changes/0","status":200,"latency_ms":1,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:41:46.097Z","role":"relay","method":"GET","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/segments/0","status":200,"latency_ms":0,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:41:41.477Z","role":"relay","method":"GET","path":"/v1/relay/changes/0/wait","status":200,"latency_ms":25017,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:42:06.497Z","role":"relay","method":"GET","path":"/v1/relay/changes/1","status":200,"latency_ms":1,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:42:06.704Z","role":"relay","method":"GET","path":"/v1/relay/changes/1/wait","status":200,"latency_ms":25015,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:42:31.926Z","role":"relay","method":"GET","path":"/v1/relay/changes/1/wait","status":200,"latency_ms":25016,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:04.465Z","role":"relay","method":"GET","path":"/v1/relay/changes/0","status":200,"latency_ms":0,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:04.466Z","role":"relay","method":"GET","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/chunks/b45b62eebf8b4c67df3f342b9593707b4d9d44e654cd4bb549ff01faa44697a1","status":200,"latency_ms":1,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:04.468Z","role":"relay","method":"GET","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/segments/0","status":200,"latency_ms":1,"client_request_id":null,"net":"192.168.64.0/24"}
+== 中继登记日志行数与段类型（只列字段名，不含内容）
+1 /var/lib/kwl/relay/t/ten_ab73drill/journal.jsonl
+{"seq":1,"mid":"mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec","sid":"seg_dev_ab73drill_ab73drill_mwz7l2lg_82c1ec76","dev":"dev_ab73drill_ab73drill","uid":"usr_ab73drill_ab73drill","sha":"b45b62eebf8b4c67df3f342b9593707b4d9d44e654cd4bb549ff01faa44697a1","size":12531,"chunks":["b45b62eebf8b4c67df3f342b9593707b4d9d44e654cd4bb549ff01faa44697a1"],"blobs":[],"epoch":1,"readers":["dev_ab73drill_ab73drill","d
+
+mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec
+{"at":"2026-11-27T16:43:35.380Z","role":"relay","method":"POST","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/have","status":200,"latency_ms":0,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:35.381Z","role":"relay","method":"PUT","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/chunks/65e66bf9365f54108098f8a82591c1243864d3e76cc18c36d0ac20fe29254432","status":200,"lat
+{"at":"2026-11-27T16:43:35.383Z","role":"relay","method":"POST","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/have","status":200,"latency_ms":0,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:35.384Z","role":"relay","method":"PUT","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/chunks/d7686925e63db791ef45c604a223ff252b9e8e4c8f59fa9778002e82858547b6","status":200,"lat
+{"at":"2026-11-27T16:43:35.386Z","role":"relay","method":"POST","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/segments","status":200,"latency_ms":1,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:35.388Z","role":"relay","method":"GET","path":"/v1/relay/changes/1","status":200,"latency_ms":0,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:35.388Z","role":"relay","method":"GET","path":"/v1/relay/changes/1","status":200,"latency_ms":0,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:35.389Z","role":"relay","method":"GET","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/chunks/d7686925e63db791ef45c604a223ff252b9e8e4c8f59fa9778002e82858547b6","status":200,"lat
+{"at":"2026-11-27T16:43:35.389Z","role":"relay","method":"GET","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/segments/0","status":200,"latency_ms":0,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:35.391Z","role":"relay","method":"GET","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/chunks/65e66bf9365f54108098f8a82591c1243864d3e76cc18c36d0ac20fe29254432","status":200,"lat
+{"at":"2026-11-27T16:43:37.283Z","role":"relay","method":"GET","path":"/v1/relay/changes/2","status":200,"latency_ms":1,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:39.700Z","role":"relay","method":"GET","path":"/v1/relay/changes/2","status":200,"latency_ms":0,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:39.701Z","role":"relay","method":"GET","path":"/v1/relay/matters/mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec/segments/1","status":200,"latency_ms":0,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:35.601Z","role":"relay","method":"GET","path":"/v1/relay/changes/2/wait","status":200,"latency_ms":25009,"client_request_id":null,"net":"192.168.64.0/24"}
+{"at":"2026-11-27T16:43:37.486Z","role":"relay","method":"GET","path":"/v1/relay/changes/2/wait","status":200,"latency_ms":25007,"client_request_id":null,"net":"192.168.64.0/24"}
+2 /var/lib/kwl/relay/t/ten_ab73drill/journal.jsonl

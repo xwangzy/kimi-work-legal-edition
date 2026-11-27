@@ -1,0 +1,33 @@
+2026-11-28T00:47:45+08:00
+当前 v1.8.0；记下的上一版本 1f74db0247bce49dbf47e9266c511d337ca5eee7
+64K	/var/lib/kwl/relay
+2 /var/lib/kwl/relay/t/ten_ab73drill/journal.jsonl
+回滚到 1f74db0247bc
+
+added 14 packages in 78ms
+✓ control-plane：healthz 200，readyz 200
+✓ cp-signer：active（mTLS，只许控制面调用，不做 HTTP 探测）
+✓ gateway：healthz 200，readyz 200
+✓ relay：healthz 200，readyz 200
+✓ search：healthz 200，readyz 200
+回滚完成：v1.7.0
+rollback.sh exit=0  耗时 15.383744325 秒
+v1.7.0
+active
+active
+== 回到 1.7.0 后的核对脚本（1.7.0 版）
+✓ device_auto_enroll
+✓ device_signout
+✓ account_switch
+✓ workspaces
+✓ team_invites
+✓ team_member_auto_enroll
+✓ onboarding_state
+✓ catalog_epoch
+✓ device_share_confirm
+verify exit=0
+== 1.7.0 上 /v1/team/roster（应 404：1.7.0 没有这个接口）
+401
+== 中继数据不动
+64K	/var/lib/kwl/relay
+2 /var/lib/kwl/relay/t/ten_ab73drill/journal.jsonl

@@ -1,5 +1,5 @@
 {
-  "$comment": "交给客户端团队的说明文件样例（客户端仓库 scripts/make-release-config.mjs --spec 读它）。不含机密：地址、备份公钥、公钥表。端口按部署手册单机布局；多机时可都用 443。没有域名时地址写 https://<公网 IP>:8443 等，服务器上 /etc/kwl/public/client-inputs/ 有按实际地址生成的一份（部署手册 4.5）。v1.8.0 起带共享中继 relay_base（与控制面同一主机名、端口 8446、同一张证书，所以 relay_backup_pins 与控制面的备用钉住相同）；没有它客户端显示“中软还没开通同事之间同步”。",
+  "$comment": "交给客户端团队的说明文件样例（客户端仓库 scripts/make-release-config.mjs --spec 读它）。不含机密：地址、备份公钥、公钥表。端口按部署手册单机布局；多机时可都用 443。没有域名时地址写 https://<公网 IP>:8443 等，服务器上 /etc/kwl/public/client-inputs/ 有按实际地址生成的一份（部署手册 4.5）。v1.8.0 起带共享中继 relay_base（与控制面同一主机名、端口 8446、同一张证书，所以 relay_backup_pins 与控制面的备用钉住相同）；没有它客户端显示“中软还没为本所开通同事之间同步”。",
   "control_plane_base": "https://cp.kwl.example.com:8443",
   "gateway_base": "https://gw.kwl.example.com:8444/v1",
   "search_base": "https://search.kwl.example.com:8445/v1/search",

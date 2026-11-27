@@ -1,0 +1,88 @@
++ date -Is
+2026-11-28T00:33:55+08:00
++ ufw allow 22/tcp
+Rules updated
+Rules updated (v6)
++ ufw default deny incoming
+Default incoming policy changed to 'deny'
+(be sure to update your rules accordingly)
++ ufw default allow outgoing
+Default outgoing policy changed to 'allow'
+(be sure to update your rules accordingly)
++ for p in 80 443 8443 8444 8445
++ ufw allow 80/tcp
+Rules updated
+Rules updated (v6)
++ for p in 80 443 8443 8444 8445
++ ufw allow 443/tcp
+Rules updated
+Rules updated (v6)
++ for p in 80 443 8443 8444 8445
++ ufw allow 8443/tcp
+Rules updated
+Rules updated (v6)
++ for p in 80 443 8443 8444 8445
++ ufw allow 8444/tcp
+Rules updated
+Rules updated (v6)
++ for p in 80 443 8443 8444 8445
++ ufw allow 8445/tcp
+Rules updated
+Rules updated (v6)
++ ufw --force enable
+Firewall is active and enabled on system startup
++ ufw status verbose
+Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+22/tcp                     ALLOW IN    Anywhere                  
+80/tcp                     ALLOW IN    Anywhere                  
+443/tcp                    ALLOW IN    Anywhere                  
+8443/tcp                   ALLOW IN    Anywhere                  
+8444/tcp                   ALLOW IN    Anywhere                  
+8445/tcp                   ALLOW IN    Anywhere                  
+22/tcp (v6)                ALLOW IN    Anywhere (v6)             
+80/tcp (v6)                ALLOW IN    Anywhere (v6)             
+443/tcp (v6)               ALLOW IN    Anywhere (v6)             
+8443/tcp (v6)              ALLOW IN    Anywhere (v6)             
+8444/tcp (v6)              ALLOW IN    Anywhere (v6)             
+8445/tcp (v6)              ALLOW IN    Anywhere (v6)             
+
++ OFF=/root/kwl-offline-b73
++ rm -rf /root/kwl-offline-b73
++ mkdir -p /root/kwl-offline-b73/backup
++ cd /root/kwl-offline-b73
++ umask 077
++ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout internal-ca.key -out internal-ca.crt -days 3650 -subj '/CN=kwl internal CA (b73 drill)'
++ tail -1
+-----
++ mk signer DNS:cp-signer.internal serverAuth
++ openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout signer.key -out signer.csr -subj /CN=signer
++ printf 'subjectAltName=%s\nextendedKeyUsage=%s\n' DNS:cp-signer.internal serverAuth
++ openssl x509 -req -in signer.csr -CA internal-ca.crt -CAkey internal-ca.key -CAcreateserial -days 825 -out signer.crt -extfile signer.ext
++ tail -1
+subject=CN = signer
++ mk cp-api-client URI:spiffe://kwl/stg/cp-api clientAuth
++ openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout cp-api-client.key -out cp-api-client.csr -subj /CN=cp-api-client
++ printf 'subjectAltName=%s\nextendedKeyUsage=%s\n' URI:spiffe://kwl/stg/cp-api clientAuth
++ openssl x509 -req -in cp-api-client.csr -CA internal-ca.crt -CAkey internal-ca.key -CAcreateserial -days 825 -out cp-api-client.crt -extfile cp-api-client.ext
++ tail -1
+subject=CN = cp-api-client
++ ls -l /root/kwl-offline-b73
+total 48
+drwxr-xr-x 2 root root 4096 Nov 28 00:33 backup
+-rw------- 1 root root  660 Nov 28 00:33 cp-api-client.crt
+-rw------- 1 root root  363 Nov 28 00:33 cp-api-client.csr
+-rw------- 1 root root   71 Nov 28 00:33 cp-api-client.ext
+-rw------- 1 root root  241 Nov 28 00:33 cp-api-client.key
+-rw------- 1 root root  627 Nov 28 00:33 internal-ca.crt
+-rw------- 1 root root  241 Nov 28 00:33 internal-ca.key
+-rw------- 1 root root   41 Nov 28 00:33 internal-ca.srl
+-rw------- 1 root root  644 Nov 28 00:33 signer.crt
+-rw------- 1 root root  351 Nov 28 00:33 signer.csr
+-rw------- 1 root root   66 Nov 28 00:33 signer.ext
+-rw------- 1 root root  241 Nov 28 00:33 signer.key

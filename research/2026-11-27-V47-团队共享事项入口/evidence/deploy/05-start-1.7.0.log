@@ -1,0 +1,42 @@
+2026-11-28T00:34:47+08:00
+cp-signer: active
+control-plane: active
+gateway: active
+search: active
+Stopping kwl@control-plane.service - Kimi Work 法律版云端服务 control-plane...
+Stopping kwl@cp-signer.service - Kimi Work 法律版云端服务 cp-signer...
+Stopping kwl@gateway.service - Kimi Work 法律版云端服务 gateway...
+Stopping kwl@search.service - Kimi Work 法律版云端服务 search...
+kwl@search.service: Deactivated successfully.
+Stopped kwl@search.service - Kimi Work 法律版云端服务 search.
+kwl@control-plane.service: Deactivated successfully.
+Stopped kwl@control-plane.service - Kimi Work 法律版云端服务 control-plane.
+kwl@cp-signer.service: Deactivated successfully.
+Stopped kwl@cp-signer.service - Kimi Work 法律版云端服务 cp-signer.
+kwl@gateway.service: Deactivated successfully.
+Stopped kwl@gateway.service - Kimi Work 法律版云端服务 gateway.
+Started kwl@cp-signer.service - Kimi Work 法律版云端服务 cp-signer.
+[cloud-serve] cp-signer 已就绪（https 127.0.0.1:9443）
+Started kwl@control-plane.service - Kimi Work 法律版云端服务 control-plane.
+[cloud-serve] 告警：已允许短信 dry-run（验证码随应答返回、不发短信）——只用于测试与联调部署
+[control-plane] 首个系统管理员：设置码已写入 /var/lib/kwl/control-plane/bootstrap-admin.txt（24 小时内有效）
+[cloud-serve] control-plane 已就绪（https 0.0.0.0:8443）
+Started kwl@gateway.service - Kimi Work 法律版云端服务 gateway.
+[cloud-serve] gateway 已就绪（https 0.0.0.0:8444）
+Started kwl@search.service - Kimi Work 法律版云端服务 search.
+[cloud-serve] search 已就绪（https 0.0.0.0:8445）
+✓ control-plane：healthz 200，readyz 200
+✓ cp-signer：active（mTLS，只许控制面调用，不做 HTTP 探测）
+✓ gateway：healthz 200，readyz 200
+✓ search：healthz 200，readyz 200
+== verify-capabilities（v1.7.0 版）
+✓ device_auto_enroll
+✓ device_signout
+✓ account_switch
+✓ workspaces
+✓ team_invites
+✓ team_member_auto_enroll
+✓ onboarding_state
+✓ catalog_epoch
+✓ device_share_confirm
+exit=0

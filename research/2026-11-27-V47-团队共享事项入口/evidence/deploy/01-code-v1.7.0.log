@@ -1,0 +1,20 @@
++ date -Is
+2026-11-28T00:33:41+08:00
++ rm -rf /srv/kwl-cloud.git
++ git clone -q --bare /tmp/cloud-v170.bundle /srv/kwl-cloud.git
++ git -C /srv/kwl-cloud.git tag
+v1.7.0
++ git clone -q /srv/kwl-cloud.git /opt/kwl/app
+warning: remote HEAD refers to nonexistent ref, unable to checkout
++ cd /opt/kwl/app
+v1.7.0
++ git tag --sort=-creatordate
++ head -3
++ git -c advice.detachedHead=false checkout v1.7.0
+HEAD is now at 1f74db0 sync: 自 monorepo 10d66a014a14 导出（kwl-cp/2）——云端 1.7.0 终版（第 72 批：成员名单带主账号编号、确认人回传、设计令牌）
++ git describe --tags
+v1.7.0
++ grep -E 'zone|synchronized'
++ timedatectl
+                Time zone: Asia/Shanghai (CST, +0800)
+System clock synchronized: yes

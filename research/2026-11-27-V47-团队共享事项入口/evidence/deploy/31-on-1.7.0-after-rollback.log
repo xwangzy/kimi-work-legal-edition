@@ -1,0 +1,21 @@
+## 00:48:13 [5791] team.roster 
+{
+ "available": false,
+ "reason": "not_supported",
+ "fetched_at": null,
+ "members": []
+}
+## 00:48:13 [5792] materials.import {"matter_id":"mat_c98f64f7-2b7a-4771-afc9-7efcde47e0ec","filename":"回滚后-乙补充.txt","data_base64":"5Zue5rua5YiwIDEuNy4wIOS5i+WQju+8jOS5meWGjeihpeS4gOS7ve+8muWvueaWueWbnuWHveimgeeCue+8iOa8lOe7g+eUqOaWh+Wtl++8ieOAggo=","mime":"text/plain"}
+{
+ "document_version_id": "docv_d12a5691-52ae-4d66-b771-0d18a644843f",
+ "parse_version_id": "psv_3a2df30f-c8c3-4760-a7be-f92b2cb9f94b",
+ "quality_flags": [
+  "plain_text"
+ ],
+ "chars": 34,
+ "marking_notice": null,
+ "sha256": "d014c14df8e27ae17ff0be2ca6161f29263ec9d9ea73e8195d09151bcf3e177f",
+ "note": "导入副本进入内容寻址块（不可变）；纠错请上传新版本"
+}
+## 00:48:16 [5791] matters.get → documents
+["回滚后-乙补充.txt","乙补充-运输单据说明.txt"]

@@ -1,0 +1,19 @@
+2026-11-28T00:37:06+08:00
+== 宿主机（macOS）访问虚机：完整校验证书链（演示 CA）+ IP SAN
+8443 readyz: 200
+8444 readyz: 200
+8445 readyz: 200
+8446 readyz: 200
+== 不带演示 CA（只信公共根）应失败
+000 (exit 60)
+== 证书公钥钉住值（SPKI sha256）
+8443  sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=
+8446  sha256/3RV74SdTObU9QnQYzaQpJgTQfTnm9gEsyrXbwwAKGGs=
+== 证书主体
+subject=O=KWL 演示用（非生产）, CN=KWL demo server 192.168.64.2
+issuer=O=KWL 演示用（非生产）, CN=KWL Demo CA 演示用 192.168.64.2
+X509v3 Subject Alternative Name: 
+    IP Address:192.168.64.2
+notAfter=Nov 27 16:34:04 2027 GMT
+== /v1/meta features
+sms_send phone_register phone_reset registration_invites phone_login phone_bind account_switch device_limit_unbind device_name usage_request_ids device_signout device_auto_enroll workspaces team_invites team_member_auto_enroll device_share_confirm onboarding_state catalog_epoch team_roster

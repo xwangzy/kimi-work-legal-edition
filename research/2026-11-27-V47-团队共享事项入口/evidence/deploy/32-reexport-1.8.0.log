@@ -1,0 +1,13 @@
+2026-11-28T00:48:52+08:00
+== 演练中修 upgrade.sh（缺项说明只列真缺的），重新导出并把演练仓库的 v1.8.0 标签移到新提交
+已导出到 /private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal/0d6e0c1f-ceda-4025-9dcf-13a576f15bc5/scratchpad/b73-w1/deploy/cloud-git：238 个文件（改动 2、删除 0）；源提交 8006a4b972afb2e222ac511693293851fc26b435（含未提交改动）
+已在目标仓库提交：6b3576c
+Updated tag 'v1.8.0' (was bb5e715)
+6b3576c sync: 自 monorepo 8006a4b972af（含未提交改动） 导出（kwl-cp/2）
+0c94a9e sync: 自 monorepo 083115ea2ce3 导出（kwl-cp/2）
+1f74db0 sync: 自 monorepo 10d66a014a14 导出（kwl-cp/2）——云端 1.7.0 终版（第 72 批：成员名单带主账号编号、确认人回传、设计令牌）
+ SOURCE.json               |  6 +++---
+ deploy/scripts/upgrade.sh | 18 +++++++++++++-----
+ 2 files changed, 16 insertions(+), 8 deletions(-)
+6b3576c
+6b3576c
