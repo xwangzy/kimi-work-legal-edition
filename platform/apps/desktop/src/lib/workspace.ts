@@ -229,3 +229,14 @@ export function workspaceMenuMeta(w: WorkspaceLike): string | null {
   if (!w.current && w.local_profile === false) return "首次在这台电脑打开";
   return null;
 }
+
+/**
+ * 第 72 批（复测 N2）：成员团队页横幅——按共享通道的真实状态写。没配通道：如实说要所内先配置；配了通道：只说团队共享事项经它加密同步
+ * （事项级“开启共享 / 加同事”的界面本批不做，不承诺入口）；还没取到状态：只写前半句。纯函数。
+ */
+export function teamPrivacyLine(relayConfigured: boolean | null): string {
+  const base = "事项内容只在成员自己的电脑上，管理员看不到";
+  if (relayConfigured === false) return `${base}；团队共享事项需要所内先配置共享通道。`;
+  if (relayConfigured === true) return `${base}；团队共享事项经所内的共享通道在成员电脑之间加密同步。`;
+  return `${base}。`;
+}

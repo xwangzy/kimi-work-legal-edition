@@ -808,8 +808,9 @@ function TeamTab({ ws, mySafety }: { ws: WorkspaceState; mySafety: string | null
         <Offboarding />
         <LeaveTeam ws={ws} />
         <details className="quiet-details account-more">
-          <summary>更多：本机核对码（管理员来电核对时用）</summary>
-          <div>管理员核对你这台电脑时（例如换电脑后重新登记），会请你在电话里读这串数字。</div>
+          {/* 第 72 批（复测 N7）：这是这台电脑密钥的识别码（同事核对公钥变更时用），与申请接收团队共享事项时读的 12 位入组核对码无关——改名“本机识别码”，避免念错 */}
+          <summary>更多：本机识别码（管理员核对这台电脑的密钥变更时用）</summary>
+          <div>这台电脑的密钥换过（例如重装后重新登记）、管理员要核对时，会请你在电话里读这串数字。申请接收团队共享事项时要读的是上面的 12 位入组核对码，不是这一串。</div>
           <SafetyCode code={mySafety} />
           <div className="muted">请在电话里或当面逐组读给对方；对方屏幕上的一致才确认。不要截图转发。</div>
         </details>
@@ -963,7 +964,7 @@ function SafetyCode({ code }: { code: string | null }) {
   if (!code) return <b className="mono safety-code">—</b>;
   const groups = groupDigits(code).split(" ");
   return (
-    <div className="safety-groups" role="group" aria-label="本机核对码">
+    <div className="safety-groups" role="group" aria-label="本机识别码">
       {groups.map((g, i) => (
         <span key={i} className="safety-group">
           <b className="mono">{g}</b>
@@ -1576,17 +1577,17 @@ function PolicyTab() {
       {(st.key_changes ?? []).length > 0 && (
         <>
           <div className="section-title h-sub">有同事换了电脑，请核对后确认</div>
-          <p>请对方读出他“设置 → 团队”里的本机核对码，与他读的一致再确认；确认前他的新电脑收不到事项内容。</p>
+          <p>请对方读出他“设置 → 团队 · 更多”里的本机识别码，与他读的一致再确认；确认前他的新电脑收不到事项内容。</p>
           <table className="data">
-            <thead><tr><th>成员</th><th>设备</th><th>对方读出的本机核对码</th></tr></thead>
+            <thead><tr><th>成员</th><th>设备</th><th>对方读出的本机识别码</th></tr></thead>
             <tbody>
               {st.key_changes!.map((k) => (
                 <tr key={k.device_id}>
                   <td>{k.member_id}</td>
                   <td className="mono" title={k.device_id}>{shortId(k.device_id)}</td>
                   <td>
-                    <input value={codes[k.device_id] ?? ""} onChange={(e) => setCodes({ ...codes, [k.device_id]: e.target.value })} placeholder="请对方读出本机核对码" />
-                    <button className="btn-ghost btn-sm" disabled={busy || !(codes[k.device_id] ?? "").trim()} onClick={() => act(() => api.keyChangeConfirm(k.device_id, codes[k.device_id] ?? ""), "本机核对码一致：已确认他的新电脑")}>核对</button>
+                    <input value={codes[k.device_id] ?? ""} onChange={(e) => setCodes({ ...codes, [k.device_id]: e.target.value })} placeholder="请对方读出本机识别码" />
+                    <button className="btn-ghost btn-sm" disabled={busy || !(codes[k.device_id] ?? "").trim()} onClick={() => act(() => api.keyChangeConfirm(k.device_id, codes[k.device_id] ?? ""), "本机识别码一致：已确认他的新电脑")}>核对</button>
                   </td>
                 </tr>
               ))}

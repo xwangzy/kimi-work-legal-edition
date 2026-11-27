@@ -146,6 +146,14 @@ export function Sidebar({ route }: { route: Route }) {
     const t = setInterval(() => setTick((x) => x + 1), 5000);
     return () => clearInterval(t);
   }, [anyActive]);
+  // 第 72 批（复测 N1）：管理员电脑上“有 n 台电脑等你确认”也按常规周期重取（对方撤回、申请过期时跟着变；内核 60 秒内复用上次结果）。
+  // 在这台电脑上确认 / 拒绝之后由成员页发 notifyDataChanged，即时重取
+  const isAdmin = me?.admin === true;
+  useEffect(() => {
+    if (!isAdmin) return;
+    const t = setInterval(() => setTick((x) => x + 1), 60_000);
+    return () => clearInterval(t);
+  }, [isAdmin]);
   // 窗口标题前缀“(N) ”：N 为等你确认的任务数（任务栏上也能看到）
   const waitingTotal = matters.reduce((n, m) => n + (m.activity?.waiting ?? 0), 0);
   useEffect(() => {

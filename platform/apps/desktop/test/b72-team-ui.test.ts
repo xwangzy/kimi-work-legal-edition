@@ -18,6 +18,7 @@ import {
   shareConfirmLine,
   shareIssuerNote,
   shareNoteVisible,
+  teamPrivacyLine,
   teamErrorText,
   teamNameOk,
   templatesLabel,
@@ -27,7 +28,7 @@ import {
   workspaceMenuMeta,
   workspaceRoleTag,
 } from "../src/lib/workspace.ts";
-import { adminErrorText, devicesCell, MEMBER_DEVICE_POLICY, twelveDigits, memberActions, memberMenu, memberStatus, removeLines, sameCheckCode, seatSummary, splitInvites, upgradeTitle, type TeamMemberRow } from "../src/lib/team-admin.ts";
+import { adminErrorText, devicesCell, joinHelpText, MEMBER_DEVICE_POLICY, twelveDigits, memberActions, memberMenu, memberStatus, removeLines, sameCheckCode, seatSummary, splitInvites, upgradeTitle, type TeamMemberRow } from "../src/lib/team-admin.ts";
 import { deviceLimitOf, switchOutcome, waitForProfileSwitch } from "../src/lib/account-switch.ts";
 
 const src = (p: string) => readFileSync(fileURLToPath(new URL(`../src/${p}`, import.meta.url)), "utf8");
@@ -361,9 +362,47 @@ test("补测 D2 / D4 / D9 / D6：团队共享处两条提示不同时出现、�
   assert.match(ts, /notifyWorkspaceChanged\(\)/, "已可接收后让工作空间状态重取（不再停在“正在重新载入…”）");
   assert.match(ts, /team\.deviceShare\.dismiss\(\)/, "被拒后可点“知道了”");
   const ma = read("../src/components/MembersAdmin.tsx");
-  assert.match(ma, /r\.kind === "upgrade" \? <td className="muted members-code-hint">请让对方读出他屏幕上的 12 位入组核对码/);
+  assert.match(ma, /r\.kind === "upgrade" \? \(\s*<td colSpan=\{2\}>/, "升级行：说明、输入框与按钮合在一格，不显示号码");
+  assert.match(ma, /<span className="muted members-code-label">请让对方读出他屏幕上的 12 位入组核对码，填在这里：<\/span>/);
   assert.doesNotMatch(ma.slice(ma.indexOf("function UpgradeConfirm("), ma.indexOf("export function PendingDevices(")), /r\.check_code/, "升级行不拿本机核对码比");
   assert.match(ma, /<td className="members-nowrap">\{ROLE_LABEL\[r\.role\] \?\? r\.role\}<\/td>/);
   assert.match(read("../src/styles-team.css"), /\.members-table \.members-nowrap \{ white-space: nowrap; \}/);
   assert.doesNotMatch(read("../src/components/TeamSpace.tsx"), /在事项里开启团队共享/);
+});
+
+test("复测 N1～N7：侧栏计数即时与周期重取；横幅按共享通道真实状态；核对码输入框留足宽度；表头与说明两种行都成立；错误写在出错那一行；本机识别码改名", () => {
+  const read = (f: string) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8");
+  // N1：确认 / 拒绝成功后通知侧栏；侧栏对管理员另按 60 秒周期重取
+  const ma = read("../src/components/MembersAdmin.tsx");
+  assert.equal((ma.match(/notifyDataChanged\(\);/g) ?? []).length, 2, "成员页与电脑待确认两处 act 都通知");
+  const sb = read("../src/components/Sidebar.tsx");
+  assert.match(sb, /if \(!isAdmin\) return;\s*const t = setInterval\(\(\) => setTick\(\(x\) => x \+ 1\), 60_000\);/);
+  // N2：没配通道照旧；配了通道不再说“需要配置”，也不承诺事项里的入口；不知道时只写前半句
+  assert.match(teamPrivacyLine(false), /需要所内先配置共享通道/);
+  assert.doesNotMatch(teamPrivacyLine(true), /需要|配置|在事项里|开启/);
+  assert.match(teamPrivacyLine(true), /经所内的共享通道在成员电脑之间加密同步/);
+  assert.equal(teamPrivacyLine(null), "事项内容只在成员自己的电脑上，管理员看不到。");
+  assert.match(read("../src/components/TeamSpace.tsx"), /<span>\{teamPrivacyLine\(relayOn\)\}<\/span>/);
+  // N4：等宽、按 15 个字符留宽，占位写号码的样子
+  const css = read("../src/styles-team.css");
+  assert.match(css, /\.members-code-input \{ font-family: var\(--font-mono\);[^}]*width: 15\.5ch;[^}]*max-width: calc\(100% - 16px\)/);
+  assert.match(ma, /placeholder="000 000 000 000"/);
+  // N5：表头与说明对两种行都成立
+  assert.match(ma, /<th>入组核对码（请对方读出他屏幕上的号码）<\/th>/);
+  // 旧的入组申请行仍显示号码，它的确认框照旧说“与这里逐位对照”；表头与表下说明不再这样写
+  assert.doesNotMatch(ma, /一致再批准）<\/th>|批准前，请先电话或当面联系对方，请他读出自己屏幕上的入组核对码，与这里逐位对照/);
+  assert.match(joinHelpText(true, false), /与这一行显示的号码逐位对照/);
+  assert.doesNotMatch(joinHelpText(true, false), /不显示号码/);
+  assert.match(joinHelpText(false, true), /这里不显示号码，把对方读出的数字填进这一行/);
+  assert.doesNotMatch(joinHelpText(false, true), /显示的号码逐位对照/);
+  assert.ok(/逐位对照/.test(joinHelpText(true, true)) && /不显示号码/.test(joinHelpText(true, true)));
+  // N6：升级行的错误写在本行、role=alert
+  const uc = ma.slice(ma.indexOf("function UpgradeConfirm("), ma.indexOf("export function PendingDevices("));
+  assert.match(uc, /members\.approve\(r\.id, typedDigits\),[\s\S]{0,120}?, setRowErr\)/);
+  assert.match(uc, /className="activate-error members-row-error" role="alert"/);
+  // N7：页底那串改名“本机识别码”，并写明不是入组核对码
+  const c = read("../src/pages/Connections.tsx").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(c, /本机核对码/);
+  assert.match(c, /<summary>更多：本机识别码（管理员核对这台电脑的密钥变更时用）<\/summary>/);
+  assert.match(c, /要读的是上面的 12 位入组核对码，不是这一串/);
 });

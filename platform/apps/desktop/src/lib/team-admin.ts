@@ -166,3 +166,11 @@ export function adminErrorText(e: unknown): string {
   return teamErrorText(e, ADMIN_ERROR_TEXT);
 }
 
+/** 复测 N5：电脑待确认表下的说明——按表里有哪几种申请写，两种都有时两句都写。纯函数。 */
+export function joinHelpText(hasJoin: boolean, hasUpgrade: boolean): string {
+  const parts = ["确认前，请先电话或当面联系对方，请他读出自己屏幕上的 12 位入组核对码。"];
+  if (hasJoin) parts.push("入组申请：与这一行显示的号码逐位对照，一致再批准。");
+  if (hasUpgrade) parts.push("接收团队共享事项的申请：这里不显示号码，把对方读出的数字填进这一行，由这台电脑逐位核对。");
+  parts.push("号码对不上？不要确认，点“拒绝”，并联系 Kimi Work 客服。");
+  return parts.join("");
+}

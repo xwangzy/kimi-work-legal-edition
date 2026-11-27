@@ -446,6 +446,23 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       slog.event("KERNEL_ACCOUNT_MARK_FAILED", errFields(e));
     }
   };
+  /** 第 72 批（复测 N8）：应答里当前工作空间（同一租户）的名称与本机激活记录不同 → 改写 activation.json 与本档案的 profile.json，内存里随即生效。 */
+  const noteFirmName = (j: unknown): void => {
+    const ws = (j as { workspace?: { tid?: unknown; name?: unknown } } | null)?.workspace;
+    const act = config.activation;
+    if (!act || !ws || ws.tid !== act.tid || typeof ws.name !== "string") return;
+    const name = ws.name.replace(/\s+/g, " ").trim();
+    // 云端没记名称时回的是租户编号的后半：不拿它覆盖本机记的名称
+    if (!name || name.length > 80 || /[\u0000-\u001f\u007f]/.test(name) || name === act.firm_name || name === act.tid.slice(4)) return;
+    try {
+      (act as { firm_name: string }).firm_name = name;
+      writeActivationFile(config.dataRoot, act);
+      writeProfile(config.dataRoot, act);
+      slog.event("KERNEL_FIRM_NAME_SYNCED", {});
+    } catch {
+      slog.event("KERNEL_FIRM_NAME_SYNC_FAILED", {});
+    }
+  };
   const accountDeps = {
     session: () => accountSession,
     last: () => lastAccount,
@@ -512,6 +529,9 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     noteMeta: (j: unknown): void => {
       const m = accountMetaOf(j);
       if (m) accountMeta = writeAccountMeta(config.workspaceDir, accountMeta, m);
+      // 第 72 批（复测 N8）：本机记的律所 / 工作室名称跟着云端当前工作空间走（升级为团队并改名、团队改名后）——
+      // 对外文书的署名与页眉（doc_style）、修订作者、恢复包名称、成员入组核对都读它；只认同一租户的应答
+      noteFirmName(j);
     },
     switchTo: (j: Record<string, unknown>): Record<string, unknown> => {
       const acc = (j.account ?? {}) as Record<string, any>;

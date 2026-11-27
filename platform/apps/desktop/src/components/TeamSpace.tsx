@@ -11,7 +11,7 @@ import { nav } from "../App.tsx";
 import { fmtPct } from "../lib/firm-usage.ts";
 import { offboardingSummary } from "../lib/offboarding.ts";
 import { personalView } from "../lib/personal-usage.ts";
-import { formatInviteCode, inviteCodeComplete, KIND_LABEL, leaveLines, teamErrorText, teamNameOk, upgradeLines, workspaceRoleTag, WS_ROLE_LABEL } from "../lib/workspace.ts";
+import { formatInviteCode, inviteCodeComplete, KIND_LABEL, leaveLines, teamErrorText, teamNameOk, teamPrivacyLine, upgradeLines, workspaceRoleTag, WS_ROLE_LABEL } from "../lib/workspace.ts";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { SettingRow } from "./SettingRow.tsx";
@@ -234,8 +234,15 @@ function JoinTeam() {
 /** 设置 · 团队的页首：团队名称、我的角色、名额与用量（只读）。children 放本所识别码等折叠项。 */
 export function TeamHeader({ ws, children }: { ws: WorkspaceState; children?: ReactNode }) {
   const [q, setQ] = useState<QuotaStatus | null>(null);
+  // 复测 N2：横幅按共享通道的真实状态写（没配通道才说“需要配置”）
+  const [relayOn, setRelayOn] = useState<boolean | null>(null);
   useEffect(() => {
     api.quotaStatus().then(setQ).catch(() => setQ(null));
+    if (!ws.features.teamRead)
+      api
+        .relayStatus()
+        .then((r) => setRelayOn(!r ? null : r.blocked === "not_configured" ? false : r.blocked === null ? true : null))
+        .catch(() => setRelayOn(null));
   }, []);
   const cur = ws.list?.current ?? null;
   const name = cur?.name ?? "本团队";
@@ -271,7 +278,7 @@ export function TeamHeader({ ws, children }: { ws: WorkspaceState; children?: Re
       {!ws.features.teamRead && (
         <p className="team-privacy" role="note">
           {Icon.lock()}
-          <span>事项内容只在成员自己的电脑上，管理员看不到；团队共享事项需要所内先配置共享通道。</span>
+          <span>{teamPrivacyLine(relayOn)}</span>
         </p>
       )}
       {children}

@@ -133,10 +133,15 @@
 .share-confirm { margin-top: var(--sp-2); color: var(--text-primary); }
 .share-confirm p { margin: 0 0 var(--sp-1); }
 .share-confirm .members-check { font-size: var(--fs-body); color: var(--text-primary); margin-right: var(--sp-2); }
-.members-code-input { width: 17ch; max-width: 100%; letter-spacing: 0.04em; }
+/* 复测 N4：按 15 个等宽字符（000 000 000 000）留宽，占位与输入都看得全；窄屏不溢出 */
+.members-code-input { font-family: var(--font-mono); font-variant-numeric: tabular-nums; box-sizing: content-box; width: 15.5ch; max-width: calc(100% - 16px); padding-inline: 8px; }
+.members-row-error { flex-basis: 100%; }
 /* 补测 D9：电脑待确认表在宽屏下“角色”“申请时间”被挤成竖排——这两列不折行；说明列可折行；已申请等状态块用中性底色（不再与橙色提示并列） */
 .members-table .members-nowrap { white-space: nowrap; }
-.members-table .members-code-hint { min-width: 14em; }
+.members-table .members-name { min-width: 9em; }
+.members-table .members-time { min-width: 6em; }
+.members-upgrade { align-items: center; }
+.members-code-label { flex-basis: 100%; }
 .share-confirm-box { margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--bg-muted); border: 1px solid var(--border-subtle); font-size: var(--fs-caption); line-height: 1.6; }
 .share-confirm-box p:last-child { margin-bottom: 0; }
 

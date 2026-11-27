@@ -66,7 +66,14 @@ test("申请 → 管理员核对核对码后确认 → 管理员本机设备表�
   let kb = await registerOn(dirB, "b-u2k@example.cn", "乙律师");
   assert.equal(((await kb.invoke("workspace.upgrade", { name: "乙律师事务所" })) as any).ok, true);
   assert.equal(((await kb.invoke("kernel.status")) as any).device_issuer, "firm_root", "开通团队的那台电脑是律所根签发的");
+  // 复测 N8：升级并改名后，本机记的律所名称随之改为团队名（对外文书署名 doc_style、修订作者、恢复包名称都读它），重启后仍是新名
+  assert.equal(((await kb.invoke("kernel.status")) as any).firm_name, "乙律师事务所");
+  assert.equal(((await kb.invoke("doc_style.get")) as any).firm_name, "乙律师事务所");
   const inv = (await kb.invoke("team.invites.create", { name: "甲律师", role: "lawyer" })) as any;
+  await close(kb);
+  kb = await boot(dirB);
+  assert.equal(((await kb.invoke("kernel.status")) as any).firm_name, "乙律师事务所", "重启后仍是新名（activation.json 已改写）");
+  assert.equal(((await kb.invoke("kernel.status")) as any).activation?.firm?.name, "乙律师事务所", "侧栏读的激活信息同为新名");
   await close(kb);
 
   // ── 甲：个人工作室 → 接受邀请 → 团队空间档案（账号签发钥直接登记）──

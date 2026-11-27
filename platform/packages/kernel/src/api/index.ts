@@ -4444,7 +4444,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (!deps.governance) throw notFound("公钥变更");
       const r = deps.governance.confirmKeyChange(String(p?.device_id ?? ""), String(p?.safety_code ?? ""), id.userId);
       if (!r.ok) throw validation(r.reason);
-      return { ok: true, note: "已核对本机核对码，换用对方电脑的新密钥：此后本机交给这台电脑的事项密钥用新密钥加密" };
+      return { ok: true, note: "已核对本机识别码，换用对方电脑的新密钥：此后本机交给这台电脑的事项密钥用新密钥加密" };
     },
 
     // ─── 设备与密钥纪元（§5.3：吊销设备证书 → tenant 纪元递增；撤权校验不依赖时钟） ───
@@ -5651,7 +5651,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (!(await has("workspaces"))) return unsupported();
         const j = await accountCp(() => cp.account("POST", "/v1/workspace/upgrade", { name }));
         // 本机状态随即改为团队（界面据 workspace_kind 显示团队功能）；许可与策略随下一次同步更新，这里立即同步一次
-        deps.account?.noteMeta?.({ workspace: { kind: kindOf((j.workspace as { kind?: unknown } | undefined)?.kind) ?? "team" } });
+        // 第 72 批（复测 N8）：连同新名称一起记下（本机律所名称随之改为团队名，对外文书署名等读它）
+        deps.account?.noteMeta?.({ workspace: { kind: kindOf((j.workspace as { kind?: unknown } | undefined)?.kind) ?? "team", tid: id.tenantId, name: typeof (j.workspace as { name?: unknown } | undefined)?.name === "string" ? (j.workspace as { name: string }).name : name } });
         audit(db, id, "workspace.upgrade_team", "tenant", id.tenantId, sha256Hex(name), keyctx);
         void cp.sync().catch(() => undefined);
         return { ok: true, ...(j.workspace && typeof j.workspace === "object" ? { workspace: j.workspace } : {}) };

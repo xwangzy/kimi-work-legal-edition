@@ -63,6 +63,9 @@ export const EVENTS = {
   KERNEL_SHARE_CONFIRM_APPLY_FAILED: { level: "warn", fields: { reason: ["own_row_mismatch", "db"] } },
   // 管理员电脑确认之后（云端已批准）写本机成员记录失败：照常审计与同步，不把数据库错误给律师看
   KERNEL_SHARE_APPROVE_LOCAL_FAILED: { level: "warn", fields: {} },
+  // 第 72 批（复测 N8）：本机律所 / 工作室名称随云端当前工作空间改名（写入成功 / 失败）
+  KERNEL_FIRM_NAME_SYNCED: { level: "info", fields: {} },
+  KERNEL_FIRM_NAME_SYNC_FAILED: { level: "warn", fields: {} },
   // 第 68 批（D-294）：同一台电脑上切换账号档案（只记去向种类与失败原因，不记账号与目录名）
   KERNEL_PROFILE_SWITCH: { level: "info", fields: { to: ["existing", "enroll"] } },
   KERNEL_PROFILE_WRITE_FAILED: { level: "warn", fields: ERR },
