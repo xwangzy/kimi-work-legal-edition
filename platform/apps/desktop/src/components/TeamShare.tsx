@@ -4,7 +4,7 @@
  * “重新同步成员名单”（原“本机重新引导”）只给管理员与事项负责人，用原位两步确认（不再用浏览器原生确认框）。
  */
 import { useEffect, useState } from "react";
-import { api, team, teamMatters, type DeviceShareStatus, type RelayStatus } from "../api.ts";
+import { api, team, teamMatters, type DeviceShareStatus, type MatterSync, type RelayStatus } from "../api.ts";
 import { shareConfirmLine, shareIssuerNote, shareNoteVisible } from "../lib/workspace.ts";
 import { notifyWorkspaceChanged } from "./WorkspaceSwitch.tsx";
 import { canResyncMembers, credentialNoSeat, relayErrorText, syncAlertAction, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
@@ -23,6 +23,9 @@ import { useRoster } from "./TeamMatter.tsx";
  */
 export function TeamShare({ admin = false, note = null, canEnable = false, relayRowAbove = false }: { admin?: boolean; note?: string | null; canEnable?: boolean; relayRowAbove?: boolean }) {
   const [st, setSt] = useState<RelayStatus | null>(null);
+  // 10b 复测 P3-B：打开团队页时 team.refresh_share_state 返回的 sync（含 no_seat，与事项成员页同一来源）——名额刚被释放时中继凭据还没报错，
+  // 只看 relay.status 会在 1～6 分钟里仍写“已可接收 · 已开通 [立即同步]”
+  const [shareSync, setShareSync] = useState<MatterSync | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   // 起点不同的事项：本人是否负责人（负责人也可以重新同步成员名单）
@@ -32,7 +35,11 @@ export function TeamShare({ admin = false, note = null, canEnable = false, relay
     load();
     const t = setInterval(load, 15_000);
     // 第 73 批（实拍补）：打开团队页时让内核看一眼所内规则是否刚放开（只这一次、不轮询；内核另有 60 秒节流，已开通不同步）；放开了就立即重读这一行
-    void teamMatters.refreshShareState().then((r) => r?.refreshed && load());
+    void teamMatters.refreshShareState().then((r) => {
+      if (!r) return;
+      setShareSync(r.sync);
+      if (r.refreshed) load();
+    });
     return () => clearInterval(t);
   }, []);
   const alerts = st?.alerts ?? [];
@@ -55,7 +62,9 @@ export function TeamShare({ admin = false, note = null, canEnable = false, relay
   // 设计评分第四轮：“管理员已确认这台电脑”与“所内已开通同事之间同步”是两个条件——按真实状态写进同一句（lib/workspace.ts shareReadyText）
   const relay: boolean | null = relayReady(st);
   // 第二轮复评 T13（43）：没有 AI 使用名额——“已确认”不打对勾、与“用不了”合成一句，“立即同步”藏起来（按了也没用）
-  const noSeat = credentialNoSeat(st);
+  // 同事名单里“我”没有名额（云端现取，事项成员页也按它说）——名额刚被释放时比中继凭据报错早知道
+  const meNoSeat = roster?.members.some((m) => m.is_me && m.seat === false) ?? false;
+  const noSeat = credentialNoSeat(st) || shareSync === "no_seat" || meNoSeat;
   // note 只说明“这台电脑是直接登录的团队电脑”（管理员自己的这类电脑另有写法）；句子按同步状态重出
   const noteText = note ? shareIssuerNote("account_ca", "team", note === shareIssuerNote("account_ca", "team", true), relay) : null;
   const shareBlock = noteText ? (
@@ -143,7 +152,7 @@ export function TeamShare({ admin = false, note = null, canEnable = false, relay
       <div>
         {noteLine}
         {/* 上面那句已经写了“所内开通同事之间同步后…”时不再重复 */}
-        {!(relay === false && noteLine) && !(noSeat && confirmedHere) && <span>{teamShareLine(st)}</span>}
+        {!(relay === false && noteLine) && !(noSeat && confirmedHere) && <span>{teamShareLine(noSeat ? { ...st, credential_error: "credential_no_seat" } : st)}</span>}
         {enableLink}
         {alerts.map((a) => (
           <div key={`${a.matter_id}-${a.kind}-${a.epoch}`} className="sync-alert">

@@ -181,6 +181,15 @@ export function MatterPage({ matterId }: { matterId: string }) {
       live = false;
     };
   }, [matterId, teamShared, membersTick]);
+  // 10b 复测 P3-A：事项页得知负责人已把我移出（matters.get 或成员页向同步服务核对）时，通知侧栏 / 事项列表重取，
+  // “团队共享”记号立刻换成“已移出”（原来要整页重开）；同一事项只通知一次
+  const removedSeen = !!matter?.removed_me || members?.removed_me === true || members?.sync === "removed";
+  const removedNotified = useRef<string | null>(null);
+  useEffect(() => {
+    if (!removedSeen || removedNotified.current === matterId) return;
+    removedNotified.current = matterId;
+    notifyDataChanged();
+  }, [removedSeen, matterId]);
   // 第 73 批（实拍补）：事项成员页上方是“所内还没开通 / 不知道”时问一次内核（带 matter_id，每次打开这个事项至多一次，不轮询；内核另有 60 秒节流）；
   // 规则刚放开就把那句换掉
   const shareAsked = useRef<string | null>(null);

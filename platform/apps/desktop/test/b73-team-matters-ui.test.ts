@@ -603,7 +603,7 @@ test("接线：设置 → 团队 → 团队策略首行“同事之间同步”�
   assert.match(rr, /if \(s === null && roster\?\.reason !== "not_supported"\) return null;/, "旧内核没有这个方法时整行不出现（云端要升级时仍如实说）");
   const ts = code("components/TeamShare.tsx");
   assert.match(ts, /canEnable && st\?\.blocked === "not_allowed" && !st\.policy_fallback/);
-  assert.match(ts, /\{!\(relay === false && noteLine\) && !\(noSeat && confirmedHere\) && <span>\{teamShareLine\(st\)\}<\/span>\}/, "同一页不重复“所内没开通”“没有名额”");
+  assert.match(ts, /\{!\(relay === false && noteLine\) && !\(noSeat && confirmedHere\) && <span>\{teamShareLine\(noSeat \? \{ \.\.\.st, credential_error: "credential_no_seat" \} : st\)\}<\/span>\}/, "同一页不重复“所内没开通”“没有名额”");
 });
 
 test("实拍补（内核 team.refresh_share_state）：提示可见时各问一次、不轮询——团队页打开、事项成员页（带 matter_id）、表单里“所内还没开通”那句；只在没开通 / 不知道时问", () => {
@@ -611,7 +611,7 @@ test("实拍补（内核 team.refresh_share_state）：提示可见时各问一�
   for (const s of ["ok", "pending", "unreachable", "not_configured", null, undefined] as const) assert.equal(needsShareRefresh(s), false, String(s));
   // 团队页：挂载时一次（在 15 秒轮询之外），放开了就立即重读
   const ts = code("components/TeamShare.tsx");
-  assert.match(ts, /const t = setInterval\(load, 15_000\);\s*void teamMatters\.refreshShareState\(\)\.then\(\(r\) => r\?\.refreshed && load\(\)\);/);
+  assert.match(ts, /const t = setInterval\(load, 15_000\);\s*void teamMatters\.refreshShareState\(\)\.then\(\(r\) => \{\s*if \(!r\) return;\s*setShareSync\(r\.sync\);\s*if \(r\.refreshed\) load\(\);\s*\}\);/);
   assert.doesNotMatch(ts, /setInterval\([^)]*refreshShareState/, "不轮询");
   // 事项成员页：带 matter_id，每次打开这个事项至多一次，拿到的 sync 直接换掉那句
   const mt = code("pages/Matter.tsx");
@@ -767,7 +767,7 @@ test("协调方口径 ②：云端还没有同事名单能力（team.roster 回 
   assert.match(rr, /\{s === undefined && row\.state !== "upgrade" \? \(/);
   const ts = code("components/TeamShare.tsx");
   assert.match(ts, /if \(roster\?\.reason === "not_supported"\)\s*return relayRowAbove \? null : \(\s*<div className="device-row">\s*<div className="device-k">团队共享<\/div>\s*<div>\s*<span>\{TEAM_SHARE_UNAVAILABLE_TEXT\}。<\/span>/, "11c 43u：普通成员看到“团队共享暂时用不了，不影响只有我的事项”；管理员上面已有升级说明，不重复");
-  assert.ok(ts.indexOf('roster?.reason === "not_supported"') < ts.indexOf("teamShareLine(st)"), "在同步状态、出错句之前截住（不说“暂时连不上”，不给申请 / 立即同步）");
+  assert.ok(ts.indexOf('roster?.reason === "not_supported"') < ts.indexOf("teamShareLine("), "在同步状态、出错句之前截住（不说“暂时连不上”，不给申请 / 立即同步）");
   const mt = code("pages/Matter.tsx");
   assert.match(mt, /const offerBase = !!matter && !teamShared && canOfferShare\(teamKind, matter\);\s*const offerRoster = useRoster\(offerBase\);\s*const offerShare = offerBase && canOfferShare\(teamKind, matter!, offerRoster\);/);
   const nm = code("components/NewMatter.tsx");
@@ -997,4 +997,13 @@ test("11c 第三轮：只读事项概览不留伪操作；材料表窄宽度不�
 
 test("11c T8（20b）：续期 / 开通后通知侧栏重读到期提醒", () => {
   assert.match(code("components/ShareRelayRow.tsx"), /window\.dispatchEvent\(new Event\(SHARE_RELAY_CHANGED\)\);\s*notifyDataChanged\(\);/);
+});
+
+test("10b 复测 P3-A / P3-B：事项页得知被移出即通知侧栏重取；团队页没有名额与事项成员页同一来源（refresh_share_state 的 sync）", () => {
+  const mt = code("pages/Matter.tsx");
+  assert.match(mt, /const removedSeen = !!matter\?\.removed_me \|\| members\?\.removed_me === true \|\| members\?\.sync === "removed";/);
+  assert.match(mt, /if \(!removedSeen \|\| removedNotified\.current === matterId\) return;\s*removedNotified\.current = matterId;\s*notifyDataChanged\(\);/, "同一事项只通知一次");
+  const ts = code("components/TeamShare.tsx");
+  assert.match(ts, /const meNoSeat = roster\?\.members\.some\(\(m\) => m\.is_me && m\.seat === false\) \?\? false;\s*const noSeat = credentialNoSeat\(st\) \|\| shareSync === "no_seat" \|\| meNoSeat;/);
+  assert.doesNotMatch(ts, /setInterval\([^)]*refreshShareState/, "仍不轮询");
 });
