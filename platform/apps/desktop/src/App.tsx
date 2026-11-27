@@ -152,8 +152,8 @@ export function parseHash(hash: string): Route {
 }
 
 /**
- * 冷启动等待（第 51 批）：Kimi 蓝点 + “正在启动…” + 已用时间。原来只有一行静态字“第一次打开需要十几秒”，
- * 等过了十几秒文案不变，像是卡住了；超过 30 秒改说“比平时慢、请不要关闭”，并说明启动不起来时这里会给“重试”（lib/boot-gate.ts 退避约两分钟后判失败）。
+ * 冷启动等待（第 51 批）：Kimi 蓝点 + “正在启动…” + 已用时间；超过 30 秒改说“比平时慢、请不要关闭”，并说明启动不起来时这里会给“重试”（lib/boot-gate.ts 退避约两分钟后判失败）。
+ * 第 72 批（Windows 实机）：去掉写死的耗时承诺（原副标题是一句固定的“第一次打开要多久”），只说在做什么；耗时由已用时间如实显示。
  */
 function BootWait({ since }: { since: number }) {
   const long = waitLevel(useElapsed(since)) === "long";
@@ -162,7 +162,7 @@ function BootWait({ since }: { since: number }) {
       variant="page"
       title="正在启动…"
       since={since}
-      {...(long ? {} : { hint: "第一次打开需要十几秒。" })}
+      {...(long ? {} : { hint: "正在打开本机加密账本与法规库。" })}
       longHint="这次启动比平时慢，请不要关闭应用；一直启动不起来时，这里会给出“重试”。"
     />
   );

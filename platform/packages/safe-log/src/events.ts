@@ -72,7 +72,8 @@ export const EVENTS = {
   KERNEL_PROFILE_SESSION_HANDOFF: { level: "info", fields: {} },
   KERNEL_PROFILE_SESSION_HANDOFF_FAILED: { level: "warn", fields: { "reason?": ["mismatch"], ...ERR } },
   // 第 54 批：激活后删不掉待激活占位工作区（Windows 上有文件仍被占用）——不再让内核启动失败，下次启动再删
-  KERNEL_PENDING_WORKSPACE_LEFT: { level: "warn", fields: { reason: ["busy", "perm", "other"] } },
+  // 第 72 批（Windows 实机）：启动路径上只改名挪开（step rename），删除改在后台（step trash）；entry 记挡住删除的是哪类文件（不记路径）
+  KERNEL_PENDING_WORKSPACE_LEFT: { level: "warn", fields: { reason: ["busy", "perm", "other"], "step?": ["rename", "trash"], "entry?": ["ledger", "logs", "keys", "root", "other"] } },
   /** 我方账号（第 44 批）：只记原因代码，不记邮箱、密码与令牌。 */
   KERNEL_ACCOUNT_CALL_FAILED: { level: "warn", fields: { reason: "ident" } },
   KERNEL_ACCOUNT_LOGIN_REQUIRED: { level: "warn", fields: { reason: "ident" } },

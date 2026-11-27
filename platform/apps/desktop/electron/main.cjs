@@ -106,10 +106,23 @@ async function loadDbKey() {
   if (keyPlan.adopted) slog.event("MAIN_KEY_SLOT_ADOPTED", {});
   // 新起的待激活密钥打不开旧的待激活占位工作区（那是用别的密钥建的）：先清掉占位工作区（只有空账本与暂存，不含案件数据）
   if (keyPlan.freshPending) {
-    try {
-      require("node:fs").rmSync(path.join(DATA_DIR, PENDING_WORKSPACE), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-    } catch {
-      // 删不掉：内核打开占位账本失败会如实报错，下次启动再删
+    const fs = require("node:fs");
+    const pending = path.join(DATA_DIR, PENDING_WORKSPACE);
+    // 第 72 批（Windows 实机）：先改名挪开（一次系统调用；隐藏的待删目录由内核启动后在后台删，见 onboarding.ts removePendingWorkspace），
+    // 改名不成再同步删——Windows 上占位区删不掉时同步重试要白等数秒
+    let moved = false;
+    if (fs.existsSync(pending)) {
+      try {
+        fs.renameSync(pending, path.join(DATA_DIR, `.pending-trash-${Date.now().toString(36)}-${require("node:crypto").randomBytes(3).toString("hex")}`));
+        moved = true;
+      } catch {}
+    }
+    if (!moved) {
+      try {
+        fs.rmSync(pending, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      } catch {
+        // 删不掉：内核打开占位账本失败会如实报错，下次启动再删
+      }
     }
   }
   const r = await loadOrCreateDbKey({ safeStorage, file: keyPlan.file, packaged: app.isPackaged });

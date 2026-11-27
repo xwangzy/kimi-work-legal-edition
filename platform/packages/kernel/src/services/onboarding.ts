@@ -12,6 +12,7 @@
  */
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { rm as rmAsync } from "node:fs/promises";
 import { join } from "node:path";
 import { issueDeviceCertificate, SoftwareSigner, verifyBytes, verifyDeviceCertificate, type DeviceCertificate, type DeviceKeys, type DeviceRole } from "@zr-legal/keys";
 import {
@@ -1528,20 +1529,70 @@ export function dropActivationClaim(keysDir: string): void {
   rmSync(join(keysDir, "activation-claim.json"), { force: true });
 }
 
-/** 激活后按真实身份启动：删除待激活占位工作区（只认这一个固定名字）。 */
 /**
- * 激活后删掉待激活占位工作区（只有空账本、日志与暂存）。第 54 批（Windows 安装包真实联调）：原来是裸 rmSync——Windows 上
- * 占位区里还有文件被占用（刚关闭的账本被杀毒软件扫描、残留句柄等）时抛 EBUSY / EPERM，内核每次启动都在这里失败，
- * 入组批准后“后台服务多次异常退出”，这台电脑始终登记不上。清理失败不能挡住启动：短暂重试，仍删不掉就记一条、下次启动再删。
- * 返回是否已删干净。
+ * 激活后按真实身份启动：清掉待激活占位工作区（只认这一个固定名字；里面只有空账本、日志与暂存，不含案件数据）。
+ *
+ * 第 54 批（Windows 安装包真实联调）：原来是裸 rmSync，占位区有文件被占用时抛 EBUSY / EPERM，内核每次启动都在这里失败——改为短暂重试、删不掉记一条。
+ * 第 72 批（Windows 实机运行 45955267514）：那段“短暂重试”是**同步**的（rmSync 5 次、线性退避），占位区删不掉时每次打开应用都在内核启动路径上
+ * 白等约 4.2 秒（注册后“正在打开…”7.1 秒里的大头，日志 KERNEL_BOOT_PHASE lawdb 4,236 ms，紧跟 KERNEL_PENDING_WORKSPACE_LEFT perm）。现在：
+ * ① 启动路径上只做一次改名，把占位区挪成隐藏的待删目录（一次系统调用、不重试；失败只记一条、占位区原地留着）；
+ * ② 真正的删除在后台异步做（含以前留下的待删目录），失败记一条并带上挡住删除的是哪类文件，不拖慢启动；
+ * ③ 改名而不是原地删：后台删除期间若又开始新的待激活（退出登录后登录别的账号），新占位区与正在删的目录不是同一个名字，不会被误删。
+ * 返回占位区是否已挪走（或本来就没有）。
  */
-export function removePendingWorkspace(dataRoot: string, rm: typeof rmSync = rmSync): boolean {
-  try {
-    rm(join(dataRoot, PENDING_WORKSPACE_SLUG), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-    return true;
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException)?.code;
-    slog.event("KERNEL_PENDING_WORKSPACE_LEFT", { reason: code === "EBUSY" ? "busy" : code === "EPERM" || code === "EACCES" ? "perm" : "other" });
-    return false;
+export const PENDING_TRASH_PREFIX = ".pending-trash-";
+export interface PendingCleanupOps {
+  rename: (from: string, to: string) => void;
+  rm: (path: string, opts: { recursive: true; force: true; maxRetries: number; retryDelay: number }) => Promise<void>;
+  list: (dir: string) => string[];
+}
+const defaultPendingOps: PendingCleanupOps = { rename: renameSync, rm: (p, o) => rmAsync(p, o), list: (d) => readdirSync(d) };
+function pendingFailReason(e: unknown): "busy" | "perm" | "other" {
+  const code = (e as NodeJS.ErrnoException)?.code;
+  return code === "EBUSY" ? "busy" : code === "EPERM" || code === "EACCES" ? "perm" : "other";
+}
+/** 挡住删除的是占位区里的哪类东西（只给枚举，不记路径）。 */
+function pendingFailEntry(e: unknown, base: string): "ledger" | "logs" | "keys" | "root" | "other" {
+  const p = String((e as NodeJS.ErrnoException)?.path ?? "");
+  if (!p.startsWith(base)) return "other";
+  const first = p.slice(base.length).replace(/^[\\/]+/, "").split(/[\\/]/)[0] ?? "";
+  if (!first) return "root";
+  if (first.startsWith("ledger")) return "ledger";
+  if (first === "logs") return "logs";
+  if (first === "keys") return "keys";
+  return "other";
+}
+export function removePendingWorkspace(dataRoot: string, ops: PendingCleanupOps = defaultPendingOps): boolean {
+  const dir = join(dataRoot, PENDING_WORKSPACE_SLUG);
+  let moved = true;
+  if (existsSync(dir)) {
+    try {
+      ops.rename(dir, join(dataRoot, `${PENDING_TRASH_PREFIX}${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`));
+    } catch (e) {
+      moved = false;
+      slog.event("KERNEL_PENDING_WORKSPACE_LEFT", { reason: pendingFailReason(e), step: "rename", entry: pendingFailEntry(e, dir) });
+    }
   }
+  void sweepPendingTrash(dataRoot, ops);
+  return moved;
+}
+/** 后台删掉所有待删目录（这次与以前留下的）。不抛错。 */
+export async function sweepPendingTrash(dataRoot: string, ops: PendingCleanupOps = defaultPendingOps): Promise<number> {
+  let names: string[] = [];
+  try {
+    names = ops.list(dataRoot).filter((n) => n.startsWith(PENDING_TRASH_PREFIX));
+  } catch {
+    return 0;
+  }
+  let left = 0;
+  for (const n of names) {
+    const p = join(dataRoot, n);
+    try {
+      await ops.rm(p, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch (e) {
+      left++;
+      slog.event("KERNEL_PENDING_WORKSPACE_LEFT", { reason: pendingFailReason(e), step: "trash", entry: pendingFailEntry(e, p) });
+    }
+  }
+  return left;
 }
