@@ -254,6 +254,12 @@
   --font-table-size: var(--fs-base); /* v9.4：表格是律师的主要阅读区（材料、交付件），由 13px 提到 14px */
   --font-table-leading: 1.6;
   --font-sans: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+  /* 字重三档（第 72 批，D-300 第 3 条）：组件样式只写这三个令牌，不写字面字重（样式门禁）；Windows 随包 Noto Sans SC 有 400/500/600 三个字形，两端层级一致 */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-strong: 600;
+  /* 图标线宽（D-300 第 4 条）：CSS 像素，按设备像素比对齐到整数物理像素（1x→1、1.25x→1.6、1.5x→1.33、2x→1.5），由 lib/icon-stroke.ts 启动时与缩放变化时改写 */
+  --icon-stroke: 1.5px;
   /* 文书纸面版式（v9.2 §4.4；Y4 §5 D-8）：DOCX 预览、审查工作台原文 */
   --font-doc: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif;
   --doc-size: var(--fs-lg);
@@ -381,3 +387,12 @@
   --risk-low: #fbb24c;
 }
 }
+
+/*
+ * 按平台的字体栈（第 72 批，D-300 第 3 条）：<html> 的 plat-darwin / plat-win32 由 lib/window-chrome.ts 打上（网页开发形态没有，用上面的缺省栈）。
+ * - macOS：系统 SF + 苹方，不引用随包字体（Mac 不下载）；
+ * - Windows：拉丁用 Segoe UI Variable Text → Segoe UI；中文用随包 Noto Sans SC（OFL-1.1，400/500/600，按字符区间切片，只在用到的字下载），
+ *   雅黑只作兜底——雅黑没有 500/600，500 会退成常规体、600 会退成粗体，层级失效（A2 §1.3）。
+ */
+html.plat-darwin { --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+html.plat-win32 { --font-sans: "Segoe UI Variable Text", "Segoe UI", "Noto Sans SC", "Microsoft YaHei UI", sans-serif; }

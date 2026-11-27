@@ -23,6 +23,7 @@
  *   preview                            第 62 批：上一个任务每份 Word/Excel 成果（含旧版本）在复核页与任务页右栏的预览是否真的出图
  *                                      （按框架区域截图数深色像素，文档载入了但没画出来也判失败），截图存证
  *   shot <名字>                        截主窗口到 $KWL_E2E_OUT/<名字>.png
+ *   gallery [标签]                     第 72 批：逐页截图（深浅）+ 窗口尺寸、devicePixelRatio、实际渲染字体（CDP），标签如 100 / 150
  * 保存对话框：Windows 上由 scripts/e2e/win-save-dialog.ps1 按 $KWL_E2E_OUT/next-save-path.txt 填路径并点“保存”；
  * macOS 上没有辅助功能权限时由人点“存储”（脚本等文件出现，最多 5 分钟）。
  */
@@ -1052,7 +1053,77 @@ async function authPages() {
   log("卡片宽度：", w);
 }
 
-const phases = { ready, "auth-pages": authPages, register, login, "login-sms": loginSms, logout, "approve-join": approveJoin, "await-approval": awaitApproval, diagnose, qa, task, export: exportAll, preview, usage, shot: (n) => shot(n ?? "shot") };
+/**
+ * 第 72 批（V46，D-300）：双端统一的实机证据——登录后逐页截图（深浅两色），并记录窗口与渲染事实：
+ * 窗口外框 / 工作区（经主进程不可得时用 screen.avail*）、devicePixelRatio、平台类名、字体是否就绪，
+ * 以及**实际用于渲染**的字体（CDP CSS.getPlatformFontsForNode：Windows 上中文应落到随包 Noto Sans SC，而不是雅黑回退；
+ * 品牌字标应落到随包 Inter）。只读：不发起任务、不改设置；主题切换只改界面主题偏好并在结束时恢复。
+ * 用法：gallery [标签]（标签进文件名，如 100 / 150）。
+ */
+async function gallery(tag = "100") {
+  await ready();
+  const facts = await page.evaluate(async () => {
+    await document.fonts.ready;
+    const cls = document.documentElement.className;
+    const fam = getComputedStyle(document.body).fontFamily;
+    return {
+      inner: [window.innerWidth, window.innerHeight],
+      outer: [window.outerWidth, window.outerHeight],
+      screen_avail: [screen.availWidth, screen.availHeight],
+      screen_pos: [window.screenX, window.screenY],
+      dpr: window.devicePixelRatio,
+      html_class: cls,
+      body_font_family: fam,
+      noto_500: document.fonts.check('500 14px "Noto Sans SC"', "法律"),
+      noto_600: document.fonts.check('600 14px "Noto Sans SC"', "法律"),
+    };
+  });
+  log(`窗口与渲染（${tag}%）：`, JSON.stringify(facts));
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("DOM.enable");
+  await cdp.send("CSS.enable");
+  const usedFonts = async (selector) => {
+    const { root } = await cdp.send("DOM.getDocument", { depth: -1 });
+    const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector });
+    if (!nodeId) return null;
+    const { fonts } = await cdp.send("CSS.getPlatformFontsForNode", { nodeId });
+    return fonts.map((f) => `${f.familyName}${f.isCustomFont ? "（随包）" : ""}×${f.glyphCount}`).join("，");
+  };
+  const pages = [
+    ["首页", "#/", ["main h1, main .home-title, main", ".sidebar"]],
+    ["方法库", "#/methods", ["main h1, main .page-title", "main"]],
+    ["问答", "#/chat", ["main", "textarea"]],
+    ["成果", "#/deliverables", ["main"]],
+    ["期限提醒", "#/reminders", ["main"]],
+    ["设置-通用", "#/connections/general", ["main"]],
+    ["设置-账号", "#/connections/account", ["main"]],
+    ["设置-用量", "#/connections/usage", ["main"]],
+  ];
+  const fontLog = {};
+  for (const [name, hash, sels] of pages) {
+    await go(hash);
+    await sleep(2200);
+    await shot(`G${tag}-${name}-浅`);
+    fontLog[name] = {};
+    for (const s of sels) fontLog[name][s] = await usedFonts(s).catch((e) => `取不到：${e.message.slice(0, 80)}`);
+  }
+  // 品牌字标（侧栏）与 Work 首页大字标
+  fontLog["品牌"] = { sidebar: await usedFonts(".sidebar .brand text, .sidebar .brand").catch(() => null) };
+  writeFileSync(join(OUT, `gallery-${tag}.json`), JSON.stringify({ facts, fonts: fontLog }, null, 1));
+  log(`实际渲染字体（${tag}%）：`, JSON.stringify(fontLog).slice(0, 2400));
+  // 深色：只切界面主题偏好（与“设置 · 通用 · 外观”同一个键），截首页、问答两张后恢复
+  const prev = await page.evaluate(() => document.documentElement.dataset.theme ?? "");
+  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+  for (const [name, hash] of [["首页", "#/"], ["问答", "#/chat"]]) {
+    await go(hash);
+    await sleep(1500);
+    await shot(`G${tag}-${name}-深`);
+  }
+  await page.evaluate((v) => { if (v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; }, prev);
+  await go("#/");
+}
+
+const phases = { ready, gallery, "auth-pages": authPages, register, login, "login-sms": loginSms, logout, "approve-join": approveJoin, "await-approval": awaitApproval, diagnose, qa, task, export: exportAll, preview, usage, shot: (n) => shot(n ?? "shot") };
 if (!phases[phase]) {
   console.error(`未知阶段：${phase}`);
   process.exit(2);

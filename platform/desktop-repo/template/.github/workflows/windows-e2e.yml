@@ -178,6 +178,15 @@ jobs:
           "KWL_SETUP_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: 驱动工具（playwright-core，只连本机调试端口，不下载浏览器）
         run: npm install --prefix "$PW_CORE" --no-save --no-audit --no-fund playwright-core@1.63.0
+      # 第 72 批（D-300）：先把运行器桌面设成常见的 1920×1080（尽力而为，驱动不支持时保持原样并记下实际分辨率），
+      # 用来核对“安装后窗口化、尺寸适宜、居中启动，不铺满屏幕”
+      - name: 桌面分辨率（尽力设为 1920×1080）
+        shell: pwsh
+        run: |
+          try { Set-DisplayResolution -Width 1920 -Height 1080 -Force -ErrorAction Stop; Write-Output "已设为 1920x1080" } catch { Write-Output "::notice::不能改分辨率：$($_.Exception.Message)" }
+          Add-Type -AssemblyName System.Windows.Forms
+          $s = [System.Windows.Forms.Screen]::PrimaryScreen
+          Write-Output "主屏：$($s.Bounds.Width)x$($s.Bounds.Height)，工作区：$($s.WorkingArea.Width)x$($s.WorkingArea.Height)"
       - name: 启动已安装的程序与保存对话框助手
         shell: pwsh
         run: |
@@ -187,6 +196,12 @@ jobs:
           Start-Process $env:KWL_APP -ArgumentList "--remote-debugging-port=$env:KWL_CDP_PORT"
           node scripts/e2e/ui.mjs ready
           node scripts/e2e/ui.mjs shot 00-首次启动
+          # 第 72 批：整个桌面截一张，看窗口是否窗口化、居中、未铺满（主窗口截图看不出窗口在屏幕上的位置）
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save((Join-Path $env:KWL_E2E_OUT "00-桌面-首次启动窗口位置.png")); $g.Dispose(); $bmp.Dispose()
       - name: 登录与注册页（install-only：不登录，核对线上策略下的登录方式与注册第一步）
         if: inputs.entry == 'install-only'
         run: node scripts/e2e/ui.mjs auth-pages
@@ -241,6 +256,32 @@ jobs:
       - name: 检测连接
         if: inputs.entry != 'install-only'
         run: node scripts/e2e/ui.mjs diagnose expect-ok
+      # 第 72 批（D-300）：双端统一的实机证据——逐页截图（深浅）+ 窗口 / 设备像素比 / 实际渲染字体；
+      # 再以 150% 缩放（--force-device-scale-factor=1.5，与 1080p 笔记本缺省缩放同一渲染比例）重开一次、同样截图，然后恢复 100% 继续后面的步骤
+      - name: 双端统一实机截图（100% 与 150%）
+        if: inputs.entry != 'install-only'
+        timeout-minutes: 12
+        shell: pwsh
+        run: |
+          node scripts/e2e/ui.mjs gallery 100
+          if ($LASTEXITCODE -ne 0) { Write-Output "::warning::gallery 100 未全部完成" }
+          Get-Process KimiWorkLegal -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null }
+          Start-Sleep -Seconds 12
+          Start-Process $env:KWL_APP -ArgumentList "--remote-debugging-port=$env:KWL_CDP_PORT","--force-device-scale-factor=1.5"
+          node scripts/e2e/ui.mjs ready
+          node scripts/e2e/ui.mjs gallery 150
+          if ($LASTEXITCODE -ne 0) { Write-Output "::warning::gallery 150 未全部完成" }
+          Get-Process KimiWorkLegal -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null }
+          Start-Sleep -Seconds 12
+          Start-Process $env:KWL_APP -ArgumentList "--remote-debugging-port=$env:KWL_CDP_PORT"
+          node scripts/e2e/ui.mjs ready
+          # 第二次启动：应恢复上次的窗口位置与尺寸（尺寸记忆）
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save((Join-Path $env:KWL_E2E_OUT "00-桌面-再次启动窗口位置.png")); $g.Dispose(); $bmp.Dispose()
+          exit 0
       - name: 问答（真实模型）
         if: inputs.entry != 'install-only'
         run: node scripts/e2e/ui.mjs qa "买卖合同约定的逾期交货违约金按每日万分之五计算、上限为合同价款的20%，卖方逾期40日，买方能否在主张违约金的同时解除合同？请给出法律依据。"

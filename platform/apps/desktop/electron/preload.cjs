@@ -26,6 +26,12 @@ contextBridge.exposeInMainWorld("zrKernel", {
   },
   /** 渲染会话被拦截的外部请求计数（设备页“唯一出口”的行为证据）。 */
   rendererNet: () => ipcRenderer.invoke("kwl:renderer-net"),
+  /**
+   * 第 72 批（A1 H5）：在应用内重拉内核（E1“还没有打开成功”、E5“还没有切换过去”、E6“后台服务没有启动起来”时先自动重试一次，
+   * 仍不行再给“重试”按钮，不再让律师关闭并重新打开应用）。两次之间至少隔 15 秒。
+   * 结果：{ ok: true, result: "restarted" } / { ok: false, result: "failed" | "skipped" } / { ok: false, reason: "too_soon", retry_after_ms } / { ok: false, reason: "exiting" }
+   */
+  restartKernel: () => ipcRenderer.invoke("kwl:restart-kernel"),
   /** 自动更新（W7）：状态与“重启并安装”（只在更新已下载并通过发布签名核验后可用）。 */
   updateStatus: () => ipcRenderer.invoke("kwl:update-status"),
   installUpdate: () => ipcRenderer.invoke("kwl:update-install"),
