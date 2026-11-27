@@ -40,6 +40,12 @@ export function StageStrip({ matter, readOnly, onChanged }: { matter: Matter; re
   const problem = eventDateProblem(eventDate);
   return (
     <div className="stage-strip">
+      {/* 第 73 批（11c T13）：只读时不摆可点的阶段条（伪操作），只写当前阶段 */}
+      {readOnly ? (
+        <div className="stage-ro">
+          当前阶段 <b>{matter.stage && matter.stage in STAGE_LABELS ? STAGE_LABELS[matter.stage as Stage] : "未填"}</b>
+        </div>
+      ) : (
       <div className="stage-line" role="radiogroup" aria-label="当前阶段">
         {stages.map((s) => (
           <button
@@ -64,6 +70,7 @@ export function StageStrip({ matter, readOnly, onChanged }: { matter: Matter; re
           />
         )}
       </div>
+      )}
       {!editing ? (
         <div className="stage-facts">
           <span>
@@ -77,7 +84,7 @@ export function StageStrip({ matter, readOnly, onChanged }: { matter: Matter; re
               {matter.event_date || matter.region ? "修改" : "填写"}
             </button>
           )}
-          {!matter.event_date && <span className="muted">填了以后，签发前按事件发生时的版本核对引用</span>}
+          {!matter.event_date && !readOnly && <span className="muted">填了以后，签发前按事件发生时的版本核对引用</span>}
         </div>
       ) : (
         <div className="stage-facts stage-edit">
@@ -116,7 +123,7 @@ export function PartiesInfoRow({ matter, docs, readOnly, onChanged }: { matter: 
     <div className="pi-row">
       <span className="pi-k">当事人信息</span>
       {!info.doc ? (
-        <span className="pi-v muted">还没有填当事人信息——起诉状、律师函等文书的首部会留【待填】</span>
+        <span className="pi-v muted">{readOnly ? "还没有填当事人信息" : "还没有填当事人信息——起诉状、律师函等文书的首部会留【待填】"}</span>
       ) : info.loading ? (
         <span className="pi-v muted">载入中…</span>
       ) : rows.length > 0 ? (
@@ -254,7 +261,7 @@ export function MatterTodos({ matter, readOnly, othersCount = 0 }: { matter: Mat
   return (
     <div className="todos">
       {/* 与上面的待核合在“等你处理”里（第 27 批，评审 U2-29）：两边都空时才说“没有” */}
-      {nothing && !adding && othersCount === 0 && <p className="muted">没有等你处理的事。AI 完成的任务会自动出现在这里，等你复核。</p>}
+      {nothing && !adding && othersCount === 0 && <p className="muted">{readOnly ? "没有等你处理的事。" : "没有等你处理的事。AI 完成的任务会自动出现在这里，等你复核。"}</p>}
       {list.derived.map((d, i) => {
         const t = derivedTodoText(d, (s) => SCENARIO_LABELS[s] ?? "任务");
         return (

@@ -134,7 +134,7 @@ export function rosterNote(r: Pick<TeamRoster, "available" | "reason" | "members
   if (!r) return "正在取同事名单…";
   if (r.available) return null;
   if (r.reason === "offline") return r.members.length > 0 ? `${OFFLINE_HEAD}：下面是上次取到的同事名单。` : `${OFFLINE_HEAD}，取不到同事名单：可以先建好，联网后在事项里加同事。`;
-  if (r.reason === "not_supported") return `同事名单${CLOUD_UPGRADE_TEXT}。`;
+  if (r.reason === "not_supported") return `${TEAM_SHARE_UNAVAILABLE_TEXT}。`;
   return "暂时取不到同事名单：可以先建好，之后在事项里加同事。";
 }
 
@@ -240,8 +240,10 @@ export function markPrefix(sub: string, mark: MatterMark): string {
   return sub ? `${head} · ${sub}` : head;
 }
 
-/** 云端还没有同事名单能力（team.roster 回 not_supported，如连线上 1.6 / 1.7）时团队页那一行的说法（协调方口径）。 */
+/** 云端还没有同事名单能力（team.roster 回 not_supported，如连线上 1.6 / 1.7）时团队页那一行的说法（协调方口径）——只给管理员看。 */
 export const CLOUD_UPGRADE_TEXT = "需要中软把云端升级后才能使用";
+/** 同一情形律师侧的说法（11c T13 43u：律师无事可做，不把运营方升级的事交给律师）。 */
+export const TEAM_SHARE_UNAVAILABLE_TEXT = "团队共享暂时用不了，不影响只有我的事项";
 
 /**
  * 我是负责人、但这台电脑现在不能调整成员时的一句（内核 can_manage = false）：最先同步这个事项的是另一位负责人 / 负责人暂时无法确认 / 已结案。纯函数。
@@ -285,14 +287,11 @@ export function addResultText(added: readonly { name: string; can_receive: boole
     const rest = added.filter((a) => a.seat !== false);
     const later = rest.filter((a) => !a.can_receive).map((a) => a.name);
     const now = rest.filter((a) => a.can_receive).map((a) => a.name);
-    const seatPart = noSeat.length > 0 ? `${noSeat.join("、")}还没有分配到 AI 使用名额，分配后才收得到` : "";
-    let tail: string;
-    // 所内没开通同步：列表上方那句已经说了“要等开通后才收得到”（实拍：同一页说两遍），这里只说各人电脑的情况
-    if (sync === "not_allowed" || sync === "not_configured") {
-      const segs = [later.length > 0 ? `${later.join("、")}的电脑经管理员确认后才收得到` : "", seatPart].filter(Boolean);
-      tail = segs.length > 0 ? `${segs.join("；")}。` : "";
-    } else
-      tail = [now.length > 0 ? `${now.join("、")}的电脑下次同步时收到` : "", later.length > 0 ? `${later.join("、")}的电脑还不能接收，申请并经管理员确认后自动收到` : "", seatPart].filter(Boolean).join("；") + "。";
+    void later;
+    void noSeat;
+    // 11c T2 / T5：电脑还不能接收、没有 AI 使用名额的人，各自那一行已经写了（行内说明）——结果句不再同义重复，只说能马上收到的人；
+    // 所内没开通同步时列表上方那句已经说了“要等开通后才收得到”，这里也不再说
+    const tail = sync === "not_allowed" || sync === "not_configured" || now.length === 0 ? "" : `${now.join("、")}的电脑下次同步时收到。`;
     parts.push(`已加入${names}。${tail}`);
   }
   if (failed.length > 0) parts.push(`没有加上：${failed.map((f) => `${f.name}（${f.why}）`).join("；")}。`);
@@ -389,7 +388,7 @@ export function teamFaultText(e: unknown): string {
   if (f.code === "team_scope_conflict") return TEAM_SCOPE_CONFLICT_TEXT;
   if (f.code === "member_not_in_team") return `这位同事${MEMBER_REASON_TEXT[f.reason ?? ""] ?? "不在团队名单里（可能已离开团队）"}：不能加进事项。`;
   // 云端还没有同事名单能力：与团队页同一说法（协调方口径）
-  if (f.code === "roster_unavailable") return f.reason === "not_supported" ? `同事名单${CLOUD_UPGRADE_TEXT}。` : `${ROSTER_REASON_TEXT[f.reason ?? ""] ?? "暂时取不到同事名单"}：联网后再试。`;
+  if (f.code === "roster_unavailable") return f.reason === "not_supported" ? `${TEAM_SHARE_UNAVAILABLE_TEXT}。` : `${ROSTER_REASON_TEXT[f.reason ?? ""] ?? "暂时取不到同事名单"}：联网后再试。`;
   if (f.reason === "relay_not_configured") return "中软还没为本所开通同事之间同步的服务：请联系 Kimi Work 客服。";
   if (f.reason === "not_enabled") return "同事之间同步还没开通：请先开通。";
   // 同事名单由别人管理（经中软同步的事项，只有最先同步它的负责人能调整成员）：写“由某某管理”，与成员页表尾同一说法
@@ -403,7 +402,7 @@ export function teamFaultText(e: unknown): string {
 export function memberErrorText(e: unknown): string {
   const f = teamFaultOf(e);
   if (f.code === "member_not_in_team") return MEMBER_REASON_TEXT[f.reason ?? ""] ?? "不在团队名单里（可能已离开团队）";
-  if (f.code === "roster_unavailable") return f.reason === "not_supported" ? `同事名单${CLOUD_UPGRADE_TEXT}` : "暂时取不到同事名单，联网后再试";
+  if (f.code === "roster_unavailable") return f.reason === "not_supported" ? TEAM_SHARE_UNAVAILABLE_TEXT : "暂时取不到同事名单，联网后再试";
   return teamFaultText(e);
 }
 

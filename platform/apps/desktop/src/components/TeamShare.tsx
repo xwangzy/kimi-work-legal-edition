@@ -11,7 +11,7 @@ import { canResyncMembers, credentialNoSeat, relayErrorText, syncAlertAction, sy
 import { fmtTime } from "../lib/labels.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { Icon } from "./Icons.tsx";
-import { CLOUD_UPGRADE_TEXT, NO_SEAT_CONFIRMED_TEXT, relayReady } from "../lib/team-matters.ts";
+import { NO_SEAT_CONFIRMED_TEXT, relayReady, TEAM_SHARE_UNAVAILABLE_TEXT } from "../lib/team-matters.ts";
 import { useRoster } from "./TeamMatter.tsx";
 
 /**
@@ -90,7 +90,7 @@ export function TeamShare({ admin = false, note = null, canEnable = false, relay
       <div className="device-row">
         <div className="device-k">团队共享</div>
         <div>
-          <span>同事之间同步：{CLOUD_UPGRADE_TEXT}</span>
+          <span>{TEAM_SHARE_UNAVAILABLE_TEXT}。</span>
         </div>
       </div>
     );

@@ -38,7 +38,8 @@ export function TemplateMethods({ matter, readOnly }: { matter: Matter; readOnly
       live = false;
     };
   }, [matter.template_id]);
-  if (!t) return null;
+  // 第 73 批（11c T13）：只读事项（被移出 / 只看 / 结案）不摆发起任务的方法按钮（原来是置灰的伪操作）
+  if (!t || readOnly) return null;
   const cards = t.scenarios.map((id) => SCENARIOS.find((c) => c.id === id)).filter((c): c is (typeof SCENARIOS)[number] => !!c);
   return (
     <div className="tpl-methods">

@@ -197,7 +197,7 @@ export function NewMatterDialog({ onClose, onCreated, initial }: { onClose: () =
       </div>
       {/* 谁能看到（第 73 批）：保密边界，与“怎么处理”同级，放在“更多设置”之前、不折叠；个人空间不出现 */}
       <ScopeField variant="modal" scope={sc.scope} onScope={sc.setScope} picked={sc.picked} onPicked={sc.setPicked} avail={sc.avail} relay={sc.relay} />
-      <button type="button" className="btn-link" onClick={() => setMore((v) => !v)}>{more ? "收起更多设置" : "更多设置（事件时点、地域、使用哪种 AI、分析截止日）"}</button>
+      <button type="button" className="btn-link nm-more-toggle" onClick={() => setMore((v) => !v)}>{more ? "收起更多设置" : "更多设置（事件时点、地域、使用哪种 AI、分析截止日）"}</button>
       {more && (
         <div className="form-grid">
         <label className="field">

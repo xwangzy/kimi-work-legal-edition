@@ -35,7 +35,16 @@ function Widget({ title, children }: { title: string; children: React.ReactNode 
   );
 }
 
-export function MatterBoard({ matter, runs, docs, onChanged, onGo }: { matter: Matter; runs: any[]; /** 本事项材料（当事人信息那一行用，D-224）；不给时不显示 */ docs?: PartiesDocRow[]; onChanged?: () => void; onGo?: (target: PendingCheck["target"]) => void }) {
+export function MatterBoard({ matter, runs, docs, onChanged, onGo, readOnly: lockedHere = false }: {
+  matter: Matter;
+  runs: any[];
+  /** 本事项材料（当事人信息那一行用，D-224）；不给时不显示 */
+  docs?: PartiesDocRow[];
+  onChanged?: () => void;
+  onGo?: (target: PendingCheck["target"]) => void;
+  /** 第 73 批（11c T13）：事项页判定的只读（被移出 / 只看 / 结案，按 can_write）——概览不留伪操作（加待办、填期限、填写、现在填、阶段选择都不出）。 */
+  readOnly?: boolean;
+}) {
   const [egress, setEgress] = useState<{ sent: number; blocked: number; unknown: number }>({ sent: 0, blocked: 0, unknown: 0 });
   // 期限卡同时列本事项的期限提醒（复核 Q1-18：“填期限”打开的是提醒表单，填完回来卡片要能看到）
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
@@ -54,7 +63,7 @@ export function MatterBoard({ matter, runs, docs, onChanged, onGo }: { matter: M
       .catch(() => {});
   }, [matter.matter_id]);
   const dates = Object.entries(matter.key_dates ?? {}).filter(([, v]) => !!v);
-  const readOnly = (matter.lifecycle ?? "active") !== "active" || !!matter.is_sample;
+  const readOnly = lockedHere || (matter.lifecycle ?? "active") !== "active" || !!matter.is_sample;
   return (
     <>
     {/* 阶段条与事件时点（v9.4 第 20 批 S-08、C1 §3.2）：当前阶段由律师点选 */}
@@ -103,8 +112,9 @@ export function MatterBoard({ matter, runs, docs, onChanged, onGo }: { matter: M
         ))}
         {dates.length === 0 && reminders.length === 0 ? (
           <p className="muted">
-            开庭日、举证期限填在这里，到时提醒你。{" "}
-            {(matter.lifecycle ?? "active") === "active" && !matter.is_sample && (
+            {/* 只读事项（11c T13）：不写“填在这里”这类引导 */}
+            {readOnly ? "还没有期限。" : "开庭日、举证期限填在这里，到时提醒你。"}{" "}
+            {!readOnly && (
               <button className="btn-link" onClick={() => nav(`/reminders/new/${encodeURIComponent(matter.matter_id)}`)}>
                 填期限
               </button>

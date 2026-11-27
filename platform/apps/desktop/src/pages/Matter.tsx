@@ -122,6 +122,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
   const [sharing, setSharing] = useState(false);
   // 第二轮复评 T13（42）：被负责人移出后“从我的电脑移除…”（内核 matters.remove_local_copy）
   const [removingLocal, setRemovingLocal] = useState(false);
+  // 第 73 批（11c T13）：内核删除后把事项名称换成占位——删除当时记下名称，回执标题用它（离开再回来就只写“已删除的事项”）
+  const lastTitle = useRef<{ id: string; title: string } | null>(null);
   const [shareMsg, setShareMsg] = useState<{ text: string; tone: "ok" | "warn" } | null>(null);
 
   const reload = useCallback(() => {
@@ -341,19 +343,23 @@ export function MatterPage({ matterId }: { matterId: string }) {
   }
   // 已删除的事项：只显示删除回执（名称已替换为占位，内容已删除）
   if (matter.lifecycle === "purged") {
+    const known = lastTitle.current?.id === matter.matter_id ? lastTitle.current.title : null;
     return (
       <main className="main">
         <div className="main-wide">
-          <h1 className="page-title">{matter.title}</h1>
-          <MatterLifecyclePanel matter={matter} onChanged={reload} />
+          <h1 className="page-title">删除回执</h1>
+          <MatterLifecyclePanel matter={matter} onChanged={reload} deletedTitle={known} />
         </div>
       </main>
     );
   }
+  lastTitle.current = { id: matter.matter_id, title: matter.title };
   const closed = matter.lifecycle === "closed";
   // 第 73 批（端到端验收 P3-3）：“只看”的事项成员——加材料、发起任务、关联案卷文件夹、改材料用途与授权一律收起，并说明一句（内核 matters.get.can_write；旧内核按 my_role）
   // 第 73 批（验收 P2-2）：负责人已把我移出这个事项（内核 removed_me / 成员视图 sync = removed）——一条说明、不再写“团队共享 · n 人”、写入口收起
   const removedMe = !!matter.removed_me || members?.removed_me === true || members?.sync === "removed";
+  // 11c T6（34）：“结案与删除”只给负责人（只有负责人能结案、删除；被移出的另有“从我的电脑移除…”，仍在事项里的同事没有删除本机副本的入口）
+  const canLifecycle = !removedMe && (matter.my_role ?? "owner") === "owner";
   const viewOnly = !removedMe && (matter.can_write === false || (matter.can_write === undefined && matter.my_role === "viewer"));
   const locked = closed || viewOnly || removedMe;
   const basis: MatterBasis = matter.basis ?? {
@@ -496,7 +502,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           )}
           <span className="spacer" />
           <span className="tab-more-wrap" ref={moreRef}>
-            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label={`更多：${[offerShare ? "改为团队共享" : "", removedMe ? "从我的电脑移除" : "", "当事人名单", "数据去向记录", removedMe ? "" : "结案与删除"].filter(Boolean).join("、")}`} onClick={() => setMoreOpen((v) => !v)}>
+            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label={`更多：${[offerShare ? "改为团队共享" : "", removedMe ? "从我的电脑移除" : "", "当事人名单", "数据去向记录", canLifecycle ? "结案与删除" : ""].filter(Boolean).join("、")}`} onClick={() => setMoreOpen((v) => !v)}>
               ⋯
             </button>
             {moreOpen && (
@@ -517,7 +523,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                   [
                     ["parties", "当事人名单"],
                     ["egress", "数据去向记录"],
-                    ...(removedMe ? [] : [["lifecycle", "结案与删除"]]),
+                    ...(canLifecycle ? [["lifecycle", "结案与删除"]] : []),
                   ] as [Tab, string][]
                 ).map(([k, l]) => (
                   <button key={k} role="menuitem" className="menu-item" onClick={() => { setTab(k); setMoreOpen(false); }}>
@@ -570,6 +576,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
                     <p className="ms-empty">没有文件名含“{q.trim()}”的材料</p>
                   ) : (
               // 固定列宽（第 27 批，评审 U3-05）：1280 宽下“我方 / 对方 / 参考”曾逐字竖排折行；只有文件名列可以两行
+              // 第 73 批（11c T13）：外面包一层容器，窄宽度（960 窗口）下按容器宽度收起次要列、文件名单行省略（styles-matter.css @container mat）
+              <div className="mat-table-wrap">
               <table className="data mat-table">
                 <colgroup><col /><col className="c-role" /><col className="c-triage" /><col className="c-read" /><col className="c-review" /><col className="c-time" /></colgroup>
                 <thead><tr><th>文件</th><th>用途</th><th>初判</th><th>读取</th><th>审查意见</th><th>时间</th></tr></thead>
@@ -696,6 +704,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                   })()}
                 </tbody>
               </table>
+              </div>
                   );
                 }}
               </MaterialSearch>
@@ -733,6 +742,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
             matter={matter}
             runs={runs}
             docs={docs}
+            readOnly={locked}
             onChanged={reload}
             onGo={(t) => {
               // 待核清单的去处（v9.4 第 21 批）：事实标签、材料的表格审阅、审查工作台

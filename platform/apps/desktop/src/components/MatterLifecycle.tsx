@@ -8,6 +8,7 @@ import { api, type DeletionReceiptView, type Matter, type MatterLifecycle } from
 import { fmtTime } from "../lib/labels.ts";
 import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
+import { receiptRestoreText, receiptRows, receiptTitle } from "../lib/deletion-receipt.ts";
 
 const YEAR_CHOICES = [1, 3, 5, 10, 15, 20, 30];
 const COPY_STATUS: Record<string, string> = { deleted: "已删除", pending: "待处理", irrevocable: "不可撤回", kept: "保留（未删除）", none: "不涉及" };
@@ -38,7 +39,7 @@ const INVENTORY_LABELS: Record<string, string> = {
 
 const day = (iso: string | null | undefined) => (iso ? iso.slice(0, 10) : "—");
 
-export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; onChanged: () => void }) {
+export function MatterLifecyclePanel({ matter, onChanged, deletedTitle = null }: { matter: Matter; onChanged: () => void; /** 删除当时还知道的事项名称（内核删除后名称换成占位）：回执标题用它。 */ deletedTitle?: string | null }) {
   const [lc, setLc] = useState<MatterLifecycle | null>(null);
   const [receipt, setReceipt] = useState<DeletionReceiptView | null>(null);
   const [years, setYears] = useState(10);
@@ -98,7 +99,7 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
   };
 
   if (!lc) return <p className="muted">{msg || "载入中…"}</p>;
-  if (lc.lifecycle === "purged") return receipt ? <DeletionReceipt view={receipt} /> : <p className="muted">事项数据已删除。</p>;
+  if (lc.lifecycle === "purged") return receipt ? <DeletionReceipt view={receipt} title={deletedTitle} /> : <p className="muted">事项数据已删除。</p>;
 
   const beforeRetention = !!lc.retention_until && lc.retention_until > new Date().toISOString();
   return (
@@ -211,8 +212,10 @@ export function MatterLifecyclePanel({ matter, onChanged }: { matter: Matter; on
   );
 }
 
-export function DeletionReceipt({ view }: { view: DeletionReceiptView }) {
+export function DeletionReceipt({ view, title = null }: { view: DeletionReceiptView; title?: string | null }) {
   const r = view.receipt;
+  const localCopy = r.mode === "local_copy";
+  const rows = receiptRows(r.copies);
   const [saved, setSaved] = useState("");
   const download = () => {
     // 回执不含案件内容：桌面客户端经主进程写到选定位置（系统对话框，不进“最近使用”）；成功与失败都告诉律师（复核 S5B-10）
@@ -222,26 +225,43 @@ export function DeletionReceipt({ view }: { view: DeletionReceiptView }) {
       .catch((e) => setSaved(`没能保存：${(e as Error).message}`));
   };
   return (
-    <section className="lifecycle">
+    <section className="lifecycle receipt">
+      {/* 第 73 批（11c T13）：律师语言——标题用事项名称；正文只写删了什么、副本还在谁那里、能不能恢复；实现细节收进“删除清单” */}
       <div className="lifecycle-status">
-        <b>{r.mode === "local_copy" ? "这台电脑上的副本已删除" : "事项数据已删除"}</b>
-        <span className="muted">删除于 {fmtTime(r.purged_at)}{r.early ? `（提前删除：${r.reason ?? ""}）` : ""}</span>
+        <b>{receiptTitle(localCopy, title)}</b>
         <span className={`tag ${view.signature_valid ? "tag-ok" : "tag-warn"}`}>{view.signature_valid ? "删除证明有效" : "删除证明无法核对"}</span>
       </div>
-      <table className="data">
-        <thead><tr><th>副本所在</th><th>状态</th><th>说明</th></tr></thead>
+      <p className="muted receipt-sub">
+        删除于 {fmtTime(r.purged_at)}
+        {r.early ? `（提前删除：${r.reason ?? ""}）` : ""} · 回执编号 {r.receipt_id}
+      </p>
+      <table className="data receipt-copies">
+        <thead><tr><th>副本在哪里</th><th className="receipt-st">现在</th></tr></thead>
         <tbody>
-          {r.copies.map((c) => (
+          {rows.map((c) => (
             <tr key={c.where}>
               <td>{c.where}</td>
-              <td>{COPY_STATUS[c.status] ?? c.status}</td>
-              <td className="muted">{c.note}</td>
+              <td className={`receipt-st is-${c.tone}`}>{c.status}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      <p className="receipt-restore">{receiptRestoreText(localCopy)}</p>
       <details>
         <summary>删除清单</summary>
+        {/* 内核签名回执的原话，原样保留供核对 */}
+        <table className="data receipt-detail">
+          <thead><tr><th>副本所在</th><th className="receipt-st">状态</th><th>说明</th></tr></thead>
+          <tbody>
+            {r.copies.map((c) => (
+              <tr key={c.where}>
+                <td>{c.where}</td>
+                <td className="receipt-st">{COPY_STATUS[c.status] ?? c.status}</td>
+                <td className="muted">{c.note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
         <ul className="plain-list">
           {Object.entries(r.inventory).map(([k, n]) => (
             <li key={k}>{INVENTORY_LABELS[k] ?? "其他记录"}：{n}</li>

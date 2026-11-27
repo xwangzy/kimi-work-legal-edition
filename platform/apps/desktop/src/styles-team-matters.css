@@ -159,3 +159,9 @@
 .tag-removed { flex: none; white-space: nowrap; }
 .sidebar-link-row .tag-removed { margin-left: 6px; }
 .menu-label .tag-removed { margin-left: 6px; }
+/* 11c T1（04）：“更多设置 / 收起更多设置”与字段左缘对齐，和下面的字段留出间距 */
+.nm-more-toggle { align-self: flex-start; padding: 0; margin: var(--sp-1) 0 var(--sp-3); }
+/* 11c T8（18）：确认框要点两行时均分，不留孤字行 */
+.relay-lines li { text-wrap: balance; }
+/* 被移出灰条里的“从我的电脑移除…”不折行（960 实拍折成两行） */
+.removed-me-note .btn-link { flex: none; white-space: nowrap; }

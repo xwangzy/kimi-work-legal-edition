@@ -369,7 +369,7 @@ export function TeamPill({ view, failed = false, onMembers }: { view: MatterMemb
           );
         })}
         {rows.length > 6 && <p className="team-pop-more">还有 {rows.length - 6} 人</p>}
-        {counts.departed > 0 && <p className="team-pop-more">另有 {counts.departed} 人已离开团队</p>}
+        {/* 11c T10：已离开的人已在上面列出（右侧“已离开”），底部不再另说一遍 */}
         <div className="team-pop-foot">
           <button
             type="button"
@@ -521,7 +521,8 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
                 </span>
               </div>
               {/* 实拍：长句放在名字下面整行（原来挤在人名那一栏里折成三行） */}
-              {note && (
+              {/* 11c T10：就地确认条出现时收起行内说明（两句几乎同义） */}
+              {note && asking !== m.user_id && (
                 <p className="mm-sub">
                   {note.text}
                   {/* 第二轮复评 T13（45）：同事没有名额、看页面的人是团队管理员——直接去分配 */}

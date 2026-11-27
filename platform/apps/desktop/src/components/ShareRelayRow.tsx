@@ -15,6 +15,7 @@ import { carriedLine, dayOnly, RELAY_ENABLED_ETA_TEXT, relayExpiringText, shareR
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { SettingRow } from "./SettingRow.tsx";
+import { notifyDataChanged } from "../lib/events.ts";
 import { useRoster } from "./TeamMatter.tsx";
 import "../styles-team-matters.css";
 
@@ -73,6 +74,8 @@ export function ShareRelayRow() {
       setAsking(null);
       setMsg({ text: doneText(r, kind === "renew"), ok: true });
       window.dispatchEvent(new Event(SHARE_RELAY_CHANGED));
+      // 11c T8（20b）：续期 / 开通后侧栏底部“同事之间同步 n 天后到期”跟着重读（原来要换页才消失）
+      notifyDataChanged();
     } catch (e) {
       setMsg({ text: teamFaultText(e), ok: false });
     } finally {
