@@ -58,3 +58,9 @@ button.authz-trail-line:hover { color: var(--text-primary); }
 .authz-overview table { width: 100%; border-collapse: collapse; margin-top: var(--sp-2); font-size: var(--fs-caption); }
 .authz-overview th { text-align: left; font-weight: var(--fw-medium); color: var(--text-secondary); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border-subtle); }
 .authz-overview td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--border-subtle); vertical-align: top; overflow-wrap: anywhere; }
+/* 产品评分 G5-3：团队共享事项的第二段“选团队共享时已发生”（同事电脑、中软加密副本），与 AI 次处理者分开 */
+.authz-scope-team { margin-top: var(--sp-2); }
+.authz-scope-cap { margin: 0 0 2px; font-size: var(--fs-caption); font-weight: var(--fw-strong); color: var(--text-secondary); }
+.authz-scope-list { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.authz-scope-list > div { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: var(--sp-2); font-size: var(--fs-caption); line-height: 1.6; }
+.authz-dt-when { display: block; font-size: var(--fs-xs); color: var(--text-label); }

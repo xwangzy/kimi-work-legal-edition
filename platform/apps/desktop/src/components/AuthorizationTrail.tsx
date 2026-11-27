@@ -5,7 +5,7 @@
  */
 import { useState } from "react";
 import type { Matter } from "../api.ts";
-import { authorizationRecordLine, authorizationStatus, BASIS_SOURCE_LABELS, monthDay } from "../lib/authorization.ts";
+import { authorizationRecordLine, authorizationScopeLabel, authorizationStatus, BASIS_SOURCE_LABELS, monthDay } from "../lib/authorization.ts";
 import "../styles-authz.css";
 
 const TONE: Record<string, string> = { valid: "dot-ok", needs_ref: "dot-warn", reconfirm: "dot-warn", pending: "dot-off", local_only: "dot-off" };
@@ -43,6 +43,8 @@ export function AuthorizationTrail({ matter, onReconfirm }: { matter: Matter; /*
             <li key={`${h.recorded_at}-${i}`}>
               {monthDay(h.recorded_at)} · {BASIS_SOURCE_LABELS[h.basis_source] ?? "授权依据"} · {h.basis_ref}
               {h.recorded_by ? ` · ${h.recorded_by}记录` : ""}
+              {/* 产品评分 G5-4：每条写明按哪个范围记的（内核 scope；旧记录没有时不写） */}
+              {authorizationScopeLabel(h.scope)}
               {h.current_version ? "" : " · 按旧的次处理者清单"}
             </li>
           ))}

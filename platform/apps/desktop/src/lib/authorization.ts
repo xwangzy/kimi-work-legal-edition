@@ -177,3 +177,8 @@ export function shortRef(ref: string): string {
   return t.length > 24 ? `${t.slice(0, 23)}…` : t;
 }
 
+
+/** 授权记录按哪个范围记的（产品评分 G5-4，内核 authorization_history[].scope）：“ · 按“只有我”记录” / “ · 按“团队共享”记录”；旧记录没有范围时不写。纯函数。 */
+export function authorizationScopeLabel(scope: string | null | undefined): string {
+  return scope === "team" ? " · 按“团队共享”记录" : scope === "personal" ? " · 按“只有我”记录" : "";
+}

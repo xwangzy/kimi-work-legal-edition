@@ -262,6 +262,8 @@ export interface DataFlowEntry {
   text: string;
   /** colleagues 一条：不含本人的在册事项成员数（内核可选给出；没有时界面从“本所同事 n 人”里读）。 */
   count?: number | null;
+  /** 产品评分 G5-3：什么时候发生——on_ai_use = 使用 AI 时（授权要覆盖）；on_team_share = 选团队共享时已发生（律所已开通同事之间同步）。旧内核没有，界面按条目类型兜底。 */
+  when?: "on_ai_use" | "on_team_share" | string;
 }
 
 export interface MatterBasis {
@@ -2051,6 +2053,9 @@ export interface ShareRelayStatus {
   expiring?: { days_left: number } | null;
   fallback_reason?: string | null;
   policy_version?: number | null;
+  /** 第 73 批收尾（待内核）：开通过、后来按本所规则关闭了（现行规则不允许、更早某一版允许过）；再开通要联系中软。旧内核没有。 */
+  closed?: boolean;
+  closed_at?: string | null;
   /** 取待签草稿失败的原因代码（管理员电脑）。 */
   drafts_error?: string;
 }

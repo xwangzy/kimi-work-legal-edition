@@ -39,7 +39,7 @@ import { MaterialPicker } from "../components/MaterialPicker.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { AddColleaguesDialog, MatterMembersPanel, useRoster, useTeamKind } from "../components/TeamMatter.tsx";
-import { canOfferShare, isTeamShared, needsShareRefresh, reconfirmReason, REMOVED_ME_TEXT, removeLocalCopyLines, sharedMaterialNote, teamFaultText } from "../lib/team-matters.ts";
+import { authzScopeReady, canOfferShare, isTeamShared, needsShareRefresh, reconfirmReason, REMOVED_ME_TEXT, removeLocalCopyLines, sharedMaterialNote, teamFaultText } from "../lib/team-matters.ts";
 import "../styles-materials.css";
 import "../styles-matter.css";
 
@@ -412,6 +412,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
           policy={policy}
           onParties={() => setTab("parties")}
           team={teamShared && !removedMe ? { view: members, error: membersErr } : null}
+          removed={removedMe}
           onMembers={() => setTab("members")}
           {...(locked
             ? {}
@@ -557,6 +558,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
                 }}
               />
             )}
+            {/* 第 73 批收尾：只读（被移出 / 只看 / 结案）又没有材料时如实说一句，不留白（原来工具栏、添加区都收起，整页空着） */}
+            {locked && docs.length === 0 && <p className="muted mat-empty-locked">这台电脑上没有这个事项的材料。</p>}
             {matView === "list" && docs.length > 0 && (
               // 材料内搜索（第 48 批）：输入即按文件名筛选下面的表；回车或停顿片刻再到材料的文字里找
               <MaterialSearch matterId={matter.matter_id}>
@@ -829,17 +832,26 @@ function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Mat
   const [touched, setTouched] = useState(false);
   // 已有出处时沿用（调整四项也要带上出处，D-225）；没有出处时按常用条款预填，律师看到并点确认
   const [adjustRef, setAdjustRef] = useState(matter.basis_ref ?? "");
+  // 产品评分 G5-1（失败即收紧）：团队共享事项按事项范围的数据去向没读到时不能记录（与开始前确认同一判断）
+  const [authzState, setAuthzState] = useState<"loading" | "ok" | "failed">("loading");
+  const [authzTick, setAuthzTick] = useState(0);
   useEffect(() => {
+    setAuthzState("loading");
     api
       .aiAuthorization(matter.matter_id)
       .then((a) => {
         setDefaults(a);
+        setAuthzState("ok");
         if (!touched) setRecord(initialRecord(a, matter));
         if (!matter.basis_ref && a.engagement_terms && a.default_ref) setAdjustRef((v) => v || a.default_ref || "");
       })
-      .catch(() => setDefaults(null));
+      .catch(() => {
+        setDefaults(null);
+        setAuthzState("failed");
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authzTick]);
+  const scopeReady = authzScopeReady({ team: matter.collab_scope === "team", flows: matter.data_flows ?? defaults?.data_flows ?? null, state: authzState });
   const [detail, setDetail] = useState<MatterBasis | null>(complete ? basis : null);
   const need = confirmNeeds(basis);
   // D-225：逐项记录、调整四项都须写出处
@@ -881,11 +893,21 @@ function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Mat
           basis={basis}
         />
       )}
+      {!complete && !scopeReady.ready && scopeReady.note && (
+        <div className="mm-notice authz-scope-wait" role="status">
+          <span>{scopeReady.note}</span>
+          {scopeReady.retry && (
+            <button type="button" className="btn-link" onClick={() => setAuthzTick((t) => t + 1)}>
+              重试
+            </button>
+          )}
+        </div>
+      )}
       <div className="modal-actions">
         <button className="btn-ghost" onClick={onClose}>取消</button>
         <button
           className="btn-primary"
-          disabled={!ready}
+          disabled={!ready || (!complete && !scopeReady.ready)}
           onClick={() =>
             complete
               ? onSave(b, { kind: detailSource(record, matter), ref: adjustRef })

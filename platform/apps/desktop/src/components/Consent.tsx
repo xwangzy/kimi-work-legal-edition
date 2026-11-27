@@ -11,7 +11,7 @@
  * 内核仍分别记录四项依据（第 02 篇 §8.1，闸门、宿主、网关口径不变）。
  */
 import type { AiSubprocessors, DataFlowEntry, MatterBasis } from "../api.ts";
-import { authzFlowRows } from "../lib/team-matters.ts";
+import { aiRoleOf, authzFlowRows } from "../lib/team-matters.ts";
 import { useRelayState } from "./TeamMatter.tsx";
 import { BasisEditor } from "./MatterHeader.tsx";
 import "../styles-authz.css";
@@ -70,8 +70,14 @@ export function AuthorizationRecord({
   const list = (processors ?? FALLBACK_PROCESSORS).items;
   const relay = useRelayState(team);
   const flows = authzFlowRows(dataFlows, { team, relay: team ? relay.ready : null });
-  // 中软那条去向若已写在次处理者的说明里（和同事一起办的清单写了“保存加密副本…”），不再单列一行（实拍：同一句说两遍）
-  const flowRows = flows.rows.filter((f) => !(f.key === "zr_relay" && list.some((p) => /加密副本/.test(p.role))));
+  // 产品评分 G5-3：分两段——“授权要覆盖（AI 使用时）”与“选团队共享时已发生”；同步与中软加密副本不放进 AI 次处理者里冒充
+  const teamRows = flows.rows.filter((f) => f.when === "on_team_share");
+  const aiRows = flows.rows.filter((f) => f.when !== "on_team_share");
+  const split = teamRows.length > 0;
+  // 中软那条去向若已写在次处理者的说明里、又没有单独一段时，不再单列一行（实拍：同一句说两遍）
+  const flowRows = split ? aiRows : flows.rows.filter((f) => !(f.key === "zr_relay" && list.some((p) => /加密副本/.test(p.role))));
+  // 第二段的标题：所内已开通同步时是“已发生”，没开通时如实说“开通后发生”
+  const teamHead = team && relay.ready === false ? "选团队共享后、所内开通同事之间同步时发生" : "选团队共享时已发生（律所已开通同事之间同步）";
   const pick = (k: BasisKind) => onChange({ ...value, kind: k, ref: value.kind === k ? value.ref : k === "engagement_terms" && value.kind === null ? value.ref : "" });
   return (
     <section className="authz-record" aria-labelledby="authz-record-h">
@@ -138,8 +144,11 @@ export function AuthorizationRecord({
               </dd>
             </div>
             <div>
-              <dt>授权要覆盖</dt>
-              <dd>使用 AI 辅助处理本案材料；次处理者：{list.map((p) => `${p.name}（${p.role}）`).join("、")}</dd>
+              <dt>
+                授权要覆盖
+                {split && <small className="authz-dt-when">（AI 使用时）</small>}
+              </dt>
+              <dd>使用 AI 辅助处理本案材料；次处理者：{list.map((p) => `${p.name}（${aiRoleOf(p.role, split)}）`).join("、")}</dd>
             </div>
             <div>
               <dt>系统另外做到</dt>
@@ -153,6 +162,19 @@ export function AuthorizationRecord({
               </div>
             ))}
           </dl>
+          {split && (
+            <div className="authz-scope authz-scope-team" role="group" aria-label={teamHead}>
+              <p className="authz-scope-cap">{teamHead}</p>
+              <dl className="authz-scope-list">
+                {teamRows.map((f) => (
+                  <div key={f.key}>
+                    <dt>{f.label}</dt>
+                    <dd>{f.text}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
           {sensitive && (
             <label className="authz-sensitive">
               <input type="checkbox" checked={value.sensitive} onChange={(e) => onChange({ ...value, sensitive: e.target.checked })} />

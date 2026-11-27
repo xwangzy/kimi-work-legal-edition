@@ -24,7 +24,7 @@ import { SendPoints } from "./SendPoints.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { afterConsentNotice, busyRunOfError, startHintOf, type StartHint } from "../lib/start-block.ts";
 import { StartHintBanner } from "./StartHint.tsx";
-import { localOnlyBlocked, reconfirmReason, teamFaultText } from "../lib/team-matters.ts";
+import { authzScopeReady, localOnlyBlocked, reconfirmReason, teamFaultText } from "../lib/team-matters.ts";
 
 export interface PendingStart {
   matter: Matter;
@@ -132,19 +132,28 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const [defaults, setDefaults] = useState<AiAuthorization | null>(null);
   const [record, setRecord] = useState<AuthRecord>(() => initialRecord(null, matter));
   const [touched, setTouched] = useState(false);
+  // 产品评分 G5-1（失败即收紧）：按事项范围的授权信息读到之前 / 读失败时，团队共享事项不能记录授权（卡片照样固定列出同事电脑、中软加密副本）
+  const [authzState, setAuthzState] = useState<"loading" | "ok" | "failed">("loading");
+  const [authzTick, setAuthzTick] = useState(0);
   useEffect(() => {
     if (!consentBlocked) return;
-    // 第 73 批（验收 P2-3）：按事项范围取次处理者清单与数据去向（和同事一起办的事项另有一份）
+    // 第 73 批（验收 P2-3）：按事项范围取次处理者清单与数据去向（团队共享事项另有一份）；从首页发起时事项来自事项列表、不带这两样，必须等它回来
+    setAuthzState("loading");
     api
       .aiAuthorization(matter.matter_id)
       .then((a) => {
         setDefaults(a);
+        setAuthzState("ok");
         // 律师还没动过表单时按常用条款预填（读取有先后，不覆盖律师已经填的）
         if (!touched) setRecord(initialRecord(a, matter));
       })
-      .catch(() => setDefaults(null));
+      .catch(() => {
+        setDefaults(null);
+        setAuthzState("failed");
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [consentBlocked]);
+  }, [consentBlocked, authzTick]);
+  const scopeReady = authzScopeReady({ team: matter.collab_scope === "team", flows: matter.data_flows ?? defaults?.data_flows ?? null, state: authzState });
   // D-225：早期记录缺少出处（内核 needs_ref / basis_state）同样走重新确认卡，文案说明“请补记一次”
   const needsRef = !!estimate.data_where?.needs_ref || matter.basis_state === "needs_ref";
   // 按事项范围的清单版本判断（团队共享事项拿全局清单比会被误判要重新确认）
@@ -315,6 +324,16 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
             endpoint={matter.model_endpoint}
             basis={matter.basis}
           />
+          {!scopeReady.ready && scopeReady.note && (
+            <div className="mm-notice authz-scope-wait" role="status">
+              <span>{scopeReady.note}</span>
+              {scopeReady.retry && (
+                <button type="button" className="btn-link" onClick={() => setAuthzTick((t) => t + 1)}>
+                  重试
+                </button>
+              )}
+            </div>
+          )}
           <div className="authz-exits">
             <span>还没有取得授权？</span>
             <button type="button" className="btn-link" onClick={onClose}>
@@ -366,7 +385,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
             确认发起
           </button>
         ) : consentBlocked ? (
-          <button className="btn-primary" disabled={busy || !canRecord} aria-busy={busy} onClick={() => void recordConsentAndStart()}>
+          <button className="btn-primary" disabled={busy || !canRecord || !scopeReady.ready} aria-busy={busy} onClick={() => void recordConsentAndStart()}>
             <BusyLabel busy={busy} busyText="正在记录并开始…">
               {reconfirm ? "重新确认并开始" : "记录授权并开始"}
             </BusyLabel>

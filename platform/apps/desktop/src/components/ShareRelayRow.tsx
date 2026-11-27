@@ -5,12 +5,13 @@
  * - 开通：以当前生效的本所规则为底稿只改这一项（内核 firm_policy.share_relay_enable 一次完成起草、本机确认、达到人数即发布）；
  *   律所版要 2 位管理员时写明还需另一位确认；第二位管理员在自己电脑上这一行点“确认开通…”即确认同一份（内核找一致的待签草稿）。
  * - 续期：按当前生效规则原样重签；已过期时恢复那一份，确认框逐条列出一并恢复的放宽项（所见即所签）。
- * - 关闭：内核没有单独的方法——确认框写清后果（关闭后要再开通需联系中软），再打开下面的“起草律所策略”并预置“不允许同事之间同步”，走原有的确认与发布。
+ * - 关闭：内核没有单独的方法——确认框写清后果（同步立即停止；再开通要联系中软，防止规则被反复切换），再打开下面的“起草律所策略”并预置“不允许同事之间同步”，走原有的确认与发布。
+ *   关闭过的（内核 closed）状态行写“已关闭 · 再开通需联系中软”，不给自助“开通…”。
  * 合伙人等不能管理的角色只读（can_manage 由内核按这台电脑判定）。旧内核没有这个方法时整行不出现。
  */
 import { useEffect, useState } from "react";
 import { teamMatters, type ShareRelayStatus } from "../api.ts";
-import { carriedLine, dayOnly, relayExpiringText, shareRelayCloseLines, shareRelayEnableLines, shareRelayRenewLines, shareRelayRow, teamFaultText } from "../lib/team-matters.ts";
+import { carriedLine, dayOnly, RELAY_ENABLED_ETA_TEXT, relayExpiringText, shareRelayCloseLines, shareRelayEnableLines, shareRelayRenewLines, shareRelayRow, teamFaultText } from "../lib/team-matters.ts";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { SettingRow } from "./SettingRow.tsx";
@@ -36,7 +37,8 @@ function useShareRelay(): [ShareRelayStatus | null | undefined, (s: ShareRelaySt
 /** 一次性结果（有效期就在状态行里，这里不再写）。 */
 function doneText(s: ShareRelayStatus, renew: boolean): string {
   if (s.state === "pending_second_signature") return `已确认，还需另一位管理员确认后${renew ? "续期" : "开通"}`;
-  if (s.state === "allowed") return renew ? "已续期" : "已开通";
+  // 产品评分 G4：开通后说清同事什么时候开始收到
+  if (s.state === "allowed") return renew ? "已续期" : `已开通：${RELAY_ENABLED_ETA_TEXT}`;
   return "已提交，稍后生效";
 }
 
@@ -50,7 +52,8 @@ export function ShareRelayRow() {
   // 成功的轻提示几秒后消失；失败的留着（要让管理员看见原因）
   useEffect(() => {
     if (!msg?.ok) return;
-    const t = setTimeout(() => setMsg(null), 4000);
+    // 开通的结果句较长（带“几分钟内开始收到”），多留一会儿
+    const t = setTimeout(() => setMsg(null), msg.text.length > 12 ? 9000 : 4000);
     return () => clearTimeout(t);
   }, [msg]);
   if (s === null && roster?.reason !== "not_supported") return null;

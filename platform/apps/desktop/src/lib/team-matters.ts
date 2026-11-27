@@ -303,7 +303,8 @@ export function addResultText(added: readonly { name: string; can_receive: boole
 export function shareMatterLines(): string[] {
   return [
     "加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果，内容在你们的电脑之间加密同步。",
-    "改为团队共享后，正在等你确认的任务需要重新确认一次。",
+    // 产品评分 G3：不可逆之前说清授权要重新记录、记录前 AI 暂停
+    "客户授权要按新范围（同事电脑、中软保存加密副本）重新记录，记录前这个事项的 AI 暂停；正在等你确认的任务也要重新确认一次。",
     "之后不能改回“只有我”：要结束共享，把同事逐个移出，或结案。",
   ];
 }
@@ -463,16 +464,51 @@ export function colleaguesPendingText(n: number | null): string {
  * relay = false（所内还没开通同事之间同步）时“同事电脑”写成“开通后会同步到 n 位同事的电脑”。纯函数。
  */
 export function authzFlowRows(
-  flows: readonly { key: string; label: string; text: string; count?: number | null }[] | null | undefined,
+  flows: readonly { key: string; label: string; text: string; count?: number | null; when?: string }[] | null | undefined,
   o: { team?: boolean; relay?: boolean | null } = {},
-): { local: string | null; rows: { key: string; label: string; text: string }[] } {
+): { local: string | null; rows: { key: string; label: string; text: string; when: "on_ai_use" | "on_team_share" }[] } {
   const list = flows && flows.length > 0 ? flows : o.team ? TEAM_FLOWS_FALLBACK : null;
   if (!list) return { local: "案卷只存这台电脑", rows: [] };
   const local = list.find((f) => f.key === "local")?.text ?? null;
   const rows = list
     .filter((f) => f.key !== "local")
-    .map((f) => (f.key === "colleagues" && o.relay === false ? { key: f.key, label: f.label, text: colleaguesPendingText(colleaguesCount(f)) } : { key: f.key, label: f.label, text: f.text }));
+    .map((f) => ({
+      key: f.key,
+      label: f.label,
+      text: f.key === "colleagues" && o.relay === false ? colleaguesPendingText(colleaguesCount(f)) : f.text,
+      when: flowWhen(f),
+    }));
   return { local, rows };
+}
+
+/**
+ * 产品评分 G5-3：数据去向这一条什么时候发生。内核给 when 用 when；旧内核按条目类型兜底——
+ * 同事电脑、中软加密副本是选团队共享时（律所已开通同事之间同步）就发生的，不是“使用 AI 时”的次处理者。纯函数。
+ */
+export function flowWhen(f: { key: string; when?: string }): "on_ai_use" | "on_team_share" {
+  if (f.when === "on_ai_use" || f.when === "on_team_share") return f.when;
+  return f.key === "colleagues" || f.key === "zr_relay" ? "on_team_share" : "on_ai_use";
+}
+
+/**
+ * “授权要覆盖（AI 使用时）”里次处理者的角色：团队共享清单里中软的角色带着“同事之间同步时保存加密副本…”——那是选团队共享时已发生的事，
+ * 下面另有一段写，这里只留 AI 使用时的那半句（产品评分 G5-3：不让同步冒充 AI 次处理者）。纯函数。
+ */
+export function aiRoleOf(role: string, teamSection: boolean): string {
+  if (!teamSection) return role;
+  const kept = role.split("；").filter((seg) => !/同事之间同步|加密副本/.test(seg));
+  return kept.length > 0 ? kept.join("；") : role;
+}
+
+/**
+ * 产品评分 G5-1（失败即收紧）：团队共享事项的授权卡要等按事项范围的数据去向读回来才能记录——
+ * 没读到（还在读 / 读失败 / 旧内核没给）时卡片照样固定列出“同事电脑”“中软加密副本”，但“记录授权并开始”不可点，读失败给“重试”。纯函数。
+ */
+export function authzScopeReady(o: { team: boolean; flows: readonly { key: string }[] | null | undefined; state: "loading" | "ok" | "failed" }): { ready: boolean; note: string | null; retry: boolean } {
+  if (!o.team) return { ready: true, note: null, retry: false };
+  if (o.flows && o.flows.some((f) => f.key === "colleagues")) return { ready: true, note: null, retry: false };
+  if (o.state === "loading") return { ready: false, note: "正在读取这个事项的数据去向…", retry: false };
+  return { ready: false, note: "没读到这个事项的数据去向，暂时不能记录授权。", retry: true };
 }
 
 /**
@@ -513,7 +549,7 @@ export function shareRelayRow(
   now = Date.now(),
   /** 同事名单（team.roster）：回 not_supported（云端还没有这项能力，如线上 1.6 / 1.7）时整行只说“需要中软把云端升级后才能使用”、不给按钮（协调方口径）。 */
   roster?: Pick<TeamRoster, "reason"> | null,
-): { state: "upgrade" | "configure" | "off" | "on" | "expiring" | "pending" | "expired" | "unknown"; text: string; actions: ShareRelayAction[]; warn: boolean } {
+): { state: "upgrade" | "configure" | "off" | "closed" | "on" | "expiring" | "pending" | "expired" | "unknown"; text: string; actions: ShareRelayAction[]; warn: boolean } {
   if (roster?.reason === "not_supported") return { state: "upgrade", text: CLOUD_UPGRADE_TEXT, actions: [], warn: false };
   if (!s) return { state: "unknown", text: "暂时读不到状态", actions: [], warn: false };
   if (!s.relay_configured) return { state: "configure", text: "未开通 · 需要中软为本所开通服务，请联系 Kimi Work 客服", actions: [], warn: false };
@@ -535,6 +571,8 @@ export function shareRelayRow(
       return { state: "expiring", text: `已开通 · ${until}${until ? " · " : ""}还有 ${Math.max(0, left)} 天`, actions: manage ? [{ kind: "renew", label: "续期…", primary: true }, close] : [], warn: true };
     return { state: "on", text: `已开通${until ? ` · ${until}` : ""}`, actions: manage ? [{ kind: "renew", label: "续期…", primary: false }, close] : [], warn: false };
   }
+  // 第 73 批收尾：开通过又关闭了（内核 closed）——再开通要找中软，不给自助“开通…”
+  if (s.closed) return { state: "closed", text: "已关闭 · 再开通需联系中软", actions: [], warn: false };
   // 第二轮复评 T8：这台电脑在按最严规则运行（没收到 / 确认人数不够 / 软件太旧）时，状态行写明原因与去向，不给“开通…”（开了也要先解决这件事）
   const why = s.fallback_reason ? FALLBACK_REASON_TEXT[s.fallback_reason] ?? "这台电脑暂按最严规则运行，联网后自动更新" : null;
   if (why) return { state: "off", text: `未开通 · ${why}`, actions: [], warn: false };
@@ -560,15 +598,21 @@ export function shareRelayEnableLines(threshold: number, signsPending = false): 
     "没更新软件的电脑会暂时按最严规则运行，直到更新。",
     ...(threshold > 1 && !signsPending ? [`本所规则要 ${threshold} 位管理员分别确认：你确认后，还需另一位管理员在自己的电脑上确认才生效。`] : []),
     "只改这一项，本所规则的其他各项不变；有效期 30 天，到期前 7 天提醒续期。",
+    // 产品评分 G4：同事什么时候开始收到
+    RELAY_ENABLED_ETA_TEXT,
   ];
 }
 
+/** 开通后同事电脑什么时候开始收到（产品评分 G4；控制面缺省 10 分钟同步一次，团队页打开时 team.refresh_share_state 立即刷新）。 */
+export const RELAY_ENABLED_ETA_TEXT = "同事的电脑一般几分钟内开始收到（最长约 10 分钟）；他们打开团队页会立即刷新。";
+
 /** 关闭同事之间同步的确认框（内核没有单独的关闭方法：走起草本所规则，预置“不允许同事之间同步”）。纯函数。 */
 export function shareRelayCloseLines(): string[] {
+  // 第 73 批收尾：不与自助“开通…”冲突——写明关闭后再开通为什么要找中软
   return [
-    "关闭后，团队共享事项暂停在同事电脑之间同步，各人电脑上的内容不受影响。",
+    "关闭后，同事之间的同步立即停止：团队共享事项不再在同事电脑之间同步，各人电脑上的内容不受影响。",
     "服务方那里已存的加密副本保留到律所停止使用。",
-    "关闭后要再开通，需要联系中软。",
+    "之后要再开通，需要联系中软重新开通（这是为了防止规则被反复切换）。",
     "关闭要改本所规则：下一步在下面“起草律所策略”里已预置“不允许同事之间同步”，核对后生成草稿、确认并发布。",
   ];
 }

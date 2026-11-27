@@ -18,8 +18,10 @@ export function basisComplete(b: MatterBasis | undefined): boolean {
   return BASIS_FIELDS.every((f) => b[f.key] !== "pending");
 }
 
-export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudonym, onParties, onConsentNotice, onClearRefusal, team, onMembers }: {
+export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudonym, onParties, onConsentNotice, onClearRefusal, team, onMembers, removed = false }: {
   matter: Matter;
+  /** 第 73 批收尾：负责人已把我移出——他已不能发起任务、记录授权，页头不再给“客户授权待记录”这类要行动的提示（保护状态胶囊、授权一行、待记录说明都不出）。 */
+  removed?: boolean;
   policy?: RunPolicyView | null;
   /** 团队共享事项（第 73 批）：事项成员（还没取到为 null）；不是团队共享事项时不传。 */
   team?: { view: MatterMembersView | null; error?: string | null } | null;
@@ -64,7 +66,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
       </div>
       <div className="mh-row">
         {/* 保护状态（UIUX 增量评审 §3.2）：一个胶囊说清“能不能用 AI、发出去前替换了什么”，展开四行；技术细节在设置页 */}
-        <details className="protect">
+        {!removed && <details className="protect">
           <summary className={`pill ${protect.tone}`} aria-label={`保护状态：${protect.label}`}>
             <protect.icon /> {protect.label} <Icon.down />
           </summary>
@@ -103,7 +105,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
               </div>
             )}
           </div>
-        </details>
+        </details>}
         {onParties && (
           <button className="pill pill-link" onClick={onParties}>
             当事人名单
@@ -113,7 +115,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
       </div>
       {/* D-225：客户授权一行只读，点开看每一次记录（只有 matters.get 带历史时显示） */}
       {/* 还没有任何记录时不再单列一行“尚未记录”（上面的胶囊已经说了；第 56 批走查：同一件事在事项头说了三遍） */}
-      {matter.authorization_history !== undefined && !refused && (complete || matter.authorization_history.length > 0) && <AuthorizationTrail matter={matter} onReconfirm={onEditBasis} />}
+      {!removed && matter.authorization_history !== undefined && !refused && (complete || matter.authorization_history.length > 0) && <AuthorizationTrail matter={matter} onReconfirm={onEditBasis} />}
       {refused && (
         <div className="mh-note mh-red">
           客户拒绝云端处理（已记录）：不用云端 AI，也不联网检索，只能用律所私有模型（如已部署）或本机能力；补填客户授权情况也不改变这一点。如已取得新的书面同意，核实后再清除这条记录。
@@ -124,7 +126,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
           )}
         </div>
       )}
-      {basis && !complete && !refused && level !== "L3b" && (
+      {!removed && basis && !complete && !refused && level !== "L3b" && (
         // 第 48 批：一句话说结果，待确认的具体项放悬停提示；入口是“记录授权”（与开始任务时同一种确认），告知函为辅
         <div className={`mh-note${basis.engagement === "pending" ? " mh-quiet" : ""}`} title={`待确认：${BASIS_FIELDS.filter((f) => basis[f.key] === "pending").map((f) => f.label).join("、")}`}>
           {/* 第 51 批（D-216）：新事项没有授权记录是常态——第一次用 AI 时“开始前确认”会请律师记录依据与出处；这里说清楚，也可以现在就记 */}
