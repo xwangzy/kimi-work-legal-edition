@@ -20,6 +20,8 @@ export interface WorkspaceItem {
   name: string;
   role: WorkspaceRole | null;
   status: "active" | "disabled";
+  /** 第 72 批（设计评分 C12 / C16）：停用的方式——disabled 停用 / removed 被团队移出 / left 本人退出；云端没给或未停用时为 null */
+  disabled_kind: "disabled" | "removed" | "left" | null;
   current: boolean;
   /** 这台电脑上已有这个工作空间的账号档案（切过去不用再登记这台电脑）。 */
   local_profile: boolean;
@@ -75,6 +77,7 @@ export function workspaceItems(raw: unknown, profiles: readonly { tid: string; m
       name: text(w.name, 80) || (kind === "personal" ? "个人工作室" : "团队"),
       role: WORKSPACE_ROLES.includes(w.role as WorkspaceRole) ? (w.role as WorkspaceRole) : null,
       status: w.status === "disabled" ? "disabled" : "active",
+      disabled_kind: w.status === "disabled" && (w.disabled_kind === "disabled" || w.disabled_kind === "removed" || w.disabled_kind === "left") ? w.disabled_kind : null,
       current,
       local_profile: local,
     });

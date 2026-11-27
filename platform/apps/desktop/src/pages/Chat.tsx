@@ -395,7 +395,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
                 choices={qaCatalog ? modelChoices(qaCatalog) : legacyModels.map((c) => ({ id: c.alias, label: c.label, description: c.note.replace(/^缺省[，,、]\s*/, ""), available: true, isDefault: c.default }))}
                 value={route}
                 onChange={chooseModel}
-                foot="按实际用量计入你的额度；具体型号由云端统一配置。"
+                foot="按实际用量计入你的额度。"
               />
             }
             send={<SendButton busy={busy} onStop={stop} disabled={!text.trim()} onSend={() => void send()} />}

@@ -49,8 +49,11 @@
 .team-stats > div { padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); background: var(--bg-main); border: 1px solid var(--border-subtle); }
 .team-stats dt { font-size: var(--fs-caption); color: var(--text-secondary); }
 .team-stats dd { margin: 2px 0 0; font-size: var(--fs-lg); font-weight: var(--fw-strong); color: var(--text-primary); font-variant-numeric: tabular-nums; }
-.team-privacy { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); background: var(--status-info-bg); color: var(--status-info-text); font-size: var(--fs-body); line-height: 1.6; }
-.team-privacy svg { flex: none; margin-top: 3px; }
+/* 隐私横幅（评分 C10 第 5 条）：中性灰底 + 蓝色锁形图标，一行说完；说明文字不折孤字 */
+.team-privacy { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-caption); line-height: 1.6; text-wrap: pretty; }
+.team-privacy svg { flex: none; margin-top: 2px; color: var(--accent-text); }
+.team-stats .team-stat-d { margin: 2px 0 0; font-size: var(--fs-xs); font-weight: var(--fw-regular); color: var(--text-secondary); }
+.team-lines li, .team-pending-lead, .ws-plate-text small, .setting-hint { text-wrap: pretty; }
 .team-check { margin: 0; font-size: var(--fs-caption); }
 
 .team-sec-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); margin-bottom: var(--sp-3); }
@@ -150,3 +153,31 @@
 .ws-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-body); }
 .ws-menu-text small { font-size: var(--fs-xs); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-menu-check { flex: none; display: inline-flex; color: var(--text-primary); }
+
+/* 成员行尾“…”菜单（评分 C10 第 2 条）：挂在 body 上、按按钮定位；每项名称 + 一句后果，危险项置底标红 */
+.tm-more { width: 28px; height: 28px; display: inline-grid; place-items: center; border-radius: var(--r-sm); color: var(--text-secondary); }
+.tm-more:hover { background: var(--bg-hover); color: var(--text-primary); }
+.tm-menu { position: fixed; z-index: 60; width: 248px; }
+.tm-menu-row { min-height: 44px; padding: 6px var(--sp-2); }
+.tm-menu-row .menu-row-text { display: flex; flex-direction: column; white-space: normal; }
+.tm-menu-row b { font-size: var(--fs-body); font-weight: var(--fw-medium); }
+.tm-menu-row small { font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.5; }
+.tm-menu-row.is-danger b { color: var(--status-danger-text); }
+
+/* 被移出 / 退出团队后落到另一个工作空间：账号区上方一次性说明（评分 C16 第 5 条） */
+.ws-left-note { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); border: 1px solid var(--border-subtle); background: var(--bg-surface); box-shadow: var(--shadow-xs); font-size: var(--fs-caption); color: var(--text-label); line-height: 1.6; text-wrap: pretty; }
+.ws-left-note .btn-link { padding: 0; font-size: var(--fs-caption); }
+.sidebar.compact .ws-left-note { display: none; }
+
+/* 鼠标点击不留焦点框（只在键盘操作时显示，评分 C15） */
+.sidebar-foot:focus:not(:focus-visible) { outline: none; }
+.team-policy-sec { display: flex; flex-direction: column; gap: var(--sp-3); }
+.team-policy-sec > .team-sec-title { margin: var(--sp-2) 0 0; }
+
+/* 方法库 · 我的范本（评分 C17）：一句说明 + 有视觉锚点的空态（图标 + 标题 + 一行格式说明 + 主按钮） */
+.ft-lead { max-width: 720px; text-wrap: pretty; }
+.ft-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); margin: var(--sp-4) 0; padding: var(--sp-6) var(--sp-5); border: 1px dashed var(--border-dashed); border-radius: var(--radius-card); background: var(--bg-surface); text-align: center; }
+.ft-empty-ico { display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-md); background: var(--bg-muted); color: var(--text-label); }
+.ft-empty-ico svg { width: 20px; height: 20px; }
+.ft-empty b { font-size: var(--fs-md); color: var(--text-primary); }
+.ft-empty p { margin: 0; max-width: 440px; font-size: var(--fs-caption); text-wrap: pretty; }

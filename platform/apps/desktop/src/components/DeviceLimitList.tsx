@@ -14,7 +14,7 @@
  * 主按钮短而确定“退出所选电脑并继续”（电脑名只在列表里出现一次）；按钮上方一行后果；“改为移除”是唯一的次要链接。
  */
 import { useMemo, useState } from "react";
-import { defaultRemovalPick, defaultSignoutPick, deviceChoiceLine, deviceMetaShort, deviceState, type AccountDevice } from "../lib/account.ts";
+import { defaultRemovalPick, defaultSignoutPick, deviceChoiceLine, deviceMetaShort, deviceState, thisDeviceLine, type AccountDevice } from "../lib/account.ts";
 import { Icon } from "./Icons.tsx";
 
 type Mode = "signout" | "remove";
@@ -75,10 +75,11 @@ export function DeviceLimitList(p: {
   const chosen = single ?? p.devices.find((d) => d.device_id === pick) ?? null;
   // 第 72 批（D-303）：标题是一句结论，说明只说怎么办；账号身份不再加粗插进正文，缩成标题下一行小字
   const title = registeredCap ? "登记的电脑已达上限" : mode === "signout" ? `已在 ${n} 台电脑登录` : removeOnly ? `已有 ${n} 台电脑` : "移除一台电脑";
+  // 第二轮（设计评分 C5）：说出上限是多少；只有一台可选时说“退出那台”
   const lead = registeredCap
     ? "移除一台不再使用的电脑，就能在这台电脑继续。"
     : mode === "signout"
-      ? "退出其中一台，就能在这台电脑继续。"
+      ? `你的账号最多同时在 ${n} 台电脑登录。${single ? "退出那台" : "退出其中一台"}，就能在这台电脑继续。`
       : removeOnly
         ? "移除一台不再使用的电脑，就能在这台电脑继续。"
         : "电脑丢了、转手或不再使用时才需要移除。";
@@ -117,11 +118,12 @@ export function DeviceLimitList(p: {
                 <Icon.monitor />
               </span>
               <span className="auth-device-text">
+                {/* 第二轮（C5）：这台电脑直接叫“这台电脑”，不与要退出 / 移除的那台同名；其余每台带“多久前用过 · 哪天登记”，同型号也能区分 */}
                 <b>
-                  {l.title}
-                  {badge}
+                  {isThis ? "这台电脑" : l.title}
+                  {isThis ? null : badge}
                 </b>
-                <span>{isThis ? "你正在这台电脑上登录" : deviceMetaShort(d, now)}</span>
+                <span>{isThis ? thisDeviceLine(d, now) : deviceMetaShort(d, now)}</span>
               </span>
               {actionable && can && (
                 <span className={`auth-device-check${on || (single && single.device_id === d.device_id) ? " on" : ""}`} aria-hidden="true">

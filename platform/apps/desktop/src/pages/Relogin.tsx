@@ -15,9 +15,21 @@ import { account } from "../api.ts";
 import { AuthCard, AuthPage, AuthPrivacy } from "../components/AuthShell.tsx";
 import { LoginBox } from "../components/AccountPanel.tsx";
 import { maskPhoneTight, reloginView } from "../lib/account.ts";
+import { LEFT_NOTICE_KEY } from "../lib/workspace.ts";
 
 export function ReloginPage(p: { reason: string | null; email: string; firm?: string | null; member?: string | null; notice?: string; onDone: () => void }) {
-  const v = reloginView(p.reason);
+  // 第 72 批（评分 C16）：被移出 / 自己退出团队——标题写团队名；账号卡不再把刚离开的团队当身份；只填验证码（云端按这台电脑找到这个人的手机号）
+  const teamGone = p.reason === "session_team_removed" || p.reason === "session_team_left";
+  const v = reloginView(p.reason, teamGone ? p.firm : null);
+  useEffect(() => {
+    if (!teamGone || !p.firm) return;
+    // 重新登录落到另一个工作空间后，侧栏账号区上方说一次“你已不在「X」，已切到「Y」”
+    try {
+      localStorage.setItem(LEFT_NOTICE_KEY, JSON.stringify({ team: p.firm, how: p.reason === "session_team_left" ? "left" : "removed", at: Date.now() }));
+    } catch {
+      // 记不住只是少一句提示
+    }
+  }, [teamGone, p.firm, p.reason]);
   const who = (p.member ?? "").trim();
   const known = !!(who || p.email);
   // 这台电脑已从账号移除：原账号不能再在这里登录——直接给“登录其他账号”，标题与说明仍讲清原因
@@ -59,7 +71,7 @@ export function ReloginPage(p: { reason: string | null; email: string; firm?: st
           )}
         </div>
         {!other && v.lead && <p className="auth-lead">{v.lead}</p>}
-        {/* 第三轮（独立评分区域 7）：本机还有别的账号——放在身份卡这一块（不在卡底），不列姓名（b68 隐私决定），给一个“登录其他账号”入口 */}
+        {/* 第三轮（独立评分区域 7）：本机还有别的账号——不列姓名（b68 隐私决定）；第 72 批评分 C16：入口只留标题行的“换个账号”一个，个数在进去之后说 */}
         {(other || revoked) && others > 0 && <p className="auth-lead">这台电脑上还有 {others} 个账号，登录对应账号即可打开。</p>}
         {!other && known && !revoked && (
           <div className="auth-reloginwho">
@@ -68,19 +80,19 @@ export function ReloginPage(p: { reason: string | null; email: string; firm?: st
             </span>
             <span className="auth-reloginwho-text">
               <b>{who || p.email}</b>
-              <small>{[p.firm ? p.firm : "", acct?.phone ?? (who && p.email ? p.email : "")].filter(Boolean).join(" · ") || "这台电脑登记的成员"}</small>
+              <small>{[teamGone ? "" : p.firm ? p.firm : "", acct?.phone ?? (who && p.email && !teamGone ? p.email : "")].filter(Boolean).join(" · ") || (teamGone ? "用验证码登录，进入你的其他工作空间" : "这台电脑登记的成员")}</small>
             </span>
           </div>
         )}
-        {!other && known && !revoked && others > 0 && (
-          <p className="auth-others">
-            {`这台电脑上还有 ${others} 个账号`}
-            <button type="button" className="btn-link" onClick={() => setOther(true)}>
-              登录其他账号
-            </button>
-          </p>
-        )}
-        <LoginBox key={other || revoked ? "other" : "me"} page subtle email={other || revoked ? "" : p.email} knownPhone={acct === undefined ? undefined : acct.phone} onDone={p.onDone} />
+        <LoginBox
+          key={other || revoked ? "other" : "me"}
+          page
+          subtle
+          email={other || revoked ? "" : p.email}
+          // 团队成员身份本身没有手机号（只在这个人的主账号上）：本机没记到打码号时仍先按“只填验证码”显示，发码时云端按这台电脑找到这个人的手机号
+          knownPhone={acct === undefined || (teamGone && acct.phone === null) ? undefined : acct.phone}
+          onDone={p.onDone}
+        />
         {/* 第三轮（独立评审 R2-3）：“不是本人移除的？”在标题下的说明里（reloginView），不放在登录按钮下面——那里像登录报错 */}
       </AuthCard>
     </AuthPage>

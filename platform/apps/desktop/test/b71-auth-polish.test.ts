@@ -78,7 +78,9 @@ test("电脑选择卡：只有一台可选不显示单选、按钮写名字；�
   assert.match(s, /removeOnly \? `已有 \$\{n\} 台电脑`/);
   const css = src("styles-auth.css");
   assert.match(css, /\.auth-card \.auth-warn \{[^}]*var\(--status-warning-bg-soft\)[^}]*var\(--status-warning-text\)/);
-  assert.match(css, /\.auth-device-row\.is-this \{[^}]*border-style: dashed/);
+  // 第 72 批第二轮（设计评分跨页第 6 条）：虚线只表示“空槽”；这台电脑改实线浅底，名字直接叫“这台电脑”
+  assert.match(css, /\.auth-device-row\.is-this \{[^}]*border-style: solid/);
+  assert.match(s, /\{isThis \? "这台电脑" : l\.title\}/);
   // 禁用主按钮：浅灰底中灰字（令牌），登录类卡片不再写白字
   assert.match(css, /\.auth-card \.activate-submit:disabled, \.auth-card \.auth-btn:disabled \{ background: var\(--btn-primary-disabled\); border-color: transparent; color: var\(--btn-primary-disabled-text\);/);
 });
@@ -114,8 +116,11 @@ test("设置·账号：登录记录“Mac 电脑 · 第 1 台”、账号卡状�
 test("第二轮：重新登录页用内核给的打码手机号（last_account.phone）与本机其他账号个数（other_profiles）", () => {
   const r = src("pages/Relogin.tsx");
   assert.match(r, /x\.last_account && \(!p\.email \|\| x\.last_account\.email === p\.email\)/, "只用同一个账号的号码");
-  assert.match(r, /acct\?\.phone \?\? \(who && p\.email \? p\.email : ""\)/, "身份卡副标题写打码手机号，没有时写邮箱");
-  assert.match(r, /这台电脑上还有 \$\{others\} 个账号/);
+  // 第 72 批（评分 C16）：被移出 / 退出团队时身份卡不再写刚离开的团队（teamGone），其余照旧
+  assert.match(r, /acct\?\.phone \?\? \(who && p\.email && !teamGone \? p\.email : ""\)/, "身份卡副标题写打码手机号，没有时写邮箱");
+  // 评分 C16 第 4 条：“换个账号”与“登录其他账号”合成一个入口——个数在点“换个账号”之后说
+  assert.match(r, /这台电脑上还有 \{others\} 个账号，登录对应账号即可打开。/);
+  assert.doesNotMatch(r, /className="auth-others"/);
   assert.doesNotMatch(r, /other_profiles[\s\S]{0,200}name/, "不列其他账号的姓名");
   const panel = src("components/AccountPanel.tsx");
   assert.match(panel, /const codeOnly = reloginAccount && !codeOnlyOff && knownPhone !== null;/, "内核明确没有号码时直接用可输入手机号的原流程");

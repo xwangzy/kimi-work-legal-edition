@@ -11,7 +11,7 @@ import { nav } from "../App.tsx";
 import { fmtPct } from "../lib/firm-usage.ts";
 import { offboardingSummary } from "../lib/offboarding.ts";
 import { personalView } from "../lib/personal-usage.ts";
-import { formatInviteCode, inviteCodeComplete, KIND_LABEL, leaveLines, teamErrorText, teamNameOk, upgradeLines, workspaceRoleTag, WS_ROLE_LABEL } from "../lib/workspace.ts";
+import { formatInviteCode, inviteCodeComplete, KIND_LABEL, LEFT_NOTICE_KEY, leaveLines, teamErrorText, teamNameOk, upgradeLines, workspaceRoleTag, WS_ROLE_LABEL } from "../lib/workspace.ts";
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { SettingRow } from "./SettingRow.tsx";
@@ -136,7 +136,7 @@ function UpgradeDialog({ initial, onClose, onDone }: { initial: string; onClose:
       >
         <label className="field">
           <span>团队名称</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoFocus placeholder="例如：某某律师事务所" />
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} autoFocus placeholder="例：××律师事务所" />
           {name.trim() && !ok && <span className="field-warn">团队名称须为 2～40 个字</span>}
         </label>
         <ul className="team-lines is-check">
@@ -240,11 +240,12 @@ export function TeamHeader({ ws, children }: { ws: WorkspaceState; children?: Re
   const role = ws.role ? WS_ROLE_LABEL[ws.role] : null;
   const firm = q?.mode === "control_plane" ? q.firm : null;
   const mine = q && q.mode === "control_plane" && q.firm ? personalView(q).used : null;
-  const stats: { k: string; v: string }[] = [
-    // 管理员与合伙人在下面的成员一节看到“席位 n / N 已分配”，这里不重复
-    ...(firm && Number.isFinite(firm.seats) && !ws.features.teamRead ? [{ k: "AI 使用名额", v: `${firm.seats} 个` }] : []),
-    ...(firm ? [{ k: "团队本期已用", v: fmtPct(firm.used_ratio) }] : []),
-    ...(mine !== null ? [{ k: "你本期已用", v: fmtPct(mine) }] : []),
+  // 第 72 批评分 C10 第 1 条：两个比例的分母不同（团队总额度 / 你的个人额度），各写一句，免得“你用的比团队还多”读成矛盾
+  const stats: { k: string; v: string; d?: string }[] = [
+    // 管理员与合伙人在下面的成员一节看到“席位（AI 使用名额）n / N 已分配”，这里不重复
+    ...(firm && Number.isFinite(firm.seats) && !ws.features.teamRead ? [{ k: "AI 使用名额", v: `${firm.seats} 个`, d: "团队可同时用 AI 的人数" }] : []),
+    ...(firm ? [{ k: "团队本期已用", v: fmtPct(firm.used_ratio), d: "占团队总额度" }] : []),
+    ...(mine !== null ? [{ k: "你本期已用", v: fmtPct(mine), d: "占你的个人额度" }] : []),
     ...(q?.plan?.label ? [{ k: "套餐", v: q.plan.label }] : []),
   ];
   return (
@@ -259,6 +260,7 @@ export function TeamHeader({ ws, children }: { ws: WorkspaceState; children?: Re
             <div key={s.k}>
               <dt>{s.k}</dt>
               <dd>{s.v}</dd>
+              {s.d && <dd className="team-stat-d">{s.d}</dd>}
             </div>
           ))}
         </dl>
@@ -267,7 +269,7 @@ export function TeamHeader({ ws, children }: { ws: WorkspaceState; children?: Re
       {!ws.features.teamRead && (
         <p className="team-privacy" role="note">
           {Icon.lock()}
-          <span>事项内容只在成员各自的电脑上，管理员看不到。要和同事一起办，在事项里开启团队共享。</span>
+          <span>事项内容只在成员自己的电脑上，管理员看不到；要一起办，在事项里开启团队共享。</span>
         </p>
       )}
       {children}
@@ -278,7 +280,7 @@ export function TeamHeader({ ws, children }: { ws: WorkspaceState; children?: Re
 /** 退出团队：先说明会进入离所交接，引导去交接；确认后切回另一个工作空间。 */
 export function LeaveTeam({ ws }: { ws: WorkspaceState }) {
   const [open, setOpen] = useState(false);
-  const [summary, setSummary] = useState<string | null>(null);
+  const [summary, setSummary] = useState<{ text: string; none: boolean } | null>(null);
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);
   const flow = useSwitchFlow();
@@ -291,11 +293,22 @@ export function LeaveTeam({ ws }: { ws: WorkspaceState }) {
     flow.clearError();
     members
       .offboarding()
-      .then((d) => setSummary(offboardingSummary(d)))
+      .then((d) => {
+        // 第 72 批评分 C15：没有负责的事项时第 1 步只说一句、不给“去离所交接”，并默认勾选
+        const none = d.matters.length === 0 || d.pending === 0;
+        setSummary({ text: d.matters.length === 0 ? "你没有需要交接的事项。" : offboardingSummary(d), none });
+        if (none) setAck(true);
+      })
       .catch(() => setSummary(null));
   };
   const leave = async () => {
     setBusy(true);
+    // 落到另一个工作空间后在侧栏说一次“你已退出「X」，已切到「Y」”（C16 第 5 条，同一条提示）
+    try {
+      localStorage.setItem(LEFT_NOTICE_KEY, JSON.stringify({ team: cur.name, how: "left", at: Date.now() }));
+    } catch {
+      // 记不住只是少一句提示
+    }
     const o = await flow.run(() => workspaces.leave(), back?.name ?? null);
     setBusy(false);
     if (o === "none" || o === "same") setOpen(false);
@@ -305,7 +318,7 @@ export function LeaveTeam({ ws }: { ws: WorkspaceState }) {
     <div className="device-row leave-row">
       <div className="device-k">退出团队</div>
       <div>
-        <div className="muted">{back ? `离开「${cur.name}」。退出前先在上面的“离所交接”里把你负责的事项交接好。` : ws.role === "admin" ? "这是你唯一的工作空间，你也是这个团队的管理员，不能退出。" : "这是你唯一的工作空间：要离开，请团队管理员把你移出。"}</div>
+        <div className="muted">{back ? `离开「${cur.name}」，这台电脑切到「${back.name}」。` : ws.role === "admin" ? "这是你唯一的工作空间，你也是这个团队的管理员，不能退出。" : "这是你唯一的工作空间：要离开，请团队管理员把你移出。"}</div>
         {back && (
           <button className="btn-ghost btn-danger btn-sm" onClick={show}>
             退出团队…
@@ -318,16 +331,18 @@ export function LeaveTeam({ ws }: { ws: WorkspaceState }) {
             <span className="leave-no">1</span>
             <div>
               <b>先交接你负责的事项</b>
-              <p className="muted">{summary ?? "正在查看你负责的事项…"}</p>
-              <button
-                className="btn-link"
-                onClick={() => {
-                  setOpen(false);
-                  window.dispatchEvent(new Event(OPEN_OFFBOARDING));
-                }}
-              >
-                去离所交接 →
-              </button>
+              <p className="muted">{summary?.text ?? "正在查看你负责的事项…"}</p>
+              {summary && !summary.none && (
+                <button
+                  className="btn-link"
+                  onClick={() => {
+                    setOpen(false);
+                    window.dispatchEvent(new Event(OPEN_OFFBOARDING));
+                  }}
+                >
+                  去离所交接 →
+                </button>
+              )}
             </div>
           </div>
           <div className="leave-step">
@@ -335,7 +350,7 @@ export function LeaveTeam({ ws }: { ws: WorkspaceState }) {
             <div>
               <b>再退出团队</b>
               <ul className="team-lines">
-                {leaveLines(cur.name, back?.name ?? null).map((l, i) => (
+                {leaveLines(cur.name, back?.name ?? null, !summary?.none).map((l, i) => (
                   <li key={i}>{l}</li>
                 ))}
               </ul>

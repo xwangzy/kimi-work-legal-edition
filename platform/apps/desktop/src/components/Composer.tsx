@@ -84,6 +84,8 @@ export function Composer(props: {
   const [roles, setRoles] = useState<Record<string, MaterialRole | null>>({});
   const boxRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  /** 托盘的事项芯片：“放进哪个事项”浮层的锚点。 */
+  const chipRef = useRef<HTMLButtonElement>(null);
   // ⌘ / Ctrl + K（新建任务）：把光标放进输入框
   useEffect(() => {
     const focus = () => textRef.current?.focus();
@@ -199,7 +201,7 @@ export function Composer(props: {
           </>
         }
         // 发送键旁不再写字（第 72 批）：快捷键在悬停提示里；不能发送的原因写在读屏标签与悬停提示里
-        send={<SendButton disabled={!canSend} onSend={send} blockedReason={blockedReason} />}
+        send={<SendButton disabled={!canSend || menu === "place"} onSend={send} blockedReason={blockedReason} />}
       >
       <textarea
         ref={textRef}
@@ -215,12 +217,13 @@ export function Composer(props: {
         // 回车发送、Shift + 回车换行（拍板第 23 项，与 Chat 统一）；中文输入法组字时回车不发送
         onKeyDown={sendOnEnter(send)}
       />
-      {props.suggestion && (
+      {/* 第 72 批第二轮（C2 必改 3）：“放进哪个事项”打开时建议条收起（并进浮层一行文字链接），同屏只留一个黑色主按钮 */}
+      {props.suggestion && menu !== "place" && (
         <div className="suggest-bar" role="status">
           <span className="suggest-text">
             这看起来是<b>「{props.suggestion.title}」</b>：会得到{props.suggestion.gets}。
           </span>
-          <button className="btn-primary btn-sm" onClick={props.suggestion.onUse}>使用{props.suggestion.title}</button>
+          <button className="btn-ghost btn-sm" onClick={props.suggestion.onUse}>使用{props.suggestion.title}</button>
           {/* 第 27 批走查：点完焦点回到输入框，回车照常能发起（原来焦点停在这个按钮上，快捷键失效） */}
           <button
             className="btn-link"
@@ -253,7 +256,7 @@ export function Composer(props: {
       {/* 事项上下文（Z3 #12、M-4：发起前一眼看到在哪个事项下工作）放在输入框下方托盘（Kimi“选择项目”同位）；底栏不放事项胶囊 */}
       <div className="composer-context">
         {props.matters ? (
-          <button className={`ctx-matter${matter ? "" : " ctx-empty"}`} onClick={() => setMenu(menu === "matter" || menu === "place" ? null : "matter")} title={matter ? matter.title : "选择事项"} aria-haspopup="listbox" aria-expanded={menu === "matter"}>
+          <button ref={chipRef} className={`ctx-matter${matter ? "" : " ctx-empty"}`} onClick={() => setMenu(menu === "matter" || menu === "place" ? null : "matter")} title={matter ? matter.title : "选择事项"} aria-haspopup="listbox" aria-expanded={menu === "matter"}>
             {/* Kimi“选择项目”同位：没选时就写“选择事项”，选了写事项名 */}
             <Icon.folder /> {matter ? <span className="ctx-title">{clipTitle(matter.title)}</span> : "选择事项"} <Icon.down />
           </button>
@@ -395,6 +398,18 @@ export function Composer(props: {
         <MatterPlace
           matters={props.matters}
           goal={value.goal}
+          anchor={chipRef.current}
+          suggestion={
+            props.suggestion
+              ? {
+                  title: props.suggestion.title,
+                  onUse: () => {
+                    setMenu(null);
+                    props.suggestion?.onUse();
+                  },
+                }
+              : null
+          }
           onPlace={(m, created) => {
             setMenu(null);
             props.onPlace?.(m, created);

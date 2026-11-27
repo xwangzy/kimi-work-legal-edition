@@ -26,11 +26,11 @@ export interface GuideProgress {
 export type ChecklistKey = "matter" | "material" | "task" | "result" | "backup" | "device" | "restore" | "folder";
 
 export const CHECKLIST: readonly { key: ChecklistKey; title: string; body: string; cta: string }[] = [
-  { key: "matter", title: "建事项", body: "写下要做的事，发送时建事项", cta: "去写任务" },
+  { key: "matter", title: "建事项", body: "写下要做的事，发送时建事项", cta: "去建事项" },
   { key: "material", title: "加材料", body: "导入合同、起诉状等，只存本机", cta: "去导入" },
   { key: "task", title: "发起任务", body: "写清要做的事，或选业务场景", cta: "去发起" },
   { key: "result", title: "复核成果", body: "AI 写的是草稿，逐条复核", cta: "去复核" },
-  { key: "backup", title: "备份这台电脑", body: "恢复包与备份位置", cta: "去备份" },
+  { key: "backup", title: "备份电脑", body: "恢复包与备份位置", cta: "去备份" },
 ];
 
 /** 新电脑版（账号已上手、这台电脑是新的）：三项。 */

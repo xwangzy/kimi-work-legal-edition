@@ -19,7 +19,8 @@ test("方法与版本：方法模板任务写名称与版本；快照是字符�
 test("输入框：两页都是回车发送、Shift + 回车换行，快捷键写在发送键悬停提示里、不常驻成灰字；不能发送时按钮变灰、原因在读屏标签（第 72 批改）", () => {
   // 第 72 批（拍板第 23 项）：Work 与 Chat 同一手势，常驻的“⌘ + Enter 发送 / 回车发送 · Shift + 回车换行”删掉
   const src = readFileSync(fileURLToPath(new URL("../src/components/Composer.tsx", import.meta.url)), "utf8");
-  assert.match(src, /send=\{<SendButton disabled=\{!canSend\} onSend=\{send\} blockedReason=\{blockedReason\} \/>\}/);
+  // 第 72 批第二轮（C2）：“放进哪个事项”打开时发送键置灰，同屏只留浮层里一个黑色主按钮
+  assert.match(src, /send=\{<SendButton disabled=\{!canSend \|\| menu === "place"\} onSend=\{send\} blockedReason=\{blockedReason\} \/>\}/);
   assert.doesNotMatch(src, /SEND_KEY|send-hint/);
   const frame = readFileSync(fileURLToPath(new URL("../src/components/ComposerFrame.tsx", import.meta.url)), "utf8");
   assert.match(frame, /export const SEND_TITLE = "发送（回车；Shift \+ 回车换行）";/);

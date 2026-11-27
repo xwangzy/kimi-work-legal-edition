@@ -19,11 +19,36 @@ const src = (p: string) => readFileSync(join(root, p), "utf8");
 /** 苹方的纵向度量（1000 单位：上 1060、下 340、行距 0）：中文在固定高度的胶囊、按钮里与 macOS 同高，不偏下。 */
 const METRICS = "  ascent-override: 106%;\n  descent-override: 34%;\n  line-gap-override: 0%;\n";
 
+/**
+ * 第 72 批第二轮（设计评分跨页第 4/5 条）：分隔点“·”（U+00B7）与省略号“…”（U+2026）不由 Noto Sans SC 画——
+ * 中文字体把它们画成全角粗圆点“ • ”和居中“⋯”，与 macOS 不同；从切片里剔掉，Windows 落到 Segoe UI（西文写法，与苹方同形）。
+ */
+const EXCLUDE = [0xb7, 0x2026];
+function excludeFromRange(range: string): string {
+  const out: string[] = [];
+  for (const tok of range.split(",")) {
+    const m = /^U\+([0-9a-f]+)(?:-([0-9a-f]+))?$/i.exec(tok.trim());
+    if (!m) {
+      out.push(tok);
+      continue;
+    }
+    let lo = parseInt(m[1]!, 16);
+    const hi = m[2] ? parseInt(m[2], 16) : lo;
+    const hex = (n: number) => n.toString(16);
+    for (const x of EXCLUDE.filter((c) => c >= lo && c <= hi).sort((a, b) => a - b)) {
+      if (x > lo) out.push(x - 1 > lo ? `U+${hex(lo)}-${hex(x - 1)}` : `U+${hex(lo)}`);
+      lo = x + 1;
+    }
+    if (lo <= hi) out.push(hi > lo ? `U+${hex(lo)}-${hex(hi)}` : `U+${hex(lo)}`);
+  }
+  return out.join(",");
+}
+
 function generate(): string {
   const head = `/*
  * Noto Sans SC（思源黑体）400 / 500 / 600，SIL Open Font License 1.1（许可原文见同目录 NotoSansSC-OFL.txt）。
  * 由 test/b72-fonts.test.ts 从 @fontsource/noto-sans-sc 5.3.1 生成，勿手改：只留 woff2（不带 woff 回退，Electron 内核都支持 woff2）、
- * 加纵向度量覆盖（对齐苹方，中文在胶囊与按钮里不偏下）。按字符区间切片，界面用到哪些字才加载哪些片。
+ * 加纵向度量覆盖（对齐苹方，中文在胶囊与按钮里不偏下）；分隔点“·”与省略号“…”不由它画（与 macOS 同形）。按字符区间切片，界面用到哪些字才加载哪些片。
  * 只有 Windows 的字体栈引用它（tokens.css 的 html.plat-win32），macOS 与网页开发形态不下载。
  */
 `;
@@ -33,7 +58,8 @@ function generate(): string {
     for (const m of css.matchAll(/@font-face \{([^}]*)\}/g)) {
       const body = m[1]!;
       const file = /url\(\.\/files\/([^)]+\.woff2)\)/.exec(body)?.[1];
-      const range = /unicode-range: ([^;]+);/.exec(body)?.[1];
+      const raw = /unicode-range: ([^;]+);/.exec(body)?.[1];
+      const range = raw ? excludeFromRange(raw) : raw;
       if (!file || !range) throw new Error(`切片缺字段：${body.slice(0, 80)}`);
       blocks.push(`@font-face {\n  font-family: "Noto Sans SC";\n  font-style: normal;\n  font-display: swap;\n  font-weight: ${w};\n  src: url("@fontsource/noto-sans-sc/files/${file}") format("woff2");\n${METRICS}  unicode-range: ${range};\n}\n`);
     }
@@ -57,6 +83,9 @@ test("随包中文字体：@fontsource/noto-sans-sc 5.3.1（OFL-1.1）已声明�
   // 三个字重都在、都只引 woff2、都带度量覆盖
   for (const w of [400, 500, 600]) assert.ok((css.match(new RegExp(`font-weight: ${w};`, "g")) ?? []).length > 90, `${w} 切片`);
   assert.doesNotMatch(css, /\.woff\)/);
+  // 分隔点与省略号剔出了切片
+  assert.equal(excludeFromRange("U+0-ff,U+2000-206f"), "U+0-b6,U+b8-ff,U+2000-2025,U+2027-206f");
+  assert.equal(excludeFromRange("U+b7,U+2026"), "");
   assert.equal((css.match(/ascent-override: 106%;/g) ?? []).length, (css.match(/@font-face/g) ?? []).length);
 });
 

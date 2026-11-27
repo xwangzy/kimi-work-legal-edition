@@ -109,23 +109,32 @@
 
 /* 第 72 批（D-301）：没选事项时托盘的事项芯片是虚线描边，不加警示色；按发送时在这里弹出“放进哪个事项？” */
 .ctx-matter.ctx-empty { border: 1px dashed var(--border-hover); background: var(--bg-surface); color: var(--text-label); }
-.place-pop { left: var(--sp-5); right: auto; width: min(440px, calc(100% - 2 * var(--sp-5))); padding: 0; overflow: visible; max-height: none; display: flex; flex-direction: column; }
+/* 第 72 批第二轮（C2）：固定定位（位置由 MatterPlace 按视口算：下方 / 上方 / 居中），限高；表单区内滚、底部按钮吸底；背后淡遮罩 */
+.place-mask { position: fixed; inset: 0; z-index: 60; background: var(--bg-overlay); }
+.place-pop { position: fixed; right: auto; bottom: auto; z-index: 61; padding: 0; overflow: hidden; max-height: none; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); }
+.place-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.place-foot { flex: none; border-top: 1px solid var(--border-subtle); }
+.place-suggest { margin-top: var(--sp-2); font-size: var(--fs-caption); color: var(--text-secondary); }
+.place-suggest .btn-link { padding: 0; font-size: inherit; }
 .place-head { padding: var(--sp-3) var(--sp-4) var(--sp-2); }
 .place-title { font-size: var(--fs-body); font-weight: var(--fw-strong); color: var(--text-primary); }
 .place-sub { margin-top: 2px; font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.6; }
-.place-list { max-height: 232px; overflow-y: auto; padding: 0 var(--sp-1); display: flex; flex-direction: column; }
+.place-list { padding: 0 var(--sp-1); display: flex; flex-direction: column; }
 .place-list .menu-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .place-list .menu-label svg { width: 14px; height: 14px; flex: none; color: var(--text-label); }
 .place-new { margin: var(--sp-1); width: auto; border-top: 0; }
 .place-new .menu-label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .place-new-name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.place-form { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-1) var(--sp-4) var(--sp-4); }
+.place-form { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.place-fields { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-1) var(--sp-4) var(--sp-3); }
 .place-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .place-k { font-size: var(--fs-caption); color: var(--text-label); }
 .place-field .input { width: 100%; }
 .place-seg { align-self: flex-start; }
 .place-hint { font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.6; }
 .place-err { margin: 0; }
-.place-actions { display: flex; align-items: center; gap: var(--sp-2); padding-top: var(--sp-1); }
+.place-actions { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--border-subtle); background: var(--bg-elevated); }
 .place-actions .btn-link { padding: 0; font-size: var(--fs-caption); }
 .mdl-foot { text-wrap: pretty; }
+/* 第 72 批第二轮（Q-8）：连不上云端的一行提示（输入框上方提示条同位，克制：灰字 + 琥珀小点） */
+.notice-offline .notice-dot { flex: none; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-warning-text); }

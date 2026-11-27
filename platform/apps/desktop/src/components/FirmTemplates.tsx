@@ -11,6 +11,7 @@ import { fmtDate } from "../lib/labels.ts";
 import { templatesLabel } from "../lib/workspace.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { useWorkspace } from "./WorkspaceSwitch.tsx";
+import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { Select } from "./Select.tsx";
 
@@ -40,9 +41,10 @@ export function FirmTemplates() {
   return (
     <section aria-label={label.short} id="firm-templates">
       <div className="section-title">{label.short}</div>
-      <p className="muted">
-        {personal ? "放入你常用的合同范本（去掉客户信息）。审合同时，工作台的每张卡片会列出范本对此条的写法，可以照着改。范本存在这台电脑上；" : "放入本所常用的合同范本（去掉客户信息）。审合同时，工作台的每张卡片会列出“本所范本对此条的写法”，可以照着改。范本只存在这台电脑上、不会同步到同事的电脑；"}
-        范本库本身不发给 AI，但你照着改并接受的文字、放进事项的范本，会和事项里其他内容一样随任务发给 AI。
+      {/* 第 72 批评分 C17：说明压成一句（存哪、什么会发给 AI），动作放在说明之前的视觉重心 */}
+      <p className="muted ft-lead">
+        {personal ? "审合同时，工作台会列出你范本里对应条款的写法。" : "审合同时，工作台会列出本所范本里对应条款的写法。"}
+        范本只存在这台电脑{personal ? "" : "、不同步给同事"}；范本库本身不发给 AI，被你采用的条款和放进事项的范本会随任务发给 AI。
       </p>
       {msg && <div className="banner banner-red">{msg}</div>}
       {note && (
@@ -53,7 +55,16 @@ export function FirmTemplates() {
       {list === null ? (
         <p className="muted">载入中…</p>
       ) : list.length === 0 ? (
-        <p className="muted">还没有范本。</p>
+        <div className="ft-empty">
+          <span className="ft-empty-ico" aria-hidden="true">
+            <Icon.book />
+          </span>
+          <b>{personal ? "还没有你的范本" : "还没有本所范本"}</b>
+          <p className="muted">放入常用的合同范本（去掉客户信息），审合同时就能照着改。支持 .docx、.txt，也可以直接粘贴正文。</p>
+          <button className="btn-primary btn-sm" onClick={() => setAdding(true)}>
+            放入第一份范本
+          </button>
+        </div>
       ) : (
         <table className="data ft-table">
           <thead>
@@ -102,11 +113,13 @@ export function FirmTemplates() {
           </tbody>
         </table>
       )}
-      <div className="settings-choice">
-        <button className="btn-ghost btn-sm" onClick={() => setAdding(true)}>
-          放入范本…
-        </button>
-      </div>
+      {list !== null && list.length > 0 && (
+        <div className="settings-choice">
+          <button className="btn-ghost btn-sm" onClick={() => setAdding(true)}>
+            放入范本…
+          </button>
+        </div>
+      )}
       {adding && (
         <AddTemplate
           types={types}

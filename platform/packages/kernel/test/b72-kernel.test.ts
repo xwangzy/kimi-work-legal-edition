@@ -303,3 +303,19 @@ test("邀请码、团队名称、账号元数据：规整与本机小记录", ()
   assert.deepEqual([m2.workspace_kind, m2.onboarding?.dismissed_at], ["personal", "2026-11-27T08:00:00Z"], "合并写");
   assert.deepEqual(readAccountMeta(dir)?.workspace_kind, "personal");
 });
+
+test("第 72 批（设计评分 C12 / C16）：工作空间项转交 disabled_kind——只在已停用时、只认三种取值", async () => {
+  const { workspaceItems } = await import("../src/services/workspaces.ts");
+  const items = workspaceItems(
+    [
+      { aid: "acc_AAAAAAAAAAAAAAAA", tid: "ten_a", kind: "personal", name: "甲", role: "admin", status: "active", current: true, disabled_kind: "removed" },
+      { aid: "acc_BBBBBBBBBBBBBBBB", tid: "ten_b", kind: "team", name: "乙所", role: "lawyer", status: "disabled", disabled_kind: "removed" },
+      { aid: "acc_CCCCCCCCCCCCCCCC", tid: "ten_c", kind: "team", name: "丙所", role: "lawyer", status: "disabled", disabled_kind: "left" },
+      { aid: "acc_DDDDDDDDDDDDDDDD", tid: "ten_d", kind: "team", name: "丁所", role: "lawyer", status: "disabled", disabled_kind: "whatever" },
+    ],
+    [],
+    null,
+  );
+  const by = Object.fromEntries(items.map((x) => [x.name, x.disabled_kind]));
+  assert.deepEqual(by, { 甲: null, 乙所: "removed", 丙所: "left", 丁所: null });
+});

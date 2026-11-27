@@ -57,7 +57,8 @@ test("选一台移除：整卡（一个标题）、单选、默认预选、主�
   assert.match(s, /"退出所选电脑并继续" : "移除所选电脑并继续"/);
   assert.doesNotMatch(s, /targetName/);
   assert.match(s, /`已在 \$\{n\} 台电脑登录`/);
-  assert.match(s, /退出其中一台，就能在这台电脑继续。/);
+  // 第 72 批第二轮（设计评分 C5）：说出上限；只有一台可选时说“退出那台”
+  assert.match(s, /`你的账号最多同时在 \$\{n\} 台电脑登录。\$\{single \? "退出那台" : "退出其中一台"\}，就能在这台电脑继续。`/);
   assert.match(s, /那台电脑上的事项和成果都还在，重新登录即可。/);
   // 上限只来自云端（limit = 云端 device_limit；没给时按列表台数说），界面没有写死的台数
   assert.doesNotMatch(s.replace(/\/\*[\s\S]*?\*\//g, ""), /\b(?:20|9)\s*台/);

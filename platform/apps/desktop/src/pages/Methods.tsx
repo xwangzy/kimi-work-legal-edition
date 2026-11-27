@@ -90,11 +90,7 @@ export function MethodsPage() {
         {showTemplates ? (
           <div className="mc-templates">
             <FirmTemplates />
-            <div className="section-title h-sub">即将推出</div>
-            <ul className="plain-list muted">
-              {ws.kind !== "personal" && <li>本所规则与范本统一下发：由律所管理员审核发布后，所有律师的电脑都能用（现在的本所范本每台电脑各自放入）。</li>}
-              <li>个人模板：把常用做法保存为自己的模板。</li>
-            </ul>
+            {/* 第 72 批评分 C17：路线图不放进“我的范本”页（原“即将推出 · 个人模板”与“范本”两个概念并排，律师分不清） */}
           </div>
         ) : (
           <>

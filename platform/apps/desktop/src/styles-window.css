@@ -29,3 +29,4 @@ html.plat-win32 ::-webkit-scrollbar-button { display: none; }
 html.plat-win32 ::-webkit-scrollbar-track, html.plat-win32 ::-webkit-scrollbar-corner { background: transparent; }
 html.plat-win32 ::-webkit-scrollbar-thumb { border: 3px solid transparent; background-clip: padding-box; border-radius: var(--r-full); background-color: var(--border-strong); }
 html.plat-win32 ::-webkit-scrollbar-thumb:hover { background-color: var(--text-secondary); }
+html.frameless .place-mask, html.frameless .place-pop { -webkit-app-region: no-drag; }

@@ -117,13 +117,46 @@ export function upgradeLines(name: string): string[] {
 }
 
 /** 退出团队（成员自己）的后果说明。纯函数。 */
-export function leaveLines(team: string, back: string | null): string[] {
+export function leaveLines(team: string, back: string | null, handover = true): string[] {
   return [
     `退出后你不再是「${team}」的成员：你在团队里的 AI 使用名额随即释放，团队共享给你的事项此后收不到新内容。`,
-    "这台电脑上团队空间里的事项和成果不会被删除，按离所交接处理；请先把你负责的事项交接好。",
+    // 没有要交接的事项时不再重复“先交接”（评分 C15：交接说明只讲一次）
+    handover ? "这台电脑上团队空间里的事项和成果不会被删除；你负责的事项请先交接给同事。" : "这台电脑上团队空间里的事项和成果不会被删除。",
     back ? `退出后这台电脑切到「${back}」，那里的事项不受影响。` : "退出后这台电脑切到你的另一个工作空间。",
-    "不能自己撤回：要回来，需要团队管理员重新邀请。",
+    "不能自己撤回：要回来，需要团队管理员在成员列表里重新启用，或重新邀请你。",
   ];
+}
+
+/**
+ * 日期时刻的产品通用写法（第 72 批评分 C10 第 4 条）：“12 月 4 日 12:49”，跨年才写年份（北京时间，与 lib/account.ts dayLabel 同口径）。纯函数。
+ */
+export function dueLabel(iso: string | null | undefined, now = Date.now()): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return "—";
+  const d = new Date(t + 8 * 3600_000);
+  const y = new Date(now + 8 * 3600_000).getUTCFullYear();
+  const hm = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  return `${d.getUTCFullYear() !== y ? `${d.getUTCFullYear()} 年 ` : ""}${d.getUTCMonth() + 1} 月 ${d.getUTCDate()} 日 ${hm}`;
+}
+
+/**
+ * 被移出 / 退出团队后的一次性提示（C16 第 5 条）：重新登录落到另一个工作空间后，侧栏账号区上方说一句。
+ * 记在本机（重新登录页记下离开的团队名；落到新空间后显示一次即清）。纯函数部分：文案。
+ */
+export const LEFT_NOTICE_KEY = "kwl.ws.left-notice";
+export function leftNoticeText(n: { team: string; how: "removed" | "left" }, now: string | null): string {
+  const to = now ? `，已切到「${now}」` : "";
+  return `${n.how === "left" ? "你已退出" : "你已不在"}「${n.team}」${to}。团队空间里的事项仍在这台电脑上。`;
+}
+export function parseLeftNotice(raw: string | null): { team: string; how: "removed" | "left"; at: number } | null {
+  try {
+    const j = raw ? JSON.parse(raw) : null;
+    if (!j || typeof j.team !== "string" || !j.team.trim() || (j.how !== "removed" && j.how !== "left") || typeof j.at !== "number") return null;
+    // 一天内有效：过时的不再提
+    return Date.now() - j.at < 86_400_000 ? { team: j.team.slice(0, 80), how: j.how, at: j.at } : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

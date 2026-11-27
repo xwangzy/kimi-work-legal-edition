@@ -18,7 +18,7 @@ import { BrandLockup, KimiMark } from "./Brand.tsx";
 import { notifyAccountChanged } from "./AccountPanel.tsx";
 import { onDataChanged } from "../lib/events.ts";
 import { sidebarFoot, userCardText } from "../lib/user-card.ts";
-import { KIND_LABEL, workspaceLabel, workspaceMenuMeta, workspaceRoleTag } from "../lib/workspace.ts";
+import { KIND_LABEL, LEFT_NOTICE_KEY, leftNoticeText, parseLeftNotice, workspaceLabel, workspaceMenuMeta, workspaceRoleTag } from "../lib/workspace.ts";
 import { useSwitchFlow, useWorkspace, type WorkspaceState } from "./WorkspaceSwitch.tsx";
 import { openJoinTeam } from "./TeamSpace.tsx";
 import { planBadge, quotaMenuLine } from "../lib/quota-notice.ts";
@@ -441,6 +441,23 @@ function UserCard(props: {
   const wsCur = wsList?.current ?? null;
   const flow = useSwitchFlow();
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
+  // 第 72 批评分 C16 第 5 条：被移出 / 退出团队、重新登录落到另一个工作空间后，在账号区上方说一次（显示即从本机清掉）
+  const [leftNote, setLeftNote] = useState(() => {
+    try {
+      return parseLeftNotice(localStorage.getItem(LEFT_NOTICE_KEY));
+    } catch {
+      return null;
+    }
+  });
+  const showLeft = !!leftNote && !!wsCur && wsCur.name !== leftNote.team;
+  useEffect(() => {
+    if (!showLeft) return;
+    try {
+      localStorage.removeItem(LEFT_NOTICE_KEY);
+    } catch {
+      // 清不掉下次再说一次，无害
+    }
+  }, [showLeft]);
   const footTone = foot.tone;
   const [open, setOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
@@ -480,6 +497,14 @@ function UserCard(props: {
   const warn = footTone !== "dot-ok";
   return (
     <div className="user-wrap" ref={ref}>
+      {showLeft && !open && (
+        <div className="ws-left-note" role="status">
+          <span>{leftNoticeText(leftNote!, wsCur!.name)}</span>
+          <button className="btn-link" onClick={() => setLeftNote(null)}>
+            知道了
+          </button>
+        </div>
+      )}
       {open && (
         <div className="popover user-menu" role="menu" aria-label="账号菜单">
           <div className="user-menu-head">

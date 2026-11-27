@@ -4,9 +4,9 @@
  * 每个危险操作都先说清后果（lib/team-admin.ts），任何操作都不超过两步（点一下 → 确认）。
  * 云端不支持新接口（旧云端，supported:false）时退回原来的成员页（MembersAdmin，按律所电脑邀请与批准）。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { account, team } from "../api.ts";
-import { fmtTime } from "../lib/labels.ts";
 import {
   adminErrorText,
   devicesCell,
@@ -14,6 +14,7 @@ import {
   INVITE_STATUS,
   MEMBER_DEVICE_POLICY,
   memberActions,
+  memberMenu,
   memberStatus,
   releaseSeatLine,
   removeLines,
@@ -25,7 +26,7 @@ import {
   type TeamInviteRow,
   type TeamMemberRow,
 } from "../lib/team-admin.ts";
-import { WS_ROLE_LABEL, type WorkspaceRole } from "../lib/workspace.ts";
+import { dueLabel, WS_ROLE_LABEL, type WorkspaceRole } from "../lib/workspace.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { Icon } from "./Icons.tsx";
 import { MembersAdmin, PendingDevices } from "./MembersAdmin.tsx";
@@ -37,6 +38,8 @@ const nameOf = (m: Pick<TeamMemberRow, "name" | "email">): string => m.name?.tri
 
 type Ask =
   | { kind: "role"; m: TeamMemberRow; role: WorkspaceRole }
+  | { kind: "release"; m: TeamMemberRow }
+  | { kind: "disable"; m: TeamMemberRow }
   | { kind: "remove"; m: TeamMemberRow; ack: boolean };
 
 /** 团队管理（管理员可改，合伙人只读）。myAid = 当前工作空间里“我”的账号编号（不能停用 / 移出自己）。 */
@@ -124,15 +127,8 @@ export function TeamAdmin({ canEdit, myAid }: { canEdit: boolean; myAid: string 
           )}
         </td>
         <td>
+          {/* 第 72 批评分 C10：席位列只写有 / 无，分配 / 释放收进行尾菜单 */}
           <span className={`tm-seat${a.seat === "release" ? " on" : ""}`}>{a.seat === "release" ? "有" : m.status === "active" ? "无" : "—"}</span>
-          {canEdit && a.seat === "assign" && (
-            <button className="btn-link tm-inline" disabled={busy !== null} onClick={() => void run(`seat-${m.aid}`, () => team.seat(m.aid, true), `已给${who}分配席位`)}>
-              分配
-            </button>
-          )}
-          {canEdit && a.seat === "release" && !me && (
-            <ConfirmButton label="释放" className="btn-link tm-inline" question={releaseSeatLine(who)} confirmLabel="释放席位" disabled={busy !== null} onConfirm={() => run(`seat-${m.aid}`, () => team.seat(m.aid, false), `已释放${who}的席位`)} />
-          )}
         </td>
         <td className="tm-num">{devicesCell(m.devices_summary)}</td>
         <td>
@@ -142,18 +138,19 @@ export function TeamAdmin({ canEdit, myAid }: { canEdit: boolean; myAid: string 
           </span>
         </td>
         <td className="tm-acts">
-          {canEdit && a.disable && (
-            <ConfirmButton label="停用" className="btn-ghost btn-sm" question={disableLines(who).join("")} confirmLabel="停用" disabled={busy !== null} onConfirm={() => run(`dis-${m.aid}`, () => team.disable(m.aid), `已停用${who}`)} />
-          )}
-          {canEdit && a.remove && (
-            <button className="btn-ghost btn-danger btn-sm" disabled={busy !== null} onClick={() => setAsk({ kind: "remove", m, ack: false })}>
-              移出团队…
-            </button>
-          )}
-          {canEdit && a.enable && (
-            <button className="btn-ghost btn-sm" disabled={busy !== null} onClick={() => void run(`en-${m.aid}`, () => team.enable(m.aid), `已重新启用${who}`)}>
-              重新启用
-            </button>
+          {canEdit && !me && (
+            <RowMenu
+              who={who}
+              items={memberMenu(a)}
+              disabled={busy !== null}
+              onPick={(k) => {
+                if (k === "assign") void run(`seat-${m.aid}`, () => team.seat(m.aid, true), `已给${who}分配席位`);
+                else if (k === "enable") void run(`en-${m.aid}`, () => team.enable(m.aid), `已重新启用${who}`);
+                else if (k === "release") setAsk({ kind: "release", m });
+                else if (k === "disable") setAsk({ kind: "disable", m });
+                else setAsk({ kind: "remove", m, ack: false });
+              }}
+            />
           )}
           {m.disabled_by === "platform" && <span className="muted">请联系中软客服</span>}
         </td>
@@ -177,7 +174,7 @@ export function TeamAdmin({ canEdit, myAid }: { canEdit: boolean; myAid: string 
       </div>
       <p className="team-privacy" role="note">
         {Icon.lock()}
-        <span>事项内容只在成员各自的电脑上，管理员看不到。这里只管谁能用、能用几台电脑。</span>
+        <span>事项内容只在成员自己的电脑上，这里只管谁能用、能用几台。</span>
       </p>
       {err && !data && <p className="activate-error">{err}</p>}
       {msg && (
@@ -204,7 +201,7 @@ export function TeamAdmin({ canEdit, myAid }: { canEdit: boolean; myAid: string 
       )}
       {off.length > 0 && (
         <details className="quiet-details tm-off">
-          <summary>已停用或移出的成员（{off.length}）</summary>
+          <summary>已停用、已移出的成员（{off.length}）</summary>
           <div className="tm-table-wrap">
             <table className="members-table tm-table">
               <tbody>{off.map(row)}</tbody>
@@ -213,6 +210,8 @@ export function TeamAdmin({ canEdit, myAid }: { canEdit: boolean; myAid: string 
         </details>
       )}
 
+      {/* 第 72 批评分 C15：邀请只有管理员管，合伙人（只读）不显示这一块 */}
+      {canEdit && (
       <div className="team-sub-sec">
         <h3 className="team-h3">邀请</h3>
         {open.length === 0 ? (
@@ -225,7 +224,7 @@ export function TeamAdmin({ canEdit, myAid }: { canEdit: boolean; myAid: string 
                   <b>{x.name}</b>
                   <span className="tag">{roleName(x.role)}</span>
                 </span>
-                <span className="muted">{fmtTime(x.expires_at)} 前有效</span>
+                <span className="muted">{dueLabel(x.expires_at)} 前有效</span>
                 {canEdit && <ConfirmButton label="撤回" className="btn-ghost btn-sm" question={`撤回给${x.name}的邀请？撤回后这串邀请码不能再用。`} confirmLabel="撤回" onConfirm={() => run(`inv-${x.id}`, () => team.revokeInvite(x.id), "已撤回")} />}
               </li>
             ))}
@@ -243,7 +242,7 @@ export function TeamAdmin({ canEdit, myAid }: { canEdit: boolean; myAid: string 
                   </span>
                   <span className="muted">
                     {INVITE_STATUS[x.status] ?? x.status}
-                    {x.accepted_at ? ` · ${fmtTime(x.accepted_at)}` : ""}
+                    {x.accepted_at ? ` · ${dueLabel(x.accepted_at)}` : ""}
                   </span>
                 </li>
               ))}
@@ -251,18 +250,13 @@ export function TeamAdmin({ canEdit, myAid }: { canEdit: boolean; myAid: string 
           </details>
         )}
       </div>
+      )}
 
       {canEdit && (
-        <>
-          <div className="team-sub-sec">
-            <h3 className="team-h3">电脑待确认</h3>
-            <PendingDevices />
-          </div>
-          <div className="team-sub-sec">
-            <h3 className="team-h3">成员新电脑</h3>
-            <MemberDevicePolicy onDone={(t) => setMsg({ text: t })} />
-          </div>
-        </>
+        <div className="team-sub-sec">
+          <h3 className="team-h3">电脑待确认</h3>
+          <PendingDevices />
+        </div>
       )}
 
       {inviting && <InviteDialog onClose={() => setInviting(false)} onCreated={load} />}
@@ -275,6 +269,36 @@ export function TeamAdmin({ canEdit, myAid }: { canEdit: boolean; myAid: string 
             </button>
             <button className="btn-primary btn-sm" disabled={busy !== null} onClick={() => void run(`role-${ask.m.aid}`, () => team.role(ask.m.aid, ask.role), `已把${nameOf(ask.m)}改为${WS_ROLE_LABEL[ask.role]}`)}>
               {busy ? "正在修改…" : `改为${WS_ROLE_LABEL[ask.role]}`}
+            </button>
+          </div>
+        </Modal>
+      )}
+      {ask?.kind === "release" && (
+        <Modal title={`释放${nameOf(ask.m)}的席位？`} onClose={() => setAsk(null)}>
+          <p className="confirm-dialog-q">{releaseSeatLine(nameOf(ask.m))}</p>
+          <div className="modal-actions">
+            <button className="btn-ghost btn-sm" autoFocus onClick={() => setAsk(null)}>
+              取消
+            </button>
+            <button className="btn-primary btn-sm" disabled={busy !== null} onClick={() => void run(`seat-${ask.m.aid}`, () => team.seat(ask.m.aid, false), `已释放${nameOf(ask.m)}的席位`)}>
+              {busy ? "正在释放…" : "释放席位"}
+            </button>
+          </div>
+        </Modal>
+      )}
+      {ask?.kind === "disable" && (
+        <Modal title={`停用${nameOf(ask.m)}？`} onClose={() => setAsk(null)}>
+          <ul className="team-lines">
+            {disableLines(nameOf(ask.m)).map((l, i) => (
+              <li key={i}>{l}</li>
+            ))}
+          </ul>
+          <div className="modal-actions">
+            <button className="btn-ghost btn-sm" autoFocus onClick={() => setAsk(null)}>
+              取消
+            </button>
+            <button className="btn-danger-solid btn-sm" disabled={busy !== null} onClick={() => void run(`dis-${ask.m.aid}`, () => team.disable(ask.m.aid), `已停用${nameOf(ask.m)}`)}>
+              {busy ? "正在停用…" : "停用"}
             </button>
           </div>
         </Modal>
@@ -345,7 +369,7 @@ function InviteDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
             {Icon.copy()} {copied ? "已复制" : "复制邀请码"}
           </button>
           <ul className="team-lines">
-            <li>只显示这一次{issued.expires_at ? `，${fmtTime(issued.expires_at)} 前有效（7 天）` : "，7 天内有效"}，只能用一次；不用了可以在“邀请”里撤回。</li>
+            <li>只显示这一次{issued.expires_at ? `，${dueLabel(issued.expires_at)} 前有效（7 天）` : "，7 天内有效"}，只能用一次；不用了可以在“邀请”里撤回。</li>
             <li>已注册的同事：在 Kimi Work 的“设置 · 账号 · 加入团队”里输入这个码。</li>
             <li>还没注册的同事：注册时填这个码，注册完就直接进入团队。</li>
           </ul>
@@ -398,8 +422,84 @@ function InviteDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
   );
 }
 
+/**
+ * 行尾“…”菜单（第 72 批评分 C10 第 2 条）：分配 / 释放席位、停用、重新启用、移出团队，每项一句后果，危险项置底标红。
+ * 挂到 document.body（成员表外面包着横向滚动，菜单放在表内会被裁掉），按按钮位置定位；Esc、点外面关闭。
+ */
+function RowMenu({ who, items, disabled, onPick }: { who: string; items: ReturnType<typeof memberMenu>; disabled: boolean; onPick: (k: ReturnType<typeof memberMenu>[number]["key"]) => void }) {
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!pos) return;
+    const close = (e: MouseEvent) => {
+      if (!menu.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) setPos(null);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && (setPos(null), btn.current?.focus());
+    const away = () => setPos(null);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    window.addEventListener("resize", away);
+    window.addEventListener("scroll", away, true);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+      window.removeEventListener("resize", away);
+      window.removeEventListener("scroll", away, true);
+    };
+  }, [pos]);
+  if (items.length === 0) return null;
+  const firstDanger = items.findIndex((x) => x.danger);
+  return (
+    <>
+      <button
+        ref={btn}
+        className="icon-btn tm-more"
+        aria-label={`${who}的更多操作`}
+        aria-haspopup="menu"
+        aria-expanded={!!pos}
+        disabled={disabled}
+        onClick={() => {
+          if (pos) return setPos(null);
+          const r = btn.current!.getBoundingClientRect();
+          // 靠近窗口底部时向上展开（菜单约 200px 高）
+          const right = Math.max(8, window.innerWidth - r.right);
+          setPos(r.bottom + 220 > window.innerHeight ? { bottom: window.innerHeight - r.top + 6, right } : { top: r.bottom + 6, right });
+        }}
+      >
+        {Icon.more()}
+      </button>
+      {pos &&
+        createPortal(
+          <div ref={menu} className="popover tm-menu" role="menu" aria-label={`${who}的更多操作`} style={{ top: pos.top, bottom: pos.bottom, right: pos.right }}>
+            {items.map((x, i) => (
+              <div key={x.key}>
+                {i === firstDanger && i > 0 && <div className="menu-sep" role="separator" />}
+                <button
+                  className={`menu-row tm-menu-row${x.danger ? " is-danger" : ""}`}
+                  role="menuitem"
+                  autoFocus={i === 0}
+                  onClick={() => {
+                    setPos(null);
+                    onPick(x.key);
+                  }}
+                >
+                  <span className="menu-row-text">
+                    <b>{x.label}</b>
+                    <small>{x.hint}</small>
+                  </span>
+                </button>
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 /** 成员新电脑策略（D-304）：缺省“直接登录”；可改“须管理员确认”（写清后果，二次确认）。当前值取 /v1/auth/me 的 workspace.member_device_policy。 */
-function MemberDevicePolicy({ onDone }: { onDone: (t: string) => void }) {
+export function MemberDevicePolicy({ onDone }: { onDone?: (t: string) => void }) {
   const [policy, setPolicy] = useState<"auto" | "approve" | null>(null);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -418,7 +518,7 @@ function MemberDevicePolicy({ onDone }: { onDone: (t: string) => void }) {
       if (r.supported === false) throw new Error("云端暂时不支持改这项设置");
       setPolicy(r.policy ?? p);
       setAsking(false);
-      onDone(p === "approve" ? "已改为：成员新电脑须管理员确认" : "已改为：成员新电脑直接登录");
+      onDone?.(p === "approve" ? "已改为：成员新电脑须管理员确认" : "已改为：成员新电脑直接登录");
     } catch (e) {
       setErr(adminErrorText(e));
     } finally {

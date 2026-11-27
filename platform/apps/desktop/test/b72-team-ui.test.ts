@@ -7,7 +7,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  dueLabel,
   formatInviteCode,
+  leftNoticeText,
+  parseLeftNotice,
   inviteCodeComplete,
   leaveLines,
   resolveKind,
@@ -22,7 +25,7 @@ import {
   workspaceMenuMeta,
   workspaceRoleTag,
 } from "../src/lib/workspace.ts";
-import { adminErrorText, devicesCell, memberActions, memberStatus, removeLines, seatSummary, splitInvites, type TeamMemberRow } from "../src/lib/team-admin.ts";
+import { adminErrorText, devicesCell, memberActions, memberMenu, memberStatus, removeLines, seatSummary, splitInvites, type TeamMemberRow } from "../src/lib/team-admin.ts";
 import { deviceLimitOf, switchOutcome, waitForProfileSwitch } from "../src/lib/account-switch.ts";
 
 const src = (p: string) => readFileSync(fileURLToPath(new URL(`../src/${p}`, import.meta.url)), "utf8");
@@ -88,13 +91,15 @@ test("危险操作的后果写清（D-305）：升级四件事（不可撤回在
   assert.match(up[2]!, /邀请同事/);
   assert.match(up[3]!, /不能撤回/);
   const lv = leaveLines("某某所", "王律师的工作室");
-  assert.match(lv.join(""), /离所交接/);
+  assert.match(lv.join(""), /先交接给同事/);
+  assert.match(lv.join(""), /重新启用，或重新邀请/, "C12：与列表里的“重新启用”同一口径");
   assert.match(lv.join(""), /切到「王律师的工作室」/);
   assert.match(lv.join(""), /不能自己撤回/);
   const rm = removeLines("张律师");
   assert.match(rm.join(""), /2 分钟内退出这个团队/);
   assert.match(rm.join(""), /管理员也看不到/);
   assert.match(rm.join(""), /离所交接/);
+  assert.match(rm.join(""), /可在成员列表里重新启用，或重新邀请/);
   // 律师层不说“席位”，说“AI 使用名额”
   assert.doesNotMatch([...up, ...lv].join(""), /席位/);
   for (const l of [...up, ...lv, ...rm]) assert.doesNotMatch(l, /律所根|签发钥|租户|证书/);
@@ -122,8 +127,18 @@ test("成员行（管理员）：状态、电脑数、可用操作——不能�
   assert.deepEqual(memberActions(m({ aid: "acc_me" }), "acc_me"), { role: true, seat: "assign", disable: false, enable: false, remove: false }, "自己");
   assert.deepEqual(memberActions(m({ status: "disabled", disabled_by: "platform" }), "acc_me"), { role: false, seat: null, disable: false, enable: false, remove: false });
   assert.equal(memberActions(m({ status: "disabled", disabled_by: "team" }), "acc_me").enable, true);
-  assert.equal(seatSummary({ total: 5, used: 3 }), "席位 3 / 5 已分配，空 2 个");
-  assert.equal(seatSummary({ total: 3, used: 3 }), "席位 3 / 3 已分配，已满");
+  assert.equal(seatSummary({ total: 5, used: 3 }), "席位（AI 使用名额）3 / 5 已分配，空 2 个", "管理员层说“席位”，首次出现括注");
+  assert.equal(seatSummary({ total: 3, used: 3 }), "席位（AI 使用名额）3 / 3 已分配，已满");
+  // C12：停用 / 移出 / 退出分开（云端 disabled_kind）；旧云端没有字段时如实合写
+  assert.equal(memberStatus(m({ status: "disabled", disabled_by: "team", disabled_kind: "disabled" })).text, "已停用");
+  assert.equal(memberStatus(m({ status: "disabled", disabled_by: "team", disabled_kind: "removed" })).text, "已移出");
+  assert.equal(memberStatus(m({ status: "disabled", disabled_by: "team", disabled_kind: "left" })).text, "已退出");
+  // C10：行尾菜单每项一句后果，危险项（移出）置底
+  const menu = memberMenu(memberActions(m({ seat: { sid: "s", assigned_at: "t" } }), "acc_me"));
+  assert.deepEqual(menu.map((x) => x.key), ["release", "disable", "remove"]);
+  assert.ok(menu.every((x) => x.hint.length > 0));
+  assert.equal(menu.at(-1)!.danger, true);
+  assert.deepEqual(memberMenu(memberActions(m({ status: "disabled", disabled_by: "team" }), "acc_me")).map((x) => x.key), ["enable"]);
   assert.equal(seatSummary(null), null);
   const inv = splitInvites([
     { id: "1", name: "a", role: "lawyer", status: "open", created_at: "", expires_at: "" },
@@ -180,13 +195,18 @@ test("接线：设置按工作空间显示（不再有 inFirm / ADMIN_ROLES 推�
   assert.doesNotMatch(c, /ADMIN_ROLES|const inFirm/);
   assert.match(c, /const ws = useWorkspace\(\);\s*const f = ws\.features;\s*const isAdmin = f\.adminTab;/);
   assert.match(c, /t\[0\] === "account" && f\.teamTab \? \[t, \["team", "团队"\]/, "团队页签紧跟“账号”");
-  assert.match(c, /if \(isAdmin\) tabs\.push\(\["admin", "管理"\]\);/);
+  // 评分 C10 第 3 条：团队空间里叫“审计与支持”（团队策略并进“团队”）；开发形态仍叫“管理”
+  assert.match(c, /if \(isAdmin\) tabs\.push\(\["admin", f\.teamTab \? "审计与支持" : "管理"\]\);/);
+  assert.match(c, /withPolicy=\{!f\.teamTab\}/);
+  const team = c.slice(c.indexOf("function TeamTab("), c.indexOf("function BackupTab("));
+  assert.match(team, /<MemberDevicePolicy \/>/);
+  assert.match(team, /<PolicyTab \/>/);
   assert.match(c, /support=\{f\.supportInBackup \? <DiagnosticsTab /);
   assert.match(c, /<WorkspaceSection ws=\{ws\} \/>/);
   assert.match(c, /\{f\.teamRead && <TeamAdmin canEdit=\{f\.teamAdmin\} myAid=\{ws\.list\?\.current\?\.aid \?\? null\} \/>\}/);
   assert.match(c, /<LeaveTeam ws=\{ws\} \/>/);
   const admin = c.slice(c.indexOf("function AdminTab("), c.indexOf("function DiagnosticsTab("));
-  assert.match(admin, /\["policy", "团队策略"\]/);
+  assert.match(admin, /withPolicy \? \(\[\["policy", "团队策略"\]\] as const\) : \[\]/);
   assert.match(admin, /legacyMembers \? \(\[\["members", "成员"\]\] as const\) : \[\]/, "成员只在取不到工作空间类型时留在“管理”");
   assert.match(src("App.tsx"), /a === "team"/);
 });
@@ -217,11 +237,14 @@ test("接线：团队共享提示、范本库名称、团队管理的危险操�
   assert.match(code("components/FirmTemplates.tsx"), /templatesLabel\(ws\.kind\)/);
   assert.match(code("pages/Methods.tsx"), /\{tplLabel\.short\}/);
   const a = code("components/TeamAdmin.tsx");
-  assert.match(a, /<ConfirmButton label="停用"/);
-  assert.match(a, /<ConfirmButton label="释放"/);
+  // 评分 C10：停用 / 释放 / 移出收进行尾菜单，各有确认框（释放可逆，用中性按钮；停用、移出红色）
+  assert.match(a, /<RowMenu/);
+  assert.match(a, /ask\?\.kind === "release"[\s\S]{0,600}className="btn-primary btn-sm"/);
+  assert.match(a, /ask\?\.kind === "disable"[\s\S]{0,700}className="btn-danger-solid btn-sm"/);
+  assert.match(a, /\{dueLabel\(x\.expires_at\)\} 前有效/, "C10 第 4 条：日期通用写法");
   assert.match(a, /<ConfirmButton label="撤回"/);
   assert.match(a, /disabled=\{!ask\.ack \|\| busy !== null\} onClick=\{\(\) => void run\(`rm-/, "移出要勾选“已交接完”");
-  assert.match(a, /事项内容只在成员各自的电脑上，管理员看不到/);
+  assert.match(a, /事项内容只在成员自己的电脑上，这里只管谁能用、能用几台。/, "C10 第 5 条：一行");
   assert.match(a, /if \(data && data\.supported === false\) return canEdit \? <MembersAdmin \/> : null;/, "旧云端退回原成员页");
   assert.match(a, /只显示这一次/);
   const ts = code("components/TeamSpace.tsx");
@@ -238,4 +261,28 @@ test("文案：设置与侧栏的新界面不出现内部术语；四个动作�
   for (const label of ["退出登录", "移除", "移出团队", "退出团队"]) assert.ok(all.includes(label), label);
   // 不再说“新电脑登录要管理员批准”（D-304）
   assert.doesNotMatch(code("components/AccountPanel.tsx"), /新电脑登录需律所管理员批准|需重新登录并由管理员批准/);
+});
+
+test("评分第一轮：日期通用写法、被移出后的一次性提示、重新登录页按真实原因", async () => {
+  const now = Date.parse("2026-11-27T04:00:00Z");
+  assert.equal(dueLabel("2026-12-04T04:49:00Z", now), "12 月 4 日 12:49", "北京时间，同年不写年");
+  assert.equal(dueLabel("2027-01-02T00:00:00Z", now), "2027 年 1 月 2 日 08:00");
+  assert.equal(dueLabel(null, now), "—");
+  assert.equal(leftNoticeText({ team: "陈氏律师事务所", how: "removed" }, "李律师的工作室"), "你已不在「陈氏律师事务所」，已切到「李律师的工作室」。团队空间里的事项仍在这台电脑上。");
+  assert.match(leftNoticeText({ team: "某所", how: "left" }, null), /^你已退出「某所」。/);
+  assert.equal(parseLeftNotice(JSON.stringify({ team: "某所", how: "removed", at: Date.now() }))?.team, "某所");
+  assert.equal(parseLeftNotice(JSON.stringify({ team: "某所", how: "removed", at: Date.now() - 2 * 86_400_000 })), null, "过时不提");
+  assert.equal(parseLeftNotice("{bad"), null);
+  const { reloginView } = await import("../src/lib/account.ts");
+  assert.equal(reloginView("session_team_removed", "陈氏律师事务所").title, "你已不在「陈氏律师事务所」");
+  assert.match(reloginView("session_team_removed").lead, /团队管理员把你移出了这个团队/);
+  assert.match(reloginView("session_team_left", "某所").lead, /你已退出这个团队/);
+  assert.equal(reloginView(null).title, "需要重新登录", "取不到原因时不说过期、不说安全");
+  assert.doesNotMatch(reloginView(null).lead + reloginView("x").lead, /过期|安全/);
+  const r = code("pages/Relogin.tsx");
+  assert.match(r, /reloginView\(p\.reason, teamGone \? p\.firm : null\)/);
+  assert.match(r, /\[teamGone \? "" : p\.firm \? p\.firm : ""/, "账号卡不把刚离开的团队当身份");
+  const sb = code("components/Sidebar.tsx");
+  assert.match(sb, /leftNoticeText\(leftNote!, wsCur!\.name\)/);
+  assert.match(sb, /localStorage\.removeItem\(LEFT_NOTICE_KEY\)/, "显示一次即清");
 });

@@ -209,7 +209,7 @@ button.auth-device-row:focus-visible { outline: 2px solid var(--focus-ring); out
 .auth-device-row.off .auth-device-text b, .auth-device-row.off .auth-device-icon { color: var(--text-secondary); }
 .auth-device-row.off .auth-device-radio { visibility: hidden; }
 /* 第 71 批（V45，独立评分区域 9）：这台电脑——虚线框、不置灰（不是“不可用”，是“你在这里”），标签反白；只有一台可选时整行就是目标（实线框、无单选） */
-.auth-device-row.is-this { background: transparent; border-style: dashed; border-color: var(--border-default); }
+.auth-device-row.is-this { background: var(--bg-subtle); border-style: solid; border-color: var(--border-subtle); } /* 第 72 批第二轮：虚线只表示“空槽 / 可放入”（设计评分跨页第 6 条），这台电脑改实线浅底 */
 .auth-device-row.is-this .auth-device-text b, .auth-device-row.is-this .auth-device-icon { color: var(--text-primary); }
 .auth-device-tag.is-this { background: var(--text-primary); color: var(--bg-surface); }
 .auth-device-row.is-target { border-color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--text-primary); }

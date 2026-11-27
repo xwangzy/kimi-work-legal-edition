@@ -140,6 +140,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   const sampleTried = useRef(false);
   /** 第 72 批（D-301）：从“放进哪个事项 › 更多设置”打开的完整新建弹窗——建好后接着发起；带着已填的三项。 */
   const placeThenSubmit = useRef(false);
+  /** 上手清单展开与否（null = 还没定，清单取到进度后定一次）；收起时清单放到输入框下方。 */
+  const [guideExpanded, setGuideExpanded] = useState<boolean | null>(null);
   const [newMatterInitial, setNewMatterInitial] = useState<{ title: string; stance: string; confidentiality: string } | null>(null);
   const loadMatters = useCallback(() => {
     api
@@ -176,9 +178,35 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     if (consumeNewMatterRequest()) setNewMatter(true);
     return () => window.removeEventListener(NEW_MATTER, on);
   }, []);
-  useEffect(() => {
-    void api.quotaStatus().then(setQuota).catch(() => setQuota(null));
+  // 第 72 批第二轮（端到端验收 Q-8）：连不上云端时首页先说一声——额度查询（quota.status）报 provider_unavailable 即判断为连不上；
+  // 窗口回到前台、系统报“已联网”时再查，连不上期间每 30 秒查一次，连上即收起。本机的事项、材料、上手清单与上次的模型照常显示。
+  const [cloudDown, setCloudDown] = useState(false);
+  const checkCloud = useCallback(() => {
+    void api
+      .quotaStatus()
+      .then((q) => {
+        setQuota(q);
+        setCloudDown(false);
+      })
+      .catch((e) => {
+        setQuota(null);
+        setCloudDown((e as { code?: string }).code === "provider_unavailable");
+      });
   }, []);
+  useEffect(() => {
+    checkCloud();
+    window.addEventListener("focus", checkCloud);
+    window.addEventListener("online", checkCloud);
+    return () => {
+      window.removeEventListener("focus", checkCloud);
+      window.removeEventListener("online", checkCloud);
+    };
+  }, [checkCloud]);
+  useEffect(() => {
+    if (!cloudDown) return;
+    const t = setInterval(checkCloud, 30_000);
+    return () => clearInterval(t);
+  }, [cloudDown, checkCloud]);
   // 第 66 批（V40 P0-4）：任务模型来自云端模型目录（套餐与路由决定哪些可选）；选了记在本机，发起任务时带给内核
   const [taskModels, setTaskModels] = useModelCatalog("task");
   const [modelMsg, setModelMsg] = useState("");
@@ -313,9 +341,25 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
         )}
       </div>
     ) : null;
+  const offlineRow = cloudDown ? (
+    <div className="notice-row notice-offline" role="status">
+      <span className="notice-dot" aria-hidden="true" />
+      <span className="notice-text">连不上云端：AI 暂时不可用，本机的事项和材料照常可看</span>
+      <button
+        className="btn-link"
+        onClick={() => {
+          nav("/connections/backup");
+          setTimeout(() => document.getElementById("sec-conn")?.scrollIntoView({ block: "center" }), 300);
+        }}
+      >
+        检测连接
+      </button>
+    </div>
+  ) : null;
   const notice =
-    showQuota || waitingRow ? (
+    showQuota || waitingRow || offlineRow ? (
       <>
+        {offlineRow}
         {showQuota && qn && (
           <div className={`notice-row notice-quota${qn.tone === "stop" ? " is-stop" : ""}`} role="status">
             <span className="notice-icon" aria-hidden="true">{Icon.chart()}</span>
@@ -355,7 +399,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
             <span className="home-wordmark-tag">法律版</span>
           </h1>
           {/* 上手清单（第 46 批；第 72 批 D-302 移到输入框正上方、首访缺省展开）：新律师第一次进首页时出现，按真实数据自动打勾 */}
-          {mattersLoaded && <GuideChecklist onNewMatter={() => setNewMatter(true)} />}
+          {mattersLoaded && guideExpanded !== false && <GuideChecklist onNewMatter={() => setNewMatter(true)} expanded={guideExpanded} onExpanded={setGuideExpanded} />}
           <Composer
             matters={matters}
             matterId={matterId}
@@ -402,6 +446,8 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
                 : null
             }
           />
+          {/* 第 72 批第二轮（C1）：做过一步后清单收成一行，放在输入框下方 */}
+          {mattersLoaded && guideExpanded === false && <GuideChecklist onNewMatter={() => setNewMatter(true)} expanded={false} onExpanded={setGuideExpanded} />}
           {importing && (
             <WaitBlock
               title={importing.total > 1 ? `正在导入第 ${countProgress(importing.done + 1, importing.total)?.text ?? ""} 份…` : "正在导入材料…"}

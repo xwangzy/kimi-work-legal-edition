@@ -140,6 +140,7 @@ test("整窗重新登录：标题按原因、可见“你已退出登录”；�
   const relogin = src("src/pages/Relogin.tsx");
   assert.match(relogin, /<AuthPage kind="relogin">/);
   // 第 69 批：缺省预填上次账号的邮箱；“换个账号”或这台电脑已从账号移除时清空预填（登录框按 key 重新挂载）
-  assert.match(relogin, /<LoginBox key=\{other \|\| revoked \? "other" : "me"\} page subtle email=\{other \|\| revoked \? "" : p\.email\} knownPhone=\{acct === undefined \? undefined : acct\.phone\} onDone=\{p\.onDone\} \/>/);
+  // 第 72 批（评分 C16）：被移出 / 退出团队时本机没记到打码号也先按“只填验证码”显示（knownPhone 传 undefined），其余不变
+  assert.match(relogin, /<LoginBox\s+key=\{other \|\| revoked \? "other" : "me"\}\s+page\s+subtle\s+email=\{other \|\| revoked \? "" : p\.email\}[\s\S]{0,200}knownPhone=\{acct === undefined \|\| \(teamGone && acct\.phone === null\) \? undefined : acct\.phone\}\s+onDone=\{p\.onDone\}\s+\/>/);
   assert.doesNotMatch(relogin.replace(/\/\*[\s\S]*?\*\//g, ""), /register|注册/i, "重新登录页不能注册新账号");
 });

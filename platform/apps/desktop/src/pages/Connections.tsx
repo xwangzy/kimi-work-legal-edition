@@ -30,7 +30,7 @@ import { AccountSection } from "../components/AccountPanel.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
-import { TeamAdmin } from "../components/TeamAdmin.tsx";
+import { MemberDevicePolicy, TeamAdmin } from "../components/TeamAdmin.tsx";
 import { LeaveTeam, TeamHeader, WorkspaceSection } from "../components/TeamSpace.tsx";
 import { useWorkspace, type WorkspaceState } from "../components/WorkspaceSwitch.tsx";
 import { shareIssuerNote } from "../lib/workspace.ts";
@@ -93,7 +93,8 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
   const f = ws.features;
   const isAdmin = f.adminTab;
   const tabs: [SettingsTab, string][] = (Object.entries(SETTINGS_TAB_LABELS) as [SettingsTab, string][]).flatMap((t) => (t[0] === "account" && f.teamTab ? [t, ["team", "团队"] as [SettingsTab, string]] : [t]));
-  if (isAdmin) tabs.push(["admin", "管理"]);
+  // 第 72 批评分 C10 第 3 条：团队空间里成员、邀请、团队策略都在“团队”；剩下的操作记录、技术支持、代号准确度叫“审计与支持”
+  if (isAdmin) tabs.push(["admin", f.teamTab ? "审计与支持" : "管理"]);
   return (
     <main className="main">
       {/* 第 55 批：表单类页签（通用、文书与写作、账号、备份）把正文收窄，见 styles-settings.css */}
@@ -130,7 +131,7 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
         )}
         {tab === "admin" &&
           (!ws.ready ? null : isAdmin ? (
-            <AdminTab caps={caps} gate={gate} devices={devices} unresolved={unresolved} onReconciled={load} im={im} recovery={recovery} legacyMembers={ws.kind === null} />
+            <AdminTab caps={caps} gate={gate} devices={devices} unresolved={unresolved} onReconciled={load} im={im} recovery={recovery} legacyMembers={ws.kind === null} withPolicy={!f.teamTab} />
           ) : (
             <div className="banner banner-gray">{ws.kind === "personal" ? "个人工作室没有“管理”：技术支持在“设置 · 备份与安全”页底。" : "“管理”只对团队管理员与合伙人开放。"}</div>
           ))}
@@ -786,6 +787,20 @@ function TeamTab({ ws, mySafety }: { ws: WorkspaceState; mySafety: string | null
         )}
       </TeamHeader>
       {f.teamRead && <TeamAdmin canEdit={f.teamAdmin} myAid={ws.list?.current?.aid ?? null} />}
+      {/* 第 72 批评分 C10 第 3 条：团队策略（成员新电脑、本所规则）并进“团队”，管理员要改的都从这一个页签进 */}
+      {f.adminTab && (
+        <section className="team-policy-sec" aria-labelledby="sec-policy">
+          <h2 className="h-section team-sec-title" id="sec-policy">团队策略</h2>
+          {f.teamAdmin && (
+            <div className="panel device-section">
+              <SettingRow label="成员新电脑">
+                <MemberDevicePolicy />
+              </SettingRow>
+            </div>
+          )}
+          <PolicyTab />
+        </section>
+      )}
       <section className="panel device-section" aria-labelledby="sec-share">
         <h2 className="section-h h-section" id="sec-share">协作与离开</h2>
         <TeamShare admin={f.teamRead} note={note} />
@@ -978,20 +993,21 @@ function StatusTile({ tone, title, line, action }: { tone: "ok" | "warn" | "info
 }
 
 /** 管理（ST-1、ST-4）：成员、律所策略、中软侧操作记录、诊断（工程细节）、召回评测（律所内）。 */
-function AdminTab({ legacyMembers = false, ...props }: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any; legacyMembers?: boolean }) {
+function AdminTab({ legacyMembers = false, withPolicy = true, ...props }: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any; legacyMembers?: boolean; withPolicy?: boolean }) {
   // 子标签收敛（Z3 评审 #7.3、I2 遗留）：诊断与替换准确度测试是给律所 IT 与中软运维用的，收进“技术支持”
   // V16 IA-4：“技术支持”直接展开诊断首层；替换准确度测试升为独立二级标签“代号准确度”（进所评测是售前动作）
   // 第 68 批：客户端不再展示团队用量——本所额度、按成员、律所上限与个人额度统一在云端控制台（本所 · 概览 / 用量 / 成员）管理
   // 第 72 批：“成员”移到“团队”页签（成员、邀请、电脑待确认、新电脑策略）；这里留团队策略、操作记录、技术支持、代号准确度。
   // 取不到工作空间类型（开发形态、没有账号）时保留原来的成员页（legacyMembers）
-  const [sub, setSub] = useState<"members" | "policy" | "cp_audit" | "support" | "recall">(legacyMembers ? "members" : "policy");
+  // 团队空间（withPolicy = false）：团队策略在“团队”页签，这里从操作记录开始
+  const [sub, setSub] = useState<"members" | "policy" | "cp_audit" | "support" | "recall">(legacyMembers ? "members" : withPolicy ? "policy" : "cp_audit");
   return (
     <div>
       <div className="tabs" role="tablist" aria-label="管理">
         {(
           [
             ...(legacyMembers ? ([["members", "成员"]] as const) : []),
-            ["policy", "团队策略"],
+            ...(withPolicy ? ([["policy", "团队策略"]] as const) : []),
             ["cp_audit", "操作记录"],
             ["support", "技术支持"],
             ["recall", "代号准确度"],

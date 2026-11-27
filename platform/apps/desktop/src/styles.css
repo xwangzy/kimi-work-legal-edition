@@ -787,7 +787,7 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .method-card .sc-gets { font-size: var(--fs-caption); color: var(--text-primary); line-height: 1.6; margin-top: 4px; }
 .method-card .sc-gives { font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.5; margin-top: auto; padding-top: 6px; }
 .sc-k { flex: 0 0 auto; font-size: var(--fs-xs); color: var(--text-label); background: var(--bg-hover); border-radius: var(--r-xs); padding: 0 4px; line-height: 17px; height: 17px; margin-top: 2px; }
-.suggest-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 2px 6px; padding: 7px 10px; border-radius: var(--r-sm); background: var(--accent-bg); border: 1px solid var(--accent-border); font-size: var(--fs-body); }
+.suggest-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 2px 6px; padding: 7px 10px; border-radius: var(--r-sm); background: var(--bg-subtle); border: 1px solid var(--border-subtle); font-size: var(--fs-body); } /* 第 72 批第二轮：中性灰底（Kimi 蓝只作点缀，设计评分跨页第 8 条） */
 .suggest-text { flex: 1 1 260px; }
 /* 旧的 .btn 已全部换成 .btn-ghost 并删除（V16 V-3；复核 S7B-07：两者原本同一外观） */
 .btn-sm { padding: 4px 10px; font-size: var(--fs-caption); border-radius: var(--r-sm); }
@@ -1903,10 +1903,13 @@ button.sidebar-empty:hover { color: var(--text-primary); }
 .guide-steps { list-style: none; margin: var(--sp-3) 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-2); }
 .guide-steps-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .guide-steps-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.guide-step { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; align-content: start; gap: var(--sp-1) var(--sp-2); min-width: 0; padding: var(--sp-3); border-radius: var(--r-md); background: var(--bg-subtle); }
+.guide-step { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; align-content: start; gap: var(--sp-1) var(--sp-2); min-width: 0; padding: var(--sp-3); border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-subtle); }
+/* 还不到做的时候（备份：有材料后）：去底色、编号虚化，与可做的步骤区分 */
+.guide-step.is-locked { background: transparent; }
+.guide-step.is-locked .guide-step-mark { color: var(--text-secondary); border-color: var(--border-subtle); }
 .guide-step-body, .guide-step-cta { grid-column: 1 / -1; }
 .guide-step-cta { justify-self: start; }
-.guide-step.is-current { background: var(--bg-surface); box-shadow: inset 0 0 0 1px var(--border-default); }
+.guide-step.is-current { background: var(--bg-surface); border-color: var(--border-default); }
 .guide-step-mark { width: 20px; height: 20px; display: inline-grid; place-items: center; border-radius: var(--r-full); border: 1px solid var(--border-default); background: var(--bg-surface); font-size: var(--fs-xs); color: var(--text-label); font-variant-numeric: tabular-nums; }
 .guide-step-mark svg { width: 12px; height: 12px; }
 .guide-step.is-current .guide-step-mark { border-color: var(--text-primary); color: var(--text-primary); }
@@ -1923,3 +1926,6 @@ button.sidebar-empty:hover { color: var(--text-primary); }
 @media (max-width: 900px) {
   .guide-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* 收成一行时在输入框下方（第 72 批第二轮 C1） */
+.home-center > .guide-checklist:not(.is-expanded) { margin: var(--sp-4) 0 0; }

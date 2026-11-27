@@ -19,7 +19,7 @@ export function removeLines(who: string): string[] {
     `${who}不再是团队成员：他的所有电脑在 2 分钟内退出这个团队，席位释放。`,
     "他电脑上的事项和成果留在他的电脑上，不会被删除，管理员也看不到。",
     `移出前，请先请${who}在自己电脑的“设置 · 团队 · 离所交接”里把负责的事项交接好。`,
-    "他的个人空间和他加入的其他团队不受影响。之后要回来，需要重新邀请。",
+    "他的个人空间和他加入的其他团队不受影响。之后可在成员列表里重新启用，或重新邀请。",
   ];
 }
 
@@ -50,15 +50,33 @@ export interface TeamMemberRow {
   seat?: { sid: string; assigned_at: string } | null;
   seat_used?: boolean;
   devices_summary?: { signed_in: number; limit: number | null } | null;
+  /** 云端区分“移出 / 退出”与“停用”的字段（待云端补，见 03 契约变更记录；没有时界面合写）。 */
+  removed?: boolean;
+  disabled_kind?: "disabled" | "removed" | "left";
   last_login_at?: string | null;
   created_via?: string | null;
 }
 
 /** 成员状态（人话 + 色调）。移出与停用在云端是同一状态（都停用了这个成员身份），界面不硬分。纯函数。 */
-export function memberStatus(m: Pick<TeamMemberRow, "status" | "disabled_by">): { text: string; tone: "ok" | "off" | "bad" } {
+export function memberStatus(m: Pick<TeamMemberRow, "status" | "disabled_by" | "removed" | "disabled_kind">): { text: string; tone: "ok" | "off" | "bad" } {
   if (m.status === "active") return { text: "正常", tone: "ok" };
   if (m.disabled_by === "platform") return { text: "被中软停用", tone: "bad" };
+  // 第 72 批评分 C12：“已停用”与“已移出”分开——云端成员行带 removed / disabled_kind 时按它说；旧字段分不开时如实合写
+  if (m.disabled_kind === "left") return { text: "已退出", tone: "off" };
+  if (m.removed === true || m.disabled_kind === "removed") return { text: "已移出", tone: "off" };
+  if (m.removed === false || m.disabled_kind === "disabled") return { text: "已停用", tone: "off" };
   return { text: "已停用或移出", tone: "off" };
+}
+
+/** 行尾“…”菜单（C10 第 2 条）：每项一句后果，危险项置底。纯函数。 */
+export function memberMenu(a: ReturnType<typeof memberActions>): { key: "assign" | "release" | "disable" | "enable" | "remove"; label: string; hint: string; danger: boolean }[] {
+  const out: { key: "assign" | "release" | "disable" | "enable" | "remove"; label: string; hint: string; danger: boolean }[] = [];
+  if (a.seat === "assign") out.push({ key: "assign", label: "分配席位", hint: "可以用 AI", danger: false });
+  if (a.seat === "release") out.push({ key: "release", label: "释放席位", hint: "保留成员，暂时不能用 AI", danger: false });
+  if (a.enable) out.push({ key: "enable", label: "重新启用", hint: "恢复成员身份；有空席位时自动分回", danger: false });
+  if (a.disable) out.push({ key: "disable", label: "停用", hint: "暂时不能登录，可随时重新启用", danger: false });
+  if (a.remove) out.push({ key: "remove", label: "移出团队…", hint: "离开团队；之后可重新启用或重新邀请", danger: true });
+  return out;
 }
 
 /** 成员行的“电脑”一格：“1 / 3 台”（同时登录 / 上限）。纯函数。 */
@@ -85,7 +103,7 @@ export function memberActions(m: TeamMemberRow, myAid: string | null): { role: b
 export function seatSummary(seats: { total: number; used: number } | null | undefined): string | null {
   if (!seats || !Number.isFinite(seats.total)) return null;
   const free = Math.max(0, seats.total - seats.used);
-  return `席位 ${seats.used} / ${seats.total} 已分配${free > 0 ? `，空 ${free} 个` : "，已满"}`;
+  return `席位（AI 使用名额）${seats.used} / ${seats.total} 已分配${free > 0 ? `，空 ${free} 个` : "，已满"}`;
 }
 
 /** 团队邀请（云端 teamInviteView）。 */

@@ -824,7 +824,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
           label="登录过的电脑"
           hint={
             me.personal
-              ? `同时登录 ${canSignout ? signedIn : activeDevices.length}${deviceLimit ? ` / ${deviceLimit}` : ""} 台（上限由云端设定）。新电脑直接登录即可；满额时在登录页选一台让它退出。各台电脑上的事项与文件各自独立。`
+              ? `同时登录 ${canSignout ? signedIn : activeDevices.length}${deviceLimit ? ` / ${deviceLimit}` : ""} 台。新电脑直接登录即可；满额时在登录页选一台让它退出。各台电脑上的事项与文件各自独立。`
               : `同时登录 ${canSignout ? signedIn : activeDevices.length}${deviceLimit ? ` / ${deviceLimit}` : ""} 台（上限由团队与云端设定）。新电脑直接登录即可（团队设了“须管理员确认”时要等管理员确认）；不再用的电脑请移除。`
           }
         >

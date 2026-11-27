@@ -111,7 +111,10 @@ test("上手（D-302）：角色按 workspace_kind，没有时按成员角色 + 
   assert.equal(checklistVisibility(null, fresh, { dismissed_at: "2026-11-02" }), "retire");
   assert.equal(checklistVisibility("shown", fresh, { dismissed_at: "2026-11-02" }), "show", "头像菜单重新打开过");
   // 落点、位置、承诺、头像菜单恢复、恢复提醒同条件
-  assert.match(src("pages/Home.tsx"), /\{mattersLoaded && <GuideChecklist onNewMatter=\{\(\) => setNewMatter\(true\)\} \/>\}\s*<Composer/);
+  // 第二轮（C1）：一步没做 → 展开在输入框上方；做过一步 → 收成一行在输入框下方
+  assert.ok(src("pages/Home.tsx").includes("{mattersLoaded && guideExpanded !== false && <GuideChecklist onNewMatter={() => setNewMatter(true)} expanded={guideExpanded} onExpanded={setGuideExpanded} />}\n          <Composer"));
+  assert.match(src("pages/Home.tsx"), /\{mattersLoaded && guideExpanded === false && <GuideChecklist onNewMatter=\{\(\) => setNewMatter\(true\)\} expanded=\{false\}/);
+  assert.match(src("components/GuideChecklist.tsx"), /onExpanded\?\.\(p\.own_matters === 0 && p\.materials === 0 && p\.runs === 0\)/);
   assert.match(src("components/GuideChecklist.tsx"), /window\.addEventListener\(OPEN_GUIDE, reopen\);/);
   // 别的页面点“上手指南”：模块加载时就登记（用字面量，避免与 App.tsx 循环引用时常量未初始化），挂上后恢复
   assert.match(src("components/GuideChecklist.tsx"), /const OPEN_GUIDE_EVENT = "kwl:guide";/);
@@ -123,8 +126,9 @@ test("上手（D-302）：角色按 workspace_kind，没有时按成员角色 + 
 test("同时登录已满（D-303）：元信息只留“多久前用过 · 版本”，不截断；开通页也传这台电脑", () => {
   const now = Date.parse("2026-11-27T10:00:00+08:00");
   const d = { device_id: "d1", platform: "darwin", last_seen_at: "2026-11-27T09:52:00+08:00", client_version: "0.10.0", registered_at: "2026-11-27T08:46:00+08:00" } as never;
-  assert.equal(deviceMetaShort(d, now), "8 分钟前用过 · 0.10.0");
-  assert.doesNotMatch(deviceMetaShort(d, now), /登记/);
+  // 第二轮（C5）：不写版本号；写登记日期，同型号同编号的两台也能区分
+  assert.equal(deviceMetaShort(d, now), "8 分钟前用过 · 11 月 27 日登记");
+  assert.doesNotMatch(deviceMetaShort(d, now), /0\.10\.0/);
   assert.match(src("pages/Activate.tsx"), /thisDevice=\{b\.thisDevice \?\? null\}/);
   assert.match(src("styles-auth.css"), /\.auth-device-text > span \{ overflow: visible; white-space: normal; text-overflow: clip; \}/);
   assert.match(src("styles-auth.css"), /\.auth-card \.activate-submit, \.auth-card \.auth-btn \{ min-height: 46px; height: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; \}/);
@@ -165,3 +169,22 @@ test("第 72 批（验收 Q-2）：事项名兜底去口头起句、取冒号前
   assert.equal(suggestMatterTitle("借款本金20万元自二〇二四年三月起至今未还款的逾期利息与违约金一并计算", st).includes("20万元"), true);
   assert.equal(suggestMatterTitle("审查这份股权转让协议，我方为受让方", ["受让方", "转让方"]), "股权转让协议审查（受让方）");
 });
+
+test("第二轮 C2：浮层固定定位、放不下就翻到上方或居中，底部按钮吸底；背后淡遮罩；打开时建议条收起并进浮层", () => {
+  const mp = src("components/MatterPlace.tsx");
+  assert.match(mp, /if \(r && vh - r\.bottom - 8 - m >= h\) top = r\.bottom \+ 8;\s*else if \(r && r\.top - 8 - m >= h\) top = r\.top - 8 - h;\s*else \{/);
+  assert.match(mp, /<div className="place-mask" aria-hidden="true" onMouseDown=/);
+  assert.match(mp, /改用「\{suggestion\.title\}」/);
+  const css = src("styles-composer.css");
+  assert.match(css, /\.place-pop \{ position: fixed;/);
+  assert.match(css, /\.place-scroll \{ flex: 1 1 auto; min-height: 0; overflow-y: auto; \}/);
+  assert.match(src("components/Composer.tsx"), /\{props\.suggestion && menu !== "place" && \(/);
+});
+
+test("第二轮 Q-8：连不上云端时首页一行提示（额度查询报 provider_unavailable），连上即收起；不让清单与模型消失", () => {
+  const h = src("pages/Home.tsx");
+  assert.match(h, /setCloudDown\(\(e as \{ code\?: string \}\)\.code === "provider_unavailable"\);/);
+  assert.match(h, /连不上云端：AI 暂时不可用，本机的事项和材料照常可看/);
+  assert.match(h, /window\.addEventListener\("online", checkCloud\);/);
+});
+

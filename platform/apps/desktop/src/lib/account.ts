@@ -513,7 +513,7 @@ export function loginRequiredText(reason: string | null | undefined): string {
  * 第 68 批（V42，D-294）：这台电脑不再只许某位成员登录——任何合法账号都可以在这里登录：登录的是刚才那个账号就回到原来的工作空间，
  * 是别的账号就打开那个账号自己的工作空间（这台电脑上第一次登录的，按云端的设备策略登记）。说明里讲清“各账号的资料互不可见”。
  */
-export function reloginView(reason: string | null | undefined): { title: string; lead: string } {
+export function reloginView(reason: string | null | undefined, team?: string | null): { title: string; lead: string } {
   const keep = "这台电脑上的事项、材料和成果都还在；登录后 AI 恢复可用。";
   // 第 69 批（V43）：主动退出时不再解释——律师刚点了退出，标题已说明一切；其余原因各一句，只说律师需要知道的
   void keep;
@@ -529,9 +529,18 @@ export function reloginView(reason: string | null | undefined): { title: string;
   if (reason === "session_device_limit") return { title: "同时登录的电脑已达上限", lead: "重新登录后选一台让它退出登录，就能在这台电脑上继续。事项和成果都还在这台电脑上。" };
   // 第 69 批真实验收：被移除的电脑上同一账号不能再登录（云端吊销是终局的）——不写“重新登录即可”，给出还能做的事
   // 第 72 批（impl-U2）：被移出团队 / 自己退出团队后这个团队空间的会话失效——云端回专门原因码后（03 契约变更记录 U-1）如实说，不说“过期”
-  if (reason === "session_team_removed" || reason === "session_team_left") return { title: "你已不在这个团队", lead: reason === "session_team_left" ? "你已退出这个团队。重新登录即可进入你的其他工作空间；这台电脑上团队空间里的事项与成果都还在。" : "团队管理员把你移出了这个团队。重新登录即可进入你的其他工作空间；这台电脑上团队空间里的事项与成果都还在。" };
+  // 第 72 批评分 C16：标题写出团队名（重新登录页从本机记录取到时）；说明讲清是谁做的、下一步落到哪里
+  if (reason === "session_team_removed" || reason === "session_team_left") {
+    const t = (team ?? "").trim();
+    return {
+      title: t ? `你已不在「${t}」` : "你已不在这个团队",
+      lead: `${reason === "session_team_left" ? "你已退出这个团队" : "团队管理员把你移出了这个团队"}。重新登录会进入你的其他工作空间；这台电脑上团队空间里的事项与成果都还在。`,
+    };
+  }
   if (reason === "device_revoked") return { title: "这台电脑已从账号移除", lead: "这个账号不能再在这台电脑上使用，本机资料仍加密保存在这里。如果不是你本人移除的，请尽快在另一台电脑上修改密码。" };
-  return { title: "登录已过期", lead: "为了账号安全，请重新登录。本机的事项与成果都还在。" };
+  // 真的过期才说“过期”；原因还没取到或不认识时说中性的“需要重新登录”（第 72 批评分 C16：不把别的原因说成过期或安全事件）
+  if (reason === "session_expired") return { title: "登录已过期", lead: "很久没有使用，请重新登录。本机的事项与成果都还在。" };
+  return { title: "需要重新登录", lead: "重新登录后继续。本机的事项与成果都还在。" };
 }
 
 /** 第 68 批：换账号登录后的过渡说明（切换到那个账号自己的工作空间；新账号按云端设备策略登记）。纯函数。 */
@@ -561,11 +570,21 @@ export function resetNextText(r: { channel?: string; message?: string } | null |
   return r?.channel === "email" ? "如果这个邮箱已注册，验证码已发到邮箱（15 分钟内有效）。请把验证码填在下面。" : "请向律所管理员或客服要一个重置码，填在下面。";
 }
 
-/** 设备卡第二行（第 72 批）：“8 分钟前用过 · 0.10.0”；起过名字的电脑前面加类型。不写登记时间（对“选哪台退出”没有帮助）。 */
+/**
+ * 设备卡第二行（第 72 批；第二轮设计评分 C5）：“8 分钟前用过 · 11 月 20 日登记”。不写版本号（对律师没有意义）；
+ * 写登记日期，同型号、同编号的两台也能区分（登记日期不同）。起过名字的电脑前面加类型。
+ */
 export function deviceMetaShort(d: AccountDevice, now = Date.now()): string {
   const seen = agoLabel(d.last_seen_at ?? d.last_seen_on, now);
-  const version = d.client_version && d.client_version !== "legacy" ? d.client_version : null;
   const line = deviceChoiceLine(d, now);
   const kind = line.meta.startsWith("Mac") || line.meta.startsWith("Windows") ? line.meta.split(" · ")[0] : "";
-  return [kind, seen ? (/\d$/.test(seen) ? `${seen} 用过` : `${seen}用过`) : "", version].filter(Boolean).join(" · ");
+  const reg = d.registered_at ? `${dayLabel(d.registered_at, now)}登记` : "";
+  return [kind, seen ? (/\d$/.test(seen) ? `${seen} 用过` : `${seen}用过`) : "", reg].filter(Boolean).join(" · ");
+}
+
+/** “这台电脑”的说明行（第二轮 C5）：类型 + 正在使用——名字不与列表里别的电脑撞。 */
+export function thisDeviceLine(d: AccountDevice, now = Date.now()): string {
+  const l = deviceChoiceLine(d, now);
+  const kind = d.platform ? l.title.split(" · ")[0] : "";
+  return [kind, "你正在用这台登录"].filter(Boolean).join(" · ");
 }

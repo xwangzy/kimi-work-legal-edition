@@ -45,10 +45,15 @@ let reopenPending = false;
 const OPEN_GUIDE_EVENT = "kwl:guide";
 if (typeof window !== "undefined") window.addEventListener(OPEN_GUIDE_EVENT, () => (reopenPending = true));
 
-export function GuideChecklist({ onNewMatter }: { onNewMatter: () => void }) {
+/**
+ * 第 72 批第二轮（设计评分 C1 建议 1）：展开与否由首页掌握（expanded / onExpanded）——首次进入（一步没做）展开成五卡、放在输入框上方；
+ * 做完一步后缺省收成一行、放到输入框下方，不再把主任务压到屏幕中部。expanded 为 null = 还没定，取到进度后按“做没做过”定一次。
+ */
+export function GuideChecklist({ onNewMatter, expanded: expandedProp = true, onExpanded }: { onNewMatter: () => void; expanded?: boolean | null; onExpanded?: (v: boolean) => void }) {
   const [p, setP] = useState<(GuideProgress & { firm: string | null; user: string | null }) | null>(null);
   const [state, setState] = useState<"shown" | "hidden" | null>(null);
-  const [expanded, setExpanded] = useState(true);
+  const expanded = expandedProp !== false;
+  const setExpanded = (f: (e: boolean) => boolean) => onExpanded?.(f(expanded));
   const [backup, setBackup] = useState<BackupFacts | null>(null);
   const [acct, setAcct] = useState<Acct | null>(null);
   const [role, setRole] = useState<OnboardRole>("personal");
@@ -92,7 +97,7 @@ export function GuideChecklist({ onNewMatter }: { onNewMatter: () => void }) {
       reopenPending = false;
       setChecklistState(safeStorage(), key, "shown");
       setState("shown");
-      setExpanded(true);
+      onExpanded?.(true);
     };
     if (reopenPending) reopen();
     window.addEventListener(OPEN_GUIDE, reopen);
@@ -114,7 +119,12 @@ export function GuideChecklist({ onNewMatter }: { onNewMatter: () => void }) {
   useEffect(() => {
     if (acct?.supported && !acct.completed_at && p && p.deliverables > 0) void account.onboardingMark({ completed: true }).then((r) => r.ok && setAcct((a) => (a ? { ...a, completed_at: new Date().toISOString() } : a)));
   }, [acct, p]);
-  if (vis !== "show" || !p || !key) return null;
+  // 展开与否还没定：按这台电脑上做没做过第一步定一次（一步没做 → 展开在输入框上方；做过 → 收成一行在输入框下方）
+  useEffect(() => {
+    if (expandedProp === null && p) onExpanded?.(p.own_matters === 0 && p.materials === 0 && p.runs === 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandedProp, p]);
+  if (vis !== "show" || !p || !key || expandedProp === null) return null;
   const variant = checklistVariant(acct, p);
   const items: ChecklistItem[] = variant === "new_device" ? newDeviceItems(flags.deviceAcked, backup) : checklistItems(p, backup);
   const allDone = items.every((i) => i.done);
@@ -165,12 +175,12 @@ export function GuideChecklist({ onNewMatter }: { onNewMatter: () => void }) {
         )}
         {expanded && !allDone && (
           <button className="btn-link" onClick={() => window.dispatchEvent(new Event(OPEN_GUIDE))}>
-            看看界面
+            界面导览
           </button>
         )}
         {!allDone && (
           <button className="btn-link" onClick={() => setExpanded((e) => !e)} aria-expanded={expanded}>
-            {expanded ? "收拢" : "展开"}
+            {expanded ? "收起" : "展开"}
           </button>
         )}
         <button className="icon-btn guide-checklist-close" onClick={hide} aria-label="关闭上手清单" title="关闭上手清单（头像菜单“上手指南”可以再打开）">
@@ -209,7 +219,7 @@ export function GuideChecklist({ onNewMatter }: { onNewMatter: () => void }) {
                   {i.done ? Icon.check() : n + 1}
                 </span>
                 <span className="guide-step-title">{i.title}</span>
-                <span className="guide-step-body">{i.locked ? "有了材料再做" : i.body}</span>
+                <span className="guide-step-body">{i.locked ? "有了材料后可做" : i.body}</span>
                 {current && (
                   <button className="btn-primary btn-sm guide-step-cta" onClick={() => go(i.key)}>
                     {i.cta}
