@@ -387,3 +387,14 @@ test("第 72 批（验收 Q-5）：成员数、未占席、“另在 N 个团队
   assert.deepEqual(activeTeamsOf(p).map((w: { name: string }) => w.name), ["乙所"]);
   assert.deepEqual(activeTeamsOf({ workspaces: [{ kind: "team", status: "disabled" }] }), []);
 });
+
+test("补测 D8：电脑派生名带“第 N 台”（设备编号末尾 _D<n>，没有则第 1 台）；起了名的不改", async () => {
+  const { deviceLabel, deviceOrdinal } = await mod("apps/console/domain.js");
+  assert.equal(deviceOrdinal({ device_id: "dev_t1_t1_D2" }), 2);
+  assert.equal(deviceOrdinal({ device_id: "dev_liuw72_chenw72" }), 1);
+  assert.equal(deviceOrdinal({ device_id: "fp:abc" }), 1);
+  assert.equal(deviceLabel({ device_id: "dev_t1_t1_D2", member_name: "孙二青", platform: "darwin" }), "孙二青的 Mac · 第 2 台");
+  assert.equal(deviceLabel({ device_id: "dev_x_y", member_name: "王律师", platform: "win32" }), "王律师的Windows 电脑 · 第 1 台".replace("的Windows", "的 Windows"));
+  assert.equal(deviceLabel({ device_id: "dev_t1_t1_D3", name: "所里的台式机" }), "所里的台式机");
+  assert.equal(deviceLabel({ pending: true, member_name: "陈律师" }), "陈律师的新电脑");
+});

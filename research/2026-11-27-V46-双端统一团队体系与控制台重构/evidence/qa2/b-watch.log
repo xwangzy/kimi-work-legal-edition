@@ -1,0 +1,9 @@
+2026-11-27T06:13:04.079Z WATCH START
+2026-11-27T06:13:34.138Z SEEN ready text
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V46-双端统一团队体系与控制台重构/evidence/qa2/b03-share-ready.png
+TEXT: 这台电脑已可接收团队共享事项
+2026-11-27T06:14:10.312Z NAV http://127.0.0.1:5792/#/connections/team
+2026-11-27T06:14:15.314Z share-confirm count after: 1
+shot /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/research/2026-11-27-V46-双端统一团队体系与控制台重构/evidence/qa2/b04-after-reload.png
+TEAMSHARE: 团队共享。 本所识别码 协作与离开 团队共享 这台电脑是直接登录的，还不能接收团队共享事项，其它功能不受影响。申请后请管理员确认一次即可接收。 这台电脑已可接收团队共享事项 离所交接 要离开团队？离开前在这里把你负责的事项交接好（点开查看） 退出团队 离开「钱氏验收律师事务所」，这台电脑切到「孙二青的工作室」。 退出团队… 更多：本机核对码（管理员来电核对时用）
+navs 1

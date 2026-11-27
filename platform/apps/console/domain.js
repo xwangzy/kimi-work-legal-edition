@@ -109,8 +109,12 @@ export const derivedName = (d) => {
   if (d?.pending) return d?.member_name ? `${d.member_name}的新电脑` : "新电脑";
   const p = platformText(d?.platform ?? d?.client?.platform ?? null);
   const kind = p === "macOS" ? "Mac" : p === "Windows" ? "Windows 电脑" : "电脑";
-  return d?.member_name ? `${d.member_name}的${/^[A-Za-z]/.test(kind) ? ` ${kind}` : kind}` : p !== "—" ? kind : "未命名的电脑";
+  // 补测 D8：同一人多台电脑分得出——派生名补“第 N 台”（设备编号末尾 _D<n>，没有则第 1 台），与律师端选择页“Mac 电脑 · 第 N 台”同一口径
+  const base = d?.member_name ? `${d.member_name}的${/^[A-Za-z]/.test(kind) ? ` ${kind}` : kind}` : p !== "—" ? kind : "未命名的电脑";
+  return `${base} · 第 ${deviceOrdinal(d)} 台`;
 };
+/** 这个人的第几台电脑：设备编号末尾 _D<n>；没有（首台、旧编号、指纹编号）则第 1 台 */
+export const deviceOrdinal = (d) => Number(/_D(\d+)$/.exec(String(d?.device_id ?? ""))?.[1] ?? 1) || 1;
 export const deviceLabel = (d) => d?.name || derivedName(d);
 /** 电脑单元格：名称（没起名时派生名，灰色）+ 第二行编号或申请时间 */
 // 第 72 批评审（跨页 1）：内部设备编号不进主列，放悬停
@@ -288,13 +292,13 @@ export const canSupport = () => can("account.manage") || can("account.support");
  * 团队里“待确认”的电脑（第 72 批，D-304、契约 §3.5）：账号签发钥登记（issuer = account_ca）的电脑能登录、用 AI、处理自己的事项，
  * 但还不能接收团队共享事项，须团队管理员在管理员电脑上确认。个人空间的电脑都是这样登记的，不算待确认——只在团队范围内标（o.team）。
  */
-export const CONFIRM_TIP = "能登录、用 AI、处理自己的事项；要接收团队共享事项前，须团队管理员在管理员电脑“设置 → 管理”里确认这台电脑";
+export const CONFIRM_TIP = "能登录、用 AI、处理自己的事项；要接收团队共享事项前，须团队管理员在管理员电脑的 Kimi Work“设置 → 团队 → 电脑待确认”里确认这台电脑";
 export const unconfirmed = (d) => d?.issuer === "account_ca" && !d?.pending && deviceState(d) !== "revoked";
 /** 工作空间的叫法：个人空间一律叫“个人空间”（不再写“某某的工作室”）；类型取 d.kind / 客户列表缓存的 kind，旧数据按名称近似 */
 export const wsKindOfTid = (tid, name) => ctx.tenants?.find((t) => t.tid === tid)?.kind ?? (/的工作室$/.test(String(name ?? "")) ? "personal" : "team");
 export const wsNameOf = (d) => ((d?.kind ?? wsKindOfTid(d?.tid, d?.tenant_name)) === "personal" ? "个人空间" : d?.tenant_name ?? d?.tid);
 /** 待管理员确认（D-304）：状态格两行——主状态 + 灰字说明与下一步 */
-export const confirmCell = (d, hint) => h("span", { class: "cell-2" }, stateCell("待管理员确认", "warn", CONFIRM_TIP), h("small", {}, hint ?? "确认后才能接收团队共享事项"));
+export const confirmCell = (d, hint) => h("span", { class: "cell-2" }, stateCell("待确认共享", "warn", CONFIRM_TIP), h("small", {}, hint ?? "确认后才能接收团队共享事项"));
 export function deviceTable(rows, { state, after, showTenant = true, showMember = true, empty, onRow, memberLabel = "成员", team = false, confirmHint } = {}) {
   const isTeam = typeof team === "function" ? team : () => !!team;
   // 第 72 批（D-306）：行与“成员”列进用户详情（一个人）；用户详情按工作空间分组列电脑

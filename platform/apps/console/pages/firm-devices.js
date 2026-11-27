@@ -29,7 +29,7 @@ export function render(page) {
   const tools = h("div", { class: "toolbar" });
   const tools2 = h("div", { class: "toolbar" });
   const box = h("div", { class: "stack" });
-  page.append(pageHead("电脑", "本团队成员登录过的电脑。让电脑退出登录可在这里做；移除、确认新电脑在管理员电脑的“设置 → 管理”里完成"), tools, tools2, box);
+  page.append(pageHead("电脑", "本团队成员登录过的电脑。让电脑退出登录可在这里做；确认新电脑在管理员电脑的“设置 → 团队 → 电脑待确认”里完成；移除也在管理员电脑上完成"), tools, tools2, box);
   let rows = [];
   const signout = async (d, reload) => {
     const r = await confirmAction({
@@ -72,7 +72,7 @@ export function render(page) {
           { key: "platform", label: "系统", value: (d) => platformText(d.platform) },
           { key: "version", label: "客户端", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.version && d.version !== "legacy" ? h("span", {}, d.version) : h("span", { class: "muted" }, versionText(d.version))) },
           { key: "last_seen_at", label: "最近在线", value: (d) => d.last_seen_at ?? "", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.last_active_at ? h("span", { title: fmt.full(d.last_active_at) }, fmt.ago(d.last_active_at)) : h("span", { title: fmt.full(d.last_seen_at) }, d.last_seen_at ? fmt.ago(d.last_seen_at) : "从未在线")) },
-          { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)] - (unconfirmed(d) ? 0.5 : 0), render: (d) => (unconfirmed(d) ? confirmCell(d, "到你电脑上的 Kimi Work：设置 → 管理 → 确认新电脑") : deviceStateCell(d)) },
+          { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)] - (unconfirmed(d) ? 0.5 : 0), render: (d) => (unconfirmed(d) ? confirmCell(d, "到管理员电脑上的 Kimi Work：设置 → 团队 → 电脑待确认") : deviceStateCell(d)) },
           anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => (shownFlags(d).length ? h("span", { class: "badges" }, shownFlags(d).map((f) => flagBadge(f, d))) : "") } : null,
           {
             key: "_act",

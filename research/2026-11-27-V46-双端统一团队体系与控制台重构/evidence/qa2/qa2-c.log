@@ -1,0 +1,12 @@
+
+  VITE v8.3.1  ready in 66 ms
+
+  ➜  Local:   http://127.0.0.1:5793/
+[build:skills] 37 个方法模板、59 个文件 → /Users/wangzeyu/Documents/Coding/Kimi Work Legal/.claude/worktrees/kimi-legal-b72/platform/content/skills/dist（签名者 SQ0dHEco60K91ro1）
+[tool-manifest] 已签名 → content/tool-manifest/dist/（hash oPcusrN4rlNy3NuB…）
+[bridge] kernel up, localPort=51582, workspace=/private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal/0d6e0c1f-ceda-4025-9dcf-13a576f15bc5/scratchpad/tools/qa2-c/pending-activation
+[bridge] dev bridge listening on http://127.0.0.1:7893/invoke
+[bridge] kernel restarted for identity, workspace=/private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal/0d6e0c1f-ceda-4025-9dcf-13a576f15bc5/scratchpad/tools/qa2-c/qa2bing
+2:28:28 PM [vite] (client) hmr update /src/components/Sidebar.tsx
+2:28:28 PM [vite] (client) hmr update /src/components/TeamSpace.tsx
+2:28:28 PM [vite] (client) hmr update /src/pages/Relogin.tsx

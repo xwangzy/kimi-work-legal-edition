@@ -1,0 +1,7 @@
+{
+ "code": "conflict",
+ "message": "入组核对码不一致：不要确认。请让对方重新念一遍；仍不一致请点“拒绝”，并联系 Kimi Work 客服",
+ "detail": {
+  "reason": "check_code_mismatch"
+ }
+}

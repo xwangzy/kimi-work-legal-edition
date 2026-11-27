@@ -253,7 +253,7 @@ const settle = async () => {
   for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 5));
 };
 
-test("本所 · 电脑：待确认共享的电脑能渲染出来（状态“待管理员确认”+ 下一步），筛选有“待确认共享 1”，不出现读取失败", async () => {
+test("本所 · 电脑：待确认共享的电脑能渲染出来（状态“待确认共享”+ 下一步），筛选有“待确认共享 1”，不出现读取失败", async () => {
   const api = await mod("apps/console/api.js");
   await api.loadConfig();
   api.saveSession("kws1.test", { kind: "web" });
@@ -264,9 +264,9 @@ test("本所 · 电脑：待确认共享的电脑能渲染出来（状态“待�
   await settle();
   const text = page.textContent;
   assert.doesNotMatch(text, /读不出来|读取失败|is not defined/, "整页不应是错误块");
-  assert.match(text, /陈律师的 Mac/);
-  assert.match(text, /待管理员确认/, "账号签发钥登记的团队电脑标“待管理员确认”");
-  assert.match(text, /确认新电脑/, "状态次行写清去哪确认");
+  assert.match(text, /陈律师的 Mac · 第 1 台/, "派生名带“第 N 台”（编号没有 _D<n> 时第 1 台）");
+  assert.match(text, /陈律师的 Mac · 第 1 台陈律师macOS未上报版本刚刚待确认共享/, "账号签发钥登记的团队电脑：状态与筛选同一个说法“待确认共享”");
+  assert.match(text, /设置 → 团队 → 电脑待确认/, "状态次行写清去哪确认（与律师端路径一致）");
   assert.match(text, /待确认共享\s*1/, "筛选计数");
   assert.doesNotMatch(text, /dev_t_chen/, "设备编号不进主列");
   assert.doesNotMatch(text, /版本未知/, "没上报版本时不在标记列重复说版本（客户端列已写“未上报版本”）");
