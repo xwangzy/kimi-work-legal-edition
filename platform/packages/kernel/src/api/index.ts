@@ -1395,7 +1395,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // ─── 材料（§15.2 materials.mount/import：原件不修改；变化即新版本） ───
     "materials.import": async (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
-      requireMatterWriter(db, matter.matter_id, id);
+      requireMatterWriter(db, matter.matter_id, id, { action: "add" });
       let bytes: Buffer;
       let filename: string;
       if (p?.path) {
@@ -1479,7 +1479,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
      */
     "materials.from_artifact": async (p, id) => {
       const art = requireArtifact(db, String(p?.artifact_version_id ?? ""), id);
-      requireMatterWriter(db, art.matter_id, id);
+      requireMatterWriter(db, art.matter_id, id, { action: "add" });
       if (!/\.docx$/i.test(String(art.filename))) throw validation("只有 Word 成果可以作为材料继续修改");
       const buf = blobs.read(String(art.storage_uri));
       if (sha256Hex(buf) !== art.sha256) throw new DomainError("hash_mismatch", "成果文件 hash 与登记不符（完整性校验失败）", 500);
@@ -1631,7 +1631,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
 
     "materials.mount": async (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
-      requireMatterWriter(db, matter.matter_id, id);
+      requireMatterWriter(db, matter.matter_id, id, { action: "add" });
       const path = String(p?.path ?? "");
       if (!path) throw validation("需要 path（挂载本机或共享位置的文件）");
       const st = lstatSync(path); // 符号链接不跟随（探针 3）
@@ -1936,7 +1936,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "runs.estimate": (p, id) => {
       const matterId = String(p?.matter_id ?? "");
       const matter = requireMatterAccess(db, matterId, id);
-      requireMatterWriter(db, matter.matter_id, id);
+      requireMatterWriter(db, matter.matter_id, id, { action: "add" });
       if (!SCENARIOS.has(p?.scenario)) throw validation(`scenario 须为 ${[...SCENARIOS].join(" / ")}`);
       const docIds: string[] = p?.document_version_ids ?? [];
       let pages = 0;
@@ -2091,7 +2091,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "runs.start": async (p, id) => {
       const matterId = String(p?.matter_id ?? "");
       const matter = requireMatterAccess(db, matterId, id);
-      requireMatterWriter(db, matter.matter_id, id);
+      requireMatterWriter(db, matter.matter_id, id, { action: "add" });
       // 退出模式（第 02 篇 §10：许可到期或未取得、本设备被吊销）：阅读与导出照常，新任务不可用
       const exitMode = deps.governance?.exitMode();
       if (exitMode) throw new DomainError("exit_mode", exitMode.message, 403);
@@ -2372,7 +2372,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     "runs.node_enqueue": (p, id) => {
       assertNotExitMode("转交节点");
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
-      requireMatterWriter(db, matter.matter_id, id);
+      requireMatterWriter(db, matter.matter_id, id, { action: "add" });
       const scenario = String(p?.scenario ?? "");
       if (!SCENARIOS.has(scenario)) throw validation(`scenario 须为 ${[...SCENARIOS].join(" / ")}`);
       if (dataLevelOf(matter.confidentiality, matter.consent_status) === "L3b") throw forbidden("当事人限制（L3b）的事项不得转交节点（只在成员电脑上运行）");
@@ -4008,7 +4008,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // 把一份范本放进事项作为参考材料（律师自己选的事项）：之后起草合同、从范本整理审查要点等方法按事项材料使用——这时才随任务发给 AI
     "firm_templates.to_matter": async (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
-      requireMatterWriter(db, matter.matter_id, id);
+      requireMatterWriter(db, matter.matter_id, id, { action: "add" });
       const { template, clauses } = getTemplate(db, id.tenantId, String(p?.template_id ?? ""));
       const bytes = createDocx(template.title, clauses.map((c) => ({ heading: "", paragraphs: c.text.split("\n") })), { mark: false });
       const r = (await api["materials.import"]!({ matter_id: matter.matter_id, data_base64: bytes.toString("base64"), filename: `${template.title}（本所范本）.docx`, mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }, id)) as { document_version_id: string; filename?: string };
@@ -4817,8 +4817,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (inflight) {
         await inflight.catch(() => null);
       } else {
-        const lastAt = Math.max(Date.parse(cp.lastSync?.at ?? "") || 0, shareRefreshAt);
-        if (Date.now() - lastAt < SHARE_REFRESH_MIN_MS) return { refreshed: false, sync: before };
+        // 复测 P3-C：只按“上次由这里发起的同步”节流（例行同步不计）——打开团队页即立即刷新，再频繁地打开也至多每 60 秒一次
+        if (Date.now() - shareRefreshAt < SHARE_REFRESH_MIN_MS) return { refreshed: false, sync: before };
         shareRefreshAt = Date.now();
         await cp.sync().catch(() => null);
       }
@@ -6168,7 +6168,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     return [...out].map(([user_id, matter_role]) => ({ user_id, matter_role }));
   }
 
-  /** team.refresh_share_state 的节流：距上次控制面同步（或上次由这里发起的同步）不足此间隔不再同步（缺省 60 秒；用例可调短，至少 1 秒）。 */
+  /** team.refresh_share_state 的节流：距上次由这里发起的同步不足此间隔不再同步（例行同步不计；缺省 60 秒；用例可调短，至少 1 秒）。 */
   const SHARE_REFRESH_MIN_MS = Math.min(600_000, Math.max(1_000, Number(config.env.ZR_SHARE_REFRESH_MS ?? 60_000) || 60_000));
   let shareRefreshAt = 0;
 
@@ -6487,7 +6487,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
   }
 
   /** 成员写操作门禁（viewer 最小权限）：有效成员（墓碑过滤）且非 viewer；节点身份例外见下。 */
-  function requireMatterWriter(db2: KernelDb, matterId: string, id: Identity, opts?: { allowClosed?: boolean }): void {
+  function requireMatterWriter(db2: KernelDb, matterId: string, id: Identity, opts?: { allowClosed?: boolean; action?: "add" }): void {
     // 数据生命周期（迁移 0021）：已结案事项只读（取消、对账等收尾操作除外）；已删除事项不可写
     const lc = db2.get<{ lifecycle: string }>(`SELECT lifecycle FROM matters WHERE matter_id = ?`, [matterId])?.lifecycle;
     if (lc === "purged" || (lc === "closed" && !opts?.allowClosed)) requireActiveMatter(db2, matterId);
@@ -6504,9 +6504,25 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // 第 73 批（P3-3）：律师层的话（D-310 角色只说“只看”），带负责人姓名
     if (row.matter_role === "viewer") {
       const owner = db2.get<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND matter_role = 'owner' AND removed_at IS NULL ORDER BY added_at LIMIT 1`, [matterId])?.user_id ?? null;
-      const ownerName = owner ? displayNameOf(owner) : null;
-      throw new DomainError("forbidden", `你在这个事项里是“只看”：不能加材料或发起任务，请找负责人${ownerName ?? ""}`.replace(/请找负责人$/, "请找事项负责人"), 403, { reason: "viewer_read_only", owner_name: ownerName });
+      // 复测 P3-D：只写真实姓名（名单 / 本机记的姓名；账号代号不算），取不到就只说“负责人”；加材料、发起任务与其它修改分开说
+      const ownerName = owner ? realNameOf(owner, id.tenantId) : null;
+      const what = opts?.action === "add" ? "不能加材料或发起任务" : "不能修改这个事项";
+      throw new DomainError("forbidden", `你在这个事项里是“只看”：${what}，请找负责人${ownerName ?? ""}`, 403, { reason: "viewer_read_only", owner_name: ownerName });
     }
+  }
+
+  /**
+   * 复测 P3-D：给律师看的真实姓名——先看同事名单（现取或缓存），再看本机记的姓名（本人用激活记录）；
+   * 本机记的是成员编号或账号代号（成员标识，例如 qa14a）时不算，返回 null（调用方只写“负责人”）。
+   */
+  function realNameOf(userId: string, tenantId: string): string | null {
+    const roster = rosterMem && rosterMem.tid === tenantId ? rosterMem.members : (readRosterCache(keyctx.keysDir, tenantId)?.members ?? []);
+    const fromRoster = roster.find((m) => m.user_id === userId)?.name;
+    if (fromRoster) return fromRoster;
+    const n = displayNameOf(userId, null);
+    if (!n) return null;
+    const slug = userId.split("_").slice(2).join("_");
+    return n === slug || n === userId ? null : n;
   }
 
   /** 第 73 批（P3-3）：这台电脑能不能写这个事项（与 requireMatterWriter 同一口径，不抛错）——界面据此收起写入口。 */

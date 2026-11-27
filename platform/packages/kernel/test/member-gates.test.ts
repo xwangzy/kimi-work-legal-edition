@@ -52,11 +52,19 @@ test("viewer 写方法一律 403，只读可用；owner 不受影响", async () 
   // 写方法 403
   await assert.rejects(
     () => viewer.inv("materials.import", { matter_id: matter.matter_id, filename: "x.txt", data_base64: Buffer.from("x").toString("base64"), mime: "text/plain" }),
-    (e: any) => e.code === "forbidden" && /你在这个事项里是“只看”/.test(e.message) && e.detail?.reason === "viewer_read_only",
+    // 复测 P3-D：加材料、发起任务说“不能加材料或发起任务”；负责人本机只记了账号代号（test-lawyer）时不写代号，只说“负责人”
+    (e: any) => e.code === "forbidden" && e.message === "你在这个事项里是“只看”：不能加材料或发起任务，请找负责人" && e.detail?.reason === "viewer_read_only" && e.detail?.owner_name === null,
   );
   await assert.rejects(
     () => viewer.inv("matters.update", { matter_id: matter.matter_id, patch: { title: "篡改" } }),
-    (e: any) => e.code === "forbidden",
+    // 其它修改（改标题等）说“不能修改这个事项”
+    (e: any) => e.code === "forbidden" && e.message === "你在这个事项里是“只看”：不能修改这个事项，请找负责人",
+  );
+  // 负责人有真实姓名时写姓名
+  viewer.kernel.db.run(`UPDATE users SET display_name = '顾明远' WHERE user_id = 'usr_gate-firm_test-lawyer'`);
+  await assert.rejects(
+    () => viewer.inv("matters.update", { matter_id: matter.matter_id, patch: { title: "篡改" } }),
+    (e: any) => e.message === "你在这个事项里是“只看”：不能修改这个事项，请找负责人顾明远" && e.detail?.owner_name === "顾明远",
   );
   await assert.rejects(
     () => viewer.inv("runs.estimate", { matter_id: matter.matter_id, scenario: "s1.contract_review", document_version_ids: [] }),

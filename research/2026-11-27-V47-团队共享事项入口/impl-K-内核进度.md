@@ -137,6 +137,12 @@
 - `data_flows` 每条 `when`：`colleagues` / `zr_relay` = `on_team_share`；新增 `ai_forward` = `on_ai_use`（按端点与数据级别；用不了 AI 时没有）；`local` = `always`（两值之外的第三值，已记 03）。授权记录同样带。估价完整说明只加团队共享两行。用例覆盖各条 `when`、三种端点、不使用模型与 L3b 非私有端点没有 AI 一条、授权记录带 `when`。
 - 验证：b73 9/9；回归 615/615；tsc 0 错；build:kernel 已重建（产物里已无 `reenable_requires_vendor`）。已写进 03（W2 第十、十一行）。
 
+## 复测 P3-C / P3-D（未提交）
+
+- P3-C：`team.refresh_share_state` 节流只看 `shareRefreshAt`（上次由这里发起的同步），不再取 `controlPlane.lastSync`。用例改为：B 例行同步后第一次打开即 `{true, not_allowed}`；节流内 `{false, not_allowed}`；过了间隔 B 再例行同步一次、A 随后发布开通，B 打开即刷新（两次并发都 `{true, ok}`）；已开通 `{false, ok}`。
+- P3-D：`realNameOf`（名单 → 本机姓名；等于成员标识 / 编号的不算）；`requireMatterWriter` 加 `action: "add"`（7 个加材料 / 发起任务的方法传），其余写入说“不能修改这个事项”。member-gates 用例逐字断言两种句子、代号不写出、有真实姓名时写姓名。
+- 验证：b73 9/9；回归 615/615；tsc 0 错；build:kernel 已重建。已写进 03（W2 第十二行）。
+
 ## 未做 / 留给主会话判断
 
 - A4 K6（云端移出团队不吊销设备、本机不自动移出事项与轮换）未做：现在靠成员页 `departed` 标记 + 负责人一键移出（D-308 口径）。
