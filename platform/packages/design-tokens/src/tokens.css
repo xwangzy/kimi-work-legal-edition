@@ -187,6 +187,8 @@
   /* 第 71 批（V45，独立评分共性问题）：原来是 30% 黑叠白底 + 白字（约 #BABABA 上白字，对比 1.9:1，看不清写的是什么）；改为浅灰底 + 中灰字（3.2:1） */
   --btn-primary-disabled: var(--p-gray-200);
   --btn-primary-disabled-text: var(--p-gray-550);
+  /* 第 72 批（设计评分第四轮）：禁用主按钮的描边——浅色不需要（浅灰底已与白面板分开），深色见下 */
+  --btn-primary-disabled-border: transparent;
 
   /* 品牌标识（第 48 批：Kimi 官方素材包 Logomark）：浅色为黑底白 K、深色为白底黑 K，蓝点两套相同 */
   --brand-mark-bg: var(--p-black);
@@ -376,9 +378,11 @@
   --btn-primary: #ecebe9;
   --btn-primary-hover: #ffffff;
   --btn-primary-text: #141312;
-  /* 深色：白底按钮压暗到约 #4A4745、字约 #8A8580（与输入框、卡片都分得开） */
-  --btn-primary-disabled: color-mix(in srgb, var(--btn-primary) 22%, var(--bg-surface));
-  --btn-primary-disabled-text: color-mix(in srgb, var(--btn-primary) 66%, var(--bg-surface));
+  /* 第 72 批（设计评分第四轮）：深色下压暗的白底按钮（约 #4A4745 实心底）仍像可点——改为几乎不填底、细描边、低对比字，
+     与浅色“浅灰底中灰字”同样一眼看出不可点 */
+  --btn-primary-disabled: color-mix(in srgb, var(--btn-primary) 6%, var(--bg-surface));
+  --btn-primary-disabled-text: color-mix(in srgb, var(--btn-primary) 42%, var(--bg-surface));
+  --btn-primary-disabled-border: color-mix(in srgb, var(--btn-primary) 18%, var(--bg-surface));
   --brand-mark-bg: #ffffff;
   --brand-mark-fg: #000000;
   --brand-mark-dot: #1783ff;

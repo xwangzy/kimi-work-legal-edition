@@ -207,7 +207,7 @@ button.card:hover { border-color: var(--border-hover); background: var(--bg-hove
 .btn-primary:hover:not(:disabled) { background: var(--btn-primary-hover); }
 /* 第 70 批（V44，全库统一）：禁用的主按钮 = 主按钮底色约 30% 叠在面板上（实色，不用半透明：部分合成层上半透明会出竖向接缝）——
    主次关系不翻转（原来开始面板改成描边按钮，比“取消”还弱；登录页深色下与输入框同色）。正在开始（aria-busy）时照常实色 */
-.btn-primary:disabled { background: var(--btn-primary-disabled); color: var(--btn-primary-disabled-text); opacity: 1; }
+.btn-primary:disabled { background: var(--btn-primary-disabled); color: var(--btn-primary-disabled-text); opacity: 1; box-shadow: inset 0 0 0 1px var(--btn-primary-disabled-border); cursor: default; }
 .btn-primary:disabled[aria-busy="true"] { background: var(--btn-primary); color: var(--btn-primary-text); }
 .btn-ghost { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: var(--r-sm); padding: 7px 14px; }
 .btn-ghost:hover:not(:disabled) { background: var(--bg-hover); }

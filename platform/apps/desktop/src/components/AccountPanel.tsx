@@ -801,7 +801,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
               <b>{a?.name ?? st.account?.name}</b>
               {/* 第 72 批：个人工作室里你就是唯一的成员，不写“管理员”。设计评分 C8：只在确知是团队空间时写角色（账号详情还没取到、或旧云端没给 personal 时不先写一个“管理员”再收回） */}
               {(ws.kind === "team" || (ws.kind === null && me?.personal === false)) && <span className="pill pill-gray">{roleLabel(a?.role ?? st.account?.role)}</span>}
-              <span className="pill pill-green">登录中</span>
+              {/* 设计评分第四轮 C8：能打开设置就说明已登录，不再写“登录中”；标签只留中性灰底与状态点两种 */}
             </div>
             <div className="muted">{a?.email ?? st.account?.email}</div>
             {/* 第 63 批：手机号（打码）或“未绑定”；账号详情取到了才显示 */}
@@ -841,8 +841,12 @@ export function AccountSection({ firm }: { firm: string | null }) {
                   <div className="account-list-main">
                     <div className="account-device-title">
                       <b>{l.title}</b>
-                      {d.current && <span className="tag tag-this">这台电脑</span>}
-                      <span className={`tag tag-${l.state.tone === "ok" ? "ok" : l.state.tone === "bad" ? "bad" : "gray"}`}>{l.state.text}</span>
+                      {d.current && <span className="pill pill-gray">这台电脑</span>}
+                      {/* 设计评分第四轮 C8：标签收敛为两种——身份类用中性灰底（这台电脑），状态类用“状态点 + 文字” */}
+                      <span className="dev-state">
+                        <span className={`sdot${l.state.tone === "ok" ? " sdot-ok" : l.state.tone === "bad" ? " sdot-bad" : ""}`} aria-hidden="true" />
+                        {l.state.text}
+                      </span>
                       {/* 第 71 批（V45）：操作结果就地显示在电脑名旁边，几秒后淡出，不推动布局；去掉名字可撤销 */}
                       {mine && (
                         <span className={`account-inline-note${mine.tone === "bad" ? " is-bad" : ""}`} role="status">

@@ -146,7 +146,8 @@ test("“谁”：成员姓名 / 本所成员 / 本所（开通时）/ Kimi Work
   // 第 72 批评分 C10：解析不到姓名时写编号后 4 位（同一个人的几条记录能对得上），不再笼统写“本所成员”
   assert.equal(auditWho({ actor: { kind: "device", id: "dev_x1a2b" }, actor_name: null }), "成员（编号 1a2b）");
   assert.equal(auditWho({ actor: { kind: "account", id: "acc_9z8y7x" }, actor_name: null }), "成员（编号 8y7x）");
-  assert.equal(auditWho({ actor: { kind: "root", id: "ten_x" }, actor_name: null }), "本所（开通时）");
+  // 第 72 批（设计评分第四轮）：律所根那一条写成人话
+  assert.equal(auditWho({ actor: { kind: "root", id: "ten_x" }, actor_name: null }), "开通团队时");
   assert.equal(auditWho({ actor: { kind: "ops", id: "stf_f8LE…T0spZB" }, actor_name: null }), "Kimi Work 运营人员");
   assert.equal(auditWho({ actor: { kind: "service", id: "x" }, actor_name: null }), "系统");
 });

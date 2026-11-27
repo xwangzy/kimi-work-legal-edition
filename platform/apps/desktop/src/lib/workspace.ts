@@ -168,28 +168,49 @@ export function parseLeftNotice(raw: string | null): { team: string; how: "remov
  * 团队共享处的一句提示（D-304）：这台电脑由账号直接登记（没有经过团队确认），能登录、用 AI、处理自己的事项，
  * 但还不能接收团队共享事项。非阻塞。管理员自己的电脑要在团队开通时的那台电脑上确认。纯函数。
  */
-export function shareIssuerNote(issuer: unknown, kind: WorkspaceKind | null, admin: boolean): string | null {
+export function shareIssuerNote(issuer: unknown, kind: WorkspaceKind | null, admin: boolean, relay: boolean | null = null): string | null {
   if (kind !== "team" || issuer !== "account_ca") return null;
-  // 第 72 批（设计评分第三轮 C18）：不把管理员侧的策略名“直接登录”搬给成员；路径统一写“设置 → 团队 → 电脑待确认”
-  return admin
-    ? "这台电脑还不能接收团队共享事项，其它功能不受影响。申请后，在团队开通时用的那台电脑上“设置 → 团队 → 电脑待确认”里确认一次即可接收。"
-    : "这台电脑还不能接收团队共享事项，其它功能不受影响。申请后，管理员确认一次即可接收。";
+  return shareReadyText({ kind: admin ? "member_admin" : "member", confirmed: false, relay });
+}
+
+/**
+ * 第 72 批（设计评分第四轮）：“能不能收到团队共享事项”的一句话——成员团队页（C15 / C18）与管理员确认结果（C19）同一口径。纯函数。
+ * 两个条件分开写、按真实状态出一句：A = 管理员已确认这台电脑（律所根签的证书）；B = 所内已开通同事之间同步（relay：true 已开通 / false 没开通 / null 不知道）。
+ * - 成员、未确认：“这台电脑还不能接收团队共享事项，其它功能不受影响。申请并经管理员确认后可接收团队共享事项”，B 没开通时同句补前提；
+ *   管理员自己的直接登录电脑（member_admin）写确认的位置“设置 → 团队 → 电脑待确认”。
+ * - 成员、已确认：A 且 B →“这台电脑已可接收团队共享事项（时刻 由某某确认）”；A 而 B 没开通 →“管理员已确认这台电脑（…）；所内开通同事之间同步后即可收到团队共享事项”；
+ *   B 不知道 → 只写“管理员已确认这台电脑（…）”，不替它承诺。
+ * - 管理员确认结果（result，subject 是“陆二平的 Mac 电脑 · 第 1 台”）：“已确认…（16:12）”，B 已开通补“，它现在可接收团队共享事项”，没开通补“；所内开通同事之间同步后，它即可收到团队共享事项”。
+ */
+export function shareReadyText(
+  o: { kind: "member" | "member_admin" | "result"; confirmed: boolean; relay: boolean | null; at?: string | null; by?: string | null; subject?: string },
+  now = Date.now(),
+): string {
+  if (o.kind === "result") {
+    const hm = dayTime(o.at ?? new Date(now).toISOString(), now).slice(-5);
+    const tail = o.relay === true ? "，它现在可接收团队共享事项" : o.relay === false ? "；所内开通同事之间同步后，它即可收到团队共享事项" : "";
+    return `已确认${o.subject ?? "这台电脑"}（${hm}）${tail}`;
+  }
+  if (!o.confirmed) {
+    const how = o.kind === "member_admin" ? "申请并在团队开通时用的那台电脑上“设置 → 团队 → 电脑待确认”里确认后，可接收团队共享事项" : "申请并经管理员确认后可接收团队共享事项";
+    return `这台电脑还不能接收团队共享事项，其它功能不受影响。${how}${o.relay === false ? "；所内还需开通同事之间同步" : ""}。`;
+  }
+  const when = o.at ? `（${dayTime(o.at, now)} ${o.by ? `由${o.by}确认` : "确认"}）` : "";
+  if (o.relay === true) return `这台电脑已可接收团队共享事项${when}`;
+  return `管理员已确认这台电脑${when}${o.relay === false ? "；所内开通同事之间同步后即可收到团队共享事项" : ""}`;
 }
 
 /**
  * 第 72 批（U-2b）：“申请接收团队共享事项”各状态的一句话（团队共享处）。pending 时另显示核对码。纯函数。
  * state 取自内核 team.deviceShare.*；不支持（旧云端 / 旧内核）返回 null，界面只留上面那句提示。
  */
-export function shareConfirmLine(s: { supported?: boolean; state?: string; restart?: boolean; problem?: string; offline?: boolean; decided_at?: string | null; decided_by_name?: string | null } | null, now = Date.now()): string | null {
+export function shareConfirmLine(s: { supported?: boolean; state?: string; restart?: boolean; problem?: string; offline?: boolean; decided_at?: string | null; decided_by_name?: string | null; relay?: boolean | null } | null, now = Date.now()): string | null {
   if (!s || s.supported !== true) return null;
   const at = s.decided_at ? momentLabel(s.decided_at, now) : "";
   switch (s.state) {
-    case "confirmed": {
-      // 设计评分第三轮 C18：确认后不无声消失——一行正向状态，带确认时刻（与审计同一写法）与确认人（拿得到才写）
-      const when = s.decided_at ? dayTime(s.decided_at, now) : "";
-      const by = s.decided_by_name ? `由${s.decided_by_name}确认` : "确认";
-      return `这台电脑已可接收团队共享事项${when ? `（${when} ${by}）` : ""}`;
-    }
+    case "confirmed":
+      // 设计评分第三 / 四轮：确认后不无声消失；“已确认”与“所内已开通同步”两个条件按真实状态写（shareReadyText）
+      return shareReadyText({ kind: "member", confirmed: true, relay: s.relay ?? null, at: s.decided_at ?? null, by: s.decided_by_name ?? null }, now);
     case "pending":
       return s.problem ? "收到的确认结果核对不通过，没有采用：请管理员拒绝后你重新申请；仍不行请联系 Kimi Work 客服" : "已申请：管理员会在“设置 → 团队 → 电脑待确认”里确认，确认时请把下面的号码读给他";
     case "rejected":

@@ -740,8 +740,8 @@ function AccountTab({ ws }: { ws: WorkspaceState }) {
             {ws.kind !== "personal" && (
               <details className="quiet-details">
                 {/* 第 26 批（评审 U2-06）：“核对码”原来指三样东西——本所的这串改叫“本所识别码” */}
-                <summary>本所识别码</summary>
-                <span className="mono">{firm.firm_check_code}</span>：与管理员“设置 · 团队”页里的数字一致，说明你加入的是本所。
+                <summary>团队识别码（入组时核对团队用）</summary>
+                <span className="mono">{firm.firm_check_code}</span>：与管理员“设置 → 团队”页里的数字一致，说明你加入的是这个团队。
               </details>
             )}
           </SettingRow>
@@ -781,7 +781,8 @@ function TeamTab({ ws, mySafety }: { ws: WorkspaceState; mySafety: string | null
       <TeamHeader ws={ws}>
         {firm?.firm_check_code && (
           <details className="quiet-details team-check">
-            <summary>本所识别码</summary>
+            {/* 设计评分第四轮：与页底“本机识别码”只差一字——改叫“团队识别码”并写明用途 */}
+            <summary>团队识别码（入组时核对团队用）</summary>
             <span className="mono">{firm.firm_check_code}</span>：同事加入后，他的这一页应显示同一串数字，说明加入的是同一个团队。
           </details>
         )}
@@ -1216,9 +1217,9 @@ function DiagnosticsTab({ caps, gate, devices, unresolved, onReconciled, im, rec
               <div className="help-row-title">
                 版本信息<span className="sup-ver">Kimi Work 法律版 {appVersion || "—"}</span>
               </div>
-              <p className="help-row-desc">客服会问版本号、本所识别码与这台电脑的编号：一键复制，直接粘贴给客服。</p>
+              <p className="help-row-desc">客服会问版本号、团队识别码与这台电脑的编号：一键复制，直接粘贴给客服。</p>
               <p className="sup-ident mono">
-                {ident.tid && <span>本所识别码 {ident.tid}</span>}
+                {ident.tid && <span>团队识别码 {ident.tid}</span>}
                 {ident.device && <span>这台电脑 {ident.device}</span>}
                 {build && <span>{build}</span>}
               </p>

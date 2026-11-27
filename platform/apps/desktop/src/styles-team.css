@@ -152,6 +152,11 @@
 .join-done { display: flex; align-items: center; gap: 6px; margin: 0 0 var(--sp-3); font-size: var(--fs-body); color: var(--text-primary); }
 .join-done-icon { display: inline-flex; width: 16px; height: 16px; color: var(--status-success-strong); }
 .join-done-icon svg { width: 16px; height: 16px; }
+.join-done-icon.is-rejected { color: var(--text-secondary); }
+/* 设计评分第四轮：核对码输入框——输入的数字与占位、成员侧号码同一款等宽字体与字距（选择器提高一级，压过全局 input 的 font: inherit 与表格里的字号） */
+.join-table input.members-code-input, .join-table input.members-code-input::placeholder { font-family: var(--font-mono); font-size: var(--fs-body); letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+/* 字距 0.04em × 15 个字符另占约 0.6ch：按 17ch 留宽，“000 000 000 000”不被截 */
+.join-table input.members-code-input { width: calc(17ch + 20px); }
 .share-confirm-box { margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--bg-muted); border: 1px solid var(--border-subtle); font-size: var(--fs-caption); line-height: 1.6; }
 .share-confirm-box p:last-child { margin-bottom: 0; }
 
@@ -223,8 +228,11 @@
 /* 设计评分第三轮 C18：还没申请是正常状态——中性灰底黑字（橙色留给需要注意的状态）；已申请的号码单独一行、等宽大号；已可接收带对勾；前提写在同一行下 */
 .share-note.share-note-neutral { background: var(--bg-muted); color: var(--text-primary); }
 .share-code-line { display: flex; align-items: baseline; gap: var(--sp-2); }
+.share-code-note { margin: 0 0 var(--sp-1); font-size: var(--fs-caption); }
 .share-code { font-size: var(--fs-xl); letter-spacing: 0.04em; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .share-confirm-ok { display: flex; align-items: center; gap: 6px; color: var(--text-primary); }
 .share-ok-icon { display: inline-flex; width: 16px; height: 16px; color: var(--status-success-strong); }
 .share-ok-icon svg { width: 16px; height: 16px; }
 .share-prereq { margin: var(--sp-1) 0 0; font-size: var(--fs-caption); }
+/* 设计评分第四轮 C8：电脑的状态写“状态点 + 文字”（与审计表、成员表同款） */
+.dev-state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--text-label); white-space: nowrap; }

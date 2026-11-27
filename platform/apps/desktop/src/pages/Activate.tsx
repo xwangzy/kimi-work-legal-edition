@@ -1101,8 +1101,8 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
     return (
       <Frame>
         <h1 className="activate-title">已批准，请再核对一次</h1>
-        <p className="activate-lead">请在你原来那台电脑上打开“设置 → 团队 → 本所识别码”，与下面这串数字逐位比对。一致，说明这台电脑加入的确实是本所。</p>
-        <div className="activate-checkcode" aria-label="本所识别码">
+        <p className="activate-lead">请在你原来那台电脑上打开“设置 → 团队 → 团队识别码”，与下面这串数字逐位比对。一致，说明这台电脑加入的确实是本所。</p>
+        <div className="activate-checkcode" aria-label="团队识别码">
           {firmCode}
         </div>
         {note && (

@@ -324,7 +324,8 @@ export function auditWho(r: Pick<AuditRowLike, "actor" | "actor_name">): string 
     case "account":
       return r.actor_name || (r.actor.id ? `成员（编号 ${r.actor.id.replace(/[^A-Za-z0-9]/g, "").slice(-4)}）` : "本所成员");
     case "root":
-      return "本所（开通时）";
+      // 设计评分第四轮：律所根的那一条写成人话（“开通团队时 | 登记了这台管理员电脑”）
+      return "开通团队时";
     case "ops":
       return "Kimi Work 运营人员";
     case "claimant":
@@ -355,7 +356,7 @@ export function auditSentence(r: AuditRowLike): { who: string; what: string; imp
   const sameAsActor = !!r.actor_name && r.actor_name === name;
   const S: Record<string, () => string> = {
     "tenant.create": () => (d.seats ? `开通本所（${d.seats} 个席位）` : "开通本所"),
-    "tenant.enroll_root": () => "登记了本所的管理钥匙",
+    "tenant.enroll_root": () => "登记了这台管理员电脑",
     "tenant.read": () => "查看了本所的开通信息",
     "tenant.usage": () => "查看了本所的用量",
     "activation.issue": () => "发出开通码",

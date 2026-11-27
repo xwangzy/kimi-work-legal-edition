@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { api, team, type DeviceShareStatus, type RelayStatus } from "../api.ts";
-import { shareConfirmLine, shareNoteVisible } from "../lib/workspace.ts";
+import { shareConfirmLine, shareIssuerNote, shareNoteVisible } from "../lib/workspace.ts";
 import { notifyWorkspaceChanged } from "./WorkspaceSwitch.tsx";
 import { canResyncMembers, relayErrorText, syncAlertAction, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
 import { fmtTime } from "../lib/labels.ts";
@@ -44,23 +44,28 @@ export function TeamShare({ admin = false, note = null }: { admin?: boolean; not
   // 带确认时刻与确认人，不再无声消失）；所内还没开通同事之间同步时，作为第二个前提写在同一行里（页顶横幅不再说）
   const share = useShareConfirm(true);
   const confirmedHere = share.s?.supported === true && share.s.state === "confirmed" && !!share.s.decided_at;
-  const shareBlock = note ? (
+  // 设计评分第四轮：“管理员已确认这台电脑”与“所内已开通同事之间同步”是两个条件——按真实状态写进同一句（lib/workspace.ts shareReadyText）
+  const relay: boolean | null = !st ? null : st.blocked === "not_configured" ? false : st.blocked === null ? true : null;
+  // note 只说明“这台电脑是直接登录的团队电脑”（管理员自己的这类电脑另有写法）；句子按同步状态重出
+  const noteText = note ? shareIssuerNote("account_ca", "team", note === shareIssuerNote("account_ca", "team", true), relay) : null;
+  const shareBlock = noteText ? (
     shareNoteVisible(share.s) ? (
       <div className="share-note share-note-neutral" role="note">
-        {note}
+        {noteText}
         {share.s?.supported === true && <ShareConfirmActions share={share} />}
       </div>
     ) : (
-      <ShareConfirmBox share={share} />
+      <ShareConfirmBox share={share} relay={relay} />
     )
   ) : confirmedHere ? (
-    <ShareConfirmBox share={share} />
+    <ShareConfirmBox share={share} relay={relay} />
   ) : null;
-  const relayMissing = !!st && st.blocked === "not_configured";
+  // 已申请 / 被拒 / 过期时，所内还没开通同步作为第二个前提写在下面（未申请、已确认的句子里已经写了）
+  const waiting = share.s?.state === "pending" || share.s?.state === "rejected" || share.s?.state === "expired";
   const noteLine = shareBlock ? (
     <>
       {shareBlock}
-      {relayMissing && <p className="muted share-prereq">所内还没有开通同事之间同步，开通后才能收到团队共享事项。</p>}
+      {relay === false && waiting && <p className="muted share-prereq">所内还没有开通同事之间同步，开通后才能收到团队共享事项。</p>}
     </>
   ) : null;
   if (!st || (st.blocked === "not_configured" && alerts.length === 0))
@@ -254,12 +259,13 @@ function ShareConfirmActions({ share }: { share: ShareConfirmState }) {
 }
 
 /** 已申请 / 被拒 / 已过期 / 已可接收：只这一块（不再并列橙色“还不能接收”）。 */
-function ShareConfirmBox({ share }: { share: ShareConfirmState }) {
+function ShareConfirmBox({ share, relay }: { share: ShareConfirmState; relay: boolean | null }) {
   const { s, busy, err, act } = share;
   if (!s || s.supported !== true) return null;
-  const line = shareConfirmLine(s);
+  const line = shareConfirmLine({ ...s, relay });
   const retry = s.state === "rejected" || s.state === "expired";
-  const ok = s.state === "confirmed";
+  // 对勾只给“两个条件都满足”的那一句；已确认而同步没开通用中性写法
+  const ok = s.state === "confirmed" && relay === true;
   return (
     <div className={`share-confirm share-confirm-box${ok ? " is-ok" : ""}`}>
       {line && (
@@ -275,6 +281,8 @@ function ShareConfirmBox({ share }: { share: ShareConfirmState }) {
           <span className="share-code mono">{s.check_code}</span>
         </p>
       )}
+      {/* 设计评分第四轮：号码由这台电脑的密钥算出（joinCheckCode：团队编号 + 设备编号 + 两把公钥，确定性派生），重新申请也不变——如实说明；律师层不写“密钥”，写“这台电脑本身决定” */}
+      {s.state === "pending" && s.check_code && <p className="muted share-code-note">号码由这台电脑本身决定，重新申请也不变。</p>}
       <span className="settings-choice">
         {retry && (
           <>

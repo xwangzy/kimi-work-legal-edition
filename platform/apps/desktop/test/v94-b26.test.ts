@@ -125,7 +125,9 @@ test("核对码三义归一（U2-06/07）：本所识别码 / 本机核对码（
     assert.doesNotMatch(visible, /安全码|律所核对码|本所核对码/);
     for (const m of visible.matchAll(/(.{0,3})核对码/g)) assert.ok(/本机$|入组$/.test(m[1]!) || /^(本机|入组)/.test(m[0]), `“核对码”要连着“本机 / 入组”：${m[0]}`);
   }
-  assert.match(files[0]!, /<summary>本所识别码<\/summary>/);
+  // 第 72 批（设计评分第四轮）：与“本机识别码”只差一字——改叫“团队识别码”并写明用途
+  assert.match(files[0]!, /<summary>团队识别码（入组时核对团队用）<\/summary>/);
+  for (const f of files) assert.doesNotMatch(f.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""), /本所识别码/);
   assert.match(files[0]!, /function SafetyCode\(/);
   assert.match(read("../src/styles.css"), /\.safety-group b \{ font-size: var\(--fs-reading\);/);
 });

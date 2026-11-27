@@ -18,6 +18,7 @@ import {
   shareConfirmLine,
   shareIssuerNote,
   shareNoteVisible,
+  shareReadyText,
   teamPrivacyLine,
   teamErrorText,
   teamNameOk,
@@ -115,8 +116,8 @@ test("危险操作的后果写清（D-305）：升级四件事（不可撤回在
 
 test("团队共享提示（D-304）：只在团队空间、账号直接登记的电脑上出现；管理员与成员说法不同；个人空间不出现", () => {
   // 第 72 批（U-2b）：已有事后确认——申请一次、管理员确认一次即可接收
-  assert.equal(shareIssuerNote("account_ca", "team", false), "这台电脑还不能接收团队共享事项，其它功能不受影响。申请后，管理员确认一次即可接收。");
-  assert.match(shareIssuerNote("account_ca", "team", true)!, /团队开通时用的那台电脑上“设置 → 团队 → 电脑待确认”里确认一次即可接收/);
+  assert.equal(shareIssuerNote("account_ca", "team", false), "这台电脑还不能接收团队共享事项，其它功能不受影响。申请并经管理员确认后可接收团队共享事项。");
+  assert.match(shareIssuerNote("account_ca", "team", true)!, /团队开通时用的那台电脑上“设置 → 团队 → 电脑待确认”里确认后，可接收团队共享事项/);
   for (const admin of [false, true]) assert.doesNotMatch(shareIssuerNote("account_ca", "team", admin)!, /律所根|签发钥|证书|暂不能|直接登录/);
   assert.equal(shareIssuerNote("firm_root", "team", false), null);
   assert.equal(shareIssuerNote("account_ca", "personal", false), null);
@@ -328,8 +329,8 @@ test("申请接收团队共享事项（U-2b）：各状态一句话；不支持�
   assert.equal(shareConfirmLine({ supported: true, state: "none" }), null, "还没申请：只有按钮");
   assert.match(shareConfirmLine({ supported: true, state: "pending" })!, /管理员会在“设置 → 团队 → 电脑待确认”里确认，确认时请把下面的号码读给他/);
   assert.match(shareConfirmLine({ supported: true, state: "pending", problem: "cert_invalid" })!, /核对不通过，没有采用/);
-  assert.equal(shareConfirmLine({ supported: true, state: "confirmed" }), "这台电脑已可接收团队共享事项");
-  assert.equal(shareConfirmLine({ supported: true, state: "confirmed", restart: true }), "这台电脑已可接收团队共享事项");
+  assert.equal(shareConfirmLine({ supported: true, state: "confirmed", relay: true }), "这台电脑已可接收团队共享事项");
+  assert.equal(shareConfirmLine({ supported: true, state: "confirmed", restart: true, relay: true }), "这台电脑已可接收团队共享事项");
   assert.match(shareConfirmLine({ supported: true, state: "rejected" })!, /可以重新申请/);
   // 补测 D5：被拒写明时刻（北京时间）
   assert.equal(shareConfirmLine({ supported: true, state: "rejected", decided_at: "2026-11-27T06:20:00.000Z" }, Date.parse("2026-11-27T08:00:00.000Z")), "管理员拒绝了这次申请（今天 14:20），可以重新申请");
@@ -393,7 +394,7 @@ test("复测 N1～N7：侧栏计数即时与周期重取；横幅按共享通道
   assert.doesNotMatch(ma, /一致再批准）<\/th>|批准前，请先电话或当面联系对方，请他读出自己屏幕上的入组核对码，与这里逐位对照/);
   // N6：升级行的错误写在本行、role=alert
   const uc = ma.slice(ma.indexOf("function UpgradeConfirm("), ma.indexOf("export function PendingDevices("));
-  assert.match(uc, /members\.approve\(r\.id, typedDigits\), confirmedText\(r\), onErr\)/);
+  assert.match(uc, /members\.approve\(r\.id, typedDigits\), confirmedText\(r, relay\), onErr\)/);
   assert.match(uc, /className="activate-error members-row-error" role="alert"/);
   // N7：页底那串改名“本机识别码”，并写明不是入组核对码
   const c = read("../src/pages/Connections.tsx").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
@@ -420,15 +421,15 @@ test("设计评分第三轮 C10 / C15 / C18 / C19 / C8：审计与待确认同�
   assert.match(read("../src/styles-team.css"), /\.join-actions \{ display: inline-flex; flex-wrap: nowrap;/);
   const pd = ma.slice(ma.indexOf("export function PendingDevices("));
   assert.ok(pd.indexOf("join-done") < pd.indexOf("没有待确认的电脑"), "处理结果在空态句之前");
-  assert.match(ma, /`已确认\$\{r\.name \?\? "这位成员"\}的\$\{deviceWord\(r\)\}（/);
+  assert.match(ma, /shareReadyText\(\{ kind: "result", confirmed: true, relay, subject: `\$\{r\.name \?\? "这位成员"\}的\$\{deviceWord\(r\)\}` \}\)/);
   assert.match(ma, /return \/\^\[A-Za-z0-9\]\/\.test\(dev\) \? ` \$\{dev\}` : dev;/, "“的 Mac 电脑”中西文之间一个空格，名字两侧不留空格");
   for (const m of ma.matchAll(/<ConfirmButton label="拒绝"[^>]*>/g)) assert.match(m[0], /danger=\{false\} className="btn-ghost btn-sm"/, "拒绝可逆，不用红色");
   // C18：撤回不用红色；确认后正向状态（带时刻与确认人）；已申请号码单独一行
   const ts = read("../src/components/TeamShare.tsx");
   assert.match(ts, /<ConfirmButton label="撤回申请" danger=\{false\} className="btn-ghost btn-sm"/);
-  assert.equal(shareConfirmLine({ supported: true, state: "confirmed", decided_at: "2026-11-27T07:31:00.000Z", decided_by_name: "林一舟" }, Date.parse("2026-11-27T09:00:00.000Z")), "这台电脑已可接收团队共享事项（11 月 27 日 15:31 由林一舟确认）");
-  assert.equal(shareConfirmLine({ supported: true, state: "confirmed", decided_at: "2026-11-27T07:31:00.000Z" }, Date.parse("2026-11-27T09:00:00.000Z")), "这台电脑已可接收团队共享事项（11 月 27 日 15:31 确认）");
-  assert.match(ts, /confirmedHere \? \(\s*<ShareConfirmBox share=\{share\} \/>/, "确认后不无声消失");
+  assert.equal(shareConfirmLine({ supported: true, state: "confirmed", decided_at: "2026-11-27T07:31:00.000Z", decided_by_name: "林一舟", relay: true }, Date.parse("2026-11-27T09:00:00.000Z")), "这台电脑已可接收团队共享事项（11 月 27 日 15:31 由林一舟确认）");
+  assert.equal(shareConfirmLine({ supported: true, state: "confirmed", decided_at: "2026-11-27T07:31:00.000Z", relay: true }, Date.parse("2026-11-27T09:00:00.000Z")), "这台电脑已可接收团队共享事项（11 月 27 日 15:31 确认）");
+  assert.match(ts, /confirmedHere \? \(\s*<ShareConfirmBox share=\{share\} relay=\{relay\} \/>/, "确认后不无声消失");
   assert.match(ts, /所内还没有开通同事之间同步，开通后才能收到团队共享事项。/);
   assert.match(ts, /<span className="share-code mono">\{s\.check_code\}<\/span>/);
   // C15：成员页与管理员页同一组卡，名字“席位”
@@ -456,4 +457,43 @@ test("设计评分第三轮 C10：操作记录——确认 / 拒绝接收共享�
   assert.deepEqual(merged.map((r: any) => r.count), [6, 1, 1], "6 条连续的被拒合并；结果不同、相隔太久的不并");
   assert.equal(auditRunText(merged[0]!, Date.parse("2026-11-27T09:00:00.000Z")), "6 次（13:32～13:33）");
   assert.equal(auditRunText(merged[1]!), "");
+});
+
+test("设计评分第四轮：两个条件（管理员已确认 / 所内已开通同步）同一套句子——成员页与管理员确认结果共用 shareReadyText；拒绝行同款；核对码说明不变；审计根那条人话；团队识别码；C8 不写“登录中”", () => {
+  const now = Date.parse("2026-11-27T09:00:00.000Z");
+  const at = "2026-11-27T08:12:00.000Z";
+  // 未申请：不再写“确认一次即可接收”；没开通同步同句补前提
+  assert.equal(shareReadyText({ kind: "member", confirmed: false, relay: true }), "这台电脑还不能接收团队共享事项，其它功能不受影响。申请并经管理员确认后可接收团队共享事项。");
+  assert.equal(shareReadyText({ kind: "member", confirmed: false, relay: false }), "这台电脑还不能接收团队共享事项，其它功能不受影响。申请并经管理员确认后可接收团队共享事项；所内还需开通同事之间同步。");
+  assert.equal(shareIssuerNote("account_ca", "team", false, false), shareReadyText({ kind: "member", confirmed: false, relay: false }));
+  for (const r of [true, false, null]) assert.doesNotMatch(shareReadyText({ kind: "member", confirmed: false, relay: r }), /确认一次即可接收/);
+  // 已确认：两者都满足才写“已可接收”；同步没开通写“管理员已确认……；开通同步后即可收到”；不知道就不承诺
+  assert.equal(shareReadyText({ kind: "member", confirmed: true, relay: true, at, by: "顾一然" }, now), "这台电脑已可接收团队共享事项（11 月 27 日 16:12 由顾一然确认）");
+  assert.equal(shareReadyText({ kind: "member", confirmed: true, relay: false, at, by: "顾一然" }, now), "管理员已确认这台电脑（11 月 27 日 16:12 由顾一然确认）；所内开通同事之间同步后即可收到团队共享事项");
+  assert.equal(shareReadyText({ kind: "member", confirmed: true, relay: null, at }, now), "管理员已确认这台电脑（11 月 27 日 16:12 确认）");
+  assert.equal(shareConfirmLine({ supported: true, state: "confirmed", decided_at: at, decided_by_name: "顾一然", relay: false }, now), shareReadyText({ kind: "member", confirmed: true, relay: false, at, by: "顾一然" }, now));
+  // 管理员确认结果同口径，不写含糊的“同步后即可接收”
+  assert.equal(shareReadyText({ kind: "result", confirmed: true, relay: true, at, subject: "陆二平的 Mac 电脑 · 第 1 台" }, now), "已确认陆二平的 Mac 电脑 · 第 1 台（16:12），它现在可接收团队共享事项");
+  assert.equal(shareReadyText({ kind: "result", confirmed: true, relay: false, at, subject: "陆二平的 Mac 电脑 · 第 1 台" }, now), "已确认陆二平的 Mac 电脑 · 第 1 台（16:12）；所内开通同事之间同步后，它即可收到团队共享事项");
+  const read = (f: string) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8");
+  const ma = read("../src/components/MembersAdmin.tsx");
+  assert.doesNotMatch(ma, /同步后即可接收团队共享事项/);
+  // 拒绝结果行：带时刻、带图标，与确认行同款
+  assert.match(ma, /`已拒绝\$\{r\.name \?\? "这位成员"\}的\$\{deviceWord\(r\)\}的申请（\$\{dayTime\(new Date\(\)\.toISOString\(\)\)\.slice\(-5\)\}），对方可以重新申请`/);
+  assert.match(ma, /done\.tone === "rejected" \? <span className="join-done-icon is-rejected">\{Icon\.x\(\)\}<\/span>/);
+  // 输入框里的数字与占位、成员侧号码同一款等宽字体
+  assert.match(read("../src/styles-team.css"), /\.join-table input\.members-code-input, \.join-table input\.members-code-input::placeholder \{ font-family: var\(--font-mono\);/);
+  // 深色禁用主按钮：几乎不填底、细描边、低对比字
+  assert.match(read("../../../packages/design-tokens/src/tokens.css"), /--btn-primary-disabled-border: color-mix\(in srgb, var\(--btn-primary\) 18%, var\(--bg-surface\)\);/);
+  assert.match(read("../src/styles.css"), /\.btn-primary:disabled \{[^}]*box-shadow: inset 0 0 0 1px var\(--btn-primary-disabled-border\);/);
+  // 已申请态说明号码不变；已确认 / 未申请时不再另起一行前提
+  const ts = read("../src/components/TeamShare.tsx");
+  assert.match(ts, /号码由这台电脑本身决定，重新申请也不变。/);
+  assert.match(ts, /relay === false && waiting && <p className="muted share-prereq">/);
+  // 审计：根那一条人话
+  assert.equal(auditSentence({ actor: { kind: "root", id: "ten_x" }, actor_name: null, action: "tenant.enroll_root", target: null, target_name: null, result: "ok", detail: null } as any).what, "登记了这台管理员电脑");
+  // 团队识别码
+  assert.match(read("../src/pages/Connections.tsx"), /<summary>团队识别码（入组时核对团队用）<\/summary>/);
+  // C8：账号行不写“登录中”
+  assert.doesNotMatch(read("../src/components/AccountPanel.tsx"), /pill-green">登录中/);
 });

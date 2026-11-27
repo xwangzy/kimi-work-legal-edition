@@ -4,12 +4,13 @@
  * 批准：同事在新装的客户端输入邀请码后，这里出现待批准申请；请对方念出他屏幕上的 12 位数字，与这里一致再批准。
  */
 import { useEffect, useState } from "react";
-import { members, type RosterMember } from "../api.ts";
+import { api, members, type RosterMember } from "../api.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { dayTime, fmtTime } from "../lib/labels.ts";
 import { memberLabel, memberStatusText, removalLines } from "../lib/offboarding.ts";
 import { Select } from "./Select.tsx";
 import { JOIN_FOOT, twelveDigits, upgradeErrorText } from "../lib/team-admin.ts";
+import { shareReadyText } from "../lib/workspace.ts";
 import { Icon } from "./Icons.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 
@@ -161,7 +162,7 @@ export function MembersAdmin() {
             </tbody>
           </table>
         )}
-        {data?.firm_check_code && <p className="muted">本所识别码：{data.firm_check_code}（同事加入后，他的“设置 → 团队”里应显示同一串数字）</p>}
+        {data?.firm_check_code && <p className="muted">团队识别码：{data.firm_check_code}（同事加入后，他的“设置 → 团队”里应显示同一串数字）</p>}
       </div>
     </div>
   );
@@ -172,7 +173,7 @@ export function MembersAdmin() {
  * 第 72 批（D-304）：团队设置“电脑待确认”与旧云端的完整成员页共用。设计评分第三轮 C19：列宽固定（三种状态不左右跳）；“申请人”两行
  * （姓名 + 灰字电脑名）；核对说明只在列头与表下一句；接收共享的申请不显示号码，填进本行由这台电脑逐位核对。
  */
-export function JoinRequestTable({ requests, act }: { requests: any[]; act: RowAct }) {
+export function JoinRequestTable({ requests, act, relay = null }: { requests: any[]; act: RowAct; relay?: boolean | null }) {
   return (
     <>
       <table className="members-table join-table">
@@ -208,7 +209,7 @@ export function JoinRequestTable({ requests, act }: { requests: any[]; act: RowA
                       <ConfirmButton label="拒绝" danger={false} className="btn-ghost btn-sm" question="拒绝这份申请？对方可以重新申请。" confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), rejectedText(r))} />
                     </span>
                   ) : (
-                    <UpgradeConfirm r={r} act={act} />
+                    <UpgradeConfirm r={r} act={act} relay={relay} />
                   )
                 ) : (
                   <span className="settings-choice join-legacy">
@@ -247,14 +248,15 @@ function deviceWord(r: any): string {
 
 /** 拒绝之后的一行结果（对象写全：谁的哪台电脑；名字两侧不留空格）。 */
 function rejectedText(r: any): string {
-  return `已拒绝${r.name ?? "这位成员"}的${deviceWord(r)}的申请，对方可以重新申请`;
+  // 设计评分第四轮：与确认那一行同款——带时刻（图标在结果行上）
+  return `已拒绝${r.name ?? "这位成员"}的${deviceWord(r)}的申请（${dayTime(new Date().toISOString()).slice(-5)}），对方可以重新申请`;
 }
 
 /**
  * 第 72 批（U-2b）：确认成员电脑接收团队共享事项——管理员输入对方读出的 12 位入组核对码（界面拿不到本机算出的那串，逐位比对在内核）。
  * 设计评分第三轮 C19：输错只写“号码不一致，请让对方重念一遍”；“确认 / 拒绝”两个按钮不分家；“拒绝”可逆，不用红色。
  */
-function UpgradeConfirm({ r, act }: { r: any; act: RowAct }) {
+function UpgradeConfirm({ r, act, relay }: { r: any; act: RowAct; relay: boolean | null }) {
   const [typed, setTyped] = useState("");
   // 复测 N6：错误写在这一行（多行待确认时不串）
   const [rowErr, setRowErr] = useState("");
@@ -278,7 +280,7 @@ function UpgradeConfirm({ r, act }: { r: any; act: RowAct }) {
         }}
       />
       <span className="join-actions">
-        <button type="button" className="btn-primary btn-sm" disabled={!ready} onClick={() => void act(() => members.approve(r.id, typedDigits), confirmedText(r), onErr)}>
+        <button type="button" className="btn-primary btn-sm" disabled={!ready} onClick={() => void act(() => members.approve(r.id, typedDigits), confirmedText(r, relay), onErr)}>
           确认
         </button>
         <ConfirmButton label="拒绝" danger={false} className="btn-ghost btn-sm" question="拒绝这份申请？对方可以重新申请。" confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), rejectedText(r), onErr)} />
@@ -292,9 +294,10 @@ function UpgradeConfirm({ r, act }: { r: any; act: RowAct }) {
   );
 }
 
-/** 确认之后的一行结果：“已确认许二安的 Mac 电脑 · 第 1 台（15:31），同步后即可接收团队共享事项”。 */
-function confirmedText(r: any): string {
-  return `已确认${r.name ?? "这位成员"}的${deviceWord(r)}（${dayTime(new Date().toISOString()).slice(-5)}），同步后即可接收团队共享事项`;
+/** 确认之后的一行结果：“已确认许二安的 Mac 电脑 · 第 1 台（15:31）”，再按所内是否已开通同事之间同步补半句（与成员团队页同一口径）。 */
+function confirmedText(r: any, relay: boolean | null): string {
+  // 设计评分第四轮：与成员团队页同一口径（lib/workspace.ts shareReadyText）——不再写含糊的“同步后即可接收”
+  return shareReadyText({ kind: "result", confirmed: true, relay, subject: `${r.name ?? "这位成员"}的${deviceWord(r)}` });
 }
 
 /**
@@ -304,7 +307,15 @@ function confirmedText(r: any): string {
 export function PendingDevices() {
   const [data, setData] = useState<any | null>(null);
   const [err, setErr] = useState("");
-  const [done, setDone] = useState<{ ok: boolean; text: string } | null>(null);
+  const [done, setDone] = useState<{ tone: "ok" | "rejected" | "error"; text: string } | null>(null);
+  // 设计评分第四轮：确认结果按“所内是否已开通同事之间同步”写（与成员团队页同一口径）
+  const [relay, setRelay] = useState<boolean | null>(null);
+  useEffect(() => {
+    api
+      .relayStatus()
+      .then((r) => setRelay(!r ? null : r.blocked === "not_configured" ? false : r.blocked === null ? true : null))
+      .catch(() => setRelay(null));
+  }, []);
   const load = () =>
     members
       .list()
@@ -322,12 +333,12 @@ export function PendingDevices() {
     setDone(null);
     try {
       await fn();
-      setDone({ ok: !ok.startsWith("已拒绝"), text: ok });
+      setDone({ tone: ok.startsWith("已拒绝") ? "rejected" : "ok", text: ok });
       notifyDataChanged();
       void load();
     } catch (e) {
       if (onErr) onErr(e);
-      else setDone({ ok: false, text: (e as Error).message });
+      else setDone({ tone: "error", text: (e as Error).message });
     }
   };
   const requests: any[] = data?.join_requests ?? [];
@@ -335,13 +346,13 @@ export function PendingDevices() {
     <div className="team-pending">
       <p className="team-pending-lead">成员申请接收团队共享事项后，在这里确认他的电脑。</p>
       {done && (
-        <p className={`join-done${done.ok ? " is-ok" : ""}`} role="status">
-          {done.ok ? <span className="join-done-icon">{Icon.check()}</span> : null}
+        <p className={`join-done is-${done.tone}`} role="status">
+          {done.tone === "ok" ? <span className="join-done-icon">{Icon.check()}</span> : done.tone === "rejected" ? <span className="join-done-icon is-rejected">{Icon.x()}</span> : null}
           {done.text}
         </p>
       )}
       {requests.length > 0 ? (
-        <JoinRequestTable requests={requests} act={act} />
+        <JoinRequestTable requests={requests} act={act} relay={relay} />
       ) : (
         <p className="muted team-empty">{err ? "要在团队开通时用的那台电脑上确认；这台电脑上看不到待确认的电脑。" : data ? "没有待确认的电脑。" : "正在读取…"}</p>
       )}

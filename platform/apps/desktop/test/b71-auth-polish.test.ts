@@ -104,7 +104,8 @@ test("设置·账号：登录记录“Mac 电脑 · 第 1 台”、账号卡状�
   assert.equal(s.title, "Mac 电脑 · 第 1 台 · 当前这次登录");
   assert.match(s.meta, /最近活动 刚刚/);
   const panel = src("components/AccountPanel.tsx");
-  assert.match(panel, /<span className="pill pill-green">登录中<\/span>/);
+  // 第 72 批（设计评分第四轮 C8）：能打开设置就说明已登录——账号行不再写“登录中”
+  assert.doesNotMatch(panel, /<span className="pill pill-green">登录中<\/span>/);
   assert.doesNotMatch(panel, />已登录</);
   assert.match(panel, /undo: prev/);
   assert.doesNotMatch(panel, /setMsg\(`已移除/);
@@ -151,5 +152,6 @@ test("第三轮：最近登录同一个名字、中文时刻、新电脑先登�
   assert.match(panel, /<SettingRow label="仍有效的登录"/);
   assert.doesNotMatch(panel, /label="登录记录"/);
   assert.doesNotMatch(panel, /还没登记的电脑|toLocaleString/);
-  assert.match(panel, /\{d\.current && <span className="tag tag-this">这台电脑<\/span>\}/);
+  // 第 72 批（设计评分第四轮 C8）：标签收敛为“中性灰底 / 状态点 + 文字”两种
+  assert.match(panel, /\{d\.current && <span className="pill pill-gray">这台电脑<\/span>\}/);
 });
