@@ -371,7 +371,7 @@ function InviteDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
           </button>
           <ul className="team-lines">
             <li>只显示这一次{issued.expires_at ? `，${dueLabel(issued.expires_at)} 前有效（7 天）` : "，7 天内有效"}，只能用一次；不用了可以在“邀请”里撤回。</li>
-            <li>已注册的同事：在 Kimi Work 的“设置 · 账号 · 加入团队”里输入这个码。</li>
+            <li>已注册的同事：在 Kimi Work 的“设置 → 账号 → 加入团队”里输入这个码。</li>
             <li>还没注册的同事：注册时填这个码，注册完就直接进入团队。</li>
           </ul>
           <div className="modal-actions">

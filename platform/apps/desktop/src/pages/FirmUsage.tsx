@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { api, type CpAuditRow } from "../api.ts";
 import { fmtTime } from "../lib/labels.ts";
-import { auditDetailLabel, auditFetchErrorText, auditFilter, auditResultShort, auditSentence, auditTime, type AuditFilter } from "../lib/firm-usage.ts";
+import { auditDetailLabel, auditFetchErrorText, auditFilter, auditResultShort, auditRunText, auditSentence, auditTime, mergeAuditRuns, type AuditFilter } from "../lib/firm-usage.ts";
 import { BusyLabel, ListSkeleton } from "../components/Loading.tsx";
 
 export function CpAuditPanel() {
@@ -88,15 +88,19 @@ export function CpAuditPanel() {
             <span role="columnheader">结果</span>
             <span aria-hidden="true" />
           </div>
-          {view.rows.map((r) => {
+          {mergeAuditRuns(view.rows).map((r) => {
             const res = auditResultShort(r.result);
             const s = auditSentence(r);
+            // 连续的同类记录合并为一行：结果后写次数与时段
+            const run = auditRunText(r);
             const isOpen = open === r.seq;
             return (
               <div key={r.seq} className={`audit-item${isOpen ? " is-open" : ""}`} role="rowgroup">
                 <div className="audit-row" role="row">
                   <span className="audit-at" role="cell">{auditTime(r.at)}</span>
-                  <span className="audit-who" role="cell">{s.who}</span>
+                  <span className="audit-who" role="cell" title={s.who}>
+                    {s.who}
+                  </span>
                   <span className="audit-what" role="cell">
                     {s.what}
                     {res.why && <span className="audit-why">{res.why}</span>}
@@ -104,6 +108,7 @@ export function CpAuditPanel() {
                   <span className={`audit-res audit-res-${res.tone}`} role="cell">
                     <span className={`sdot ${res.tone === "ok" ? "sdot-ok" : res.tone === "warn" ? "sdot-warn" : "sdot-bad"}`} aria-hidden="true" />
                     {res.text}
+                    {run && <span className="audit-run">{run}</span>}
                   </span>
                   <button className="btn-link audit-more" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : r.seq)}>
                     {isOpen ? "收起" : "详情"}

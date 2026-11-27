@@ -218,6 +218,18 @@ export function fmtTime(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? iso : `${ymd(d)} ${hm(d)}`;
 }
 
+/**
+ * 第 72 批（设计评分第三轮跨页问题 1）：日期时刻的公共写法——“11 月 27 日 15:26”（北京时间），跨年才加年份。
+ * 审计表、团队策略、电脑待确认等新组件一律用它，不自写格式。纯函数。
+ */
+export function dayTime(iso: string | null | undefined, now = Date.now()): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return "—";
+  const d = new Date(t + 8 * 3600_000);
+  const y = d.getUTCFullYear() === new Date(now + 8 * 3600_000).getUTCFullYear() ? "" : `${d.getUTCFullYear()} 年 `;
+  return `${y}${d.getUTCMonth() + 1} 月 ${d.getUTCDate()} 日 ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}
+
 /** 只要日期：“2026年10月19日”。纯函数。 */
 export function fmtDate(iso: string | number | Date | null | undefined): string {
   if (iso === null || iso === undefined || iso === "") return "—";

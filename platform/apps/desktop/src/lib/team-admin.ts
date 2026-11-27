@@ -18,7 +18,7 @@ export function removeLines(who: string): string[] {
   return [
     `${who}不再是团队成员：他的所有电脑在 2 分钟内退出这个团队，席位释放。`,
     "他电脑上的事项和成果留在他的电脑上，不会被删除，管理员也看不到。",
-    `移出前，请先请${who}在自己电脑的“设置 · 团队 · 离所交接”里把负责的事项交接好。`,
+    `移出前，请先请${who}在自己电脑的“设置 → 团队 → 离所交接”里把负责的事项交接好。`,
     "他的个人空间和他加入的其他团队不受影响。之后可在成员列表里重新启用，或重新邀请。",
   ];
 }
@@ -126,7 +126,7 @@ export function splitInvites(list: readonly TeamInviteRow[]): { open: TeamInvite
 /** 成员新电脑策略的说明（D-304）。纯函数。 */
 export const MEMBER_DEVICE_POLICY: Readonly<Record<"auto" | "approve", { label: string; hint: string }>> = {
   // 第 72 批（U-2b）：直接登录的电脑可“事后确认”——成员在团队共享处申请一次，你在“电脑待确认”里核对确认一次即可接收团队共享事项
-  auto: { label: "直接登录", hint: "成员在新电脑上用手机号验证码登录后即可使用（推荐）。这台电脑要接收团队共享事项时，成员申请一次、你在“电脑待确认”里核对确认一次即可。" },
+  auto: { label: "直接登录", hint: "成员在新电脑上用手机号验证码登录后即可使用（推荐）。这台电脑要接收团队共享事项时，成员申请一次、你在“设置 → 团队 → 电脑待确认”里核对确认一次即可。" },
   approve: { label: "须管理员确认", hint: "成员的新电脑要等你在“电脑待确认”里确认后才能登录使用，确认过的电脑可以接收团队共享事项。已登录的电脑不受影响。" },
 };
 
@@ -166,11 +166,12 @@ export function adminErrorText(e: unknown): string {
   return teamErrorText(e, ADMIN_ERROR_TEXT);
 }
 
-/** 复测 N5：电脑待确认表下的说明——按表里有哪几种申请写，两种都有时两句都写。纯函数。 */
-export function joinHelpText(hasJoin: boolean, hasUpgrade: boolean): string {
-  const parts = ["确认前，请先电话或当面联系对方，请他读出自己屏幕上的 12 位入组核对码。"];
-  if (hasJoin) parts.push("入组申请：与这一行显示的号码逐位对照，一致再批准。");
-  if (hasUpgrade) parts.push("接收团队共享事项的申请：这里不显示号码，把对方读出的数字填进这一行，由这台电脑逐位核对。");
-  parts.push("号码对不上？不要确认，点“拒绝”，并联系 Kimi Work 客服。");
-  return parts.join("");
+/** 设计评分第三轮 C19：电脑待确认表下只留一句核对说明（列头已写“对方读出的 12 位核对码”）。 */
+export const JOIN_FOOT = "先电话或当面联系对方，请他读出自己屏幕上的号码；对不上就点“拒绝”并联系客服。";
+
+/** 设计评分第三轮 C19：确认 / 拒绝失败时本行的一句话——号码不一致只写“号码不一致，请让对方重念一遍”，其余按管理员话术。纯函数。 */
+export function upgradeErrorText(e: unknown): string {
+  const reason = (e as { detail?: { reason?: unknown } })?.detail?.reason;
+  if (reason === "check_code_mismatch") return "号码不一致，请让对方重念一遍";
+  return adminErrorText(e);
 }

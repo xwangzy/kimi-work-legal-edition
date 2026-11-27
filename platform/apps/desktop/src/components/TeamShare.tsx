@@ -10,6 +10,7 @@ import { notifyWorkspaceChanged } from "./WorkspaceSwitch.tsx";
 import { canResyncMembers, relayErrorText, syncAlertAction, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
 import { fmtTime } from "../lib/labels.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
+import { Icon } from "./Icons.tsx";
 
 /**
  * 第 72 批（D-304）：note = 这台电脑由账号直接登记、还不能接收团队共享事项时的一句非阻塞提示（lib/workspace.ts shareIssuerNote）；
@@ -39,17 +40,27 @@ export function TeamShare({ admin = false, note = null }: { admin?: boolean; not
         .catch(() => setOwners((o) => ({ ...o, [id]: false })));
     }
   }, [rootIds]);
-  // 第 72 批（补测 D2 / D9）：申请状态提到这里——已申请、被拒、已可接收时不再同时显示橙色“还不能接收”，两条提示只出现一条
-  const share = useShareConfirm(!!note);
-  const noteLine = note ? (
+  // 第 72 批（补测 D2 / D9；设计评分第三轮 C15 / C18）：申请状态提到这里——一处只说一件事：还没申请（中性提示 + 申请按钮）/ 已申请 / 被拒 / 已可接收（正向状态，
+  // 带确认时刻与确认人，不再无声消失）；所内还没开通同事之间同步时，作为第二个前提写在同一行里（页顶横幅不再说）
+  const share = useShareConfirm(true);
+  const confirmedHere = share.s?.supported === true && share.s.state === "confirmed" && !!share.s.decided_at;
+  const shareBlock = note ? (
+    shareNoteVisible(share.s) ? (
+      <div className="share-note share-note-neutral" role="note">
+        {note}
+        {share.s?.supported === true && <ShareConfirmActions share={share} />}
+      </div>
+    ) : (
+      <ShareConfirmBox share={share} />
+    )
+  ) : confirmedHere ? (
+    <ShareConfirmBox share={share} />
+  ) : null;
+  const relayMissing = !!st && st.blocked === "not_configured";
+  const noteLine = shareBlock ? (
     <>
-      {shareNoteVisible(share.s) && (
-        <div className="share-note" role="note">
-          {note}
-          {share.s?.supported === true && share.s.state !== "rejected" && share.s.state !== "expired" && <ShareConfirmActions share={share} />}
-        </div>
-      )}
-      {!shareNoteVisible(share.s) && <ShareConfirmBox share={share} />}
+      {shareBlock}
+      {relayMissing && <p className="muted share-prereq">所内还没有开通同事之间同步，开通后才能收到团队共享事项。</p>}
     </>
   ) : null;
   if (!st || (st.blocked === "not_configured" && alerts.length === 0))
@@ -179,7 +190,8 @@ function useShareConfirm(enabled: boolean) {
     };
   }, [enabled]);
   // 已可接收：内核换证后会重启——每 2 秒看一次，内核回来且本机证书已是律所根签的，就让工作空间状态重取（至多约 1 分钟）
-  const confirmed = s?.state === "confirmed";
+  // 只在刚换上证书（restart）时等内核重启后重取；已确认过的电脑打开这一页不再轮询
+  const confirmed = s?.state === "confirmed" && s.restart === true;
   useEffect(() => {
     if (!enabled || !confirmed) return;
     let live = true;
@@ -247,17 +259,20 @@ function ShareConfirmBox({ share }: { share: ShareConfirmState }) {
   if (!s || s.supported !== true) return null;
   const line = shareConfirmLine(s);
   const retry = s.state === "rejected" || s.state === "expired";
+  const ok = s.state === "confirmed";
   return (
-    <div className="share-confirm share-confirm-box">
+    <div className={`share-confirm share-confirm-box${ok ? " is-ok" : ""}`}>
       {line && (
-        <p role="status" className={s.state === "confirmed" ? "share-confirm-ok" : undefined}>
+        <p role="status" className={ok ? "share-confirm-ok" : undefined}>
+          {ok && <span className="share-ok-icon">{Icon.check()}</span>}
           {line}
         </p>
       )}
       {s.state === "pending" && s.check_code && (
-        <p>
-          入组核对码 <span className="mono members-check">{s.check_code}</span>
-          <span className="muted">（管理员确认时会请你念出这串数字）</span>
+        // 设计评分第三轮 C18：已申请态最关键的是这串号码——单独一行、等宽大号
+        <p className="share-code-line">
+          <span className="muted">入组核对码</span>
+          <span className="share-code mono">{s.check_code}</span>
         </p>
       )}
       <span className="settings-choice">
@@ -271,7 +286,8 @@ function ShareConfirmBox({ share }: { share: ShareConfirmState }) {
             </button>
           </>
         )}
-        {s.state === "pending" && <ConfirmButton label="撤回申请" question="撤回这次申请？之后需要时可以重新申请。" confirmLabel="撤回" onConfirm={() => act(() => team.deviceShare.withdraw())} />}
+        {/* 撤回可逆：中性描边，不用红色 */}
+        {s.state === "pending" && <ConfirmButton label="撤回申请" danger={false} className="btn-ghost btn-sm" question="撤回这次申请？之后需要时可以重新申请。" confirmLabel="撤回" onConfirm={() => act(() => team.deviceShare.withdraw())} />}
       </span>
       {err && <p className="activate-error">{err}</p>}
     </div>

@@ -6,14 +6,15 @@
 import { useEffect, useState } from "react";
 import { members, type RosterMember } from "../api.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
-import { fmtTime } from "../lib/labels.ts";
+import { dayTime, fmtTime } from "../lib/labels.ts";
 import { memberLabel, memberStatusText, removalLines } from "../lib/offboarding.ts";
 import { Select } from "./Select.tsx";
-import { joinHelpText, twelveDigits, upgradeTitle } from "../lib/team-admin.ts";
+import { JOIN_FOOT, twelveDigits, upgradeErrorText } from "../lib/team-admin.ts";
+import { Icon } from "./Icons.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 
 /** 行内操作：成功写一句结果并刷新（侧栏“有 n 台电脑等你确认”随即重取，复测 N1）；失败时有 onErr 的写在出错那一行（复测 N6），否则写在表下。 */
-type RowAct = (fn: () => Promise<unknown>, ok: string, onErr?: (message: string) => void) => Promise<void>;
+type RowAct = (fn: () => Promise<unknown>, ok: string, onErr?: (error: unknown) => void) => Promise<void>;
 
 const ROLES: [string, string][] = [
   ["lawyer", "律师"],
@@ -68,7 +69,7 @@ export function MembersAdmin() {
       notifyDataChanged();
       void load();
     } catch (e) {
-      if (onErr) onErr((e as Error).message);
+      if (onErr) onErr(e);
       else setMsg((e as Error).message);
     }
   };
@@ -160,109 +161,128 @@ export function MembersAdmin() {
             </tbody>
           </table>
         )}
-        {data?.firm_check_code && <p className="muted">本所识别码：{data.firm_check_code}（同事加入后，他的“设置 · 团队”里应显示同一串数字）</p>}
+        {data?.firm_check_code && <p className="muted">本所识别码：{data.firm_check_code}（同事加入后，他的“设置 → 团队”里应显示同一串数字）</p>}
       </div>
     </div>
   );
 }
 
 /**
- * 入组申请表（第 13 批起）：请对方念出他屏幕上的 12 位入组核对码，与这里一致再批准。
- * 第 72 批（D-304）：团队设置“电脑待确认”与旧云端的完整成员页共用——登录不再等批准，这一步只为让那台电脑能接收团队共享事项。
+ * 入组申请表（第 13 批起）：请对方念出他屏幕上的 12 位入组核对码再批准。
+ * 第 72 批（D-304）：团队设置“电脑待确认”与旧云端的完整成员页共用。设计评分第三轮 C19：列宽固定（三种状态不左右跳）；“申请人”两行
+ * （姓名 + 灰字电脑名）；核对说明只在列头与表下一句；接收共享的申请不显示号码，填进本行由这台电脑逐位核对。
  */
 export function JoinRequestTable({ requests, act }: { requests: any[]; act: RowAct }) {
-  // 复测 N5：表头与说明对两种行都成立——入组申请对照这一列显示的号码；接收团队共享事项的申请不显示号码，填进本行的输入框由这台电脑核对
-  const hasUpgrade = requests.some((r) => r.kind === "upgrade");
-  const hasJoin = requests.some((r) => r.kind !== "upgrade");
   return (
     <>
-      <table className="members-table">
+      <table className="members-table join-table">
+        <colgroup>
+          <col className="join-col-who" />
+          <col className="join-col-role" />
+          <col className="join-col-time" />
+          <col />
+        </colgroup>
         <thead>
           <tr>
-            <th>姓名</th>
-            <th className="members-nowrap">角色</th>
-            <th className="members-nowrap">申请时间</th>
-            <th>入组核对码（请对方读出他屏幕上的号码）</th>
-            <th />
+            <th>申请人</th>
+            <th>角色</th>
+            <th>申请时间</th>
+            <th>对方读出的入组核对码</th>
           </tr>
         </thead>
         <tbody>
           {requests.map((r) => (
             <tr key={r.id}>
-              <td className="members-name">
-                {r.kind === "upgrade" ? upgradeTitle(r) : (r.name ?? (r.via === "account" ? (r.account_email ?? "本所成员") : "（不是在这台电脑上邀请的）"))}
-                {/* 第 44 批（D-186）：同一账号的新电脑——没有邀请可对，只能人工核对核对码 */}
-                {r.via === "account" && <div className="muted">同一账号的新电脑{r.account_email && r.name ? ` · ${r.account_email}` : ""}</div>}
+              <td className="join-who">
+                <div className="join-name">{r.name ?? (r.via === "account" ? (r.account_email ?? "本所成员") : "（不是在这台电脑上邀请的）")}</div>
+                {/* 第 44 批（D-186）：同一账号的新电脑；第 72 批：接收共享的申请写电脑名 */}
+                {r.kind === "upgrade" ? <div className="muted join-sub">{r.device_name ?? "电脑"}</div> : r.via === "account" ? <div className="muted join-sub">同一账号的新电脑{r.account_email && r.name ? ` · ${r.account_email}` : ""}</div> : null}
               </td>
               <td className="members-nowrap">{ROLE_LABEL[r.role] ?? r.role}</td>
-              <td className="members-time">{fmtTime(r.requested_at)}</td>
-              {/* 第 72 批（补测 D4）：“接收团队共享事项”的行不显示本机算出的核对码（否则照抄即“一致”）——说明、输入框与按钮合在一格（复测 N4：窄屏不溢出） */}
-              {r.kind === "upgrade" ? (
-                <td colSpan={2}>
-                  {r.verified === false ? (
+              <td className="members-nowrap">{dayTime(r.requested_at)}</td>
+              <td>
+                {r.kind === "upgrade" ? (
+                  r.verified === false ? (
                     <span className="settings-choice">
                       <span className="activate-error">这份申请的电脑编号或角色与成员对不上，不要确认；请拒绝，并联系 Kimi Work 客服</span>
-                      <ConfirmButton label="拒绝" question="拒绝这份申请？对方可以重新申请。" confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
+                      <ConfirmButton label="拒绝" danger={false} className="btn-ghost btn-sm" question="拒绝这份申请？对方可以重新申请。" confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), rejectedText(r))} />
                     </span>
                   ) : (
                     <UpgradeConfirm r={r} act={act} />
-                  )}
-                </td>
-              ) : (
-                <>
-              <td className="members-check">{r.check_code}</td>
-              <td>
-                {r.local_invite && r.verified === false ? (
-                  <span className="settings-choice">
-                    <span className="activate-error">这份申请在传送中被改动过，不要批准；请拒绝并重新发邀请，同时告知 Kimi Work 客服</span>
-                    {/* 第 54 批真实联调：原来只有这句提示、没有“拒绝”按钮，管理员照提示做不了 */}
-                    <ConfirmButton label="拒绝" question={`拒绝${r.name ? ` ${r.name} ` : ""}的这份申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
-                  </span>
-                ) : r.local_invite ? (
-                  <span className="settings-choice">
-                    <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question={r.via === "account" ? `这是${r.name ?? r.account_email ?? "本所成员"}的账号在一台新电脑上申请加入。请先电话或当面联系本人，请他读出新电脑屏幕上的 12 位入组核对码，与这里逐位对照。号码一致吗？` : `请先电话或当面联系${r.name ?? "对方"}，请他读出屏幕上的入组核对码，与这里逐位对照。号码一致吗？`} confirmLabel="已核对一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ? ` ${r.name}` : ""}`)} />
-                    <ConfirmButton label="拒绝" question={r.via === "account" ? "拒绝这台新电脑的申请？对方可以重新登录后再申请。" : `拒绝${r.name ? ` ${r.name} ` : ""}的申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
-                  </span>
+                  )
                 ) : (
-                  <span className="muted">请在发出邀请的电脑上处理</span>
+                  <span className="settings-choice join-legacy">
+                    <span className="members-check">{r.check_code}</span>
+                    {r.local_invite && r.verified === false ? (
+                      <>
+                        <span className="activate-error">这份申请在传送中被改动过，不要批准；请拒绝并重新发邀请，同时告知 Kimi Work 客服</span>
+                        {/* 第 54 批真实联调：原来只有这句提示、没有“拒绝”按钮，管理员照提示做不了 */}
+                        <ConfirmButton label="拒绝" danger={false} className="btn-ghost btn-sm" question={`拒绝${r.name ? ` ${r.name} ` : ""}的这份申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
+                      </>
+                    ) : r.local_invite ? (
+                      <span className="join-actions">
+                        <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question={r.via === "account" ? `这是${r.name ?? r.account_email ?? "本所成员"}的账号在一台新电脑上申请加入。请先电话或当面联系本人，请他读出新电脑屏幕上的 12 位入组核对码，与这里逐位对照。号码一致吗？` : `请先电话或当面联系${r.name ?? "对方"}，请他读出屏幕上的入组核对码，与这里逐位对照。号码一致吗？`} confirmLabel="已核对一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ?? ""}`)} />
+                        <ConfirmButton label="拒绝" danger={false} className="btn-ghost btn-sm" question={r.via === "account" ? "拒绝这台新电脑的申请？对方可以重新登录后再申请。" : `拒绝${r.name ? ` ${r.name} ` : ""}的申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
+                      </span>
+                    ) : (
+                      <span className="muted">请在发出邀请的电脑上处理</span>
+                    )}
+                  </span>
                 )}
               </td>
-                </>
-              )}
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="muted">
-        {joinHelpText(hasJoin, hasUpgrade)}
-      </p>
+      <p className="muted join-foot">{JOIN_FOOT}</p>
     </>
   );
 }
 
+/** 电脑名接在“的”后面：以字母数字开头（“Mac 电脑 · 第 1 台”）时中西文之间留一个空格，中文开头不留。 */
+function deviceWord(r: any): string {
+  const dev = String(r.device_name ?? "电脑");
+  return /^[A-Za-z0-9]/.test(dev) ? ` ${dev}` : dev;
+}
+
+/** 拒绝之后的一行结果（对象写全：谁的哪台电脑；名字两侧不留空格）。 */
+function rejectedText(r: any): string {
+  return `已拒绝${r.name ?? "这位成员"}的${deviceWord(r)}的申请，对方可以重新申请`;
+}
+
 /**
- * 第 72 批（U-2b）：确认成员电脑接收团队共享事项——请对方念出他屏幕上的 12 位核对码、在这里输入，逐位一致才能“确认”
- * （内核另行逐位核对，不一致不签发）。
+ * 第 72 批（U-2b）：确认成员电脑接收团队共享事项——管理员输入对方读出的 12 位入组核对码（界面拿不到本机算出的那串，逐位比对在内核）。
+ * 设计评分第三轮 C19：输错只写“号码不一致，请让对方重念一遍”；“确认 / 拒绝”两个按钮不分家；“拒绝”可逆，不用红色。
  */
 function UpgradeConfirm({ r, act }: { r: any; act: RowAct }) {
   const [typed, setTyped] = useState("");
-  // 复测 N6：核对码不一致等原因写在这一行（多行待确认时不串）
+  // 复测 N6：错误写在这一行（多行待确认时不串）
   const [rowErr, setRowErr] = useState("");
-  // 第 72 批（补测 D4）：界面拿不到本机算出的核对码——填满 12 位即可点“确认”，由内核按本机独立算出的逐位比对（不一致不签发，原因写在下面）
   const typedDigits = typed.replace(/[\s-]/g, "");
   const ready = twelveDigits(typed);
+  const onErr = (e: unknown) => setRowErr(upgradeErrorText(e));
   return (
-    <span className="settings-choice members-upgrade">
-      <span className="muted members-code-label">请让对方读出他屏幕上的 12 位入组核对码，填在这里：</span>
-      {/* 复测 N4：占位写号码的样子（000 000 000 000），说明在左边一列；输入框按 15 个等宽字符留宽 */}
-      <input className="members-code-input" inputMode="numeric" maxLength={17} placeholder="000 000 000 000" aria-label="对方读出的 12 位入组核对码" aria-invalid={rowErr ? true : undefined} value={typed} onChange={(e) => {
+    <span className="members-upgrade">
+      {/* 复测 N4：占位写号码的样子（000 000 000 000），按 15 个等宽字符留宽；窄屏可缩 */}
+      <input
+        className="members-code-input"
+        inputMode="numeric"
+        maxLength={17}
+        placeholder="000 000 000 000"
+        aria-label="对方读出的入组核对码"
+        aria-invalid={rowErr ? true : undefined}
+        value={typed}
+        onChange={(e) => {
           setTyped(e.target.value);
           setRowErr("");
-        }} />
-      <button type="button" className="btn-primary btn-sm" disabled={!ready} onClick={() => void act(() => members.approve(r.id, typedDigits), `已确认${r.name ? ` ${r.name} 的电脑` : ""}：同步后即可接收团队共享事项`, setRowErr)}>
-        确认
-      </button>
-      <ConfirmButton label="拒绝" question="拒绝这份申请？对方可以重新申请。" confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝", setRowErr)} />
+        }}
+      />
+      <span className="join-actions">
+        <button type="button" className="btn-primary btn-sm" disabled={!ready} onClick={() => void act(() => members.approve(r.id, typedDigits), confirmedText(r), onErr)}>
+          确认
+        </button>
+        <ConfirmButton label="拒绝" danger={false} className="btn-ghost btn-sm" question="拒绝这份申请？对方可以重新申请。" confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), rejectedText(r), onErr)} />
+      </span>
       {rowErr && (
         <span className="activate-error members-row-error" role="alert">
           {rowErr}
@@ -272,14 +292,19 @@ function UpgradeConfirm({ r, act }: { r: any; act: RowAct }) {
   );
 }
 
+/** 确认之后的一行结果：“已确认许二安的 Mac 电脑 · 第 1 台（15:31），同步后即可接收团队共享事项”。 */
+function confirmedText(r: any): string {
+  return `已确认${r.name ?? "这位成员"}的${deviceWord(r)}（${dayTime(new Date().toISOString()).slice(-5)}），同步后即可接收团队共享事项`;
+}
+
 /**
- * 第 72 批（D-304）：设置 · 团队 · 电脑待确认（管理员）。成员的新电脑登录后就能正常工作（用 AI、办自己的事项）；
- * 要接收团队共享事项，才需要管理员在这里确认一次（确认动作沿用入组批准：核对对方屏幕上的入组核对码）。没有待确认的电脑时一行说明。
+ * 第 72 批（D-304）：设置 → 团队 → 电脑待确认（管理员）。成员的新电脑登录后就能正常工作（用 AI、办自己的事项）；
+ * 要接收团队共享事项，才需要管理员在这里确认一次。设计评分第三轮 C19：处理结果（带图标、时刻与对象）放在列表 / 空态句之前。
  */
 export function PendingDevices() {
   const [data, setData] = useState<any | null>(null);
   const [err, setErr] = useState("");
-  const [msg, setMsg] = useState("");
+  const [done, setDone] = useState<{ ok: boolean; text: string } | null>(null);
   const load = () =>
     members
       .list()
@@ -294,30 +319,31 @@ export function PendingDevices() {
     return () => clearInterval(t);
   }, []);
   const act: RowAct = async (fn, ok, onErr) => {
-    setMsg("");
+    setDone(null);
     try {
       await fn();
-      setMsg(ok);
+      setDone({ ok: !ok.startsWith("已拒绝"), text: ok });
       notifyDataChanged();
       void load();
     } catch (e) {
-      if (onErr) onErr((e as Error).message);
-      else setMsg((e as Error).message);
+      if (onErr) onErr(e);
+      else setDone({ ok: false, text: (e as Error).message });
     }
   };
   const requests: any[] = data?.join_requests ?? [];
   return (
     <div className="team-pending">
-      <p className="team-pending-lead">成员的电脑登录后可正常工作；要接收团队共享事项，成员申请后需要你在这里核对入组核对码、确认一次。</p>
+      <p className="team-pending-lead">成员申请接收团队共享事项后，在这里确认他的电脑。</p>
+      {done && (
+        <p className={`join-done${done.ok ? " is-ok" : ""}`} role="status">
+          {done.ok ? <span className="join-done-icon">{Icon.check()}</span> : null}
+          {done.text}
+        </p>
+      )}
       {requests.length > 0 ? (
         <JoinRequestTable requests={requests} act={act} />
       ) : (
         <p className="muted team-empty">{err ? "要在团队开通时用的那台电脑上确认；这台电脑上看不到待确认的电脑。" : data ? "没有待确认的电脑。" : "正在读取…"}</p>
-      )}
-      {msg && (
-        <p className="muted" role="status">
-          {msg}
-        </p>
       )}
     </div>
   );

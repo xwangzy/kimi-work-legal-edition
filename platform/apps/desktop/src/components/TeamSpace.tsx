@@ -97,7 +97,7 @@ export function WorkspaceSection({ ws }: { ws: WorkspaceState }) {
           onClose={() => setUpgrading(false)}
           onDone={(name) => {
             setUpgrading(false);
-            setDone(`已升级为团队「${name}」。现在可以在“设置 · 团队”里邀请同事。`);
+            setDone(`已升级为团队「${name}」。现在可以在“设置 → 团队”里邀请同事。`);
             notifyWorkspaceChanged();
           }}
         />
@@ -234,15 +234,8 @@ function JoinTeam() {
 /** 设置 · 团队的页首：团队名称、我的角色、名额与用量（只读）。children 放本所识别码等折叠项。 */
 export function TeamHeader({ ws, children }: { ws: WorkspaceState; children?: ReactNode }) {
   const [q, setQ] = useState<QuotaStatus | null>(null);
-  // 复测 N2：横幅按共享通道的真实状态写（没配通道才说“需要配置”）
-  const [relayOn, setRelayOn] = useState<boolean | null>(null);
   useEffect(() => {
     api.quotaStatus().then(setQ).catch(() => setQ(null));
-    if (!ws.features.teamRead)
-      api
-        .relayStatus()
-        .then((r) => setRelayOn(!r ? null : r.blocked === "not_configured" ? false : r.blocked === null ? true : null))
-        .catch(() => setRelayOn(null));
   }, []);
   const cur = ws.list?.current ?? null;
   const name = cur?.name ?? "本团队";
@@ -252,7 +245,8 @@ export function TeamHeader({ ws, children }: { ws: WorkspaceState; children?: Re
   // 第 72 批评分 C10 第 1 条：两个比例的分母不同（团队总额度 / 你的个人额度），各写一句，免得“你用的比团队还多”读成矛盾
   const stats: { k: string; v: string; d?: string }[] = [
     // 管理员与合伙人在下面的成员一节看到“席位（AI 使用名额）n / N 已分配”，这里不重复
-    ...(firm && Number.isFinite(firm.seats) && !ws.features.teamRead ? [{ k: "AI 使用名额", v: `${firm.seats} 个`, d: "团队可同时用 AI 的人数" }] : []),
+    // 设计评分第三轮 C15：成员页与管理员页同一组卡、同一个名字“席位”（括注 AI 使用名额）
+    ...(firm && Number.isFinite(firm.seats) ? [{ k: "席位（AI 使用名额）", v: `${firm.seats} 个`, d: "团队可同时用 AI 的人数" }] : []),
     ...(firm ? [{ k: "团队本期已用", v: fmtPct(firm.used_ratio), d: "占团队总额度" }] : []),
     ...(mine !== null ? [{ k: "你本期已用", v: fmtPct(mine), d: "占你的个人额度" }] : []),
     ...(q?.plan?.label ? [{ k: "套餐", v: q.plan.label }] : []),
@@ -278,7 +272,7 @@ export function TeamHeader({ ws, children }: { ws: WorkspaceState; children?: Re
       {!ws.features.teamRead && (
         <p className="team-privacy" role="note">
           {Icon.lock()}
-          <span>{teamPrivacyLine(relayOn)}</span>
+          <span>{teamPrivacyLine()}</span>
         </p>
       )}
       {children}

@@ -43,8 +43,10 @@ interface ShareConfirmFile {
   request_id: string;
   requested_at: string;
   /** 第 72 批（补测 D5）：管理员拒绝 / 7 天未处理——保留这一结果直到成员重新申请或点“知道了”（不再只闪一个轮询周期）。 */
-  outcome?: "rejected" | "expired";
+  outcome?: "rejected" | "expired" | "confirmed";
   decided_at?: string;
+  /** 设计评分第三轮 C18：确认这台电脑的管理员在本团队的名字（云端给了才有）。只作界面显示。 */
+  decided_by_name?: string | null;
 }
 
 export type ShareConfirmState = "confirmed" | "none" | "pending" | "rejected" | "expired" | "withdrawn";
@@ -106,8 +108,8 @@ export class DeviceShareConfirm {
   /** 启动：本机有待处理的申请就开始轮询（内核关闭时 stop）。 */
   start(): void {
     if (this.issuer() === "firm_root") {
-      // 已确认（换证后重启）：清掉残留的申请记录
-      if (existsSync(this.path())) this.drop();
+      // 已确认（换证后重启）：留着“何时、由谁确认”那一条（团队共享处的正向状态读它），其余残留记录清掉
+      if (existsSync(this.path()) && this.read()?.outcome !== "confirmed") this.drop();
       return;
     }
     const f = this.read();
@@ -133,14 +135,15 @@ export class DeviceShareConfirm {
       state,
       issuer: this.issuer(),
       ...(state === "pending" && f ? { request_id: f.request_id, requested_at: f.requested_at, check_code: this.checkCode() } : {}),
-      ...((state === "rejected" || state === "expired") && f ? { requested_at: f.requested_at, decided_at: f.decided_at ?? null } : {}),
+      ...((state === "rejected" || state === "expired" || state === "confirmed") && f ? { requested_at: f.requested_at, decided_at: f.decided_at ?? null } : {}),
+      ...(state === "confirmed" && f?.decided_by_name ? { decided_by_name: f.decided_by_name } : {}),
       ...extra,
     };
   }
 
   /** 发起（或取回已有的待处理申请）。 */
   async request(): Promise<Record<string, unknown>> {
-    if (this.issuer() === "firm_root") return this.view("confirmed", null);
+    if (this.issuer() === "firm_root") return this.confirmedView();
     const r = await this.d.call("POST", "/v1/join-requests/upgrade", {});
     if (!r.ok) {
       if (r.error === "already_firm_root") return this.status();
@@ -158,8 +161,9 @@ export class DeviceShareConfirm {
   /** 被拒 / 过期的结果看过了（“知道了”）：放下本机记录，回到可以申请。 */
   dismiss(): Record<string, unknown> {
     const f = this.read();
-    if (f?.outcome) this.drop();
-    return this.view(this.issuer() === "firm_root" ? "confirmed" : f && !f.outcome ? "pending" : "none", f && !f.outcome ? f : null);
+    if (f?.outcome === "rejected" || f?.outcome === "expired") this.drop();
+    if (this.issuer() === "firm_root") return this.confirmedView();
+    return this.view(f && !f.outcome ? "pending" : "none", f && !f.outcome ? f : null);
   }
 
   /** 撤回待处理的申请（云端联不上也在本机放下，云端 7 天后自行过期）。 */
@@ -183,8 +187,14 @@ export class DeviceShareConfirm {
     return this.inflight;
   }
 
+  /** 已确认的视图（带确认时刻与确认人，若本机记着）。 */
+  confirmedView(): Record<string, unknown> {
+    const f = this.read();
+    return this.view("confirmed", f?.outcome === "confirmed" ? f : null);
+  }
+
   private async doStatus(): Promise<Record<string, unknown>> {
-    if (this.issuer() === "firm_root") return this.view("confirmed", null);
+    if (this.issuer() === "firm_root") return this.confirmedView();
     const f = this.read();
     if (!f) return this.view("none", null);
     if (f.outcome) return this.view(f.outcome, f);
@@ -207,9 +217,17 @@ export class DeviceShareConfirm {
         slog.event("KERNEL_SHARE_CONFIRM_REJECTED", { reason: why });
         return this.view("pending", f, { checked: true, problem: why });
       }
-      this.drop();
+      // 记下“何时、由谁确认”（换证后重启也在），团队共享处写一行正向状态
+      const decided = typeof r.json.decided_at === "string" && !Number.isNaN(Date.parse(r.json.decided_at)) ? r.json.decided_at : new Date().toISOString();
+      const by = typeof r.json.decided_by_name === "string" && r.json.decided_by_name.trim() ? r.json.decided_by_name.trim().slice(0, 40) : null;
+      const kept: ShareConfirmFile = { ...f, outcome: "confirmed", decided_at: decided, decided_by_name: by };
+      try {
+        this.write(kept);
+      } catch {
+        // 只影响显示：证书已换上
+      }
       this.stop();
-      return this.view("confirmed", null, { restart: true });
+      return this.view("confirmed", kept, { restart: true });
     }
     this.stop();
     if (st === "withdrawn") {

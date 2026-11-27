@@ -14,6 +14,7 @@ import { SettingRow } from "./SettingRow.tsx";
 import { MetaGate } from "./AuthShell.tsx";
 import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMeta, useRegistrationMetaState } from "./SmsCodeFields.tsx";
 import { DeviceLimitList } from "./DeviceLimitList.tsx";
+import { useWorkspace } from "./WorkspaceSwitch.tsx";
 import { currentProfileMark, isSwitchResult, waitForProfileSwitch } from "../lib/account-switch.ts";
 import { accountWho, recentLoginRows, canRenameDevices, checkDeviceName, DEVICE_NAME_MAX, deviceName, deviceState, maskPhoneTight, passwordIdOk, reloginSmsFailure, resetIdKind, switchingText, type AccountDevice } from "../lib/account.ts";
 
@@ -720,6 +721,8 @@ function ChangePassword({ email }: { email: string }) {
 
 /** 账号与团队页的“账号”一节。firm = 本机激活信息里的律所名。 */
 export function AccountSection({ firm }: { firm: string | null }) {
+  // 设计评分 C8：角色标签只在团队空间写（个人空间没有团队角色）
+  const ws = useWorkspace();
   const [st, setSt] = useState<AccountStatus | null>(null);
   const [me, setMe] = useState<AccountMe | null>(null);
   const [meErr, setMeErr] = useState("");
@@ -796,8 +799,8 @@ export function AccountSection({ firm }: { firm: string | null }) {
           <div className="account-card-main">
             <div>
               <b>{a?.name ?? st.account?.name}</b>
-              {/* 第 72 批：个人工作室里你就是唯一的成员，不写“管理员” */}
-              {!me?.personal && <span className="pill pill-gray">{roleLabel(a?.role ?? st.account?.role)}</span>}
+              {/* 第 72 批：个人工作室里你就是唯一的成员，不写“管理员”。设计评分 C8：只在确知是团队空间时写角色（账号详情还没取到、或旧云端没给 personal 时不先写一个“管理员”再收回） */}
+              {(ws.kind === "team" || (ws.kind === null && me?.personal === false)) && <span className="pill pill-gray">{roleLabel(a?.role ?? st.account?.role)}</span>}
               <span className="pill pill-green">登录中</span>
             </div>
             <div className="muted">{a?.email ?? st.account?.email}</div>

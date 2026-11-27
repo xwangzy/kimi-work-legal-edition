@@ -148,19 +148,21 @@
 .audit-bar-actions { display: flex; gap: var(--sp-2); }
 .audit-n { margin-left: 6px; font-size: var(--fs-meta); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .audit-list { border-top: 1px solid var(--border-subtle); }
-.audit-row { display: grid; grid-template-columns: 136px minmax(96px, 160px) minmax(0, 1fr) 132px 40px; align-items: center; gap: var(--sp-4); min-height: 48px; padding: var(--sp-2) var(--sp-2); font-size: var(--fs-body); }
+/* 第 72 批（设计评分第三轮 C10）：时间 / 结果 / 详情定宽、“谁”限宽（省略号 + 悬停全文），余宽全给“做了什么”——960 宽下也不逐字折行 */
+.audit-row { display: grid; grid-template-columns: 116px minmax(56px, 120px) minmax(12em, 1fr) 96px 36px; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-2) var(--sp-2); font-size: var(--fs-body); }
 .audit-item { border-bottom: 1px solid var(--border-subtle); }
 .audit-item:hover, .audit-item.is-open { background: var(--bg-hover-soft); }
 .audit-head { min-height: 36px; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-caption); color: var(--text-secondary); }
 .audit-at { font-size: var(--fs-caption); color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .audit-who { min-width: 0; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .audit-what { min-width: 0; color: var(--text-primary); }
-.audit-res { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--text-label); }
+.audit-res { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; font-size: var(--fs-caption); color: var(--text-label); }
+.audit-run { flex-basis: 100%; padding-left: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .audit-res .sdot { width: 6px; height: 6px; }
 .audit-res-warn { color: var(--status-warning-text); }
 .audit-res-bad { color: var(--status-danger-text); }
 .audit-more { justify-self: end; font-size: var(--fs-caption); color: var(--text-secondary); }
-.audit-detail { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 4px var(--sp-3); margin: 0; padding: 0 var(--sp-2) var(--sp-3) calc(136px + var(--sp-4) + var(--sp-2)); font-size: var(--fs-meta); color: var(--text-secondary); }
+.audit-detail { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 4px var(--sp-3); margin: 0; padding: 0 var(--sp-2) var(--sp-3) calc(116px + var(--sp-3) + var(--sp-2)); font-size: var(--fs-meta); color: var(--text-secondary); }
 .audit-detail dt { color: var(--text-secondary); }
 .audit-detail dd { margin: 0; color: var(--text-label); word-break: break-all; }
 @media (max-width: 900px) {

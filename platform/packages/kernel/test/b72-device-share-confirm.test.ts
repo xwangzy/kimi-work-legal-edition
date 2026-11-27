@@ -139,6 +139,19 @@ test("申请 → 管理员核对核对码后确认 → 管理员本机设备表�
   const add1 = (await kb.invoke("matters.members.add", { matter_id: m1.matter.matter_id, user_id: myUser, matter_role: "editor" })) as any;
   assert.equal(add1.devices_wrapped, 1, JSON.stringify(add1));
   assert.ok(!((await kb.invoke("members.list")) as any).join_requests.some((x: any) => x.id === rq.request_id), "已确认的不再列出");
+  // 设计评分第三轮 C10：操作记录里的人与对象写成员表里的名字——甲的电脑由账号签发钥登记（不在乙本机设备表的那段时间）、甲的团队账号、加入时记在甲的主账号上，都对得上“甲律师”
+  const au = (await kb.invoke("control_plane.audit", { limit: 200 })) as any;
+  const byAction = (a: string) => au.records.filter((r: any) => r.action === a);
+  const appr = byAction("device.upgrade_approve").find((r: any) => r.target === myDevice);
+  assert.ok(appr, JSON.stringify(au.records.map((r: any) => r.action)));
+  assert.equal(appr.target_name, "甲律师");
+  const req0 = byAction("device.upgrade_request").find((r: any) => r.target === myDevice);
+  assert.equal(req0?.actor_name, "甲律师", "成员电脑（账号签发钥登记）发起的申请：谁 = 甲律师");
+  const enr = byAction("device.auto_enroll").find((r: any) => r.target === myDevice);
+  assert.equal(enr?.actor_name, "甲律师", "账号直接登记：谁 = 甲律师（团队账号）");
+  const joins = byAction("team.invite_accept");
+  assert.ok(joins.length >= 1, "有甲接受团队邀请的记录");
+  for (const r of joins) assert.equal(r.actor_name, "甲律师", "接受邀请记在甲的主账号上：也对得上名字（成员行带 person_aid）");
   await close(kb);
 
   // ── 甲：取回 → 核验 → 换证 → 请求重启 ──
@@ -158,10 +171,14 @@ test("申请 → 管理员核对核对码后确认 → 管理员本机设备表�
   const sy2 = (await k.invoke("control_plane.sync")) as any;
   assert.equal(sy2.report.steps.register, "ok", JSON.stringify(sy2.report));
   assert.ok(["accepted", "valid", "unchanged"].includes(sy2.report.steps.seat), JSON.stringify(sy2.report));
-  assert.deepEqual(((await k.invoke("team.deviceShare.status")) as any).state, "confirmed");
+  // 设计评分第三轮 C18：确认后不无声消失——状态带确认时刻与确认人（重启后仍在）
+  const conf = (await k.invoke("team.deviceShare.status")) as any;
+  assert.equal(conf.state, "confirmed");
+  assert.ok(Date.parse(conf.decided_at) > 0, JSON.stringify(conf));
+  assert.equal(conf.decided_by_name, "乙律师");
   const own = (await k.invoke("devices.list")) as any;
   assert.equal(own.devices.find((d: any) => d.device_id === myDevice).status, "active", "本机设备表里这台仍是同一编号、在用");
-  assert.equal(stateFiles(dir).length, 0, "确认后申请记录已清掉");
+  assert.equal(stateFiles(dir).length, 1, "确认后只留“何时、由谁确认”这一条（无秘密）");
   await close(k);
 });
 

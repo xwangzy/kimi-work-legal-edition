@@ -1,4 +1,5 @@
 import { momentLabel } from "./account.ts";
+import { dayTime } from "./labels.ts";
 /**
  * 第 72 批（V46，D-304、D-305，契约 02 §7）：个人 / 团队工作空间在界面这一侧的纯函数。
  *
@@ -169,28 +170,32 @@ export function parseLeftNotice(raw: string | null): { team: string; how: "remov
  */
 export function shareIssuerNote(issuer: unknown, kind: WorkspaceKind | null, admin: boolean): string | null {
   if (kind !== "team" || issuer !== "account_ca") return null;
-  // 第 72 批（U-2b）：已有“事后确认”——申请一次、管理员在团队开通时用的那台电脑上核对确认一次即可接收
+  // 第 72 批（设计评分第三轮 C18）：不把管理员侧的策略名“直接登录”搬给成员；路径统一写“设置 → 团队 → 电脑待确认”
   return admin
-    ? "这台电脑是直接登录的，还不能接收团队共享事项，其它功能不受影响。申请后，在团队开通时用的那台电脑上“团队设置 · 电脑待确认”里核对确认一次即可接收。"
-    : "这台电脑是直接登录的，还不能接收团队共享事项，其它功能不受影响。申请后请管理员确认一次即可接收。";
+    ? "这台电脑还不能接收团队共享事项，其它功能不受影响。申请后，在团队开通时用的那台电脑上“设置 → 团队 → 电脑待确认”里确认一次即可接收。"
+    : "这台电脑还不能接收团队共享事项，其它功能不受影响。申请后，管理员确认一次即可接收。";
 }
 
 /**
  * 第 72 批（U-2b）：“申请接收团队共享事项”各状态的一句话（团队共享处）。pending 时另显示核对码。纯函数。
  * state 取自内核 team.deviceShare.*；不支持（旧云端 / 旧内核）返回 null，界面只留上面那句提示。
  */
-export function shareConfirmLine(s: { supported?: boolean; state?: string; restart?: boolean; problem?: string; offline?: boolean; decided_at?: string | null } | null, now = Date.now()): string | null {
+export function shareConfirmLine(s: { supported?: boolean; state?: string; restart?: boolean; problem?: string; offline?: boolean; decided_at?: string | null; decided_by_name?: string | null } | null, now = Date.now()): string | null {
   if (!s || s.supported !== true) return null;
   const at = s.decided_at ? momentLabel(s.decided_at, now) : "";
   switch (s.state) {
-    case "confirmed":
-      return s.restart ? "这台电脑已可接收团队共享事项，正在刷新…" : "这台电脑已可接收团队共享事项";
+    case "confirmed": {
+      // 设计评分第三轮 C18：确认后不无声消失——一行正向状态，带确认时刻（与审计同一写法）与确认人（拿得到才写）
+      const when = s.decided_at ? dayTime(s.decided_at, now) : "";
+      const by = s.decided_by_name ? `由${s.decided_by_name}确认` : "确认";
+      return `这台电脑已可接收团队共享事项${when ? `（${when} ${by}）` : ""}`;
+    }
     case "pending":
-      return s.problem ? "收到的确认结果核对不通过，没有采用：请管理员拒绝后你重新申请；仍不行请联系 Kimi Work 客服" : "已申请：请管理员在团队设置 · 电脑待确认里核对下面的入组核对码后确认";
+      return s.problem ? "收到的确认结果核对不通过，没有采用：请管理员拒绝后你重新申请；仍不行请联系 Kimi Work 客服" : "已申请：管理员会在“设置 → 团队 → 电脑待确认”里确认，确认时请把下面的号码读给他";
     case "rejected":
-      return `管理员没有确认这次申请${at ? `（${at}）` : ""}。需要时可以重新申请`;
+      return `管理员拒绝了这次申请${at ? `（${at}）` : ""}，可以重新申请`;
     case "expired":
-      return `申请 7 天没有处理，已过期${at ? `（${at}）` : ""}。需要时可以重新申请`;
+      return `申请 7 天没有处理，已过期${at ? `（${at}）` : ""}，可以重新申请`;
     case "withdrawn":
       return s.offline ? "已撤回（联不上云端：云端那份申请 7 天后自动过期）" : "已撤回申请";
     default:
@@ -234,9 +239,7 @@ export function workspaceMenuMeta(w: WorkspaceLike): string | null {
  * 第 72 批（复测 N2）：成员团队页横幅——按共享通道的真实状态写。没配通道：如实说要所内先配置；配了通道：只说团队共享事项经它加密同步
  * （事项级“开启共享 / 加同事”的界面本批不做，不承诺入口）；还没取到状态：只写前半句。纯函数。
  */
-export function teamPrivacyLine(relayConfigured: boolean | null): string {
-  const base = "事项内容只在成员自己的电脑上，管理员看不到";
-  if (relayConfigured === false) return `${base}；团队共享事项需要所内先配置共享通道。`;
-  if (relayConfigured === true) return `${base}；团队共享事项经所内的共享通道在成员电脑之间加密同步。`;
-  return `${base}。`;
+export function teamPrivacyLine(): string {
+  // 设计评分第三轮 C15 / C18：页顶只留这一句；团队共享的前提与状态都归到“团队共享”那一行
+  return "事项内容只在成员自己的电脑上，管理员看不到。";
 }

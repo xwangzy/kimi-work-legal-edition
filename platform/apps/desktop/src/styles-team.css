@@ -133,15 +133,25 @@
 .share-confirm { margin-top: var(--sp-2); color: var(--text-primary); }
 .share-confirm p { margin: 0 0 var(--sp-1); }
 .share-confirm .members-check { font-size: var(--fs-body); color: var(--text-primary); margin-right: var(--sp-2); }
-/* 复测 N4：按 15 个等宽字符（000 000 000 000）留宽，占位与输入都看得全；窄屏不溢出 */
-.members-code-input { font-family: var(--font-mono); font-variant-numeric: tabular-nums; box-sizing: content-box; width: 15.5ch; max-width: calc(100% - 16px); padding-inline: 8px; }
-.members-row-error { flex-basis: 100%; }
-/* 补测 D9：电脑待确认表在宽屏下“角色”“申请时间”被挤成竖排——这两列不折行；说明列可折行；已申请等状态块用中性底色（不再与橙色提示并列） */
+/* 复测 N4 / 设计评分第三轮 C19：电脑待确认表——列宽固定（正常 / 输错 / 拒绝确认三态不左右跳）；核对码输入框按 15 个等宽字符留宽、窄屏可缩；
+   “确认 / 拒绝”两个按钮不分家（窄屏整组换到输入框下一行）；处理结果带图标排在列表之前 */
+.join-table { table-layout: fixed; }
+.join-table .join-col-who { width: 184px; }
+.join-table .join-col-role { width: 64px; }
+.join-table .join-col-time { width: 136px; }
+.join-table th { white-space: nowrap; }
+.join-who .join-name { color: var(--text-primary); overflow-wrap: anywhere; }
+.join-who .join-sub { font-size: var(--fs-caption); overflow-wrap: anywhere; }
 .members-table .members-nowrap { white-space: nowrap; }
-.members-table .members-name { min-width: 9em; }
-.members-table .members-time { min-width: 6em; }
-.members-upgrade { align-items: center; }
-.members-code-label { flex-basis: 100%; }
+.members-upgrade { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.join-actions { display: inline-flex; flex-wrap: nowrap; gap: 6px; white-space: nowrap; }
+.join-legacy { align-items: center; }
+.members-code-input { font-family: var(--font-mono); font-variant-numeric: tabular-nums; box-sizing: border-box; width: calc(15.5ch + 20px); min-width: 0; max-width: 100%; padding-inline: 8px; }
+.members-row-error { flex-basis: 100%; }
+.join-foot { margin-top: var(--sp-2); }
+.join-done { display: flex; align-items: center; gap: 6px; margin: 0 0 var(--sp-3); font-size: var(--fs-body); color: var(--text-primary); }
+.join-done-icon { display: inline-flex; width: 16px; height: 16px; color: var(--status-success-strong); }
+.join-done-icon svg { width: 16px; height: 16px; }
 .share-confirm-box { margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--bg-muted); border: 1px solid var(--border-subtle); font-size: var(--fs-caption); line-height: 1.6; }
 .share-confirm-box p:last-child { margin-bottom: 0; }
 
@@ -210,3 +220,11 @@
 .tm-menu-row small, .tm-menu-row b { word-break: keep-all; overflow-wrap: anywhere; }
 /* 窄窗口（≤ 1200）页签左右留白收一档，960 宽下九个页签一行放得下；仍放不下（更大字号）时横向滚动兜底 */
 @media (max-width: 1200px) { .set-page > .tabs-line > .tab.tab { padding-left: var(--sp-2); padding-right: var(--sp-2); } }
+/* 设计评分第三轮 C18：还没申请是正常状态——中性灰底黑字（橙色留给需要注意的状态）；已申请的号码单独一行、等宽大号；已可接收带对勾；前提写在同一行下 */
+.share-note.share-note-neutral { background: var(--bg-muted); color: var(--text-primary); }
+.share-code-line { display: flex; align-items: baseline; gap: var(--sp-2); }
+.share-code { font-size: var(--fs-xl); letter-spacing: 0.04em; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.share-confirm-ok { display: flex; align-items: center; gap: 6px; color: var(--text-primary); }
+.share-ok-icon { display: inline-flex; width: 16px; height: 16px; color: var(--status-success-strong); }
+.share-ok-icon svg { width: 16px; height: 16px; }
+.share-prereq { margin: var(--sp-1) 0 0; font-size: var(--fs-caption); }

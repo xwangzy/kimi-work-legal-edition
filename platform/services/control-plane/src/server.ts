@@ -5712,7 +5712,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       const status = expired ? "expired" : jr.status;
       // 第 72 批（补测 D5）：带处理时刻（过期的按到期时刻），成员电脑据此一直显示“管理员没有确认这次申请（时刻）”
       const decidedAt = expired ? iso(Date.parse(jr.created_at) + 7 * DAY_MS) : jr.decided_at;
-      return sendRaw(res, 200, { ok: true, status, decided_at: decidedAt, ...(status === "approved" ? { cert: jr.cert, root_public_key_pem: t.root_public_key_pem } : {}) });
+      // 设计评分第三轮 C18：确认后成员电脑写一行正向状态“（11 月 27 日 15:31 由某某确认）”——确认人取批准那台电脑所属成员在本团队的名字（取不到不给）
+      const approver = status === "approved" && jr.decided_by ? accountOfMember(t.tid, t.devices.get(jr.decided_by)?.cert.memberId ?? "")?.name ?? null : null;
+      return sendRaw(res, 200, { ok: true, status, decided_at: decidedAt, ...(status === "approved" ? { cert: jr.cert, root_public_key_pem: t.root_public_key_pem, decided_by_name: approver } : {}) });
     }
     if (method === "GET" && p === "/v1/join-requests") {
       requireAdmin(t, dev);
@@ -6180,6 +6182,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         devices_summary: { signed_in: signedInDevices(x).length, limit: deviceLimitOf(x) },
         locked_s: locked(x, now()),
         member_slug: x.member_slug,
+        // 第 72 批（设计评分第三轮 C10）：这个人的主账号编号——加入 / 切换 / 退出团队的操作记录记在主账号上（安全审查 O-6 已知），
+        // 管理员电脑据此把这几条记录也对上成员表里的名字（编号本就出现在本所操作记录里，不新增暴露）
+        person_aid: primaryOf(x).aid,
         last_login_at: x.last_login_at,
         created_via: x.created_via,
         has_password: x.pw !== null,

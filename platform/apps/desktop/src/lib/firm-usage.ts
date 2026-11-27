@@ -2,6 +2,7 @@
  * 用量与上限、中软侧操作记录的显示文字（第 9 批 S3/S14；第 44 批 v2：一把尺子——tokens 或元，按 Kimi 的额度呈现）。纯函数，便于用例覆盖。
  * 律师可见的文字不出现租约、序号、签名等工程用语，也不出现点数一类的说法；单位只有 tokens 与元（中软的单位名 unit_label 原样显示）。
  */
+import { dayTime } from "./labels.ts";
 import type { CpAuditRow, QuotaStatus } from "../api.ts";
 
 /** 次数等整数的千分位。 */
@@ -302,14 +303,15 @@ export function auditResultLabel(result: string): { text: string; tone: "ok" | "
 /** 日常的、量大的操作：签发各类使用凭据、更新事项匿名摘要、登录与退出。“重要改动”一档不列（失败的照列）。 */
 const ROUTINE_ACTIONS = new Set(["seat_token.issue", "support_token.issue", "notify_token.issue", "relay_token.issue", "anon_summary.update", "account.login", "account.login_sms", "account.logout"]);
 
+/** 电脑自己领取的各类使用凭据（“谁”写成“某某的电脑”）。 */
+const TOKEN_ACTIONS = new Set(["seat_token.issue", "support_token.issue", "notify_token.issue", "relay_token.issue"]);
+
 export type AuditRowLike = Pick<CpAuditRow, "actor" | "actor_name" | "action" | "target" | "target_name" | "result" | "detail"> & Partial<Pick<CpAuditRow, "actor_is_me" | "target_kind" | "target_is_me" | "target_ordinal">>;
 
 /** 时间：“11 月 22 日 08:02”（北京时间；不是今年的加年份）。 */
 export function auditTime(iso: string, now = Date.now()): string {
-  const d = bj(iso);
-  if (!d) return "—";
-  const y = d.getUTCFullYear() === new Date(now + BJ).getUTCFullYear() ? "" : `${d.getUTCFullYear()} 年 `;
-  return `${y}${d.getUTCMonth() + 1} 月 ${d.getUTCDate()} 日 ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  // 第 72 批：与全产品同一个公共写法（lib/labels.ts dayTime）
+  return dayTime(iso, now);
 }
 
 /**
@@ -364,10 +366,11 @@ export function auditSentence(r: AuditRowLike): { who: string; what: string; imp
     "account.device_unbind": () => `解绑了${device()}`,
     "seat.assign": () => (sameAsActor ? "领取了一个席位" : name ? `给${name}分配了席位` : "分配了一个席位"),
     "seat.revoke": () => `释放了${seat}`,
-    "seat_token.issue": () => "领取了日常使用凭据",
-    "support_token.issue": () => "领取了上传诊断信息的凭据",
-    "notify_token.issue": () => "领取了期限提醒的凭据",
-    "relay_token.issue": () => "领取了同事之间同步的凭据",
+    // 第 72 批（设计评分第三轮 C10）：凭据签发写成律师看得懂的事——成功是“用 AI”，被拒是“尝试使用 AI”（原因写在结果下面）
+    "seat_token.issue": () => (r.result === "ok" ? "使用 AI" : "尝试使用 AI"),
+    "support_token.issue": () => (r.result === "ok" ? "上传诊断信息" : "尝试上传诊断信息"),
+    "notify_token.issue": () => (r.result === "ok" ? "取期限提醒" : "尝试取期限提醒"),
+    "relay_token.issue": () => (r.result === "ok" ? "与同事同步团队事项" : "尝试与同事同步团队事项"),
     "anon_summary.update": () => "更新了一个事项的匿名摘要（不含案件内容）",
     "invitation.create": () => "发出了一份入所邀请",
     "invitation.revoke": () => "撤回了一份入所邀请",
@@ -414,6 +417,9 @@ export function auditSentence(r: AuditRowLike): { who: string; what: string; imp
     "device.auto_enroll": () => (sameAsActor || !name ? "用账号直接登记了一台电脑" : `用账号直接登记了${device()}`),
     "device.auto_revoke": () => `自动停用了${device()}`,
     "device.upgrade_request": () => "申请让这台电脑接收团队共享事项",
+    // 第 72 批（设计评分第三轮 C10）：管理员确认 / 拒绝、成员撤回——写成人话，对象写成员表里的名字
+    "device.upgrade_approve": () => `确认${device()}可接收团队共享事项`,
+    "device.upgrade_reject": () => `拒绝了${device()}接收团队共享事项的申请`,
     "device.upgrade_withdraw": () => "撤回了接收团队共享事项的申请",
     "team.member_remove": () => `把${person}移出了团队`,
     "team.leave": () => "退出了团队",
@@ -452,7 +458,38 @@ export function auditSentence(r: AuditRowLike): { who: string; what: string; imp
   };
   const f = S[r.action];
   // 仍不认识的动作写出原始事件名（不再笼统写“做了一项操作”），IT 与客服能据此查
-  return { who: auditWho(r), what: f ? f() : `执行了“${r.action}”`, important: r.actor.kind === "ops" || !ROUTINE_ACTIONS.has(r.action), known: !!f };
+  // 凭据签发是电脑自己做的：“谁”写“赵律师的电脑”，读作“赵律师的电脑 | 尝试使用 AI | 被拒绝：账号已停用”
+  const who = r.actor.kind === "device" && TOKEN_ACTIONS.has(r.action) ? (r.actor_name ? `${r.actor_name}的电脑` : "一台本所电脑") : auditWho(r);
+  return { who, what: f ? f() : `执行了“${r.action}”`, important: r.actor.kind === "ops" || !ROUTINE_ACTIONS.has(r.action), known: !!f };
+}
+
+/**
+ * 第 72 批（设计评分第三轮 C10）：连续的同类记录（同一个人、同一动作、同一对象、同一结果，相邻两条相隔不超过 30 分钟）合并为一行，
+ * 写次数与时段（“被拒绝 6 次（13:32～13:33）”）。输入按时间从新到旧；输出每组取最新一条，另带 count、first_at。纯函数。
+ */
+export function mergeAuditRuns<T extends AuditRowLike & { at: string }>(rows: readonly T[]): (T & { count: number; first_at: string })[] {
+  const out: (T & { count: number; first_at: string })[] = [];
+  const key = (r: T) => `${r.actor.kind}\u0000${r.actor.id}\u0000${r.action}\u0000${r.target ?? ""}\u0000${r.result}`;
+  for (const r of rows) {
+    const last = out[out.length - 1];
+    if (last && key(last) === key(r) && Math.abs(Date.parse(last.first_at) - Date.parse(r.at)) <= 30 * 60_000) {
+      last.count += 1;
+      last.first_at = r.at;
+      continue;
+    }
+    out.push({ ...r, count: 1, first_at: r.at });
+  }
+  return out;
+}
+
+/** 合并行的次数与时段：“6 次（13:32～13:33）”；跨天写日期。只有 1 次时为空串。纯函数。 */
+export function auditRunText(r: { count: number; first_at: string; at: string }, now = Date.now()): string {
+  if (r.count <= 1) return "";
+  const a = auditTime(r.first_at, now);
+  const b = auditTime(r.at, now);
+  const day = (x: string) => x.replace(/\s*\d{2}:\d{2}$/, "");
+  const span = a === b ? b.slice(-5) : day(a) === day(b) ? `${a.slice(-5)}～${b.slice(-5)}` : `${a}～${b}`;
+  return `${r.count} 次（${span}）`;
 }
 
 export type AuditFilter = "important" | "all";

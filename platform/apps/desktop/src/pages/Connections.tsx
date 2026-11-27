@@ -809,8 +809,8 @@ function TeamTab({ ws, mySafety }: { ws: WorkspaceState; mySafety: string | null
         <LeaveTeam ws={ws} />
         <details className="quiet-details account-more">
           {/* 第 72 批（复测 N7）：这是这台电脑密钥的识别码（同事核对公钥变更时用），与申请接收团队共享事项时读的 12 位入组核对码无关——改名“本机识别码”，避免念错 */}
-          <summary>更多：本机识别码（管理员核对这台电脑的密钥变更时用）</summary>
-          <div>这台电脑的密钥换过（例如重装后重新登记）、管理员要核对时，会请你在电话里读这串数字。申请接收团队共享事项时要读的是上面的 12 位入组核对码，不是这一串。</div>
+          <summary>更多：本机识别码（管理员来电核对这台电脑时用）</summary>
+          <div>这台电脑重装或重新登记后，管理员会请你在电话里读这串数字。申请接收团队共享事项时要读的是上面的 12 位入组核对码，不是这一串。</div>
           <SafetyCode code={mySafety} />
           <div className="muted">请在电话里或当面逐组读给对方；对方屏幕上的一致才确认。不要截图转发。</div>
         </details>
@@ -1450,7 +1450,8 @@ function policyLine(st: ControlPlaneStatus): string {
   // 第 56 批：签名人是成员编号（usr_…），不显示给律师——只说有几名管理员确认过；是谁、何时，在“操作记录”里
   const who = p.signers.length > 0 ? `已由 ${p.signers.length} 名管理员确认` : "最严设置，Kimi Work 服务签发";
   // 第 72 批评分 C10 第 3 条：日期统一“12 月 27 日 12:00”（跨年写年份），与操作记录同一写法
-  return `本所规则第 ${p.version} 版（${who}）· ${dueLabel(p.expires_at)} 前有效`;
+  // 设计评分第三轮 C10：日期与时刻不断在两行（不换行空格）
+  return `本所规则第 ${p.version} 版（${who}）· ${dueLabel(p.expires_at).replace(/ /g, "\u00a0")}\u00a0前有效`;
 }
 
 function PolicyTab() {
