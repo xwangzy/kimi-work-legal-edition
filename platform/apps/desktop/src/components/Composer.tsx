@@ -17,9 +17,9 @@ import "../styles-composer.css";
 
 import { ComposerFrame, SendButton, sendOnEnter } from "./ComposerFrame.tsx";
 import { MatterPlace } from "./MatterPlace.tsx";
-import { TeamMark } from "./TeamMatter.tsx";
+import { MatterMarkBadge } from "./TeamMatter.tsx";
 import { useWorkspace } from "./WorkspaceSwitch.tsx";
-import { isTeamShared, teamPrefix } from "../lib/team-matters.ts";
+import { markPrefix, matterMark } from "../lib/team-matters.ts";
 
 export interface ComposerValue {
   goal: string;
@@ -264,7 +264,7 @@ export function Composer(props: {
           <button ref={chipRef} className={`ctx-matter${matter ? "" : " ctx-empty"}`} onClick={() => setMenu(menu === "matter" || menu === "place" ? null : "matter")} title={matter ? matter.title : "选择事项"} aria-haspopup="listbox" aria-expanded={menu === "matter"}>
             {/* Kimi“选择项目”同位：没选时就写“选择事项”，选了写事项名 */}
             <Icon.folder /> {matter ? <span className="ctx-title">{clipTitle(matter.title)}</span> : "选择事项"}
-            {isTeamShared(matter, wsKind) && <TeamMark />} <Icon.down />
+            <MatterMarkBadge mark={matterMark(matter, wsKind)} /> <Icon.down />
           </button>
         ) : (
           <span className="ctx-matter ctx-static"><Icon.folder /> 事项：{props.matterId ? "本事项" : "未选择事项"}</span>
@@ -443,7 +443,7 @@ export function Composer(props: {
               }}
             >
               <span className="menu-label">{m.title}</span>
-              <span className="menu-desc">{teamPrefix([m.client_name, m.counterparty].filter(Boolean).join(" / ") || stanceLabel(m.stance), isTeamShared(m, wsKind))}</span>
+              <span className="menu-desc">{markPrefix([m.client_name, m.counterparty].filter(Boolean).join(" / ") || stanceLabel(m.stance), matterMark(m, wsKind))}</span>
             </button>
           ))}
           <button

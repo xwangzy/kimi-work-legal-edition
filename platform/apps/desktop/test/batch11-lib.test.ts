@@ -17,13 +17,15 @@ test("错误代码映射：每类代码给出对应说法；未知代码给通�
   assert.match(relayErrorText("relay_connect_failed")!, /连不上/);
   assert.match(relayErrorText("relay_timeout")!, /连不上/);
   assert.match(relayErrorText("relay_tls_pin_mismatch")!, /加密连接/);
-  assert.match(relayErrorText("credential_no_seat")!, /账号或许可/);
+  // 第 73 批第三轮：没有名额单独一句（与团队页、事项成员页同一说法）；其余凭据问题仍说账号或许可
+  assert.match(relayErrorText("credential_no_seat")!, /还没有分配到 AI 使用名额/);
+  assert.match(relayErrorText("credential_revoked")!, /账号或许可/);
   assert.match(relayErrorText("tenant_storage_full")!, /存储已满/);
   assert.match(relayErrorText("relay_chunk_digest_mismatch")!, /核对不通过/);
   assert.match(relayErrorText("not_reader")!, /已不在/);
   assert.match(relayErrorText("export_failed")!, /磁盘/);
   assert.equal(relayErrorText("something_new"), "有改动没有同步成功", "未知代码不承诺会自动重试（第二轮复核 S11B-23③）");
-  assert.match(relayErrorText("credential_backoff")!, /连不上 Kimi Work 的同步服务/);
+  assert.equal(relayErrorText("credential_backoff"), "暂时连不上 Kimi Work：稍后自动重试");
   assert.match(relayErrorText("relay_matter_conflict")!, /Kimi Work 客服/);
   // epoch_jump 已不存在：不再说成“会自动重试”而实际卡死（复核 S11B 第六节）
   assert.equal(relayErrorText("epoch_not_established")!.includes("连不上"), false);

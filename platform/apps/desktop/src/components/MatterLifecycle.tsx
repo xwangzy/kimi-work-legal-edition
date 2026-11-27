@@ -224,7 +224,7 @@ export function DeletionReceipt({ view }: { view: DeletionReceiptView }) {
   return (
     <section className="lifecycle">
       <div className="lifecycle-status">
-        <b>事项数据已删除</b>
+        <b>{r.mode === "local_copy" ? "这台电脑上的副本已删除" : "事项数据已删除"}</b>
         <span className="muted">删除于 {fmtTime(r.purged_at)}{r.early ? `（提前删除：${r.reason ?? ""}）` : ""}</span>
         <span className={`tag ${view.signature_valid ? "tag-ok" : "tag-warn"}`}>{view.signature_valid ? "删除证明有效" : "删除证明无法核对"}</span>
       </div>

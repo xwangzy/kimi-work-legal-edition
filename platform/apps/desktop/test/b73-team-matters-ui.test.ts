@@ -62,11 +62,19 @@ import {
   syncNotice,
   teamPillText,
   teamPrefix,
+  matterMark,
+  markPrefix,
+  CLOUD_UPGRADE_TEXT,
+  colleaguesCount,
+  colleaguesPendingText,
+  NO_SEAT_CONFIRMED_TEXT,
+  OFFLINE_HEAD,
+  removeLocalCopyLines,
 } from "../src/lib/team-matters.ts";
 import { shareReadyText, upgradeLines } from "../src/lib/workspace.ts";
 import { searchGroups } from "../src/lib/search.ts";
 import { sidebarFoot } from "../src/lib/user-card.ts";
-import { teamShareLine } from "../src/lib/relay-text.ts";
+import { credentialNoSeat, relayErrorText, teamShareLine } from "../src/lib/relay-text.ts";
 import { checklistItems, matterStepText } from "../src/lib/guide-checklist.ts";
 import { authorizationStatus } from "../src/lib/authorization.ts";
 import type { MatterMemberRow, ShareRelayStatus, TeamRosterMember } from "../src/api.ts";
@@ -79,7 +87,7 @@ const person = (o: Partial<TeamRosterMember>): TeamRosterMember => ({ user_id: "
 const row = (o: Partial<MatterMemberRow>): MatterMemberRow => ({ user_id: "usr_t_a", name: "陈律师", matter_role: "editor", can_receive: true, departed: false, is_me: false, ...o });
 
 test("谁能看到（D-307）：只在团队空间出现；这台电脑没经团队确认、客户要求不上云、服务不支持名单时置灰并说原因", () => {
-  assert.deepEqual(SCOPE_OPTIONS.map((o) => o.label), ["只有我", "和同事一起办"]);
+  assert.deepEqual(SCOPE_OPTIONS.map((o) => o.label), ["只有我", "团队共享"], "第二轮复评跨页 1：叫法统一为“团队共享”");
   assert.equal(SCOPE_OPTIONS[0]!.hint, "只在你的电脑上；以后可以在事项里加同事。");
   assert.equal(SCOPE_OPTIONS[1]!.hint, "加进来的同事在自己的电脑上也能看到、一起办；内容在你们的电脑之间加密同步。", "设计评分第一轮：律师层不讲服务方");
   // 个人空间、开发形态：一处不出现
@@ -88,14 +96,17 @@ test("谁能看到（D-307）：只在团队空间出现；这台电脑没经团
   const acct = scopeAvailability({ kind: "team", issuer: "account_ca", level: "normal" });
   assert.equal(acct.team, false);
   assert.equal(acct.apply, true, "给“去申请 →”");
-  assert.equal(acct.reason, "这台电脑还没经管理员确认，不能和同事一起办：申请并确认后就可以。");
+  assert.equal(acct.reason, "这台电脑还没经管理员确认，不能设为团队共享：申请并确认后就可以。");
   const strict = scopeAvailability({ kind: "team", issuer: "firm_root", level: "strict" });
   assert.equal(strict.team, false);
   assert.equal(strict.apply, false);
   assert.match(strict.reason!, /客户要求不上云的事项只在这台电脑上/);
   // 不上云优先说（与这件事项的选择就近），即使这台电脑也没确认
   assert.match(scopeAvailability({ kind: "team", issuer: "account_ca", level: "strict" }).reason!, /客户要求不上云/);
-  assert.equal(scopeAvailability({ kind: "team", issuer: "firm_root", level: "normal", roster: { reason: "not_supported" } }).team, false);
+  // 协调方口径：云端还没有同事名单能力（not_supported，如线上 1.6 / 1.7）——团队共享相关入口照旧不出现（整块不渲染，不置灰、不讲原因）；直接登录的电脑、不上云事项也一样
+  for (const issuer of ["firm_root", "account_ca", null] as const)
+    for (const level of ["normal", "strict"])
+      assert.deepEqual(scopeAvailability({ kind: "team", issuer, level, roster: { reason: "not_supported" } }), { show: false, team: false, reason: null, apply: false }, `${issuer}/${level}`);
   // 联不上云端时仍可选（用缓存名单，或先建好再加）
   assert.equal(scopeAvailability({ kind: "team", issuer: "firm_root", level: "normal", roster: { reason: "offline" } }).team, true);
 });
@@ -129,7 +140,7 @@ test("同事之间同步（D-309）：本所规则没允许如实算“没开通
   assert.equal(relaySyncOf({ blocked: "not_configured" }), "not_configured");
   assert.equal(relaySyncOf({ blocked: null }), "ok");
   // 团队页那一行也改成同一说法，不再说“仍可经律所共享文件夹同步”
-  assert.equal(teamShareLine({ blocked: "not_allowed" }), "所内还没开通同事之间同步：开通后，和同事一起办的事项才会在同事电脑之间同步");
+  assert.equal(teamShareLine({ blocked: "not_allowed" }), "同事之间同步：未开通 · 管理员开通后，团队共享事项才会在同事电脑之间同步");
   // 两处映射都改用同一个函数（原 not_allowed → 不知道 的写法不再出现）
   for (const f of ["components/TeamShare.tsx", "components/MembersAdmin.tsx"]) {
     assert.match(code(f), /relayReady\((st|r)\)/, f);
@@ -215,7 +226,7 @@ test("谁能调整成员：内核 can_manage 优先（最先同步它的是另�
 test("事项成员页上方一句（sync 非 ok 时；不知道不说）；管理员在“所内没开通”时有去开通", () => {
   assert.deepEqual(syncNotice("not_allowed"), { text: RELAY_NOT_ALLOWED_TEXT, enable: true });
   assert.deepEqual(syncNotice("not_configured"), { text: RELAY_NOT_CONFIGURED_TEXT, enable: false });
-  assert.match(syncNotice("unreachable")!.text, /连不上同步服务/);
+  assert.equal(syncNotice("unreachable")!.text, "暂时连不上 Kimi Work：改动先留在这台电脑上，连上后自动同步给同事。", "第二轮复评 T14：与名单处同一说法");
   assert.match(syncNotice("pending")!.text, /还在等第一次同步：联网时会自动同步给同事/);
   for (const s of ["ok", "unknown", null, undefined] as const) assert.equal(syncNotice(s), null, String(s));
 });
@@ -225,6 +236,9 @@ test("加人结果一句（A5 §7.2）：谁下次同步时收到、谁的电脑
   // 所内没开通：上方一句已说，结果句不重复（实拍发现同一页说两遍）
   assert.equal(addResultText([{ name: "陈律师", can_receive: true }], [], "not_allowed"), "已加入陈律师。");
   assert.equal(addResultText([{ name: "李助理", can_receive: false }], [], "not_configured"), "已加入李助理。李助理的电脑经管理员确认后才收得到。");
+  // 第三轮实拍：没有 AI 使用名额的同事单说，不混进“电脑经确认后收到”
+  assert.equal(addResultText([{ name: "钱雨桐", can_receive: true, seat: false }], [], "not_allowed"), "已加入钱雨桐。钱雨桐还没有分配到 AI 使用名额，分配后才收得到。");
+  assert.equal(addResultText([{ name: "陈律师", can_receive: true, seat: true }, { name: "孙明远", can_receive: false, seat: false }], [], "ok"), "已加入陈律师、孙明远。陈律师的电脑下次同步时收到；孙明远还没有分配到 AI 使用名额，分配后才收得到。");
   assert.equal(addResultText([], [{ name: "赵合伙人", why: "不在团队名单里（可能已离开团队）" }], "ok"), "没有加上：赵合伙人（不在团队名单里（可能已离开团队））。");
   assert.equal(addResultText([], [], "ok"), "");
 });
@@ -252,15 +266,16 @@ test("错误按内核终版 code + detail.reason 分支（03 第 W2 行 ⑥）�
   // team_scope_unavailable 四种
   assert.match(teamFaultText(err("team_scope_unavailable", "personal_workspace")), /^个人空间里的事项只在你自己的电脑上/);
   assert.match(teamFaultText(err("team_scope_unavailable", "workspace_unknown")), /还没确认当前是团队空间/);
-  assert.match(teamFaultText(err("team_scope_unavailable", "device_not_confirmed")), /^这台电脑还没经管理员确认，不能和同事一起办：请在“设置 → 团队”里申请/);
-  assert.match(teamFaultText(err("team_scope_unavailable", "client_no_cloud")), /^客户要求不上云的事项不能和同事一起办/);
-  for (const r of ["personal_workspace", "workspace_unknown", "device_not_confirmed", "client_no_cloud"]) assert.doesNotMatch(teamFaultText(err("team_scope_unavailable", r)), /中软|团队共享事项/, r);
+  assert.match(teamFaultText(err("team_scope_unavailable", "device_not_confirmed")), /^这台电脑还没经管理员确认，不能设为团队共享：请在“设置 → 团队”里申请/);
+  assert.match(teamFaultText(err("team_scope_unavailable", "client_no_cloud")), /^客户要求不上云的事项不能设为团队共享/);
+  for (const r of ["personal_workspace", "workspace_unknown", "device_not_confirmed", "client_no_cloud"]) assert.doesNotMatch(teamFaultText(err("team_scope_unavailable", r)), /中软|和同事一起办/, r);
   assert.equal(teamFaultText(err("team_scope_unavailable", "new_reason")), "内核原句", "认不出的原因用内核原句");
   // 其余
-  assert.equal(teamFaultText(err("scope_irreversible", "team_to_personal")), "这个事项已和同事一起办，不能改回“只有我”：要结束共享，请移出同事或结案。");
+  assert.equal(teamFaultText(err("scope_irreversible", "team_to_personal")), "这个事项已是团队共享，不能改回“只有我”：要结束共享，请移出同事或结案。");
   assert.equal(teamFaultText(err("team_scope_conflict")), TEAM_SCOPE_CONFLICT_TEXT);
   assert.match(teamFaultText(err("roster_unavailable", "offline")), /联网后再试/);
-  assert.match(teamFaultText(err("roster_unavailable", "not_supported")), /请联系 Kimi Work 客服/);
+  assert.equal(teamFaultText(err("roster_unavailable", "not_supported")), "同事名单需要中软把云端升级后才能使用。", "与团队页同一说法");
+  assert.equal(memberErrorText(err("roster_unavailable", "not_supported")), "同事名单需要中软把云端升级后才能使用");
   assert.match(teamFaultText(err("validation", "relay_not_configured")), /中软还没为本所开通/);
   assert.equal(teamFaultText(err("validation", "not_enabled")), "同事之间同步还没开通：请先开通。");
   assert.deepEqual(teamFaultOf(err("member_not_in_team", "left", { user_id: "usr_t_a" })), { code: "member_not_in_team", reason: "left", userId: "usr_t_a", manager: null, message: "内核原句" });
@@ -270,7 +285,7 @@ test("错误按内核终版 code + detail.reason 分支（03 第 W2 行 ⑥）�
   assert.equal(memberErrorText({ code: "forbidden", message: "李律师负责这个事项与同事之间的同步，不能改成只看：请联系管理员", detail: { reason: "relay_controller_role_change", controller_name: "李律师" } }), "李律师负责这个事项与同事之间的同步，不能改成只看：请联系管理员");
   assert.equal(memberErrorText({ code: "internal", message: "这台电脑还没拿到这个事项的最新内容，暂时不能加人：同步一次后再试", detail: { reason: "own_wrap_missing" } }), "这台电脑还没拿到这个事项的最新内容，暂时不能加人：同步一次后再试", "内核给了律师层原因时不换成泛泛一句");
   // RunSheet“记为客户要求不上云”在团队事项上收到 team_scope_conflict：按 code 显示
-  assert.equal(teamFaultText({ code: "team_scope_conflict", message: "这个事项已和同事一起办…", detail: { reason: "consent_refused" } }), TEAM_SCOPE_CONFLICT_TEXT);
+  assert.equal(teamFaultText({ code: "team_scope_conflict", message: "这个事项已是团队共享…", detail: { reason: "consent_refused" } }), TEAM_SCOPE_CONFLICT_TEXT);
   // 某位同事没加上：名单类给短语
   assert.equal(memberErrorText(err("member_not_in_team", "not_in_roster")), "不在团队同事名单里");
   assert.equal(memberErrorText(err("member_not_in_team", "disabled")), "已停用");
@@ -315,10 +330,10 @@ test("“记为客户要求不上云”在团队共享事项上置灰并说原�
   assert.equal(localOnlyBlocked({ collab_scope: "personal" }), null);
   // 设计评分第一轮 T3：原因一行（与置灰项同一行），不重复左侧“先只用本机功能”，不讲服务方；完整说法放悬停
   const why = localOnlyBlocked({ collab_scope: "team" })!;
-  assert.equal(why.short, "和同事一起办的事项不能选");
+  assert.equal(why.short, "团队共享事项不能选");
   assert.equal(why.long, TEAM_SCOPE_CONFLICT_TEXT);
   assert.match(why.long, /另建一个“只有我”的事项/);
-  assert.doesNotMatch(why.long + why.short, /中软|先只用本机功能|团队共享事项/);
+  assert.doesNotMatch(why.long + why.short, /中软|先只用本机功能|和同事一起办/);
   const rs = code("components/RunSheet.tsx");
   assert.match(rs, /const localOnlyWhy = localOnlyBlocked\(matter\);/);
   assert.match(rs, /disabled=\{localOnlyBusy \|\| !!localOnlyWhy\}[^>]*title=\{localOnlyWhy\?\.long\}/);
@@ -426,8 +441,8 @@ test("开通同事之间同步（D-309）：三态 + 待确认 + 过期；到期
 });
 
 test("用语（A5 §6.3）：升级确认第 2 条改说怎么做；上手清单按事项范围如实说", () => {
-  assert.equal(upgradeLines("某所")[1], "你原有的事项仍只属于你，同事看不到；要一起办，在那件事项里把同事加进来。");
-  assert.equal(guideScopeNote(), "“只有我”的事项只在你的电脑上；“和同事一起办”的也在加进来的同事电脑上。团队管理员都看不到内容。");
+  assert.equal(upgradeLines("某所")[1], "你原有的事项仍只属于你，同事看不到；要和同事共享，在那件事项里点“⋯ → 改为团队共享…”。");
+  assert.equal(guideScopeNote(), "“只有我”的事项只在你的电脑上；“团队共享”的也在加进来的同事电脑上。团队管理员都看不到内容。");
   const g = code("components/GuideChecklist.tsx");
   assert.match(g, /<p className="guide-checklist-note">\{guideScopeNote\(\)\}<\/p>/);
   assert.doesNotMatch(g, /事项内容只在你的电脑上，团队管理员看不到内容/);
@@ -459,7 +474,8 @@ test("接线：两处新建表单都有“谁能看到”（完整弹窗在“�
   const mp = code("components/MatterPlace.tsx");
   assert.match(mp, /<ScopeField variant="place" scope=\{sc\.scope\}/);
   assert.match(mp, /onMore\(\{ title, stance, confidentiality: level, scope: sc\.scope, members: sc\.picked \}\)/);
-  assert.match(mp, /teamPrefix\(/);
+  assert.match(mp, /markPrefix\(\[m\.client_name, m\.counterparty\]\.filter\(Boolean\)\.join\(" \/ "\) \|\| `我方：\$\{stanceLabel\(m\.stance\)\}`, matterMark\(m, kind\)\)/);
+  assert.match(mp, /\{m\.title\}<MatterMarkBadge mark=\{matterMark\(m, kind\)\} \/><\/span>/);
   // 个人空间：ScopeField 不渲染（show = false 时返回 null）
   const tm = code("components/TeamMatter.tsx");
   assert.match(tm, /if \(!avail\.show\) return null;/);
@@ -490,7 +506,7 @@ test("接线：事项页胶囊、常驻“事项成员”标签、“⋯ → 和
   const tm = code("components/TeamMatter.tsx");
   assert.match(tm, /const manage = canManageMembers\(view, closed\);/);
   assert.match(tm, /const editable = manage && !m\.is_me && !m\.departed && /, "实拍：已离开团队的人不给改角色，只留移出");
-  assert.match(tm, /\{note && <p className="mm-sub">\{note\.text\}<\/p>\}/, "实拍：长句放在名字下面整行；已离开的人同样一句后果");
+  assert.match(tm, /\{note && \(\s*<p className="mm-sub">\s*\{note\.text\}/, "实拍：长句放在名字下面整行；已离开的人同样一句后果");
   // 设计评分第一轮 T10：人数只数在团队里的；已离开的角色列写“已离开团队”、按钮写“从事项移出”；浮层角色列写“已离开”并另计人数
   assert.match(tm, /事项成员 <span className="team-count">\{counts\.active\}<\/span>/);
   assert.match(tm, /\{m\.departed \? "已离开团队" : matterRoleLabel\(m\.matter_role\)\}/);
@@ -518,7 +534,7 @@ test("接线：事项页胶囊、常驻“事项成员”标签、“⋯ → 和
   assert.match(tm, /<ColleaguePicker variant="inline" roster=\{roster\}/);
   assert.doesNotMatch(tm, /加入后是/);
   assert.match(tm, /matterMembers\.add\(matter\.matter_id, id, "editor"\)/);
-  assert.match(tm, /加进来的同事都可以一起办；要只给看，加进来后在事项成员里改。/);
+  assert.match(tm, /加进来的同事默认是“一起办”；要只给看，加进来后在事项成员里改。/);
   // 选同事展开时不再同时显示已选胶囊；“收起 / 选同事”是文字链；复选框用产品样式
   assert.match(tm, /\{variant === "inline" && !open && \(\s*<div className="cp-chips">/);
   assert.match(tm, /<span className="cp-count">已选 \{chosen\.length\} 人<\/span>/);
@@ -535,7 +551,7 @@ test("接线：事项页胶囊、常驻“事项成员”标签、“⋯ → 和
 test("接线：侧栏事项行改 flex、长标题不挤掉尾部记号；事项列表可见标签替代悬停；输入框芯片与搜索带记号；个人空间不出现", () => {
   const sb = code("components/Sidebar.tsx");
   assert.match(sb, /className=\{`sidebar-link sidebar-link-row\$\{activeMatter === m\.matter_id \? " active" : ""\}`\}/);
-  assert.match(sb, /<span className="sidebar-link-text">\{m\.title\}<\/span>\s*\{isTeamShared\(m, ws\.kind\) && <TeamMark \/>\}/);
+  assert.match(sb, /<span className="sidebar-link-text">\{m\.title\}<\/span>\s*<MatterMarkBadge mark=\{matterMark\(m, ws\.kind\)\} \/>/);
   assert.match(sb, /relayExpiring \}\);/);
   const css = src("styles-team-matters.css");
   assert.match(css, /\.sidebar-link\.sidebar-link-row \{ display: flex; align-items: center; \}/);
@@ -543,13 +559,15 @@ test("接线：侧栏事项行改 flex、长标题不挤掉尾部记号；事项
   const tmk = code("components/TeamMatter.tsx");
   assert.match(tmk, /<span className="sr-only">团队共享<\/span>/, "读屏文字，不靠悬停");
   const ml = code("pages/Matters.tsx");
-  assert.match(ml, /isTeamShared\(m, kind\) && \(\s*<span className="tag tag-gray tag-team">/);
+  assert.match(ml, /matterMark\(m, kind\) === "shared" && \(\s*<span className="tag tag-gray tag-team">/);
+  assert.match(ml, /\{matterMark\(m, kind\) === "removed" && <RemovedTag \/>\}/);
   assert.doesNotMatch(ml, /协作：/, "悬停串里不再重复");
   const c = code("components/Composer.tsx");
-  assert.match(c, /\{isTeamShared\(matter, wsKind\) && <TeamMark \/>\}/);
-  assert.match(c, /teamPrefix\(\[m\.client_name, m\.counterparty\]/);
+  assert.match(c, /<MatterMarkBadge mark=\{matterMark\(matter, wsKind\)\} \/> <Icon\.down \/>/);
+  assert.match(c, /markPrefix\(\[m\.client_name, m\.counterparty\]\.filter\(Boolean\)\.join\(" \/ "\) \|\| stanceLabel\(m\.stance\), matterMark\(m, wsKind\)\)/);
   const sp = code("components/SearchPalette.tsx");
-  assert.match(sp, /searchGroups\(res, Date\.now\(\), teamIds\)/);
+  assert.match(sp, /searchGroups\(res, Date\.now\(\), marks\)/);
+  assert.match(sp, /const mk = matterMark\(m, kind\);\s*if \(mk\) next\.set\(m\.matter_id, mk\);/);
   assert.match(sp, /if \(kind === "personal"\) return;/);
 });
 
@@ -565,10 +583,10 @@ test("接线：设置 → 团队 → 团队策略首行“同事之间同步”�
   const rr = code("components/ShareRelayRow.tsx");
   assert.match(rr, /teamMatters\.shareRelayEnable\(\)/);
   assert.match(rr, /teamMatters\.shareRelayRenew\(\)/);
-  assert.match(rr, /if \(s === null\) return null;/, "旧内核没有这个方法时整行不出现");
+  assert.match(rr, /if \(s === null && roster\?\.reason !== "not_supported"\) return null;/, "旧内核没有这个方法时整行不出现（云端要升级时仍如实说）");
   const ts = code("components/TeamShare.tsx");
   assert.match(ts, /canEnable && st\?\.blocked === "not_allowed" && !st\.policy_fallback/);
-  assert.match(ts, /\{!\(relay === false && noteLine\) && <span>\{teamShareLine\(st\)\}<\/span>\}/, "同一页不重复“所内没开通”");
+  assert.match(ts, /\{!\(relay === false && noteLine\) && !\(noSeat && confirmedHere\) && <span>\{teamShareLine\(st\)\}<\/span>\}/, "同一页不重复“所内没开通”“没有名额”");
 });
 
 test("实拍补（内核 team.refresh_share_state）：提示可见时各问一次、不轮询——团队页打开、事项成员页（带 matter_id）、表单里“所内还没开通”那句；只在没开通 / 不知道时问", () => {
@@ -603,7 +621,7 @@ test("实拍补（内核 guide.progress 口径变了）：上手清单第 1 步�
 
 test("端到端验收 P3-2～P3-4：已申请等确认不再给“去申请 →”；“只看”成员的事项页收起写入口并说明；团队空间上手清单第 2 卡按事项范围如实说", () => {
   const applied = scopeAvailability({ kind: "team", issuer: "account_ca", level: "normal", applied: true });
-  assert.deepEqual([applied.team, applied.apply, applied.reason], [false, false, "这台电脑已申请，等管理员确认后就能和同事一起办。"]);
+  assert.deepEqual([applied.team, applied.apply, applied.reason], [false, false, "这台电脑已申请，等管理员确认后就能设为团队共享。"]);
   assert.equal(scopeAvailability({ kind: "team", issuer: "account_ca", level: "normal", applied: false }).apply, true);
   const tm = code("components/TeamMatter.tsx");
   assert.match(tm, /setApplied\(s\.supported === true && s\.state === "pending"\)/);
@@ -617,7 +635,7 @@ test("端到端验收 P3-2～P3-4：已申请等确认不再给“去申请 →�
   assert.match(mt, /你在这个事项里是“只看”：可以看材料、AI 记录和成果，不能加材料、发起任务或改动。/);
   // 上手清单第 2 卡
   const base = { own_matters: 1, materials: 0, runs: 0, deliverables: 0, latest_matter_id: null, latest_run: null };
-  assert.equal(checklistItems(base, null, { team: true })[1]!.body, "导入合同、起诉状等；一起办的事项会同步给同事");
+  assert.equal(checklistItems(base, null, { team: true })[1]!.body, "导入合同、起诉状等；团队共享事项会同步给同事");
   assert.equal(checklistItems(base, null)[1]!.body, "导入合同、起诉状等，只存本机", "个人空间照旧");
   assert.match(code("components/GuideChecklist.tsx"), /checklistItems\(p, backup, \{ team: role !== "personal" \}\)/);
 });
@@ -634,7 +652,7 @@ test("验收修四项（内核 919fcafa）：授权卡按事项范围的数据�
   assert.match(consent, /\{flowRows\.map\(\(f\) => \(/);
   assert.match(consent, /const flowRows = flows\.rows\.filter\(\(f\) => !\(f\.key === "zr_relay" && list\.some\(\(p\) => \/加密副本\/\.test\(p\.role\)\)\)\);/, "实拍：中软那条已写在次处理者说明里时不再单列");
   // 事项头授权一行：改为一起办引起的重新确认如实说
-  assert.equal(authorizationStatus({ basis_state: "reconfirm", collab_scope: "team", authorization_history: [{ scope: "personal" }] }).label, "改为和同事一起办，待重新确认");
+  assert.equal(authorizationStatus({ basis_state: "reconfirm", collab_scope: "team", authorization_history: [{ scope: "personal" }] }).label, "改为团队共享，待重新确认");
   assert.equal(authorizationStatus({ basis_state: "reconfirm", collab_scope: "personal" }).label, "次处理者清单已更新，待重新确认");
   assert.doesNotMatch(consent, /换成代号；案卷只存这台电脑<\/dd>/, "不再写死");
   // ② 重新确认：按事项范围的清单版本；只有我转一起办后如实引导
@@ -645,14 +663,15 @@ test("验收修四项（内核 919fcafa）：授权卡按事项范围的数据�
   assert.equal(reconfirmReason({ collab_scope: "team", authorization_history: [{ scope: "team" }] }), "list");
   assert.equal(reconfirmReason({ collab_scope: "team", basis_notice_version: "sp-2026-11" }, "sp-2026-11-team"), "scope", "事项列表里取的事项：按版本判断");
   assert.equal(reconfirmReason({ collab_scope: "personal", authorization_history: [{ scope: "personal" }] }), "list");
-  assert.match(consent, /这个事项改为和同事一起办了，请重新确认本案授权/);
-  assert.match(consent, /没有覆盖同事之间同步（同事电脑、中软的加密副本）/);
+  assert.match(consent, /这个事项改为团队共享了，请重新确认本案授权/);
+  // 第二轮复评 T12（41c / 41d）：说明压到两行，不再贴一遍标准段落
+  assert.match(consent, /"原来的授权只覆盖这台电脑，没覆盖同事之间同步；核实客户授权覆盖下面的范围后重新记录，记录前不会发给 AI。"/);
   // ③ 被移出：一条说明、事项头不写“团队共享 · n 人”、事项成员标签收起、写入口收起
-  assert.equal(REMOVED_ME_TEXT, "负责人已把你移出这个事项：之后的改动不会再同步给同事；已有内容留在你的电脑上，只能查看。");
+  assert.equal(REMOVED_ME_TEXT, "负责人已把你移出这个事项：之后同事的改动你不会再收到，你的改动也不会再同步给同事；你电脑上已有的内容保留，只能查看。");
   assert.deepEqual(syncNotice("removed"), { text: REMOVED_ME_TEXT, enable: false });
   const mt = code("pages/Matter.tsx");
   assert.match(mt, /const removedMe = !!matter\.removed_me \|\| members\?\.removed_me === true \|\| members\?\.sync === "removed";/);
-  assert.match(mt, /\{removedMe && \(\s*<div className="banner banner-gray banner-inline removed-me-note" role="note">\s*\{REMOVED_ME_TEXT\}/);
+  assert.match(mt, /\{removedMe && \(\s*<div className="banner banner-gray banner-inline removed-me-note" role="note">\s*<span>\{REMOVED_ME_TEXT\}<\/span>/);
   // ④ 没有名额：我这边、同事那边（律师层说“AI 使用名额”，不说席位——lawyer-copy 门禁）
   assert.deepEqual(syncNotice("no_seat"), { text: NO_SEAT_TEXT, enable: false });
   assert.equal(relaySyncOf({ blocked: null, credential_error: "credential_no_seat" }), "no_seat");
@@ -661,10 +680,176 @@ test("验收修四项（内核 919fcafa）：授权卡按事项范围的数据�
   assert.equal(needsShareRefresh("no_seat"), true);
   assert.equal(scopeHint("team", true, true, "no_seat"), NO_SEAT_TEXT);
   assert.match(teamShareLine({ blocked: null, credential_error: "credential_no_seat" }), /还没有分配到 AI 使用名额/);
-  assert.deepEqual(memberRowNote(row({ seat: false, can_receive: false })), { text: "他还没有分配到 AI 使用名额，收不到这个事项：请管理员在“设置 → 团队”里分配。", tone: "quiet" });
+  assert.deepEqual(memberRowNote(row({ seat: false, can_receive: false })), { text: "他还没有分配到 AI 使用名额，收不到这个事项：请管理员在“设置 → 团队”里分配。", tone: "quiet", assign: true }, "第二轮复评 T13（45）：管理员看时给“去分配 →”");
   assert.equal(colleagueMeta(person({ seat: false, can_receive: false })), "律师 · 还没有 AI 使用名额");
   for (const t of [NO_SEAT_TEXT, REMOVED_ME_TEXT]) assert.doesNotMatch(t, /席位|中继|密钥/);
   // ⑤ 只看 / 被移出的报错用内核原句
   assert.equal(teamFaultText({ code: "forbidden", message: "你在这个事项里是“只看”：不能加材料或发起任务，请找负责人周启明", detail: { reason: "viewer_read_only", owner_name: "周启明" } }), "你在这个事项里是“只看”：不能加材料或发起任务，请找负责人周启明");
   assert.equal(teamFaultText({ code: "forbidden", message: REMOVED_ME_TEXT, detail: { reason: "removed_from_matter" } }), REMOVED_ME_TEXT);
+});
+
+test("协调方口径 ①：被移出的事项在侧栏 / 列表 / 搜索不再带团队共享记号，改为灰色“已移出”小标（读屏同）；个人空间都不出现", () => {
+  assert.equal(matterMark({ collab_scope: "team" }, "team"), "shared");
+  assert.equal(matterMark({ collab_scope: "team", removed_me: true }, "team"), "removed", "被移出：不再算团队共享记号");
+  assert.equal(matterMark({ collab_scope: "team", removed_me: true }, null), "removed", "类型还不知道时照实");
+  assert.equal(matterMark({ collab_scope: "team", removed_me: true }, "personal"), null, "个人空间一处不变");
+  assert.equal(matterMark({ collab_scope: "personal" }, "team"), null);
+  assert.equal(matterMark(null, "team"), null);
+  // 事项页的范围事实不变（被移出的仍是团队共享事项，横幅、只看另有判断）
+  assert.equal(isTeamShared({ collab_scope: "team" }, "team"), true);
+  assert.equal(markPrefix("客户甲", "removed"), "已移出 · 客户甲");
+  assert.equal(markPrefix("", "removed"), "已移出");
+  assert.equal(markPrefix("客户甲", "shared"), teamPrefix("客户甲", true));
+  assert.equal(markPrefix("客户甲", null), "客户甲");
+  // 搜索：传映射时按记号拼前缀；仍兼容传集合（= 团队共享）
+  const marks = new Map([["m2", "shared" as const], ["m3", "removed" as const]]);
+  const g = searchGroups({ matters: [{ matter_id: "m1", title: "甲", sub: "客户甲" }, { matter_id: "m2", title: "乙", sub: "客户乙" }, { matter_id: "m3", title: "丙", sub: "客户丙" }], runs: [], deliverables: [] }, Date.now(), marks);
+  assert.deepEqual(g[0]!.items.map((i) => i.sub), ["客户甲", "团队共享 · 客户乙", "已移出 · 客户丙"]);
+  // 小标是看得见的字（读屏读到同一句），灰色，不靠悬停；团队共享记号只在 shared 时出现
+  const tm = code("components/TeamMatter.tsx");
+  assert.match(tm, /export function RemovedTag\(\{ className = "" \}: \{ className\?: string \}\) \{\s*return <span className=\{`tag tag-gray tag-removed \$\{className\}`\.trim\(\)\}>已移出<\/span>;/);
+  assert.match(tm, /return mark === "shared" \? <TeamMark \/> : mark === "removed" \? <RemovedTag \/> : null;/);
+  assert.doesNotMatch(tm.slice(tm.indexOf("export function RemovedTag("), tm.indexOf("export function MatterMarkBadge(")), /title=/, "不靠悬停");
+  const css = src("styles-team-matters.css");
+  assert.match(css, /\.tag-removed \{ flex: none; white-space: nowrap; \}/);
+  assert.match(css, /\.sidebar-link-row \.tag-removed \{ margin-left: 6px; \}/);
+  // 侧栏、列表、输入框、首页浮层、搜索都走同一个判断
+  for (const f of ["components/Sidebar.tsx", "pages/Matters.tsx", "components/Composer.tsx", "components/MatterPlace.tsx", "components/SearchPalette.tsx"]) {
+    assert.match(code(f), /matterMark\(/, f);
+    assert.doesNotMatch(code(f), /isTeamShared\(/, `${f} 不再只看 collab_scope`);
+  }
+});
+
+test("协调方口径 ②：云端还没有同事名单能力（team.roster 回 not_supported）——团队页“同事之间同步”一行写“需要中软把云端升级后才能使用”，不说“暂时连不上”；团队共享入口照旧不出现", () => {
+  assert.equal(CLOUD_UPGRADE_TEXT, "需要中软把云端升级后才能使用");
+  const ns = { reason: "not_supported" as const };
+  // 团队策略首行：不管同步状态读没读到、读到什么，都只说这一句、不给按钮
+  const on = { relay_configured: true, state: "allowed", can_manage: true, threshold: 1, signatures: 1, days_left: 20, expires_at: "2026-12-27T00:00:00Z" } as unknown as ShareRelayStatus;
+  for (const s of [null, on]) {
+    const r = shareRelayRow(s, Date.now(), ns);
+    assert.equal(r.state, "upgrade");
+    assert.equal(r.text, CLOUD_UPGRADE_TEXT);
+    assert.deepEqual(r.actions, []);
+    assert.equal(r.warn, false);
+    assert.doesNotMatch(r.text, /暂时连不上/);
+  }
+  // 名单连不上（offline）、取不到（unavailable）不算：照常显示同步状态
+  assert.equal(shareRelayRow(on, Date.now(), { reason: "offline" }).state, "on");
+  assert.equal(shareRelayRow(on, Date.now(), { reason: "unavailable" }).state, "on");
+  // 入口：新建事项“谁能看到”整块不出现；事项“⋯ → 和同事一起办…”不出现；名单处、出错时同一说法
+  assert.equal(scopeAvailability({ kind: "team", issuer: "firm_root", level: "normal", roster: ns }).show, false);
+  const m = { collab_scope: "personal", my_role: "owner", lifecycle: "active", is_sample: false };
+  assert.equal(canOfferShare("team", m, ns), false);
+  assert.equal(canOfferShare("team", m, null), true, "名单没回来前照常给，由内核判断");
+  assert.equal(canOfferShare("team", m, { reason: "offline" }), true);
+  assert.equal(rosterNote({ available: false, reason: "not_supported", members: [] }), "同事名单需要中软把云端升级后才能使用。");
+  // 接线
+  const rr = code("components/ShareRelayRow.tsx");
+  assert.match(rr, /const roster = useRoster\(true\);/);
+  assert.match(rr, /const row = shareRelayRow\(s \?\? null, Date\.now\(\), roster\);/);
+  assert.match(rr, /\{s === undefined && row\.state !== "upgrade" \? \(/);
+  const ts = code("components/TeamShare.tsx");
+  assert.match(ts, /if \(roster\?\.reason === "not_supported"\)\s*return relayRowAbove \? null : \(\s*<div className="device-row">\s*<div className="device-k">团队共享<\/div>\s*<div>\s*<span>同事之间同步：\{CLOUD_UPGRADE_TEXT\}<\/span>/, "普通成员也如实看到；管理员上面已有那一行，不重复");
+  assert.ok(ts.indexOf('roster?.reason === "not_supported"') < ts.indexOf("teamShareLine(st)"), "在同步状态、出错句之前截住（不说“暂时连不上”，不给申请 / 立即同步）");
+  const mt = code("pages/Matter.tsx");
+  assert.match(mt, /const offerBase = !!matter && !teamShared && canOfferShare\(teamKind, matter\);\s*const offerRoster = useRoster\(offerBase\);\s*const offerShare = offerBase && canOfferShare\(teamKind, matter!, offerRoster\);/);
+  const nm = code("components/NewMatter.tsx");
+  assert.match(nm, /const roster = useRoster\(team\);/, "直接登录的电脑也先知道云端支不支持");
+});
+
+test("第二轮复评 T12：团队共享事项的授权卡固定列出“同事电脑”（同一来源、旧内核也不写“案卷只存这台电脑”）；同步未开通写“开通后会同步到 n 位同事电脑”；41b 只说一次；41c / 41d 两行", () => {
+  const flows = [
+    { key: "colleagues", label: "同事电脑", text: "经加密同步到事项成员的电脑（本所同事 2 人）；他们电脑上也有材料与成果", count: 2 },
+    { key: "zr_relay", label: "中软", text: "保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本" },
+  ];
+  // 已开通：内核原句
+  assert.equal(authzFlowRows(flows, { team: true, relay: true }).rows[0]!.text, flows[0]!.text);
+  // 没开通：写成开通后会同步到哪里（人数用内核 count；没有 count 时从原句读）
+  assert.equal(authzFlowRows(flows, { team: true, relay: false }).rows[0]!.text, "同事之间同步开通后，会加密同步到本事项 2 位同事的电脑；他们电脑上也会有材料与成果");
+  assert.equal(colleaguesCount({ text: "经加密同步到事项成员的电脑（本所同事 3 人）；…" }), 3);
+  assert.equal(colleaguesCount({ text: "经加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果" }), 0);
+  assert.equal(colleaguesCount({ text: "x", count: 5 }), 5);
+  assert.equal(colleaguesCount({ text: "经加密同步到事项成员的电脑；…" }), null);
+  assert.equal(colleaguesPendingText(0), "同事之间同步开通后，会加密同步到之后加进来的同事电脑；他们电脑上也会有材料与成果");
+  assert.equal(colleaguesPendingText(null), "同事之间同步开通后，会加密同步到本事项同事的电脑；他们电脑上也会有材料与成果");
+  // 13 / win150-w5 的来源：旧内核没给 data_flows——团队共享事项也固定列“同事电脑”，不再写“案卷只存这台电脑”
+  const old = authzFlowRows(null, { team: true, relay: null });
+  assert.equal(old.local, null);
+  assert.deepEqual(old.rows.map((r) => r.label), ["同事电脑", "中软"]);
+  assert.deepEqual(authzFlowRows(null, { team: false }), { local: "案卷只存这台电脑", rows: [] }, "只有我的事项不变");
+  // 开始前确认与事项页“记录授权”同一来源、同一判断
+  const consent = code("components/Consent.tsx");
+  assert.match(consent, /const relay = useRelayState\(team\);\s*const flows = authzFlowRows\(dataFlows, \{ team, relay: team \? relay\.ready : null \}\);/);
+  for (const f of ["components/RunSheet.tsx", "pages/Matter.tsx"]) assert.match(code(f), /dataFlows=\{matter\.data_flows \?\? defaults\?\.data_flows \?\? null\}\s*team=\{matter\.collab_scope === "team"\}/, f);
+  // 41c / 41d：重新确认的说明两行以内，不再贴标准段落
+  assert.doesNotMatch(consent, /\}\s*请记下客户授权的依据/, "标准段落只在第一次记录时出现");
+  // 41b：胶囊已说“待重新确认”，下一行只给去处
+  const trail = code("components/AuthorizationTrail.tsx");
+  assert.match(trail, /if \(onReconfirm && \(status\.key === "reconfirm" \|\| status\.key === "needs_ref"\)\)/);
+  assert.match(trail, /\{status\.key === "needs_ref" \? "去补记出处 →" : "去重新确认 →"\}/);
+  const mt = code("pages/Matter.tsx");
+  assert.match(mt, /const again = matter\.basis_state === "reconfirm" \|\| matter\.basis_state === "needs_ref";\s*const complete = basisComplete\(basis\) && !again;/, "去重新确认打开与开始前确认同一张记录卡");
+  assert.match(mt, /reconfirm=\{matter\.basis_state === "reconfirm"\}\s*reconfirmWhy=\{reconfirmReason\(matter, scopeVersion\)\}/);
+});
+
+test("第二轮复评 T13：被移出的说法与“从我的电脑移除”；没有名额不打对勾、藏起“立即同步”；管理员看到同事没名额可去分配", () => {
+  assert.match(REMOVED_ME_TEXT, /之后同事的改动你不会再收到，你的改动也不会再同步给同事；你电脑上已有的内容保留，只能查看。$/);
+  assert.equal(removeLocalCopyLines().length, 3);
+  assert.match(removeLocalCopyLines()[1]!, /负责人和其他同事电脑上的这个事项、中软那里的加密副本都不受影响/);
+  const mt = code("pages/Matter.tsx");
+  assert.match(mt, /\{removedMe && \(\s*<button role="menuitem" className="menu-item" onClick=\{\(\) => \{ setRemovingLocal\(true\); setMoreOpen\(false\); \}\}>\s*<span className="menu-label">从我的电脑移除…<\/span>/);
+  assert.match(mt, /\.\.\.\(removedMe \? \[\] : \[\["lifecycle", "结案与删除"\]\]\)/, "被移出的人不给“结案与删除”");
+  assert.match(mt, /await api\.removeLocalCopy\(matter\.matter_id, title\);/);
+  assert.match(mt, /disabled=\{busy \|\| title !== matter\.title\}/, "输入事项名称才能移除");
+  assert.match(code("api.ts"), /invoke<[^>]*>\("matters\.remove_local_copy", \{ matter_id: id, confirm_title: confirmTitle \}\)/);
+  assert.match(code("components/MatterLifecycle.tsx"), /r\.mode === "local_copy" \? "这台电脑上的副本已删除" : "事项数据已删除"/);
+  // 43：没有名额
+  assert.equal(credentialNoSeat({ credential_error: "credential_seat_revoked" }), true);
+  assert.equal(credentialNoSeat({ credential_error: "credential_backoff" }), false);
+  assert.doesNotMatch(NO_SEAT_CONFIRMED_TEXT, /席位/);
+  const ts = code("components/TeamShare.tsx");
+  assert.match(ts, /const ok = s\.state === "confirmed" && relay === true && !noSeat;/, "没名额不打对勾");
+  assert.match(ts, /\{!noSeat && <button className="btn-ghost btn-sm" disabled=\{busy\} onClick=\{\(\) => void syncNow\(\)\}>/, "没名额不给“立即同步”");
+  // 45：管理员看同事没名额
+  const tm = code("components/TeamMatter.tsx");
+  assert.match(tm, /\{note\.assign && canEnable && \(\s*<button type="button" className="btn-link mm-sub-go" onClick=\{\(\) => nav\("\/connections\/team"\)\}>\s*去分配 →/);
+});
+
+test("第二轮复评 T8 / T14 / 跨页：同步状态一套词；规则没生效写原因；连不上一种说法；提示两种样式；复选框产品样式；叫法统一为“团队共享”", () => {
+  // 一套词：同事之间同步：已开通 / 未开通 / 已暂停 / 用不了
+  for (const st of [{ blocked: null }, { blocked: "not_allowed" }, { blocked: "exit_mode" }, { blocked: null, credential_error: "credential_no_seat" }, { blocked: "not_allowed", policy_fallback: true }])
+    assert.match(teamShareLine(st), /^同事之间同步：(已开通|未开通|已暂停|用不了)( · |$)/, JSON.stringify(st));
+  assert.doesNotMatch(teamShareLine({ blocked: null }), /正常/);
+  // 规则没在这台电脑上生效：写明原因与去向，不给“开通…”
+  const fb = shareRelayRow({ relay_configured: true, state: "not_allowed", can_manage: true, threshold: 1, signatures: 0, expires_at: null, days_left: null, fallback_reason: "none_received" } as ShareRelayStatus);
+  assert.equal(fb.text, "未开通 · 这台电脑还没收到本所规则，联网后自动更新");
+  assert.deepEqual(fb.actions, []);
+  // 连不上：一种说法
+  assert.equal(OFFLINE_HEAD, "暂时连不上 Kimi Work");
+  assert.match(rosterNote({ available: false, reason: "offline", members: [person({})] })!, /^暂时连不上 Kimi Work：下面是上次取到的同事名单。$/);
+  assert.match(syncNotice("unreachable")!.text, /^暂时连不上 Kimi Work：/);
+  assert.match(relayErrorText("connect_timeout")!, /^暂时连不上 Kimi Work：/);
+  for (const c of ["credential_no_seat", "credential_seat_revoked", "seat_revoked"]) assert.match(relayErrorText(c)!, /^你还没有分配到 AI 使用名额/, c);
+  for (const t of [rosterNote({ available: false, reason: "offline", members: [] })!, syncNotice("unreachable")!.text]) assert.doesNotMatch(t, /联不上|同步服务/);
+  // 提示两种样式：37 没加上的人用灰底说明条（提醒图标），38 名单说明条在名单上方
+  const tm = code("components/TeamMatter.tsx");
+  assert.match(tm, /<div className="mm-notice mm-notice-warn" role="status">\s*<Icon\.alert \/>/);
+  assert.doesNotMatch(tm, /mm-msg is-warn/);
+  assert.match(tm, /\{note && <p className="cp-note cp-note-bar" role="note">\{note\}<\/p>\}\s*\{variant === "inline" && !open && \(/);
+  const css = src("styles-team-matters.css");
+  assert.match(css, /\.cp-note\.cp-note-bar \{[^}]*background: var\(--bg-subtle\);/);
+  assert.match(css, /\.cp-search \{ -webkit-appearance: none; appearance: none;[^}]*border-radius: var\(--r-sm\);/, "搜索同事框不是浏览器原生方框");
+  // 复选框：全库产品样式（不用系统原生），选中 Kimi 蓝
+  const base = src("styles.css");
+  assert.match(base, /input\[type="checkbox"\] \{ appearance: none; -webkit-appearance: none;/);
+  assert.match(base, /input\[type="checkbox"\]:checked \{ background: var\(--accent\); border-color: var\(--accent\); \}/);
+  assert.doesNotMatch(base, /input\[type="checkbox"\], input\[type="radio"\] \{ accent-color/);
+  // 叫法：律师层正文不再用“和同事一起办”（注释除外）；内核原句里的旧叫法换掉
+  for (const f of ["lib/team-matters.ts", "lib/workspace.ts", "lib/authorization.ts", "lib/guide-checklist.ts", "lib/relay-text.ts", "lib/offboarding.ts", "components/TeamMatter.tsx", "components/ShareRelayRow.tsx", "components/Consent.tsx", "components/RunSheet.tsx", "pages/Matter.tsx"]) {
+    const lines = code(f).split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*|\{\/\*)/.test(l));
+    assert.ok(!lines.some((l) => /和同事一起办/.test(l.replace(/\/\/.*$/, "").replace(/replace\(\/[^/]*\//g, ""))), f);
+  }
+  assert.equal(SCOPE_OPTIONS[1]!.label, "团队共享");
+  assert.equal(teamFaultText({ code: "validation", message: "已改为和同事一起办：加进来的同事会收到这个事项" }), "已改为团队共享：加进来的同事会收到这个事项");
+  assert.equal(teamFaultText({ code: "validation", message: "这个事项已是团队共享，经同步服务转送" }), "这个事项已是团队共享，经同步服务转送");
 });

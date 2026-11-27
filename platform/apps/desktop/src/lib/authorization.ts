@@ -131,7 +131,7 @@ export function authorizationStatus(m: {
   if (m.consent_status === "refused" || m.data_level === "L3b") return { key: "local_only", label: "客户要求不上云" };
   if (m.basis_state === "needs_ref") return { key: "needs_ref", label: "待补记" };
   // 第 73 批（验收 P2-3）：只有我的事项改为和同事一起办后，原授权没覆盖同事之间同步——如实说原因，不说“清单已更新”
-  if (m.basis_state === "reconfirm") return { key: "reconfirm", label: reconfirmReason(m, m.subprocessors?.version) === "scope" ? "改为和同事一起办，待重新确认" : "次处理者清单已更新，待重新确认" };
+  if (m.basis_state === "reconfirm") return { key: "reconfirm", label: reconfirmReason(m, m.subprocessors?.version) === "scope" ? "改为团队共享，待重新确认" : "次处理者清单已更新，待重新确认" };
   if (m.basis_state === "valid" || (m.basis_state === undefined && m.basis_complete)) return { key: "valid", label: "有效" };
   return { key: "pending", label: "尚未记录" };
 }

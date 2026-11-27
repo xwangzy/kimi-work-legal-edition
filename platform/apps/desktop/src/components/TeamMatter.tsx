@@ -44,6 +44,7 @@ import {
   syncNotice,
   teamPillText,
   type CollabScope,
+  type MatterMark,
   type ScopeAvailability,
 } from "../lib/team-matters.ts";
 import { notifyDataChanged } from "../lib/events.ts";
@@ -152,6 +153,16 @@ export function TeamMark({ className = "" }: { className?: string }) {
   );
 }
 
+/** 负责人已把我移出的事项：灰色“已移出”小标（协调方口径：不再带团队共享记号；看得见的字即读屏文字，不靠悬停）。 */
+export function RemovedTag({ className = "" }: { className?: string }) {
+  return <span className={`tag tag-gray tag-removed ${className}`.trim()}>已移出</span>;
+}
+
+/** 侧栏、输入框事项芯片、事项浮层的记号：团队共享 → 两人记号；已移出 → 灰色小标；其余不出现。 */
+export function MatterMarkBadge({ mark }: { mark: MatterMark }) {
+  return mark === "shared" ? <TeamMark /> : mark === "removed" ? <RemovedTag /> : null;
+}
+
 /* ── 新建事项：谁能看到 ── */
 
 /**
@@ -250,6 +261,7 @@ export function ColleaguePicker({ roster, picked, onPicked, variant, exclude = [
   const listShown = variant === "dialog" || open;
   return (
     <div className={`cp cp-${variant}`}>
+      {note && <p className="cp-note cp-note-bar" role="note">{note}</p>}
       {variant === "inline" && !open && (
         <div className="cp-chips">
           {chosen.map((m) => (
@@ -278,9 +290,9 @@ export function ColleaguePicker({ roster, picked, onPicked, variant, exclude = [
           )}
         </div>
       )}
-      {note && <p className="cp-note">{note}</p>}
+      {/* 第二轮复评 T14（38）：名单取不到 / 用的是上次的名单——灰底说明条放在名单上方，不夹在“已选 n 人”与名单之间 */}
       {listShown && <ColleagueList list={all} picked={picked} onPicked={onPicked} emptyText={emptyText} />}
-      {listShown && all.length > 0 && <p className="cp-foot">加进来的同事都可以一起办；要只给看，加进来后在事项成员里改。</p>}
+      {listShown && all.length > 0 && <p className="cp-foot">加进来的同事默认是“一起办”；要只给看，加进来后在事项成员里改。</p>}
     </div>
   );
 }
@@ -452,13 +464,19 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
           )}
         </div>
       )}
-      {/* 设计评分第一轮（跨页 6）：成功是中性的轻提示（只对勾着色、几秒后消失）；没加上的人用提醒色、留着 */}
-      {msg && (
-        <p className={msg.tone === "warn" ? "mm-msg is-warn" : "lite-toast mm-toast"} role="status">
-          {msg.tone === "ok" && <Icon.check />}
-          <span>{msg.text}</span>
-        </p>
-      )}
+      {/* 设计评分第一轮（跨页 6）：成功是中性的轻提示（只对勾着色、几秒后消失）；第二轮复评 T14（37）：没加上的人用与其他提示同一个灰底说明条（左侧提醒图标、正文色），留着 */}
+      {msg &&
+        (msg.tone === "warn" ? (
+          <div className="mm-notice mm-notice-warn" role="status">
+            <Icon.alert />
+            <span>{msg.text}</span>
+          </div>
+        ) : (
+          <p className="lite-toast mm-toast" role="status">
+            <Icon.check />
+            <span>{msg.text}</span>
+          </p>
+        ))}
       <ul className="mm-list" aria-label="事项成员">
         {rows.map((m) => {
           const name = memberName(m);
@@ -503,7 +521,17 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
                 </span>
               </div>
               {/* 实拍：长句放在名字下面整行（原来挤在人名那一栏里折成三行） */}
-              {note && <p className="mm-sub">{note.text}</p>}
+              {note && (
+                <p className="mm-sub">
+                  {note.text}
+                  {/* 第二轮复评 T13（45）：同事没有名额、看页面的人是团队管理员——直接去分配 */}
+                  {note.assign && canEnable && (
+                    <button type="button" className="btn-link mm-sub-go" onClick={() => nav("/connections/team")}>
+                      去分配 →
+                    </button>
+                  )}
+                </p>
+              )}
               {asking === m.user_id && (
                 // 原位两步（D-308）：后果写清，确认按钮红色实心，默认焦点在“取消”
                 <div className="mm-confirm" role="alertdialog" aria-label={`移出${name}`}>
@@ -592,7 +620,7 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
       setBusy(false);
       return;
     }
-    const added: { name: string; can_receive: boolean }[] = [];
+    const added: { name: string; can_receive: boolean; seat: boolean | null }[] = [];
     const failed: { name: string; why: string }[] = [];
     for (const id of picked) {
       const m = all.find((x) => x.user_id === id);
@@ -600,18 +628,18 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
       try {
         // 三个入口同一规则：加进来一律“一起办”，要只给看到事项成员里改
         const r = await matterMembers.add(matter.matter_id, id, "editor");
-        added.push({ name: r.name ?? name, can_receive: r.can_receive ?? !!m?.can_receive });
+        added.push({ name: r.name ?? name, can_receive: r.can_receive ?? !!m?.can_receive, seat: m?.seat ?? null });
       } catch (e) {
         failed.push({ name, why: memberErrorText(e) });
       }
     }
     setBusy(false);
     const text = addResultText(added, failed, effSync);
-    onDone(mode === "share" ? `已改为和同事一起办${text ? `，${text}` : "。"}` : text, failed.length > 0 ? "warn" : "ok");
+    onDone(mode === "share" ? `已改为团队共享${text ? `，${text}` : "。"}` : text, failed.length > 0 ? "warn" : "ok");
   };
   const n = picked.length;
   return (
-    <Modal title={mode === "share" ? `和同事一起办「${matter.title}」` : `把同事加进「${matter.title}」`} onClose={() => !busy && onClose()}>
+    <Modal title={mode === "share" ? `改为团队共享「${matter.title}」` : `把同事加进「${matter.title}」`} onClose={() => !busy && onClose()}>
       <div className="acd">
         {mode === "share" && (
           <ul className="acd-lines">
@@ -661,7 +689,7 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
         )}
         {!blocked && !nobody && (
           <button type="button" className="btn-primary" aria-busy={busy || undefined} disabled={busy || (mode === "add" && n === 0) || (mode === "share" && !ws.ready)} onClick={() => void submit()}>
-            {busy ? "正在处理…" : mode === "share" ? (n > 0 ? `开始一起办（${n}）` : "开始一起办") : `加入（${n}）`}
+            {busy ? "正在处理…" : mode === "share" ? (n > 0 ? `改为团队共享（${n}）` : "改为团队共享") : `加入（${n}）`}
           </button>
         )}
       </div>

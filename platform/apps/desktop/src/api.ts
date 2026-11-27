@@ -260,6 +260,8 @@ export interface DataFlowEntry {
   key: string;
   label: string;
   text: string;
+  /** colleagues 一条：不含本人的在册事项成员数（内核可选给出；没有时界面从“本所同事 n 人”里读）。 */
+  count?: number | null;
 }
 
 export interface MatterBasis {
@@ -440,6 +442,8 @@ export interface DeletionReceiptView {
     device_id: string;
     inventory: Record<string, number>;
     copies: { where: string; status: "deleted" | "pending" | "irrevocable" | "kept" | "none"; note: string }[];
+    /** 第 73 批：local_copy = 被移出的成员只删了这台电脑上的副本（matters.remove_local_copy）；其余为整个事项的删除。 */
+    mode?: string;
   };
   signature: string;
   signer_cert: unknown;
@@ -1084,6 +1088,11 @@ export const api = {
     return true;
   },
   purgeMatter: (id: string, body: { confirm_title: string; early: boolean; reason: string }) => invoke<{ lifecycle: MatterLifecycle; receipt: DeletionReceiptView }>("matters.purge", { matter_id: id, ...body }),
+  /**
+   * 第 73 批（第二轮复评 T13）：被负责人移出的团队共享事项——只删这台电脑上的副本（密码学擦除、签名回执 mode = local_copy；负责人与同事的电脑、中软的加密副本保留）。
+   * 未被移出 403 forbidden reason not_removed；名称不符 422；法律保全中照样拦。
+   */
+  removeLocalCopy: (id: string, confirmTitle: string) => invoke<{ lifecycle: MatterLifecycle; receipt: DeletionReceiptView; lawyer_note?: string }>("matters.remove_local_copy", { matter_id: id, confirm_title: confirmTitle }),
   consentNotice: (id: string) => invoke<{ artifact_version_id: string; filename: string; note: string }>("matters.consent_notice", { matter_id: id }),
   parties: (matterId: string) => invoke<{ parties: { name: string; kind: "person" | "org"; aliases: string[]; role: string | null }[]; full_pseudonym: boolean }>("matters.parties.list", { matter_id: matterId }),
   upsertParty: (matterId: string, body: { name: string; kind: "person" | "org"; aliases: string[]; role?: string | null }) => invoke("matters.parties.upsert", { matter_id: matterId, ...body }),

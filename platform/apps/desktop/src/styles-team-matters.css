@@ -50,7 +50,9 @@
 .cp-note { margin: 0; font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.6; }
 .cp-list { display: flex; flex-direction: column; gap: 4px; padding: 4px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); }
 .cp-list .cp-note { padding: 6px 8px; }
-.cp-search { width: 100%; margin: 2px 0; }
+/* 搜索同事：与其他输入框同一套（type=search 不吃全局输入框样式，实拍是浏览器原生方框） */
+.cp-search { -webkit-appearance: none; appearance: none; width: 100%; margin: 2px 0 4px; padding: 6px 10px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: var(--fs-caption); outline: none; }
+.cp-search:focus { border-color: var(--focus-ring); }
 /* 最多 6 行高、内滚（Windows 150% 下浮层不超出窗口） */
 .cp-rows { display: flex; flex-direction: column; max-height: calc(6 * 44px); overflow-y: auto; }
 .cp-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; }
@@ -60,8 +62,8 @@
 /* 复选框用产品样式（设计评分第一轮跨页 5）：16px 圆角方框，选中为正文色实底 + 反色对勾；深浅两色随令牌 */
 .kw-check { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; border: 1px solid var(--border-strong); border-radius: var(--r-xs); background: var(--bg-surface); display: inline-grid; place-items: center; cursor: pointer; transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease; }
 .kw-check:hover { border-color: var(--text-secondary); }
-.kw-check:checked { background: var(--text-primary); border-color: var(--text-primary); }
-.kw-check:checked::after { content: ""; width: 4px; height: 8px; margin-top: -2px; border: solid var(--bg-surface); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.kw-check:checked { background: var(--accent); border-color: var(--accent); }
+.kw-check:checked::after { content: ""; width: 4px; height: 8px; margin-top: -2px; border: solid var(--text-on-solid); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .kw-check:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .cp-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .cp-name { font-size: var(--fs-body); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -92,8 +94,11 @@
 .mm-lead svg { flex: none; width: 14px; height: 14px; margin-top: 3px; }
 .mm-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--sp-2); margin: 0 0 var(--sp-3); padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-caption); color: var(--text-primary); line-height: 1.6; }
 .mm-notice .btn-link { padding: 0; font-size: inherit; white-space: nowrap; }
-.mm-msg { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 var(--sp-3); font-size: var(--fs-body); line-height: 1.6; }
-.mm-msg.is-warn { color: var(--status-warning-text); }
+/* 第二轮复评跨页 A：状态提示收敛为两种——灰底说明条（.mm-notice / .cp-note-bar）+ 一次性轻提示（.lite-toast） */
+.mm-notice-warn { flex-wrap: nowrap; align-items: flex-start; }
+.mm-notice-warn svg { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--status-warning-text); }
+.cp-note.cp-note-bar { margin: 0 0 var(--sp-2); padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-caption); color: var(--text-primary); }
+.mm-sub-go { margin-left: 6px; padding: 0; font-size: inherit; white-space: nowrap; }
 /* 一次性轻提示（设计评分第一轮跨页 6）：中性底、正文色，只有对勾着色；几秒后消失 */
 .lite-toast { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-full); background: var(--bg-subtle); font-size: var(--fs-caption); color: var(--text-primary); line-height: 1.6; animation: lite-toast-in var(--motion-fast) ease; }
 .lite-toast svg { flex: none; width: 14px; height: 14px; color: var(--status-success-text); }
@@ -150,3 +155,7 @@
 .relay-carried { margin: 0 0 var(--sp-2); padding: 8px 12px; border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-caption); color: var(--text-label); line-height: 1.6; }
 .team-expiring { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
 .team-expiring .btn-ghost { flex: none; }
+/* 第 73 批：负责人已把我移出的事项——灰色“已移出”小标（侧栏行尾、输入框事项芯片、事项浮层） */
+.tag-removed { flex: none; white-space: nowrap; }
+.sidebar-link-row .tag-removed { margin-left: 6px; }
+.menu-label .tag-removed { margin-left: 6px; }

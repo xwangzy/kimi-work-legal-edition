@@ -64,8 +64,9 @@ export function useMatterScope(level: string, initial?: { scope?: CollabScope; m
   const [scope, setScope] = useState<CollabScope>(initial?.scope ?? "personal");
   const [picked, setPicked] = useState<string[]>(initial?.members ?? []);
   const team = kind === "team";
-  // 团队空间里先取同事名单（60 秒内共用一份）：点“和同事一起办”时列表已就绪，服务不支持也能立刻置灰
-  const roster = useRoster(team && ws.issuer !== "account_ca");
+  // 团队空间里先取同事名单（60 秒内共用一份）：点“和同事一起办”时列表已就绪；云端还没有同事名单能力（not_supported）时整块不出现——
+  // 直接登录、还没经确认的电脑也取（要先知道云端支不支持，再说“去申请”）
+  const roster = useRoster(team);
   const relay = useRelayState(team);
   const applied = useDeviceShareApplied(team && ws.issuer === "account_ca");
   const avail = scopeAvailability({ kind, issuer: ws.issuer, level, roster, applied });

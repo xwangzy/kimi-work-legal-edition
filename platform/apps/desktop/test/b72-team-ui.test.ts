@@ -95,7 +95,7 @@ test("危险操作的后果写清（D-305）：升级四件事（不可撤回在
   assert.match(up[0]!, /同一个工作空间.*「某某律师事务所」.*原地不动/);
   assert.match(up[1]!, /仍只属于你/);
   // 第 73 批（D-307）：事项里有了“和同事一起办”的入口——第 2 条改说怎么做（原“不承诺入口 / 需要所内先配置共享通道”的前提已不成立）
-  assert.equal(up[1], "你原有的事项仍只属于你，同事看不到；要一起办，在那件事项里把同事加进来。");
+  assert.equal(up[1], "你原有的事项仍只属于你，同事看不到；要和同事共享，在那件事项里点“⋯ → 改为团队共享…”。");
   assert.doesNotMatch(up.join(""), /配置共享通道/);
   assert.match(up[2]!, /邀请同事/);
   assert.match(up[3]!, /不能撤回/);
@@ -244,7 +244,7 @@ test("接线：侧栏工作空间菜单走同一条切换流程；旧云端只�
 });
 
 test("接线：团队共享提示、范本库名称、团队管理的危险操作都有确认；邀请码只显示一次", () => {
-  assert.match(code("components/TeamShare.tsx"), /note = null, canEnable = false \}: \{ admin\?: boolean; note\?: string \| null; canEnable\?: boolean \}/);
+  assert.match(code("components/TeamShare.tsx"), /note = null, canEnable = false, relayRowAbove = false \}: \{ admin\?: boolean; note\?: string \| null; canEnable\?: boolean; relayRowAbove\?: boolean \}/);
   assert.match(code("components/FirmTemplates.tsx"), /templatesLabel\(ws\.kind\)/);
   assert.match(code("pages/Methods.tsx"), /\{tplLabel\.short\}/);
   const a = code("components/TeamAdmin.tsx");
@@ -374,7 +374,7 @@ test("补测 D2 / D4 / D9 / D6：团队共享处两条提示不同时出现、�
   assert.match(read("../src/styles-team.css"), /\.members-table \.members-nowrap \{ white-space: nowrap; \}/);
   // 第 73 批（D-307）：入口已在事项里（“⋯ → 和同事一起办…”、新建事项“谁能看到”）——不再断言“不承诺入口”，改断言入口在
   const mt = read("../src/pages/Matter.tsx");
-  assert.match(mt, /canOfferShare\(teamKind, matter\) && \(\s*<button role="menuitem" className="menu-item" onClick=\{\(\) => \{ setSharing\(true\); setMoreOpen\(false\); \}\}>\s*<span className="menu-label">和同事一起办…<\/span>/);
+  assert.match(mt, /\{offerShare && \(\s*<button role="menuitem" className="menu-item" onClick=\{\(\) => \{ setSharing\(true\); setMoreOpen\(false\); \}\}>\s*<span className="menu-label">改为团队共享…<\/span>/);
   assert.match(read("../src/components/NewMatter.tsx"), /<ScopeField variant="modal"/);
 });
 
@@ -434,7 +434,7 @@ test("设计评分第三轮 C10 / C15 / C18 / C19 / C8：审计与待确认同�
   assert.match(ts, /<ConfirmButton label="撤回申请" danger=\{false\} className="btn-ghost btn-sm"/);
   assert.equal(shareConfirmLine({ supported: true, state: "confirmed", decided_at: "2026-11-27T07:31:00.000Z", decided_by_name: "林一舟", relay: true }, Date.parse("2026-11-27T09:00:00.000Z")), "这台电脑已可接收团队共享事项（11 月 27 日 15:31 由林一舟确认）");
   assert.equal(shareConfirmLine({ supported: true, state: "confirmed", decided_at: "2026-11-27T07:31:00.000Z", relay: true }, Date.parse("2026-11-27T09:00:00.000Z")), "这台电脑已可接收团队共享事项（11 月 27 日 15:31 确认）");
-  assert.match(ts, /confirmedHere \? \(\s*<ShareConfirmBox share=\{share\} relay=\{relay\} \/>/, "确认后不无声消失");
+  assert.match(ts, /confirmedHere \? \(\s*<ShareConfirmBox share=\{share\} relay=\{relay\} noSeat=\{noSeat\} \/>/, "确认后不无声消失");
   assert.match(ts, /所内还没有开通同事之间同步，开通后才能收到团队共享事项。/);
   assert.match(ts, /<span className="share-code mono">\{s\.check_code\}<\/span>/);
   // C15：成员页与管理员页同一组卡，名字“席位”

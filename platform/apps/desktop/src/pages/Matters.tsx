@@ -10,7 +10,8 @@ import { Icon } from "../components/Icons.tsx";
 import "../styles-matter.css";
 import { fmtRelative, fmtTime, LEVEL_LABELS, matterProgress } from "../lib/labels.ts";
 import { stanceLabel } from "../lib/labels.ts";
-import { isTeamShared } from "../lib/team-matters.ts";
+import { matterMark } from "../lib/team-matters.ts";
+import { RemovedTag } from "../components/TeamMatter.tsx";
 import { useWorkspace } from "../components/WorkspaceSwitch.tsx";
 import "../styles-team-matters.css";
 
@@ -64,12 +65,14 @@ export function MattersPage() {
                   <span className="mt-main">
                     <span className="mt-title">
                       <span className="mt-name">{m.title}</span>
-                      {isTeamShared(m, kind) && (
+                      {/* 第 73 批：负责人已把我移出的不再带团队共享记号，改为灰色“已移出”小标（读屏同） */}
+                      {matterMark(m, kind) === "shared" && (
                         <span className="tag tag-gray tag-team">
                           <Icon.users />
                           团队共享
                         </span>
                       )}
+                      {matterMark(m, kind) === "removed" && <RemovedTag />}
                       {m.is_sample && <span className="tag tag-trial">示例</span>}
                       {m.lifecycle === "closed" && <span className="tag tag-gray">已结案</span>}
                       {m.legal_hold && <span className="tag tag-warn">保全</span>}

@@ -14,6 +14,7 @@ import { carriedLine, dayOnly, relayExpiringText, shareRelayCloseLines, shareRel
 import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { SettingRow } from "./SettingRow.tsx";
+import { useRoster } from "./TeamMatter.tsx";
 import "../styles-team-matters.css";
 
 /** 状态变了（开通、续期）：团队页顶部提醒、下面的规则与草稿据此重读。 */
@@ -41,6 +42,8 @@ function doneText(s: ShareRelayStatus, renew: boolean): string {
 
 export function ShareRelayRow() {
   const [s, setS] = useShareRelay();
+  // 云端还没有同事名单能力（team.roster 回 not_supported）时这一行只说“需要中软把云端升级后才能使用”（不说“暂时连不上”、不给按钮）
+  const roster = useRoster(true);
   const [asking, setAsking] = useState<"enable" | "renew" | "close" | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
@@ -50,8 +53,8 @@ export function ShareRelayRow() {
     const t = setTimeout(() => setMsg(null), 4000);
     return () => clearTimeout(t);
   }, [msg]);
-  if (s === null) return null;
-  const row = shareRelayRow(s ?? null);
+  if (s === null && roster?.reason !== "not_supported") return null;
+  const row = shareRelayRow(s ?? null, Date.now(), roster);
   const run = async (kind: "enable" | "renew") => {
     setBusy(true);
     setMsg(null);
@@ -76,8 +79,8 @@ export function ShareRelayRow() {
   const carried = asking === "renew" ? carriedLine(s?.carry_relaxations?.renew, expired ? "restore" : "renew") : asking === "enable" ? carriedLine(s?.carry_relaxations?.enable) : null;
   const title = asking === "close" ? "关闭同事之间同步" : asking === "renew" ? "续期同事之间同步" : "开通同事之间同步";
   return (
-    <SettingRow label="同事之间同步" id="row-share-relay" hint="和同事一起办的事项在同事电脑之间加密同步。">
-      {s === undefined ? (
+    <SettingRow label="同事之间同步" id="row-share-relay" hint="团队共享事项在同事电脑之间加密同步。">
+      {s === undefined && row.state !== "upgrade" ? (
         <p className="muted team-empty">正在读取…</p>
       ) : (
         <div className="relay-row">
@@ -155,7 +158,7 @@ export function ShareRelayExpiring() {
     <div className="banner banner-orange team-expiring" role="status">
       <span>
         {text}
-        {s?.expires_at && s.state !== "expired" ? `（${dayOnly(s.expires_at)}前有效）` : ""}：{s?.state === "expired" ? "续期后恢复" : "到期后，和同事一起办的事项暂停同步"}，各人电脑上的内容不受影响。
+        {s?.expires_at && s.state !== "expired" ? `（${dayOnly(s.expires_at)}前有效）` : ""}：{s?.state === "expired" ? "续期后恢复" : "到期后，团队共享事项暂停同步"}，各人电脑上的内容不受影响。
       </span>
       <button type="button" className="btn-ghost btn-sm" onClick={() => document.getElementById("row-share-relay")?.scrollIntoView({ behavior: "smooth", block: "center" })}>
         去续期 →

@@ -4,7 +4,7 @@
  */
 import { artifactName, ARTIFACT_LABELS, fmtWhen, SCENARIO_LABELS } from "./labels.ts";
 import { SCENARIOS, scenarioOfRun } from "./scenarios.ts";
-import { teamPrefix } from "./team-matters.ts";
+import { markPrefix, type MatterMark } from "./team-matters.ts";
 
 export type SearchKind = "matter" | "run" | "deliverable" | "material";
 export interface SearchItem {
@@ -61,11 +61,15 @@ export function searchGroups(
     materials?: { document_version_id: string; matter_id: string; matter_title: string; filename: string; rel_path: string | null; created_at: string }[];
   },
   now = Date.now(),
-  /** 第 73 批（D-310）：团队共享事项的编号（界面按事项列表拼“团队共享 · ”前缀，不改内核）；个人空间传空集。 */
-  teamIds: ReadonlySet<string> = new Set(),
+  /**
+   * 第 73 批（D-310）：事项记号（界面按事项列表拼前缀，不改内核）。传集合 = 这些是团队共享事项（“团队共享 · ”）；
+   * 传映射 = 事项编号 → 记号，负责人已把我移出的是“已移出 · ”（协调方口径）。个人空间传空集。
+   */
+  marks: ReadonlySet<string> | ReadonlyMap<string, MatterMark> = new Set(),
 ): { kind: SearchKind; items: SearchItem[] }[] {
+  const markOf = (id: string): MatterMark => (marks instanceof Map ? (marks.get(id) ?? null) : (marks as ReadonlySet<string>).has(id) ? "shared" : null);
   const groups: { kind: SearchKind; items: SearchItem[] }[] = [
-    { kind: "matter", items: r.matters.map((m) => ({ kind: "matter" as const, title: m.title, sub: teamPrefix(m.sub, teamIds.has(m.matter_id)), href: `/matter/${m.matter_id}` })) },
+    { kind: "matter", items: r.matters.map((m) => ({ kind: "matter" as const, title: m.title, sub: markPrefix(m.sub, markOf(m.matter_id)), href: `/matter/${m.matter_id}` })) },
     {
       kind: "run",
       items: r.runs.map((x) => {

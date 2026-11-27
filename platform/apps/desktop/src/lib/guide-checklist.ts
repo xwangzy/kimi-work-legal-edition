@@ -67,7 +67,7 @@ export function checklistItems(p: GuideProgress, backup?: BackupFacts | null, op
     ...c,
     ...(c.key === "matter" ? matterStepText(p) : {}),
     // 端到端验收 P3-4：团队空间里材料不一定“只存本机”——和同事一起办的事项会同步给同事，按事项范围如实说
-    ...(c.key === "material" && opts.team ? { body: "导入合同、起诉状等；一起办的事项会同步给同事" } : {}),
+    ...(c.key === "material" && opts.team ? { body: "导入合同、起诉状等；团队共享事项会同步给同事" } : {}),
     done: !!done[c.key],
     ...(c.key === "backup" && p.materials === 0 ? { locked: true } : {}),
   }));

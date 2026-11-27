@@ -309,6 +309,7 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
             needsRef={needsRef}
             processors={matter.subprocessors ?? defaults?.subprocessors ?? null}
             dataFlows={matter.data_flows ?? defaults?.data_flows ?? null}
+            team={matter.collab_scope === "team"}
             detail={detail}
             onDetail={setDetail}
             endpoint={matter.model_endpoint}

@@ -38,8 +38,8 @@ import { filterDocsByName, importResultText, MATERIAL_ORIGIN_LABELS, materialOri
 import { MaterialPicker } from "../components/MaterialPicker.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
-import { AddColleaguesDialog, MatterMembersPanel, useTeamKind } from "../components/TeamMatter.tsx";
-import { canOfferShare, isTeamShared, needsShareRefresh, REMOVED_ME_TEXT, sharedMaterialNote } from "../lib/team-matters.ts";
+import { AddColleaguesDialog, MatterMembersPanel, useRoster, useTeamKind } from "../components/TeamMatter.tsx";
+import { canOfferShare, isTeamShared, needsShareRefresh, reconfirmReason, REMOVED_ME_TEXT, removeLocalCopyLines, sharedMaterialNote, teamFaultText } from "../lib/team-matters.ts";
 import "../styles-materials.css";
 import "../styles-matter.css";
 
@@ -120,6 +120,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
   const [membersErr, setMembersErr] = useState<string | null>(null);
   const [membersTick, setMembersTick] = useState(0);
   const [sharing, setSharing] = useState(false);
+  // 第二轮复评 T13（42）：被负责人移出后“从我的电脑移除…”（内核 matters.remove_local_copy）
+  const [removingLocal, setRemovingLocal] = useState(false);
   const [shareMsg, setShareMsg] = useState<{ text: string; tone: "ok" | "warn" } | null>(null);
 
   const reload = useCallback(() => {
@@ -158,6 +160,10 @@ export function MatterPage({ matterId }: { matterId: string }) {
   }, [matterId]);
   useEffect(reload, [reload]);
   const teamShared = isTeamShared(matter, ws.kind);
+  // “和同事一起办…”：能给时才取一次同事名单（60 秒内共用）；云端还没有同事名单能力（not_supported，如线上 1.6 / 1.7）时不出现。名单没回来前照常给，由内核判断
+  const offerBase = !!matter && !teamShared && canOfferShare(teamKind, matter);
+  const offerRoster = useRoster(offerBase);
+  const offerShare = offerBase && canOfferShare(teamKind, matter!, offerRoster);
   useEffect(() => {
     if (!teamShared) {
       setMembers(null);
@@ -431,12 +437,15 @@ export function MatterPage({ matterId }: { matterId: string }) {
         )}
         {removedMe && (
           <div className="banner banner-gray banner-inline removed-me-note" role="note">
-            {REMOVED_ME_TEXT}
+            <span>{REMOVED_ME_TEXT}</span>
+            <button type="button" className="btn-link" onClick={() => setRemovingLocal(true)}>
+              从我的电脑移除…
+            </button>
           </div>
         )}
         {viewOnly && !closed && (
           <div className="banner banner-gray banner-inline view-only-note" role="note">
-            你在这个事项里是“只看”：可以看材料、AI 记录和成果，不能加材料、发起任务或改动。要一起办，请找负责人。
+            你在这个事项里是“只看”：可以看材料、AI 记录和成果，不能加材料、发起任务或改动。要改动，请找负责人把你改为“一起办”。
           </div>
         )}
         {!locked && (composerOpen || !!value.goal.trim()) && <div className="matter-composer has-text">
@@ -486,22 +495,28 @@ export function MatterPage({ matterId }: { matterId: string }) {
           )}
           <span className="spacer" />
           <span className="tab-more-wrap" ref={moreRef}>
-            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label={`更多：${[!teamShared && canOfferShare(teamKind, matter) ? "和同事一起办" : "", "当事人名单", "数据去向记录", "结案与删除"].filter(Boolean).join("、")}`} onClick={() => setMoreOpen((v) => !v)}>
+            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label={`更多：${[offerShare ? "改为团队共享" : "", removedMe ? "从我的电脑移除" : "", "当事人名单", "数据去向记录", removedMe ? "" : "结案与删除"].filter(Boolean).join("、")}`} onClick={() => setMoreOpen((v) => !v)}>
               ⋯
             </button>
             {moreOpen && (
               <div className="popover tab-more-menu" role="menu">
                 {/* 第 73 批：个人事项的负责人（团队空间、进行中）有“和同事一起办…”；团队共享事项的“事项成员”是常驻标签 */}
-                {!teamShared && canOfferShare(teamKind, matter) && (
+                {offerShare && (
                   <button role="menuitem" className="menu-item" onClick={() => { setSharing(true); setMoreOpen(false); }}>
-                    <span className="menu-label">和同事一起办…</span>
+                    <span className="menu-label">改为团队共享…</span>
+                  </button>
+                )}
+                {/* 被移出的成员：只删这台电脑上的副本（负责人与同事那边不受影响）；“结案与删除”是负责人的事，不给 */}
+                {removedMe && (
+                  <button role="menuitem" className="menu-item" onClick={() => { setRemovingLocal(true); setMoreOpen(false); }}>
+                    <span className="menu-label">从我的电脑移除…</span>
                   </button>
                 )}
                 {(
                   [
                     ["parties", "当事人名单"],
                     ["egress", "数据去向记录"],
-                    ["lifecycle", "结案与删除"],
+                    ...(removedMe ? [] : [["lifecycle", "结案与删除"]]),
                   ] as [Tab, string][]
                 ).map(([k, l]) => (
                   <button key={k} role="menuitem" className="menu-item" onClick={() => { setTab(k); setMoreOpen(false); }}>
@@ -735,8 +750,20 @@ export function MatterPage({ matterId }: { matterId: string }) {
         {tab === "members" && (teamShared ? (
           <MatterMembersPanel key={shareMsg?.text ?? "members"} matter={matter} view={members} error={membersErr} onReload={() => setMembersTick((t) => t + 1)} canEnable={ws.features.teamAdmin} initialMsg={shareMsg} />
         ) : (
-          <p className="muted">这个事项只有你：要和同事一起办，点右上角“⋯ → 和同事一起办…”。</p>
+          <p className="muted">这个事项只有你：要和同事共享，点右上角“⋯ → 改为团队共享…”。</p>
         ))}
+        {removingLocal && (
+          <RemoveLocalCopyDialog
+            matter={matter}
+            onClose={() => setRemovingLocal(false)}
+            onDone={() => {
+              setRemovingLocal(false);
+              notifyDataChanged();
+              // 删除后 matters.get 为 purged：本页换成删除回执（mode = local_copy，写明负责人与同事那边保留）
+              reload();
+            }}
+          />
+        )}
         {sharing && (
           <AddColleaguesDialog
             mode="share"
@@ -744,6 +771,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
             onClose={() => setSharing(false)}
             onDone={(text, tone) => {
               setSharing(false);
+              // 第三轮实拍：改为团队共享后授权要重新确认——页上之前的“已记录客户授权：可以用 AI…”不再成立，清掉
+              setMsg("");
               setShareMsg({ text, tone });
               setTab("members");
               reload();
@@ -791,7 +820,9 @@ export function MatterPage({ matterId }: { matterId: string }) {
  * 已齐备时“调整”直接给四项编辑（撤回某一项、改成不适用等）。改动都有记录。
  */
 function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Matter; basis: MatterBasis; endpoint: string; onClose: () => void; onSave: (b: MatterBasis, rec: { kind: string; ref: string }) => void }) {
-  const complete = basisComplete(basis);
+  // 第二轮复评 T12（41b）：待重新确认 / 待补记出处时，事项头“去重新确认 →”打开的是与开始前确认同一张记录卡（按事项范围列出数据去向），不是四项编辑
+  const again = matter.basis_state === "reconfirm" || matter.basis_state === "needs_ref";
+  const complete = basisComplete(basis) && !again;
   const [b, setB] = useState(basis);
   const [defaults, setDefaults] = useState<AiAuthorization | null>(null);
   const [record, setRecord] = useState<AuthRecord>(() => initialRecord(null, matter));
@@ -813,8 +844,9 @@ function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Mat
   const need = confirmNeeds(basis);
   // D-225：逐项记录、调整四项都须写出处
   const ready = complete ? detailReady(adjustRef) : detail ? detailReady(record.ref) : recordReady(record, need.sensitive);
+  const scopeVersion = matter.subprocessors?.version ?? defaults?.subprocessors?.version;
   return (
-    <Modal title={complete ? "客户授权" : "记录客户授权"} onClose={onClose} wide>
+    <Modal title={complete ? "客户授权" : again ? "重新确认客户授权" : "记录客户授权"} onClose={onClose} wide>
       {complete ? (
         <>
           <p className="muted">
@@ -837,9 +869,12 @@ function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Mat
             setRecord(v);
           }}
           sensitive={need.sensitive}
-          reconfirm={false}
+          reconfirm={matter.basis_state === "reconfirm"}
+          reconfirmWhy={reconfirmReason(matter, scopeVersion)}
+          needsRef={matter.basis_state === "needs_ref"}
           processors={matter.subprocessors ?? defaults?.subprocessors ?? null}
           dataFlows={matter.data_flows ?? defaults?.data_flows ?? null}
+          team={matter.collab_scope === "team"}
           detail={detail}
           onDetail={setDetail}
           endpoint={endpoint}
@@ -859,7 +894,52 @@ function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Mat
                 : onSave(basisAfterConfirm(basis, { general: true, sensitive: record.sensitive }), { kind: record.kind!, ref: record.ref })
           }
         >
-          {complete ? "保存" : "记录授权"}
+          {complete ? "保存" : again ? "重新确认" : "记录授权"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** 被负责人移出的团队共享事项：只删这台电脑上的副本（第二轮复评 T13，内核 matters.remove_local_copy）。后果三条 + 输入事项名称确认。 */
+function RemoveLocalCopyDialog({ matter, onClose, onDone }: { matter: Matter; onClose: () => void; onDone: () => void }) {
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const go = async () => {
+    setBusy(true);
+    setErr("");
+    try {
+      await api.removeLocalCopy(matter.matter_id, title);
+      onDone();
+    } catch (e) {
+      setErr(teamFaultText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={`从我的电脑移除「${matter.title}」`} onClose={() => !busy && onClose()}>
+      <ul className="relay-lines">
+        {removeLocalCopyLines().map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+      <label className="field">
+        <span>输入事项名称“{matter.title}”以确认</span>
+        <input aria-label="输入事项名称以确认移除" value={title} onChange={(e) => setTitle(e.target.value)} disabled={busy} />
+      </label>
+      {err && (
+        <div className="banner banner-red" role="alert">
+          {err}
+        </div>
+      )}
+      <div className="modal-actions">
+        <button type="button" className="btn-ghost" disabled={busy} autoFocus onClick={onClose}>
+          取消
+        </button>
+        <button type="button" className="btn-danger-solid" disabled={busy || title !== matter.title} onClick={() => void go()}>
+          {busy ? "正在移除…" : "从我的电脑移除"}
         </button>
       </div>
     </Modal>

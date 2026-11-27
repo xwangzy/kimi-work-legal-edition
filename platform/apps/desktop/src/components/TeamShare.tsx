@@ -7,18 +7,21 @@ import { useEffect, useState } from "react";
 import { api, team, teamMatters, type DeviceShareStatus, type RelayStatus } from "../api.ts";
 import { shareConfirmLine, shareIssuerNote, shareNoteVisible } from "../lib/workspace.ts";
 import { notifyWorkspaceChanged } from "./WorkspaceSwitch.tsx";
-import { canResyncMembers, relayErrorText, syncAlertAction, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
+import { canResyncMembers, credentialNoSeat, relayErrorText, syncAlertAction, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
 import { fmtTime } from "../lib/labels.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 import { Icon } from "./Icons.tsx";
-import { relayReady } from "../lib/team-matters.ts";
+import { CLOUD_UPGRADE_TEXT, NO_SEAT_CONFIRMED_TEXT, relayReady } from "../lib/team-matters.ts";
+import { useRoster } from "./TeamMatter.tsx";
 
 /**
  * 第 72 批（D-304）：note = 这台电脑由账号直接登记、还不能接收团队共享事项时的一句非阻塞提示（lib/workspace.ts shareIssuerNote）；
  * 有提示时即使本所没开同事之间同步也显示这一行。
  * 第 73 批（D-309）：本所规则没允许（not_allowed）如实算“所内还没开通”（原来映射成“不知道”）；团队管理员另给“去开通 →”（团队策略首行）。
+ * 第 73 批（协调方口径）：云端还没有同事名单能力（team.roster 回 not_supported，如线上 1.6 / 1.7）时，这一行只说“同事之间同步：需要中软把云端升级后才能使用”，
+ * 不说“暂时连不上”、不给申请接收 / 立即同步等入口；relayRowAbove（上面团队策略已有“同事之间同步”一行说了同一句）时这里不再重复。
  */
-export function TeamShare({ admin = false, note = null, canEnable = false }: { admin?: boolean; note?: string | null; canEnable?: boolean }) {
+export function TeamShare({ admin = false, note = null, canEnable = false, relayRowAbove = false }: { admin?: boolean; note?: string | null; canEnable?: boolean; relayRowAbove?: boolean }) {
   const [st, setSt] = useState<RelayStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -47,9 +50,12 @@ export function TeamShare({ admin = false, note = null, canEnable = false }: { a
   // 第 72 批（补测 D2 / D9；设计评分第三轮 C15 / C18）：申请状态提到这里——一处只说一件事：还没申请（中性提示 + 申请按钮）/ 已申请 / 被拒 / 已可接收（正向状态，
   // 带确认时刻与确认人，不再无声消失）；所内还没开通同事之间同步时，作为第二个前提写在同一行里（页顶横幅不再说）
   const share = useShareConfirm(true);
+  const roster = useRoster(true);
   const confirmedHere = share.s?.supported === true && share.s.state === "confirmed" && !!share.s.decided_at;
   // 设计评分第四轮：“管理员已确认这台电脑”与“所内已开通同事之间同步”是两个条件——按真实状态写进同一句（lib/workspace.ts shareReadyText）
   const relay: boolean | null = relayReady(st);
+  // 第二轮复评 T13（43）：没有 AI 使用名额——“已确认”不打对勾、与“用不了”合成一句，“立即同步”藏起来（按了也没用）
+  const noSeat = credentialNoSeat(st);
   // note 只说明“这台电脑是直接登录的团队电脑”（管理员自己的这类电脑另有写法）；句子按同步状态重出
   const noteText = note ? shareIssuerNote("account_ca", "team", note === shareIssuerNote("account_ca", "team", true), relay) : null;
   const shareBlock = noteText ? (
@@ -59,10 +65,10 @@ export function TeamShare({ admin = false, note = null, canEnable = false }: { a
         {share.s?.supported === true && <ShareConfirmActions share={share} />}
       </div>
     ) : (
-      <ShareConfirmBox share={share} relay={relay} />
+      <ShareConfirmBox share={share} relay={relay} noSeat={noSeat} />
     )
   ) : confirmedHere ? (
-    <ShareConfirmBox share={share} relay={relay} />
+    <ShareConfirmBox share={share} relay={relay} noSeat={noSeat} />
   ) : null;
   // 已申请 / 被拒 / 过期时，所内还没开通同步作为第二个前提写在下面（未申请、已确认的句子里已经写了）
   const waiting = share.s?.state === "pending" || share.s?.state === "rejected" || share.s?.state === "expired";
@@ -79,6 +85,15 @@ export function TeamShare({ admin = false, note = null, canEnable = false }: { a
         去开通 →
       </button>
     ) : null;
+  if (roster?.reason === "not_supported")
+    return relayRowAbove ? null : (
+      <div className="device-row">
+        <div className="device-k">团队共享</div>
+        <div>
+          <span>同事之间同步：{CLOUD_UPGRADE_TEXT}</span>
+        </div>
+      </div>
+    );
   if (!st || (st.blocked === "not_configured" && alerts.length === 0))
     return noteLine ? (
       <div className="device-row">
@@ -128,7 +143,7 @@ export function TeamShare({ admin = false, note = null, canEnable = false }: { a
       <div>
         {noteLine}
         {/* 上面那句已经写了“所内开通同事之间同步后…”时不再重复 */}
-        {!(relay === false && noteLine) && <span>{teamShareLine(st)}</span>}
+        {!(relay === false && noteLine) && !(noSeat && confirmedHere) && <span>{teamShareLine(st)}</span>}
         {enableLink}
         {alerts.map((a) => (
           <div key={`${a.matter_id}-${a.kind}-${a.epoch}`} className="sync-alert">
@@ -160,9 +175,9 @@ export function TeamShare({ admin = false, note = null, canEnable = false }: { a
         {st.blocked === null && (
           <>
             {" "}
-            <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void syncNow()}>
+            {!noSeat && <button className="btn-ghost btn-sm" disabled={busy} onClick={() => void syncNow()}>
               {busy ? "正在同步…" : "立即同步"}
-            </button>
+            </button>}
             {msg && <span className="muted"> {msg}</span>}
             {admin && (
               <details className="muted">
@@ -272,13 +287,14 @@ function ShareConfirmActions({ share }: { share: ShareConfirmState }) {
 }
 
 /** 已申请 / 被拒 / 已过期 / 已可接收：只这一块（不再并列橙色“还不能接收”）。 */
-function ShareConfirmBox({ share, relay }: { share: ShareConfirmState; relay: boolean | null }) {
+function ShareConfirmBox({ share, relay, noSeat = false }: { share: ShareConfirmState; relay: boolean | null; noSeat?: boolean }) {
   const { s, busy, err, act } = share;
   if (!s || s.supported !== true) return null;
-  const line = shareConfirmLine({ ...s, relay });
+  const seatLess = s.state === "confirmed" && noSeat;
+  const line = seatLess ? NO_SEAT_CONFIRMED_TEXT : shareConfirmLine({ ...s, relay });
   const retry = s.state === "rejected" || s.state === "expired";
-  // 对勾只给“两个条件都满足”的那一句；已确认而同步没开通用中性写法
-  const ok = s.state === "confirmed" && relay === true;
+  // 对勾只给“条件都满足”的那一句；已确认而同步没开通、没有名额用中性写法
+  const ok = s.state === "confirmed" && relay === true && !noSeat;
   return (
     <div className={`share-confirm share-confirm-box${ok ? " is-ok" : ""}`}>
       {line && (

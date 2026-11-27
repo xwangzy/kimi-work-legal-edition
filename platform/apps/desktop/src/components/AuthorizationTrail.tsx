@@ -10,11 +10,20 @@ import "../styles-authz.css";
 
 const TONE: Record<string, string> = { valid: "dot-ok", needs_ref: "dot-warn", reconfirm: "dot-warn", pending: "dot-off", local_only: "dot-off" };
 
-export function AuthorizationTrail({ matter }: { matter: Matter }) {
+export function AuthorizationTrail({ matter, onReconfirm }: { matter: Matter; /** 事项页：待重新确认 / 待补记出处时这一行改成可点的“去重新确认 →”（上面的橙色胶囊已说了状态，不再说第二遍）。 */ onReconfirm?: () => void }) {
   const [open, setOpen] = useState(false);
   const status = authorizationStatus(matter);
   const history = matter.authorization_history ?? [];
   const line = authorizationRecordLine(matter);
+  // 第二轮复评 T12（41b）：同一状态只说一次——胶囊说“AI 暂不可用：客户授权待重新确认”，这一行只给去处
+  if (onReconfirm && (status.key === "reconfirm" || status.key === "needs_ref"))
+    return (
+      <div className="authz-trail">
+        <button type="button" className="btn-link authz-trail-go" onClick={onReconfirm}>
+          {status.key === "needs_ref" ? "去补记出处 →" : "去重新确认 →"}
+        </button>
+      </div>
+    );
   return (
     <div className="authz-trail">
       {history.length > 0 ? (

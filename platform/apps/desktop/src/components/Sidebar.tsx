@@ -26,8 +26,8 @@ import { openJoinTeam } from "./TeamSpace.tsx";
 import { planBadge, quotaMenuLine } from "../lib/quota-notice.ts";
 import { runName } from "../lib/labels.ts";
 import { NARROW_QUERY, sidebarState } from "../lib/sidebar-state.ts";
-import { isTeamShared } from "../lib/team-matters.ts";
-import { TeamMark } from "./TeamMatter.tsx";
+import { matterMark } from "../lib/team-matters.ts";
+import { MatterMarkBadge } from "./TeamMatter.tsx";
 /** 第 72 批（C16）：被移出 / 退出团队后在另一个工作空间提示一次（登记在 docs/privacy/residency.json；键须是本文件里的字面量）。 */
 const LEFT_NOTICE_KEY = "kwl.ws.left-notice";
 
@@ -348,7 +348,7 @@ export function Sidebar({ route }: { route: Route }) {
                       </>
                     ) : null}
                     <span className="sidebar-link-text">{m.title}</span>
-                    {isTeamShared(m, ws.kind) && <TeamMark />}
+                    <MatterMarkBadge mark={matterMark(m, ws.kind)} />
                   </button>
                 ))}
                 {matters.length > 8 && (

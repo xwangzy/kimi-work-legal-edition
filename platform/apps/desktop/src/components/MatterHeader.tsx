@@ -113,7 +113,7 @@ export function MatterHeader({ matter, policy, onEditBasis, onToggleFullPseudony
       </div>
       {/* D-225：客户授权一行只读，点开看每一次记录（只有 matters.get 带历史时显示） */}
       {/* 还没有任何记录时不再单列一行“尚未记录”（上面的胶囊已经说了；第 56 批走查：同一件事在事项头说了三遍） */}
-      {matter.authorization_history !== undefined && !refused && (complete || matter.authorization_history.length > 0) && <AuthorizationTrail matter={matter} />}
+      {matter.authorization_history !== undefined && !refused && (complete || matter.authorization_history.length > 0) && <AuthorizationTrail matter={matter} onReconfirm={onEditBasis} />}
       {refused && (
         <div className="mh-note mh-red">
           客户拒绝云端处理（已记录）：不用云端 AI，也不联网检索，只能用律所私有模型（如已部署）或本机能力；补填客户授权情况也不改变这一点。如已取得新的书面同意，核实后再清除这条记录。

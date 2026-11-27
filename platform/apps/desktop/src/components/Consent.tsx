@@ -12,6 +12,7 @@
  */
 import type { AiSubprocessors, DataFlowEntry, MatterBasis } from "../api.ts";
 import { authzFlowRows } from "../lib/team-matters.ts";
+import { useRelayState } from "./TeamMatter.tsx";
 import { BasisEditor } from "./MatterHeader.tsx";
 import "../styles-authz.css";
 import "../styles-motion.css";
@@ -41,7 +42,10 @@ export function AuthorizationRecord({
   needsRef = false,
   dataFlows = null,
   reconfirmWhy = "list",
+  team = false,
 }: {
+  /** 事项是团队共享（collab_scope = team）：内核没给数据去向时也固定列出“同事电脑”；所内还没开通同事之间同步时写成“开通后会同步到…”。 */
+  team?: boolean;
   /** 第 73 批（验收 P2-3）：按事项范围的数据去向（只有我 = 案卷只存这台电脑；和同事一起办 = 同事电脑、中软加密副本）。 */
   dataFlows?: readonly DataFlowEntry[] | null;
   /** 要重新确认的原因：次处理者清单更新 / 事项改为和同事一起办（原授权没覆盖同事之间同步）。 */
@@ -64,23 +68,24 @@ export function AuthorizationRecord({
   basis: MatterBasis | undefined;
 }) {
   const list = (processors ?? FALLBACK_PROCESSORS).items;
-  const flows = authzFlowRows(dataFlows);
+  const relay = useRelayState(team);
+  const flows = authzFlowRows(dataFlows, { team, relay: team ? relay.ready : null });
   // 中软那条去向若已写在次处理者的说明里（和同事一起办的清单写了“保存加密副本…”），不再单列一行（实拍：同一句说两遍）
   const flowRows = flows.rows.filter((f) => !(f.key === "zr_relay" && list.some((p) => /加密副本/.test(p.role))));
   const pick = (k: BasisKind) => onChange({ ...value, kind: k, ref: value.kind === k ? value.ref : k === "engagement_terms" && value.kind === null ? value.ref : "" });
   return (
     <section className="authz-record" aria-labelledby="authz-record-h">
       <div className="authz-record-head">
-        <h3 id="authz-record-h">{needsRef ? "请补记本案授权的出处" : reconfirm ? (reconfirmWhy === "scope" ? "这个事项改为和同事一起办了，请重新确认本案授权" : "AI 次处理者有变化，请重新确认本案授权") : "记录本案的客户授权"}</h3>
+        <h3 id="authz-record-h">{needsRef ? "请补记本案授权的出处" : reconfirm ? (reconfirmWhy === "scope" ? "这个事项改为团队共享了，请重新确认本案授权" : "AI 次处理者有变化，请重新确认本案授权") : "记录本案的客户授权"}</h3>
+        {/* 第二轮复评 T12：重新确认的说明压到两行，不再贴一遍标准段落（第一次记录时才说“这是什么记录”） */}
         <p>
           {needsRef
             ? "这是早期记录，缺少出处，请补记一次。"
             : reconfirm
               ? reconfirmWhy === "scope"
-                ? "原来记录的授权只覆盖你这台电脑，没有覆盖同事之间同步（同事电脑、中软的加密副本）。核实客户的授权覆盖下面的范围后，重新记录一次；记录之前不会发给 AI。"
-                : "原来记录的授权依据告知的是旧的次处理者清单。核实客户的授权覆盖下面的新清单后，重新确认一次。"
-              : "这是本事项第一次用 AI。"}
-          请记下客户授权的依据——它是你核实过的事实记录，不代替客户本人的授权；记录随事项保存、写进事项日志。
+                ? "原来的授权只覆盖这台电脑，没覆盖同事之间同步；核实客户授权覆盖下面的范围后重新记录，记录前不会发给 AI。"
+                : "原来记录的授权依据告知的是旧的次处理者清单；核实客户授权覆盖下面的新清单后重新确认，确认前不会发给 AI。"
+              : "这是本事项第一次用 AI。请记下客户授权的依据——它是你核实过的事实记录，不代替客户本人的授权；记录随事项保存、写进事项日志。"}
         </p>
       </div>
       {detail ? (

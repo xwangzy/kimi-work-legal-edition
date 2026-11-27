@@ -817,7 +817,7 @@ function TeamTab({ ws, mySafety }: { ws: WorkspaceState; mySafety: string | null
       )}
       <section className="panel device-section" aria-labelledby="sec-share">
         <h2 className="section-h h-section" id="sec-share">协作与离开</h2>
-        <TeamShare admin={f.teamRead} note={note} canEnable={f.teamAdmin} />
+        <TeamShare admin={f.teamRead} note={note} canEnable={f.teamAdmin} relayRowAbove={f.adminTab} />
         <DepartedMembers />
         <Offboarding />
         <LeaveTeam ws={ws} />

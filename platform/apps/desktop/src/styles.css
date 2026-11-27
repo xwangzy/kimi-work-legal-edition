@@ -177,7 +177,14 @@ button.brand-mark-btn:focus-visible { outline: 2px solid var(--focus-ring); outl
 .section-title.h-sub { font-size: var(--fs-subtitle); }
 .muted { color: var(--text-secondary); font-size: var(--fs-body); }
 /* v9.4 视觉基础（U1 §3.6）：复选框与单选框跟黑白选中态一致；折叠三角换成线性箭头（胶囊与时间线步骤不加） */
-input[type="checkbox"], input[type="radio"] { accent-color: var(--btn-primary); }
+input[type="radio"] { accent-color: var(--btn-primary); }
+/* 复选框：产品样式（第 73 批第二轮复评跨页 5：不用系统原生方框）——选中用 Kimi 蓝底 + 白色对勾（与“授权依据”选择卡的选中点同一用法） */
+input[type="checkbox"] { appearance: none; -webkit-appearance: none; flex: none; width: 16px; height: 16px; vertical-align: -3px; border: 1px solid var(--border-strong); border-radius: var(--r-xs); background: var(--bg-surface); display: inline-grid; place-items: center; cursor: pointer; transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease; }
+input[type="checkbox"]:hover:not(:disabled) { border-color: var(--text-secondary); }
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked::after { content: ""; width: 4px; height: 8px; margin-top: -2px; border: solid var(--text-on-solid); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+input[type="checkbox"]:disabled { opacity: 0.45; cursor: not-allowed; }
+input[type="checkbox"]:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 details > summary { cursor: pointer; }
 details > summary:not(.pill):not(:has(.step-dot)) { list-style: none; }
 details > summary:not(.pill):not(:has(.step-dot))::-webkit-details-marker { display: none; }

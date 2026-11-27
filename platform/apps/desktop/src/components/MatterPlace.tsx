@@ -12,9 +12,9 @@ import type { Matter } from "../api.ts";
 import { Icon } from "./Icons.tsx";
 import { Select } from "./Select.tsx";
 import { LEVELS, quickCreateMatter, STANCE_GROUPS, STANCE_OPTIONS, useMatterScope } from "./NewMatter.tsx";
-import { ScopeField, TeamMark } from "./TeamMatter.tsx";
+import { MatterMarkBadge, ScopeField } from "./TeamMatter.tsx";
 import { useWorkspace } from "./WorkspaceSwitch.tsx";
-import { createErrorText, isTeamShared, teamPrefix, type CollabScope } from "../lib/team-matters.ts";
+import { createErrorText, markPrefix, matterMark, type CollabScope } from "../lib/team-matters.ts";
 import { stanceLabel } from "../lib/labels.ts";
 import { suggestMatterTitle, suggestStance } from "../lib/matter-place.ts";
 
@@ -136,9 +136,9 @@ export function MatterPlace({ matters, goal, onPlace, onMore, onCancel, anchor, 
             <div className="place-scroll place-list">
               {matters.slice(0, RECENT_LIMIT).map((m) => (
                 <button key={m.matter_id} type="button" className="menu-item" onClick={() => onPlace(m, false)}>
-                  <span className="menu-label"><Icon.folder /> {m.title}{isTeamShared(m, kind) && <TeamMark />}</span>
+                  <span className="menu-label"><Icon.folder /> {m.title}<MatterMarkBadge mark={matterMark(m, kind)} /></span>
                   {/* 第 73 批：团队共享的事项先说一句（发起前知道材料会到同事电脑上） */}
-                  <span className="menu-desc">{teamPrefix([m.client_name, m.counterparty].filter(Boolean).join(" / ") || `我方：${stanceLabel(m.stance)}`, isTeamShared(m, kind))}</span>
+                  <span className="menu-desc">{markPrefix([m.client_name, m.counterparty].filter(Boolean).join(" / ") || `我方：${stanceLabel(m.stance)}`, matterMark(m, kind))}</span>
                 </button>
               ))}
             </div>

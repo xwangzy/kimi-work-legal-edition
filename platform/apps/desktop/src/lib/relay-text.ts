@@ -58,16 +58,25 @@ export function canResyncMembers(admin: boolean, isMatterOwner: boolean | undefi
 }
 
 /** 律师层一行状态（Z3 评审 5.5）：正常 / 有 n 个事项暂停同步 / 暂停原因一句话。纯函数。 */
+/** 没有 AI 使用名额（中继凭据 credential_no_seat / 名额被收回 credential_seat_revoked）。纯函数。 */
+export function credentialNoSeat(st: { credential_error?: string | null } | null | undefined): boolean {
+  return st?.credential_error === "credential_no_seat" || st?.credential_error === "credential_seat_revoked";
+}
+
+/**
+ * 律师层一行状态（Z3 评审 5.5）。第 73 批第二轮复评（T8 / 跨页 D）：全库一套状态词——“同事之间同步：<已开通 / 未开通 / 已暂停 / 用不了>[ · 一句说明]”，
+ * 与团队策略首行（已开通 / 未开通 / 已过期）同一套，不再写“正常”。纯函数。
+ */
 export function teamShareLine(st: { blocked: string | null; alerts?: unknown[] | null; stuck?: number | null; stuck_matters?: number | null; policy_fallback?: boolean | null; credential_error?: string | null }): string {
   const n = st.alerts?.length ?? 0;
-  if (st.blocked === "exit_mode") return "同事之间同步已暂停：这台电脑的许可失效或已被停用";
+  if (st.blocked === "exit_mode") return "同事之间同步：已暂停 · 这台电脑的许可失效或已被停用";
   // 第 73 批（验收 P2-1）：没有名额时如实说（原来落到“连不上”）
-  if (st.credential_error === "credential_no_seat" || st.credential_error === "credential_seat_revoked") return "同事之间同步用不了：你还没有分配到 AI 使用名额，请找管理员在“设置 → 团队”里分配";
-  // 第 73 批（D-309）：规则没允许如实说“所内还没开通”（与事项成员页、选同事处同一说法）
-  if (st.blocked === "not_allowed") return st.policy_fallback ? "同事之间同步已暂停：这台电脑还没收到最新的律所规则，联网后自动恢复" : "所内还没开通同事之间同步：开通后，和同事一起办的事项才会在同事电脑之间同步";
-  if (n > 0) return `有 ${n} 个事项暂停同步，负责人处理后自动恢复`;
-  if (st.stuck) return `有 ${st.stuck_matters ?? 1} 个事项的改动暂时发不出去，会自动重试`;
-  return "同事之间同步：正常";
+  if (credentialNoSeat(st)) return "同事之间同步：用不了 · 你还没有分配到 AI 使用名额，请找管理员在“设置 → 团队”里分配";
+  // 第 73 批（D-309）：规则没允许如实说“未开通”（与事项成员页、选同事处同一说法）
+  if (st.blocked === "not_allowed") return st.policy_fallback ? "同事之间同步：已暂停 · 这台电脑还没收到最新的本所规则，联网后自动恢复" : "同事之间同步：未开通 · 管理员开通后，团队共享事项才会在同事电脑之间同步";
+  if (n > 0) return `同事之间同步：已开通 · 有 ${n} 个事项暂停同步，负责人处理后自动恢复`;
+  if (st.stuck) return `同事之间同步：已开通 · 有 ${st.stuck_matters ?? 1} 个事项的改动暂时发不出去，会自动重试`;
+  return "同事之间同步：已开通";
 }
 
 /** 错误代码 → 律师看得懂的说法（v9.4：不再出现“中继、控制面、控制成员、席位”）。 */
@@ -76,7 +85,7 @@ export function relayErrorText(code: string | null | undefined): string | null {
   if (code === "waiting_for_owner") return "这个事项的负责人还没有同步过：负责人的电脑同步一次后，这里的改动会自动发出";
   if (code === "epoch_not_established")
     return "这个事项的成员在这台电脑上有调整，同步服务上还没有生效：正在等负责同步的同事那边送达。若是在律所关闭“同事之间同步”期间做的移出，被移出的人仍可能收到其他成员的新内容——请那位负责人在其电脑上重做移出，或联系 Kimi Work 客服";
-  if (code === "credential_backoff") return "暂时连不上 Kimi Work 的同步服务，稍后自动重试";
+  if (code === "credential_backoff") return "暂时连不上 Kimi Work：稍后自动重试";
   if (code === "relay_push_failed" || code === "relay_blob_failed" || code === "relay_import_failed") return "本机处理改动时出错（可能是文件被占用），稍后自动重试";
   if (code === "segment_too_large" || code === "too_many_readers") return "有一批改动过大或事项成员过多，无法经同步服务发出；请联系 Kimi Work 客服，或先经律所共享文件夹同步";
   if (code === "not_reader") return "这台电脑已不在其中某个事项里，那批改动没有发出";
@@ -88,8 +97,10 @@ export function relayErrorText(code: string | null | undefined): string | null {
   if (code === "tenant_storage_full") return "本所在 Kimi Work 同步服务上的存储已满，请联系 Kimi Work 客服";
   if (code === "tenant_unavailable") return "Kimi Work 同步服务暂时不可用，会自动重试";
   if (/^tls_|_tls_/.test(code)) return "与 Kimi Work 同步服务的加密连接核对未通过，已停止收发（请联系 IT）";
-  if (/timeout|connect|unreachable|gate_|http_5|relay_error/.test(code)) return "暂时连不上 Kimi Work 同步服务，会自动重试";
-  if (/credential_|no_seat|seat_revoked|license/.test(code)) return "本所账号或许可暂时不可用，同事之间同步已暂停";
+  if (/timeout|connect|unreachable|gate_|http_5|relay_error/.test(code)) return "暂时连不上 Kimi Work：会自动重试";
+  // 第三轮实拍：名额被释放 / 收回（立即同步的结果句）与没有名额同一说法，不说“账号或许可不可用”
+  if (/no_seat|seat_revoked/.test(code)) return "你还没有分配到 AI 使用名额，同事之间同步用不了：请找管理员在“设置 → 团队”里分配";
+  if (/credential_|license/.test(code)) return "本所账号或许可暂时不可用，同事之间同步已暂停";
   if (code === "relay_not_allowed") return "同步服务按本所规则拒绝了请求（规则可能刚更改），稍后自动重试";
   if (/digest_mismatch|blob_mismatch|blob_ref_invalid/.test(code)) return "有一份同事的改动核对不通过，已跳过并会重试";
   return "有改动没有同步成功";

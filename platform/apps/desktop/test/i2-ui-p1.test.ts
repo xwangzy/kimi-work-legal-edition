@@ -96,9 +96,10 @@ test("#7 团队共享律师层只有一句话：不讲密钥、起点、控制�
   const s = syncAlertSummary({ title: "甲案", peer_name: "林律师" });
   assert.equal(s, "「甲案」暂时不能同步给同事，负责人 林律师 处理后会自动恢复。");
   assert.equal(syncAlertSummary({ title: null }), "有一个事项暂时不能同步给同事，负责人处理后会自动恢复。");
-  assert.equal(teamShareLine({ blocked: null, alerts: [] }), "同事之间同步：正常");
-  assert.equal(teamShareLine({ blocked: null, alerts: [{}, {}] }), "有 2 个事项暂停同步，负责人处理后自动恢复");
-  assert.match(teamShareLine({ blocked: "not_allowed", policy_fallback: true }), /律所规则/);
+  // 第 73 批第二轮复评（T8 / 跨页 D）：全库一套状态词，不再写“正常”
+  assert.equal(teamShareLine({ blocked: null, alerts: [] }), "同事之间同步：已开通");
+  assert.equal(teamShareLine({ blocked: null, alerts: [{}, {}] }), "同事之间同步：已开通 · 有 2 个事项暂停同步，负责人处理后自动恢复");
+  assert.match(teamShareLine({ blocked: "not_allowed", policy_fallback: true }), /本所规则/);
   for (const t of [s, teamShareLine({ blocked: "exit_mode" }), teamShareLine({ blocked: "not_allowed" })]) assert.doesNotMatch(t, /密钥|起点|控制成员|中继|策略|吊销/);
 });
 

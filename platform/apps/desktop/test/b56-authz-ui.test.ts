@@ -48,7 +48,7 @@ test("界面接线：逐项编辑器下要求出处；开始前确认两条路�
   assert.match(sheet, /detail \? detailReady\(record\.ref\)/);
   assert.match(sheet, /basis_source: detail \? detailSource\(record, matter\) : record\.kind, basis_ref: record\.ref\.trim\(\)/);
   assert.match(src("pages/Review.tsx"), /<AuthorizationTrail matter=\{authzMatter\} \/>/);
-  assert.match(src("components/MatterHeader.tsx"), /<AuthorizationTrail matter=\{matter\} \/>/);
+  assert.match(src("components/MatterHeader.tsx"), /<AuthorizationTrail matter=\{matter\} onReconfirm=\{onEditBasis\} \/>/);
   const conn = src("pages/Connections.tsx");
   assert.match(conn, /<AuthorizationOverview \/>/);
   assert.match(conn, /用常用条款预填/);
