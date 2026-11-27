@@ -3249,12 +3249,16 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     // 首页“等你处理 / 继续工作”（UIUX 增量评审 H-1）：本人能看到的事项里最近的任务（只给目标前 24 字与状态，不含正文）
     // ─── 上手清单（第 46 批，主文 §5-5）：按“自己建的事项 / 自己导入的材料 / 自己发起的任务 / 这些任务的成果”判断四步做没做；示例事项不算 ───
     "guide.progress": (_p, id) => {
-      const own = db.all<{ matter_id: string }>(
-        `SELECT matter_id FROM matters WHERE tenant_id = ? AND created_by = ? AND lifecycle <> 'purged'
-            AND matter_id NOT IN (SELECT matter_id FROM sample_matters WHERE removed_at IS NULL)
-          ORDER BY created_at DESC`,
-        [id.tenantId, id.userId],
+      // 第 73 批：第 1 步“建事项”按“我在其中、未删除的事项”算（含同事把我加进的团队共享事项——他已有事项可办）；
+      // created_matters = 其中我自己建的，shared_matters = 同事建、把我加进来的
+      const own = db.all<{ matter_id: string; created_by: string }>(
+        `SELECT m.matter_id, m.created_by FROM matters m JOIN matter_members mm ON mm.matter_id = m.matter_id AND mm.user_id = ? AND mm.removed_at IS NULL
+          WHERE m.tenant_id = ? AND m.lifecycle <> 'purged'
+            AND m.matter_id NOT IN (SELECT matter_id FROM sample_matters WHERE removed_at IS NULL)
+          ORDER BY m.created_at DESC`,
+        [id.userId, id.tenantId],
       );
+      const createdByMe = own.filter((m) => m.created_by === id.userId).length;
       const notSample = `matter_id NOT IN (SELECT matter_id FROM sample_matters WHERE removed_at IS NULL)`;
       const docs = db.get<{ n: number; matter_id: string | null }>(
         `SELECT COUNT(*) AS n, MAX(matter_id) AS matter_id FROM document_versions WHERE tenant_id = ? AND uploaded_by = ? AND ${notSample}`,
@@ -3274,10 +3278,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         firm: config.firmSlug,
         user: config.userSlug,
         own_matters: own.length,
+        created_matters: createdByMe,
+        shared_matters: own.length - createdByMe,
         materials: docs?.n ?? 0,
         runs: runCount,
         deliverables: art,
-        // “去做”直达用：最近一个自己的事项、最近一次自己发起的任务
+        // “去做”直达用：最近一个我在其中的事项（含同事加我的团队共享事项）、最近一次自己发起的任务
         latest_matter_id: own[0]?.matter_id ?? null,
         latest_run: runs[0] ? { run_id: runs[0].run_id, matter_id: runs[0].matter_id } : null,
       };
@@ -4725,6 +4731,30 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         members: r.members.map((m) => ({ user_id: m.user_id, member_slug: m.member_slug, name: m.name, role: m.role, status: m.status, can_receive: m.status === "active" && canReceiveOf(m.user_id, id), is_me: m.user_id === id.userId })),
       };
     },
+    // 第 73 批（实拍补）：管理员开通同事之间同步后，成员电脑原要等下一次控制面同步（缺省 10 分钟）才知道——界面打开团队页、事项成员页、
+    // 侧栏团队共享提示可见时调这里：同步状态还是“没开通 / 不知道”且距上次控制面同步超过 60 秒才立即同步一次（已有同步在跑就等它）；
+    // 已开通、没配中继的不同步；节流对没开通的律所同样有效（界面再频繁地调也至多每 60 秒一次）
+    "team.refresh_share_state": async (p, id) => {
+      const mid = typeof p?.matter_id === "string" && p.matter_id ? (requireMatterAccess(db, p.matter_id, id).matter_id as string) : null;
+      const team = mid ? db.get<{ collab_scope: string }>(`SELECT collab_scope FROM matters WHERE matter_id = ?`, [mid])?.collab_scope === CollabScope.team : false;
+      const stateNow = () => syncStateOf(mid ?? "", team);
+      const cp = deps.controlPlane;
+      const before = stateNow();
+      if (!cp || deps.governance?.exitMode() || !(before === "not_allowed" || before === "unknown")) return { refreshed: false, sync: before };
+      const inflight = cp.syncInFlight();
+      if (inflight) {
+        await inflight.catch(() => null);
+      } else {
+        const lastAt = Math.max(Date.parse(cp.lastSync?.at ?? "") || 0, shareRefreshAt);
+        if (Date.now() - lastAt < SHARE_REFRESH_MIN_MS) return { refreshed: false, sync: before };
+        shareRefreshAt = Date.now();
+        await cp.sync().catch(() => null);
+      }
+      const after = stateNow();
+      // 规则刚放开：立刻收发一次（收件循环在不能收发时 30 秒才再看一次）
+      if (after !== before && deps.shareRelay && !deps.shareRelay.blocked()) void deps.shareRelay.sync().catch(() => undefined);
+      return { refreshed: true, sync: after };
+    },
     "matters.members.list": async (p, id) => {
       const matter = requireMatterAccess(db, String(p?.matter_id ?? ""), id);
       // 名单只用来标姓名与“已离开团队”：两分钟内取过的直接用；取不到用缓存；会话失效等也不挡住看成员
@@ -6059,6 +6089,10 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     }
     return [...out].map(([user_id, matter_role]) => ({ user_id, matter_role }));
   }
+
+  /** team.refresh_share_state 的节流：距上次控制面同步（或上次由这里发起的同步）不足此间隔不再同步（缺省 60 秒；用例可调短，至少 1 秒）。 */
+  const SHARE_REFRESH_MIN_MS = Math.min(600_000, Math.max(1_000, Number(config.env.ZR_SHARE_REFRESH_MS ?? 60_000) || 60_000));
+  let shareRefreshAt = 0;
 
   /** 同事名单在内存里的一份（最近一次成功取到或读到的缓存）。 */
   let rosterMem: { tid: string; at: number; fetched_at: string; members: RosterMember[]; live: boolean } | null = null;

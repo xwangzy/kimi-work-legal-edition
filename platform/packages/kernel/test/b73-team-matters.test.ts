@@ -6,6 +6,7 @@
  *     L3b 不能团队共享（建与转都拒）；团队 → 个人拒绝（scope_irreversible）；改范围把字段放在顶层 → 说明要放 patch（V46 10b 的“无可更新字段”即此）；
  *     个人 → 团队立即锚定成员链；开通同步未达门限 → pending_second_signature，第二位管理员在自己电脑上“开通”即签同一份并发布；
  *     非负责人不能改范围、不能加人；事项成员视图（my_role / can_manage / sync）；移出的结果说明。
+ *     实拍补：team.refresh_share_state 的节流与“等在跑的同步”；上手清单第 1 步把同事加我的团队共享事项也算上（guide.progress）。
  * 三、账号体系（真实控制面带账号设备签发钥 + W1 的 GET /v1/team/roster）：个人空间不可选团队；账号签发钥登记的电脑不能建 / 转团队事项；
  *     同事名单（不含邮箱手机号、can_receive、封装缓存）；建事项同时加同事一个事务（名单外的人整体失败、不留半个事项）；存真实姓名；
  *     离线用缓存名单、缓存也没有 → roster_unavailable；开通同步以当前生效规则为底稿不收紧其它项；续期与到期前 7 天提醒；
@@ -215,6 +216,12 @@ test("旧律所体系：建团队事项同时加同事；事项成员视图与�
     [usr("test-lawyer"), false],
     [usr("bob"), true],
   ]);
+  // 实拍补 2：上手清单第 1 步按“我在其中、未删除的事项”算——B 自己一个没建，被 A 加进团队共享事项也算完成
+  const gB = await kB.inv("guide.progress");
+  assert.deepEqual([gB.own_matters, gB.created_matters, gB.shared_matters, gB.latest_matter_id], [1, 0, 1, mid], JSON.stringify(gB));
+  const gA = await inv("guide.progress");
+  assert.equal(gA.shared_matters, 0, "A 的事项都是自己建的");
+  assert.equal(gA.own_matters, gA.created_matters);
   // 非负责人：不能改范围，不能加人
   await assert.rejects(kB.inv("matters.update", { matter_id: mid, patch: { collab_scope: "personal" } }), (e: any) => e.code === "forbidden" && /只有事项负责人/.test(e.message));
   await assert.rejects(kB.inv("matters.members.add", { matter_id: mid, user_id: usr("carol") }), (e: any) => e.code === "forbidden");
@@ -273,6 +280,51 @@ test("旧律所体系：建团队事项同时加同事；事项成员视图与�
   assert.equal((await inv("matters.members.list", { matter_id: mid })).sync, "unknown");
   const sf = await inv("firm_policy.share_relay_status");
   assert.deepEqual([sf.state, sf.fallback_reason], ["expired", "signers_insufficient"], JSON.stringify(sf));
+});
+
+test("实拍补 1：team.refresh_share_state——管理员刚开通，成员电脑不等 10 分钟：没开通 / 不知道时距上次同步超过节流间隔才立即同步（在跑的同步就等它）；节流内、已开通、没配中继都不同步", { timeout: 300_000 }, async () => {
+  const F2 = "b73r-firm";
+  const c = await startCloudCp({ tenant: `ten_${F2}` });
+  const kA2 = await makeKernel({ ...c.env, ZR_MODEL_PROVIDER: "upstream" }, F2);
+  const ws = mkdtempSync(join(tmpdir(), "kwl-b73r-bob-"));
+  mkdirSync(join(ws, F2, "keys"), { recursive: true });
+  copyFileSync(join(kA2.dir, F2, "keys", "firm-root.json"), join(ws, F2, "keys", "firm-root.json"));
+  const { createKernel } = await import("../src/index.ts");
+  const WINDOW = 4_000;
+  const bk = await createKernel({ dataDir: ws, firmSlug: F2, userSlug: "bob", env: { ...process.env, ...c.env, ZR_MODEL_PROVIDER: "upstream", ZR_SHARE_REFRESH_MS: String(WINDOW) } });
+  const kB2 = (m: string, p?: any) => bk.invoke(m, p) as Promise<any>;
+  const bare = await makeKernel({}, "b73r-bare");
+  try {
+    for (const inv2 of [kA2.inv, kB2, kA2.inv, kB2]) assert.equal((await inv2("control_plane.sync")).report.ok, true);
+    // 没配中继（开发形态）：不同步
+    assert.deepEqual(await bare.inv("team.refresh_share_state"), { refreshed: false, sync: "not_configured" });
+    // A 起草并签好“开通同事之间同步”（还没发布）；B 此刻同步过一次：所内没开通
+    const body = { max_mode: "default", auto_preauthorizations: [], fetch_allowlist_extra: [], l3a_standard_model: "deny", share_relay: "allow" };
+    const { draft } = await kA2.inv("firm_policy.create_draft", { kind: "policy", body });
+    await kA2.inv("firm_policy.sign", { draft_id: draft.draft_id, expected_digest: draft.digest });
+    assert.equal((await kB2("control_plane.sync")).report.ok, true);
+    const tB = Date.now();
+    assert.deepEqual(await kB2("team.refresh_share_state"), { refreshed: false, sync: "not_allowed" }, "刚同步过：节流内不再同步");
+    // A 发布：B 在节流内仍不同步（没开通的律所不会因为界面反复调用而加快轮询）
+    await kA2.inv("firm_policy.publish", { draft_id: draft.draft_id });
+    await c.feed.refresh();
+    const r1 = await kB2("team.refresh_share_state");
+    assert.ok(Date.now() - tB < WINDOW, "用例自身：这一步须在节流间隔内");
+    assert.deepEqual(r1, { refreshed: false, sync: "not_allowed" });
+    assert.equal((await kB2("kernel.status")).egress_gate.share_relay_allowed, false, "B 还不知道");
+    // 过了节流间隔：两次并发调用——第一次立即同步，第二次等这次同步（不另起一次），都拿到新状态
+    await new Promise((r) => setTimeout(r, Math.max(0, WINDOW + 200 - (Date.now() - tB))));
+    const [x, y] = await Promise.all([kB2("team.refresh_share_state"), kB2("team.refresh_share_state")]);
+    assert.deepEqual([x, y], [{ refreshed: true, sync: "ok" }, { refreshed: true, sync: "ok" }], JSON.stringify([x, y]));
+    assert.equal((await kB2("kernel.status")).egress_gate.share_relay_allowed, true, "B 已知道所内开通了");
+    // 已开通：不再同步
+    assert.deepEqual(await kB2("team.refresh_share_state"), { refreshed: false, sync: "ok" });
+  } finally {
+    await bk.close().catch(() => {});
+    await kA2.kernel.close().catch(() => {});
+    await bare.kernel.close().catch(() => {});
+    await c.close();
+  }
 });
 
 // ───────────────────────── 三、账号体系（真实控制面 + 同事名单） ─────────────────────────

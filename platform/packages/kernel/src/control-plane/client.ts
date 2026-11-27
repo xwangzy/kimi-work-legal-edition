@@ -252,6 +252,11 @@ export class ControlPlaneClient {
     return this.last;
   }
 
+  /** 第 73 批：正在进行的同步（没有为 null）——“立即刷新”时等它，不另起一次。 */
+  syncInFlight(): Promise<SyncReport> | null {
+    return this.running;
+  }
+
   /** 设备签名的控制面请求（第 13 批成员管理：邀请、待批准列表、批准与拒绝）；不进同步单飞。 */
   request(method: string, path: string, body?: unknown): Promise<CallResult> {
     return this.call(method, path, body);

@@ -91,6 +91,13 @@
 4. **FaultCode**：`packages/domain/src/errors.ts` 只加五项（teamScopeUnavailable / memberNotInTeam / rosterUnavailable / scopeIrreversible / teamScopeConflict），内核 `teamFault` 去掉类型断言、按 `Extract<FaultCode, …>` 收窄。
 - 验证：b73 5/5；回归 535/535（两组合并：b44/b66/b68/b72/b73、onboarding*、member-*、device-recovery、share-relay*、control-plane、cp-*、egress、privacy-residency、firm-node、im、sync、r12b*、b47/b48/b51/b56/b62/b63/b64/b70/b71、matter-*、w1*、kernel-probes、node-authz 等 + egress-gate / safe-log 全部）；`npx tsc -b tsconfig.check.json` 0 错；`npm run build:kernel` 已重建。
 
+## 实拍补两项（cdd366a0 之后，未提交）
+
+1. **`team.refresh_share_state { matter_id? }`** → `{ refreshed, sync }`（sync 同 `matters.members.list.sync`）：当前是 not_allowed / unknown 且距上次控制面同步 > 60 秒才立即同步（`ControlPlaneClient.syncInFlight()` 新增：在跑就等它，不另起一次）；节流内、已开通、没配中继、退出模式都不同步；规则刚放开时后台收发一次（收件循环在不能收发时 30 秒才再看）。节流间隔可用 `ZR_SHARE_REFRESH_MS` 调（1 秒～10 分钟，缺省 60 秒；用例用 4 秒）。
+   用例：没配中继 → `{false, not_configured}`；B 刚同步 → 节流内 `{false, not_allowed}`；A 发布开通后 B 在节流内仍 `{false, not_allowed}`、B 还不知道；过了间隔两次并发调用都 `{true, ok}`（第二次等第一次那次同步），B 已知道；已开通再调 `{false, ok}`。
+2. **`guide.progress`**：`own_matters` 改为“我在其中、未删除的事项”（含团队共享，字段名不变）；加 `created_matters`、`shared_matters`；`latest_matter_id` 同口径。用例：B 一个没建、被 A 加进团队共享事项 → `own_matters 1 / created 0 / shared 1 / latest = 该事项`；A 的 `shared_matters 0`。
+- 验证：b73 6/6；回归 536/536；tsc 0 错；build:kernel 已重建（产物含新方法）。已写进 03 第六行。
+
 ## 未做 / 留给主会话判断
 
 - A4 K6（云端移出团队不吊销设备、本机不自动移出事项与轮换）未做：现在靠成员页 `departed` 标记 + 负责人一键移出（D-308 口径）。
