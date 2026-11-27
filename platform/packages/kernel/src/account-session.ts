@@ -369,7 +369,8 @@ export function onboardingStateText(state: string, o: { admin?: boolean } = {}):
       return "云端服务暂不支持在这台电脑上切换账号：请稍后重试；仍不行请联系客服";
     case "waiting_founder":
     case "needs_founder_setup":
-      return "你的律所还没有完成开通：请律所负责人先在自己的电脑上登录完成开通";
+      // 第 72 批（控制台走查）：网页上升级 / 开通的团队，创建人还没在电脑上打开过客户端时成员会到这里——说清找谁、做什么、做完怎样
+      return "你的团队还没有完成开通：请团队创建人（管理员）先在自己的电脑上打开 Kimi Work 法律版并登录一次，之后你再登录即可";
     case "needs_device_join":
       return "这个账号还没有登记这台电脑：重新登录后按提示提交登记申请，由律所管理员批准";
     // 第 66 批（V40，D-292）：个人账号的新电脑由云端直接登记（不用另一台电脑批准）；正常模式下遇到即说明换到这台电脑怎么做

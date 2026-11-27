@@ -2515,7 +2515,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     workspaces: workspacesOf(pr).map((x) => {
       const t = tenants.get(x.tid);
       const s0 = t?.seatsByUser.get(uidOfAccount(x));
-      return { aid: x.aid, tid: x.tid, kind: t ? kindOf(t) : ("team" as const), name: t?.name ?? x.tid.slice(4), role: x.role, status: x.status, seat: !!s0 && !s0.revoked_at };
+      // 第 72 批（控制台 W-5）：带停用来源，列表上分得清“已移出团队 / 团队停用”（team）与“平台停用”（platform）
+      return { aid: x.aid, tid: x.tid, kind: t ? kindOf(t) : ("team" as const), name: t?.name ?? x.tid.slice(4), role: x.role, status: x.status, ...(x.disabled_by ? { disabled_by: x.disabled_by } : {}), seat: !!s0 && !s0.revoked_at };
     }),
   });
   const accountRow = (a: AccountRecord) => {
@@ -3716,6 +3717,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         },
       };
     if (method === "GET" && rest === "usage") return { perm: "usage.read", action: "tenant.usage", tid: at, target: none, run: () => ({ tid, issued_at: iso(), ...tenantUsage(tenantOf(tid)) }) };
+    // 第 72 批（控制台 W-3）：运营看这家团队的团队邀请（不含码；码只在发出时给一次）
+    if (method === "GET" && rest === "invites") return { perm: "account.read", action: "team.invite_list", tid: at, target: none, run: () => ({ invites: [...(tenantOf(tid).team_invites?.values() ?? [])].sort((x, y) => y.created_at.localeCompare(x.created_at)).map(teamInviteView) }) };
     // 第 71 批（V45，I-5 / B-1）：这家客户的审计记录（运营与律所的操作都在这条链上）；控制台“操作记录”页签用。after = 序号游标，缺省取最近 limit 条
     if (method === "GET" && rest === "audit")
       return {
@@ -3805,6 +3808,52 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           const detail = upgradeTeam(t, b.name);
           audit({ tid: t.tid, actor: { kind: "ops", id: who.operator }, action: "workspace.upgrade_team", target: t.tid, result: "ok", detail });
           return { ok: true, tenant: tenantRow(t) };
+        },
+      };
+    // ─── 第 72 批（控制台 W-3，D-306 第 2 条）：运营代团队管理员改角色、移出成员、撤回团队邀请（与本所同一逻辑与约束；审计 actor=ops） ───
+    const om = /^members\/(acc_[A-Za-z0-9_-]{16})\/(role|remove)$/.exec(rest);
+    if (om)
+      return {
+        perm: "account.manage",
+        danger: om[2] === "remove",
+        action: om[2] === "remove" ? "team.member_remove" : "account.role",
+        tid: at,
+        target: () => om[1]!,
+        run: (b, who) => {
+          const t = tenantOf(tid);
+          if (kindOf(t) !== "team") throw new CpError(409, "team_only", "个人工作室没有团队成员可管理");
+          const x = requireMemberOf(t, om[1]!);
+          if (om[2] === "remove") {
+            if (lastAdmin(t, x)) throw new CpError(409, "last_admin", "这是本团队最后一名有效管理员，不能移出");
+            const r = removeMember(t, x, "team_removed");
+            audit({ tid: t.tid, actor: { kind: "ops", id: who.operator }, action: "team.member_remove", target: x.aid, result: "ok", detail: { seat_released: r.seat_released, invites_revoked: r.invites_revoked } });
+            return { ok: true, ...r, account: accountRow(x) };
+          }
+          const role = b.role;
+          if (role !== "admin" && role !== "partner" && role !== "lawyer" && role !== "assistant") throw new CpError(400, "role_invalid", "角色须为 admin / partner / lawyer / assistant");
+          if (role !== "admin" && lastAdmin(t, x)) throw new CpError(409, "last_admin", "这是本团队最后一名有效管理员，不能降级");
+          const invRevoked = x.role === "admin" && role !== "admin" ? revokeInvitesBy(t, x) : 0;
+          audit({ tid: t.tid, actor: { kind: "ops", id: who.operator }, action: "account.role", target: x.aid, result: "ok", detail: { admin: role === "admin" ? 1 : 0, invites_revoked: invRevoked } });
+          x.role = role;
+          feedVersion += 1;
+          return { ok: true, account: accountRow(x) };
+        },
+      };
+    const oir = /^invites\/(tiv_[A-Za-z0-9_-]{16})\/revoke$/.exec(rest);
+    if (oir)
+      return {
+        perm: "account.manage",
+        action: "team.invite_revoke",
+        tid: at,
+        target: () => oir[1]!,
+        run: (_b, who) => {
+          const t = tenantOf(tid);
+          const r = t.team_invites?.get(oir[1]!);
+          if (!r) throw new CpError(404, "invite_unknown", "没有这份邀请");
+          if (inviteStatusOf(r) !== "open") throw new CpError(409, "invite_not_open", "这份邀请已被接受、撤销或已过期");
+          r.status = "revoked";
+          audit({ tid: t.tid, actor: { kind: "ops", id: who.operator }, action: "team.invite_revoke", target: r.id, result: "ok" });
+          return { ok: true, invite: teamInviteView(r) };
         },
       };
     if (rest === "invites")

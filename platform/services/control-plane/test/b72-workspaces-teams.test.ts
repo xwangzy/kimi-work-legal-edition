@@ -420,6 +420,35 @@ test("契约 §8：运营代发团队邀请（码可用）、手动分配席位�
   assert.equal((await ops("op_7202", "POST", `/v1/ops/tenants/${A.tid}/seats/${xin}/assign`, {})).status, 404, "不是这家客户的成员");
 });
 
+test("控制台 W-3 / W-5：运营代办改角色、移出成员（最后一名管理员不能降级 / 移出；跨客户 404；个人空间 409）、列出与撤回团队邀请；用户列表工作空间项带停用来源", async () => {
+  const P = await signup("ren-b72@example.cn", "壬律师", "壬律师工作室");
+  assert.equal((await ops("op_7202", "POST", `/v1/ops/tenants/${P.tid}/members/${P.aid}/role`, { role: "lawyer" })).json.error.code, "team_only");
+  assert.equal((await ops("op_7202", "POST", `/v1/ops/tenants/${P.tid}/upgrade-team`, { name: "壬律师事务所" })).status, 200);
+  assert.equal((await ops("op_7202", "POST", `/v1/ops/tenants/${P.tid}/members/${P.aid}/role`, { role: "lawyer" })).json.error.code, "last_admin");
+  const inv = await ops("op_7202", "POST", `/v1/ops/tenants/${P.tid}/invites`, { name: "癸律师", role: "lawyer" });
+  const inv2 = await ops("op_7202", "POST", `/v1/ops/tenants/${P.tid}/invites`, { name: "未用", role: "assistant" });
+  const li = await ops("op_7202", "GET", `/v1/ops/tenants/${P.tid}/invites`);
+  assert.equal(li.status, 200, li.text);
+  assert.equal(li.json.invites.length, 2);
+  assert.ok(!JSON.stringify(li.json).includes(inv.json.code), "列表不含码");
+  const rv = await ops("op_7202", "POST", `/v1/ops/tenants/${P.tid}/invites/${inv2.json.invite.id}/revoke`, {});
+  assert.deepEqual([rv.status, rv.json.invite.status], [200, "revoked"]);
+  assert.equal((await ops("op_7202", "POST", `/v1/ops/tenants/${P.tid}/invites/${inv2.json.invite.id}/revoke`, {})).json.error.code, "invite_not_open");
+  const j = await post("/v1/teams/join", { code: inv.json.code }, D.session);
+  assert.equal(j.status, 200, JSON.stringify(j.json));
+  const gui = j.json.account.aid as string;
+  assert.equal((await ops("op_7202", "POST", `/v1/ops/tenants/${A.tid}/members/${gui}/role`, { role: "partner" })).status, 404, "不是这家客户的成员");
+  const ro = await ops("op_7202", "POST", `/v1/ops/tenants/${P.tid}/members/${gui}/role`, { role: "partner" });
+  assert.deepEqual([ro.status, ro.json.account.role], [200, "partner"]);
+  const rm = await ops("op_7202", "POST", `/v1/ops/tenants/${P.tid}/members/${gui}/remove`, {});
+  assert.equal(rm.status, 200, rm.text);
+  const au = await ops("op_7202", "GET", `/v1/ops/tenants/${P.tid}/audit`);
+  for (const a of ["account.role", "team.member_remove", "team.invite_revoke"]) assert.ok(au.json.records.some((x: any) => x.action === a && x.actor?.kind === "ops"), a);
+  const pe = await ops("op_7202", "GET", `/v1/ops/people?q=${encodeURIComponent("壬律师事务所")}`);
+  const ws = pe.json.people.flatMap((x: any) => x.workspaces).find((w: any) => w.aid === gui);
+  assert.deepEqual([ws.status, ws.disabled_by], ["disabled", "team"]);
+});
+
 test("契约 §3.4 / §6.4 / X7：移出团队——会话失效、席位释放、旧设备取不到席位令牌、切换到该团队 404；不能移出自己 / 最后一名管理员；成员自己退出团队切回个人空间；唯一工作空间不能退出", async () => {
   assert.equal((await post(`/v1/firm/members/${A.aid}/remove`, {}, A.session)).json.error.code, "cannot_remove_self");
   assert.equal((await bTeam.dev!.call("POST", "/v1/seat-token", {}, bTeam.session)).status, 200, "移出前能取席位令牌");
