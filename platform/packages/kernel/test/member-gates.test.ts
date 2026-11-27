@@ -46,11 +46,13 @@ test("viewer 写方法一律 403，只读可用；owner 不受影响", async () 
   // 只读可用
   const got = await viewer.inv("matters.get", { matter_id: matter.matter_id });
   assert.equal(got.matter.matter_id, matter.matter_id, "viewer 可读事项");
+  assert.equal(got.matter.can_write, false, "第 73 批（P3-3）：只看成员 can_write=false，界面据此收起写入口");
+  assert.equal((await host.inv("matters.get", { matter_id: matter.matter_id })).matter.can_write, true);
 
   // 写方法 403
   await assert.rejects(
     () => viewer.inv("materials.import", { matter_id: matter.matter_id, filename: "x.txt", data_base64: Buffer.from("x").toString("base64"), mime: "text/plain" }),
-    (e: any) => e.code === "forbidden" && /viewer/.test(e.message),
+    (e: any) => e.code === "forbidden" && /你在这个事项里是“只看”/.test(e.message) && e.detail?.reason === "viewer_read_only",
   );
   await assert.rejects(
     () => viewer.inv("matters.update", { matter_id: matter.matter_id, patch: { title: "篡改" } }),
@@ -66,7 +68,7 @@ test("viewer 写方法一律 403，只读可用；owner 不受影响", async () 
   await viewer.inv("sync.import", { share_dir: shareDir });
   await assert.rejects(
     () => viewer.inv("materials.reparse", { document_version_id: realDoc.document_version_id }),
-    (e: any) => e.code === "forbidden" && /viewer/.test(e.message),
+    (e: any) => e.code === "forbidden" && /你在这个事项里是“只看”/.test(e.message) && e.detail?.reason === "viewer_read_only",
   );
 
   // owner 写不受影响（对照）

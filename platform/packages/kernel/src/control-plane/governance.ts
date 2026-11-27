@@ -1153,8 +1153,8 @@ export class FirmGovernance {
   }
 
   summaryOf(matterId: string): AnonMatterSummary | null {
-    const m = this.d.db.get<{ confidentiality: string; consent_status: string; basis: string | null; basis_source: string | null; basis_ref: string | null; basis_notice_version: string | null; model_endpoint: string; policy_version: number }>(
-      `SELECT confidentiality, consent_status, basis, basis_source, basis_ref, basis_notice_version, model_endpoint, policy_version FROM matters WHERE matter_id = ? AND tenant_id = ?`,
+    const m = this.d.db.get<{ confidentiality: string; consent_status: string; basis: string | null; basis_source: string | null; basis_ref: string | null; basis_notice_version: string | null; model_endpoint: string; policy_version: number; collab_scope: string }>(
+      `SELECT confidentiality, consent_status, basis, basis_source, basis_ref, basis_notice_version, model_endpoint, policy_version, collab_scope FROM matters WHERE matter_id = ? AND tenant_id = ?`,
       [matterId, this.d.tenantId],
     );
     if (!m) return null;

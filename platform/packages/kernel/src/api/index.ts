@@ -73,7 +73,7 @@ import type { MatterTokenStore } from "../egress/matter-tokens.ts";
 import { upstreamTransport, type KernelGate } from "../egress/kernel-gate.ts";
 import { applyStructuredPatches, registerCleanCopy } from "../services/structured-patch.ts";
 import { authorizationStateOf, basisCompleteOf, dataLevelOf, parseBasis, BASIS_KEYS } from "../egress/gate-host.ts";
-import { AI_NOTICE_VERSION, AI_SUBPROCESSORS, AUTHORIZATION_AUDIT_ACTION, BASIS_SOURCES, NEEDS_REF_REASON, authorizationHistory, NOTICE_RECONFIRM_REASON, normalizeRef, type BasisSource } from "../services/ai-authorization.ts";
+import { AI_NOTICE_VERSION, AI_SUBPROCESSORS, AUTHORIZATION_AUDIT_ACTION, BASIS_SOURCES, NEEDS_REF_REASON, authorizationHistory, dataFlowsFor, noticeVersionFor, NOTICE_RECONFIRM_REASON, normalizeRef, subprocessorsFor, type BasisSource, type DataFlowEntry } from "../services/ai-authorization.ts";
 import type { EgressApprovalStore } from "../services/egress-approvals.ts";
 import type { QaChatService } from "../services/qa-chat.ts";
 import type { KapAgentClient, KapMatterPolicy } from "../executor/kap-agent-client.ts";
@@ -605,12 +605,26 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
    * 律师本人的 AI 辅助授权设置（迁移 0070、0072）：委托合同是否通常含使用 AI 辅助与次处理者的条款、常用条款出处。
    * 第 51 批（D-216）起只用于预填出处，不再替新事项自动记录；随附当前的 AI 次处理者清单（界面据此告知客户）。
    */
-  function aiAuthorizationOf(tenantId: string, userId: string): { engagement_terms: boolean; default_ref: string | null; updated_at: string | null; subprocessors: typeof AI_SUBPROCESSORS } {
+  function aiAuthorizationOf(
+    tenantId: string,
+    userId: string,
+    matter: { matter_id: string; collab_scope: string } | null = null,
+  ): { engagement_terms: boolean; default_ref: string | null; updated_at: string | null; subprocessors: { version: string; items: readonly { name: string; role: string }[] }; scope?: string; data_flows?: DataFlowEntry[] } {
     const r = db.get<{ engagement_terms: number; default_ref: string | null; updated_at: string }>(
       `SELECT engagement_terms, default_ref, updated_at FROM user_ai_authorization WHERE tenant_id = ? AND user_id = ?`,
       [tenantId, userId],
     );
-    return { engagement_terms: r?.engagement_terms === 1, default_ref: r?.default_ref ?? null, updated_at: r?.updated_at ?? null, subprocessors: AI_SUBPROCESSORS };
+    const base = { engagement_terms: r?.engagement_terms === 1, default_ref: r?.default_ref ?? null, updated_at: r?.updated_at ?? null };
+    // 第 73 批（P2-3）：给了事项时按事项范围给次处理者清单与数据去向（团队共享事项：同事电脑上也有、中软保存加密副本）
+    if (!matter) return { ...base, subprocessors: AI_SUBPROCESSORS };
+    return { ...base, subprocessors: subprocessorsFor(matter.collab_scope), scope: matter.collab_scope, data_flows: dataFlowsOf(matter.matter_id, matter.collab_scope) };
+  }
+
+  /** 事项的数据去向（P2-3）：团队共享事项带“本所同事 n 人”（除本人外在册的事项成员，不含节点服务成员）。 */
+  function dataFlowsOf(matterId: string, scope: string | null | undefined): DataFlowEntry[] {
+    if (scope !== CollabScope.team) return dataFlowsFor(scope);
+    const n = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM matter_members WHERE matter_id = ? AND removed_at IS NULL AND user_id <> ? AND user_id <> 'node_service'`, [matterId, keyctx.device.cert.memberId])?.n ?? 0;
+    return dataFlowsFor(scope, n);
   }
 
   /** 律师本人看过的“首次使用 AI 数据去向告知”版本（迁移 0072）。 */
@@ -633,6 +647,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     refRaw: unknown,
     basisJson: string | null,
     _id: { tenantId: string; userId: string },
+    scope: string | null | undefined,
   ): { source: BasisSource; ref: string; notice: string } | null {
     if (v === undefined || v === null || v === "") return null;
     if (!(BASIS_SOURCES as readonly unknown[]).includes(v)) throw validation(`basis_source 须为 ${BASIS_SOURCES.join(" / ")}`);
@@ -647,7 +662,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (source === "engagement_terms") throw validation("请写明授权依据的出处：委托合同名称或编号、条款号");
       throw validation("逐项记录同样须写明授权依据的出处：委托合同条款或客户书面同意的日期与方式");
     }
-    return { source, ref, notice: AI_SUBPROCESSORS.version };
+    // 第 73 批（P2-3）：按事项范围记次处理者清单版本（团队共享事项是另一份清单）
+    return { source, ref, notice: noticeVersionFor(scope) };
   }
 
   /**
@@ -655,18 +671,21 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
    * 依据类型、出处原文（≤200 字）、次处理者清单版本、四项；记录人与时间即审计行的 actor_id 与 created_at。
    * 出处是“委托合同第 X 条”这类文字，不是案件内容，可以明文留存；审计表只增不改（随签名链、事项同步与归档 ledger 一起走）。
    */
-  function auditAuthorization(id: Identity, matterId: string, rec: { source: BasisSource; ref: string; notice: string }, basisJson: string | null): void {
-    const detail = canonicalJson({ v: 1, basis_source: rec.source, basis_ref: rec.ref, basis_notice_version: rec.notice, basis: parseBasis(basisJson) });
+  function auditAuthorization(id: Identity, matterId: string, rec: { source: BasisSource; ref: string; notice: string }, basisJson: string | null, scope: string | null | undefined): void {
+    // 第 73 批（P2-3）：授权记录里落下记录时的事项范围与数据去向（团队共享事项：同事电脑、中软加密副本）
+    const detail = canonicalJson({ v: 1, basis_source: rec.source, basis_ref: rec.ref, basis_notice_version: rec.notice, basis: parseBasis(basisJson), scope: scope === CollabScope.team ? "team" : "personal", data_flows: dataFlowsOf(matterId, scope) });
     audit(db, id, AUTHORIZATION_AUDIT_ACTION, "matter", matterId, detail, keyctx);
   }
 
   /** 事项的授权记录历史（D-225；新的在前）：从审计事件读明文，记录人按成员姓名。 */
-  function authorizationHistoryOf(matterId: string): { basis_source: string; basis_ref: string; basis_notice_version: string; current_version: boolean; recorded_by: string | null; recorded_at: string }[] {
+  function authorizationHistoryOf(matterId: string, scope: string | null | undefined): { basis_source: string; basis_ref: string; basis_notice_version: string; current_version: boolean; scope: string | null; data_flows: DataFlowEntry[] | null; recorded_by: string | null; recorded_at: string }[] {
     return authorizationHistory(db, matterId).map((r) => ({
       basis_source: r.basis_source,
       basis_ref: r.basis_ref,
       basis_notice_version: r.basis_notice_version,
-      current_version: r.basis_notice_version === AI_SUBPROCESSORS.version,
+      current_version: r.basis_notice_version === noticeVersionFor(scope),
+      scope: r.scope,
+      data_flows: r.data_flows,
       recorded_by: displayNameOf(r.recorded_by_id, null),
       recorded_at: r.recorded_at,
     }));
@@ -976,7 +995,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       if (body.confidentiality !== undefined && !["normal", "high", "strict"].includes(body.confidentiality)) throw validation("confidentiality 须为 normal / high / strict");
       const facts = matterFactsFrom(body);
       // 四项依据的记录（第 51 批，D-216）：来源类型 + 出处 + 次处理者清单版本，逐案记录；当事人拒绝时不记
-      const basisRec = consent === "refused" ? null : basisRecordFrom(body.basis_source, body.basis_ref, basisJson, id);
+      const basisRec = consent === "refused" ? null : basisRecordFrom(body.basis_source, body.basis_ref, basisJson, id, scope);
       const basisSource = basisRec?.source ?? null;
       // 事项模板（v9.4 第 22 批，C1 #20）：先校验并算好届满日，失败即不创建；阶段没给时用模板的
       const plan = planTemplate(body.template_id, body.template_start, body.stance);
@@ -1043,7 +1062,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       audit(db, id, "matter.create", "matter", matterId, plan || basisSource ? sha256Hex(JSON.stringify({ ...(plan ? { template: plan.template.id, todos: todosAdded, deadline: !!plan.deadline } : {}), ...(basisRec ? { basis_source: basisRec.source, basis_notice_version: basisRec.notice, has_ref: !!basisRec.ref } : {}) })) : undefined, keyctx);
       for (const a of added) audit(db, id, "matter.member_add", "matter", matterId, a.user_id, keyctx);
       // D-225：授权记录明文留痕（只增不改）
-      if (basisRec) auditAuthorization(id, matterId, basisRec, basisJson);
+      if (basisRec) auditAuthorization(id, matterId, basisRec, basisJson, scope);
       // 事项匿名摘要（阶段 6；经控制面下发网关做二次检查，收敛 D-20）：只有匿名编号与数据级别、端点、依据是否齐备
       deps.governance?.enqueueSummary(matterId);
       void deps.controlPlane?.pushSummaries().catch(() => {});
@@ -1174,9 +1193,23 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const isSample = !!db.get(`SELECT 1 AS x FROM sample_matters WHERE matter_id = ? AND removed_at IS NULL`, [matter.matter_id]);
       // 案卷文件夹（第 48 批）：本机关联的文件夹（路径只在这台电脑）
       // D-225：授权记录历史（明文，新的在前）——事项页与签发页的“客户授权”一行据此显示
-      const authHistory = authorizationHistoryOf(matter.matter_id);
+      const authHistory = authorizationHistoryOf(matter.matter_id, matter.collab_scope);
       return {
-        matter: { ...matterOut(matter), my_role: myRole, ...(isSample ? { is_sample: true } : {}), folder: folderViewOf(matter), basis_recorded_at: authHistory[0]?.recorded_at ?? null, basis_recorded_by: authHistory[0]?.recorded_by ?? null, authorization_history: authHistory },
+        matter: {
+          ...matterOut(matter),
+          my_role: myRole,
+          ...(isSample ? { is_sample: true } : {}),
+          folder: folderViewOf(matter),
+          basis_recorded_at: authHistory[0]?.recorded_at ?? null,
+          basis_recorded_by: authHistory[0]?.recorded_by ?? null,
+          authorization_history: authHistory,
+          // 第 73 批（P2-3）：按事项范围的次处理者清单与数据去向
+          subprocessors: subprocessorsFor(matter.collab_scope),
+          data_flows: dataFlowsOf(matter.matter_id, matter.collab_scope),
+          // 第 73 批（P3-3、P2-2）：能不能在这台电脑上写（只看成员、已结案、已被负责人移出都不能）与“已被移出这个事项”
+          can_write: canWriteMatter(matter.matter_id, id),
+          removed_me: removedFromMatter(matter.matter_id),
+        },
         documents: docs,
         runs,
         run_policy: runPolicyView(matter.matter_id),
@@ -1216,6 +1249,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       }
       const fields: string[] = [];
       const values: unknown[] = [];
+      // 第 73 批（P2-3）：这次更新之后的事项范围（授权记录按它记次处理者清单版本）
+      const scopeAfter: string = toTeam ? CollabScope.team : matter.collab_scope;
       const simple = ["title", "client_name", "counterparty", "stance", "jurisdiction", "confidentiality"] as const;
       for (const f of simple) {
         if (body[f] !== undefined) {
@@ -1247,7 +1282,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         const bj = basisFrom(body.basis, String(body.model_endpoint ?? matter.model_endpoint));
         fields.push(`basis = ?`);
         values.push(bj);
-        basisSourceNext = { v: matter.consent_status === "refused" || body.consent_status === "refused" ? null : basisRecordFrom(body.basis_source, body.basis_ref, bj, id) };
+        basisSourceNext = { v: matter.consent_status === "refused" || body.consent_status === "refused" ? null : basisRecordFrom(body.basis_source, body.basis_ref, bj, id, scopeAfter) };
         if (matter.consent_status !== "refused") {
           fields.push(`consent_status = ?`);
           values.push(bj && basisCompleteOf({ basis: bj }) ? "agreed" : "pending");
@@ -1279,7 +1314,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
           const bj = body.basis !== undefined ? basisFrom(body.basis, String(body.model_endpoint ?? matter.model_endpoint)) : matter.basis;
           body.consent_status = bj && basisCompleteOf({ basis: bj }) ? "agreed" : "pending";
           // 记录方式按本次给出的重新核（律师的默认设置可能已经关了）；没给就清为 NULL
-          basisSourceNext = { v: body.basis !== undefined ? basisRecordFrom(body.basis_source, body.basis_ref, bj, id) : null };
+          basisSourceNext = { v: body.basis !== undefined ? basisRecordFrom(body.basis_source, body.basis_ref, bj, id, scopeAfter) : null };
         }
         if (body.consent_status === "refused") basisSourceNext = { v: null };
       }
@@ -1287,7 +1322,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       let basisRecordOnly = false;
       if (!basisSourceNext && body.basis === undefined) {
         if (body.basis_source !== undefined) {
-          basisSourceNext = { v: matter.consent_status === "refused" ? null : basisRecordFrom(body.basis_source, body.basis_ref, matter.basis, id) };
+          basisSourceNext = { v: matter.consent_status === "refused" ? null : basisRecordFrom(body.basis_source, body.basis_ref, matter.basis, id, scopeAfter) };
           basisRecordOnly = true;
         } else if (body.basis_ref !== undefined) {
           throw validation("记录授权依据的出处须同时给出依据类型（basis_source）");
@@ -1344,7 +1379,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       audit(db, id, "matter.update", "matter", matter.matter_id, sha256Hex(JSON.stringify({ fields: Object.keys(body).sort(), ...(basisReopened ? { basis_reopened: "subprocessor" } : {}), ...(basisSourceNext ? { basis_source: basisSourceNext.v?.source ?? null, basis_notice_version: basisSourceNext.v?.notice ?? null } : {}) })), keyctx);
       const after = db.get<any>(`SELECT * FROM matters WHERE matter_id = ?`, [matter.matter_id]);
       // D-225：每次记录或重新确认授权都追加一条明文记录（历史不覆盖）
-      if (basisSourceNext?.v) auditAuthorization(id, matter.matter_id, basisSourceNext.v, after?.basis ?? null);
+      if (basisSourceNext?.v) auditAuthorization(id, matter.matter_id, basisSourceNext.v, after?.basis ?? null, after?.collab_scope ?? scopeAfter);
       return {
         matter: matterOut(after),
         note: `关键口径变更已记录（审计事件已入签名链）；策略事件的签发人角色签名在同步阶段接入${basisReopened ? "。改用有第三方处理者的端点后，“转委托与次处理者”已改为待确认，请核实后补录" : ""}`,
@@ -1979,11 +2014,17 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
               { label: "按原文发送", text: plainNote.replace(/^以原文发送的有：/, "") },
               ...(searchNote ? [{ label: "联网检索", text: searchNote.replace(/^；/, "") }] : []),
               { label: "是否保存", text: retentionNote },
+              // 第 73 批（P2-3）：团队共享事项的去向如实写——同事电脑上也有、中软保存加密副本
+              ...(matter.collab_scope === CollabScope.team ? dataFlowsOf(matterId, matter.collab_scope).map((f) => ({ label: f.label, text: f.text })) : []),
               { label: "记录", text: "每一次发送都记在本任务的“数据去向”里" },
             ];
       const dataWhere = {
         model_endpoint: matter.model_endpoint,
         consent_status: matter.consent_status,
+        // 第 73 批（P2-3）：事项的数据去向（只有我：案卷只存这台电脑；团队共享：同事电脑、中软加密副本）——授权卡“系统另外做到 / 去向”按它写
+        collab_scope: matter.collab_scope,
+        data_flows: dataFlowsOf(matterId, matter.collab_scope),
+        subprocessors: subprocessorsFor(matter.collab_scope),
         bullets,
         bullet_kinds: bulletKinds,
         ...(previewRows.length ? { preview_rows: previewRows } : {}),
@@ -3834,7 +3875,12 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     },
     // 我的写作偏好（v9.4 第 22 批，C1 #29）：只存格式与文风，按律师本人存在本机
     // AI 辅助授权的律师设置（第 48 批 D-202；第 51 批 D-216 起只用于预填常用条款出处，不再替新事项自动记录）
-    "ai_authorization.get": (_p, id) => aiAuthorizationOf(id.tenantId, id.userId),
+    // 第 73 批（P2-3）：给 matter_id 时按事项范围给次处理者清单与数据去向（授权卡、重新确认据此）
+    "ai_authorization.get": (p, id) => {
+      const mid = typeof p?.matter_id === "string" && p.matter_id ? p.matter_id : null;
+      const m = mid ? (requireMatterAccess(db, mid, id) as { matter_id: string; collab_scope: string }) : null;
+      return aiAuthorizationOf(id.tenantId, id.userId, m);
+    },
     "ai_authorization.set": (p, id) => {
       const hasTerms = p?.engagement_terms !== undefined;
       const hasRef = p?.default_ref !== undefined;
@@ -4728,7 +4774,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         available: r.available,
         ...(r.available ? {} : { reason: r.reason }),
         fetched_at: r.fetched_at,
-        members: r.members.map((m) => ({ user_id: m.user_id, member_slug: m.member_slug, name: m.name, role: m.role, status: m.status, can_receive: m.status === "active" && canReceiveOf(m.user_id, id), is_me: m.user_id === id.userId })),
+        members: r.members.map((m) => ({ user_id: m.user_id, member_slug: m.member_slug, name: m.name, role: m.role, status: m.status, seat: m.seat, can_receive: m.status === "active" && canReceiveOf(m.user_id, id), is_me: m.user_id === id.userId })),
       };
     },
     // 第 73 批（实拍补）：管理员开通同事之间同步后，成员电脑原要等下一次控制面同步（缺省 10 分钟）才知道——界面打开团队页、事项成员页、
@@ -4739,8 +4785,11 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const team = mid ? db.get<{ collab_scope: string }>(`SELECT collab_scope FROM matters WHERE matter_id = ?`, [mid])?.collab_scope === CollabScope.team : false;
       const stateNow = () => syncStateOf(mid ?? "", team);
       const cp = deps.controlPlane;
+      // 第 73 批（P2-2）：给了团队共享事项、本机不是负责人时顺带核对是否已被移出（每个事项至多每 60 秒一次）
+      if (mid && team && deps.shareRelay) await deps.shareRelay.probeRemoved(mid).catch(() => false);
       const before = stateNow();
-      if (!cp || deps.governance?.exitMode() || !(before === "not_allowed" || before === "unknown")) return { refreshed: false, sync: before };
+      // 第 73 批（P2-1）：没有席位也可能刚分配——同样按节流同步一次（取到席位令牌后放下中继凭据的退避）
+      if (!cp || deps.governance?.exitMode() || !(before === "not_allowed" || before === "unknown" || before === "no_seat")) return { refreshed: false, sync: before };
       const inflight = cp.syncInFlight();
       if (inflight) {
         await inflight.catch(() => null);
@@ -4750,6 +4799,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         shareRefreshAt = Date.now();
         await cp.sync().catch(() => null);
       }
+      if (before === "no_seat" && deps.governance?.seatToken()) deps.shareRelay?.clearCredentialBackoff();
       const after = stateNow();
       // 规则刚放开：立刻收发一次（收件循环在不能收发时 30 秒才再看一次）
       if (after !== before && deps.shareRelay && !deps.shareRelay.blocked()) void deps.shareRelay.sync().catch(() => undefined);
@@ -4773,6 +4823,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
       const myRole = rows.find((r) => r.user_id === id.userId)?.matter_role ?? null;
       const isOwner = myRole === "owner";
       const team = matter.collab_scope === CollabScope.team;
+      // 第 73 批（P2-2）：本机不是负责人的团队共享事项：向中继核对本机还是不是读者（每个事项至多每 60 秒一次）
+      const removedMe = team && !isOwner && deps.shareRelay ? await deps.shareRelay.probeRemoved(matter.matter_id).catch(() => removedFromMatter(matter.matter_id)) : false;
       // 能不能在这台电脑上改成员（负责人；经中继同步的须是控制成员；本机无法确认负责人时不能；结案的不加人）
       const foreign = deps.shareRelay?.foreignController(matter.matter_id) ?? null;
       const blocked = !!db.get(`SELECT 1 AS x FROM sync_alerts WHERE matter_id = ? AND kind = 'owner_unverifiable'`, [matter.matter_id]);
@@ -4784,6 +4836,7 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
             name: m?.name ?? displayNameOf(r.user_id) ?? r.user_id,
             matter_role: r.matter_role,
             can_receive: canReceiveOf(r.user_id, id),
+            seat: m?.seat ?? null,
             departed: !!m && m.status !== "active",
             is_me: r.user_id === id.userId,
             added_at: r.added_at,
@@ -4795,7 +4848,8 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         collab_scope: matter.collab_scope,
         my_role: myRole,
         is_owner: isOwner,
-        can_manage: isOwner && !foreign && !blocked && (matter.lifecycle ?? "active") === "active",
+        can_manage: isOwner && !foreign && !blocked && !removedMe && (matter.lifecycle ?? "active") === "active",
+        removed_me: removedMe,
         relay_controller: deps.shareRelay?.controllerOf(matter.matter_id) ?? null,
         members,
         sync: syncStateOf(matter.matter_id, team),
@@ -6230,14 +6284,18 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
    * 同事之间同步的状态（契约 §2.3 sync）：not_configured（没配中继）/ not_allowed（所内还没开通，如实，不再折成“不知道”）/
    * unreachable（最近一次收发连不上）/ pending（这个事项有还没发出的内容）/ ok / unknown（退出模式等）。
    */
-  function syncStateOf(matterId: string, team: boolean): "ok" | "not_configured" | "not_allowed" | "unreachable" | "pending" | "unknown" {
+  function syncStateOf(matterId: string, team: boolean): "ok" | "not_configured" | "not_allowed" | "unreachable" | "pending" | "unknown" | "no_seat" | "removed" {
     const sr = deps.shareRelay;
     if (!sr) return "not_configured";
+    // 第 73 批（P2-2）：负责人已把本机移出这个团队共享事项
+    if (team && matterId && sr.removedFrom(matterId)) return "removed";
     const st = sr.status() as { blocked: string | null; policy_fallback?: boolean; push_last_ok_at?: string | null; push_last_error?: string | null; push_last_error_at?: string | null; pull_last_ok_at?: string | null; pull_last_error?: string | null; pull_last_error_at?: string | null };
     if (st.blocked === "not_configured") return "not_configured";
     // 第 73 批（W3 提请，03 第四行）：律所规则过期 / 没收到而回退（不是所内没开通）→ unknown；只有真正没开通才回 not_allowed
     if (st.blocked === "not_allowed") return st.policy_fallback ? "unknown" : "not_allowed";
     if (st.blocked) return "unknown";
+    // 第 73 批（P2-1）：没有席位——申领同事之间同步的凭据被拒（credential_no_seat），或控制面同步时席位一步答 no_seat 而本机没有席位令牌
+    if (sr.credentialError() === "credential_no_seat" || (deps.controlPlane?.lastSync?.steps.seat === "no_seat" && !deps.governance?.seatToken())) return "no_seat";
     const failedAfterOk = (err: string | null | undefined, errAt: string | null | undefined, okAt: string | null | undefined) => !!err && !!errAt && (!okAt || errAt > okAt) && /timeout|connect|unreachable|gate_|tls_|http_5\d\d|relay_error|credential_/.test(err);
     if (failedAfterOk(st.push_last_error, st.push_last_error_at, st.push_last_ok_at) || failedAfterOk(st.pull_last_error, st.pull_last_error_at, st.pull_last_ok_at)) return "unreachable";
     // 团队共享事项：有还没发出的段（退避 / 卡住），或这台电脑还没经中继收发过它（刚建、刚转成团队共享）
@@ -6412,7 +6470,29 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
     }
     const row = db2.get<{ matter_role: string }>(`SELECT matter_role FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [matterId, id.userId]);
     if (!row) throw forbidden("你不是该事项成员（或已被移出）");
-    if (row.matter_role === "viewer") throw forbidden("viewer 角色只读：该操作需要编辑及以上角色（最小权限）");
+    // 第 73 批（P2-2）：负责人已把这台电脑的主人移出这个团队共享事项（本机还没收到移出、中继已不认它为读者）：转只读，已有内容保留
+    if (removedFromMatter(matterId)) throw new DomainError("forbidden", "负责人已把你移出这个事项：之后的改动不会再同步给同事；已有内容留在你的电脑上，只能查看", 403, { reason: "removed_from_matter" });
+    // 第 73 批（P3-3）：律师层的话（D-310 角色只说“只看”），带负责人姓名
+    if (row.matter_role === "viewer") {
+      const owner = db2.get<{ user_id: string }>(`SELECT user_id FROM matter_members WHERE matter_id = ? AND matter_role = 'owner' AND removed_at IS NULL ORDER BY added_at LIMIT 1`, [matterId])?.user_id ?? null;
+      const ownerName = owner ? displayNameOf(owner) : null;
+      throw new DomainError("forbidden", `你在这个事项里是“只看”：不能加材料或发起任务，请找负责人${ownerName ?? ""}`.replace(/请找负责人$/, "请找事项负责人"), 403, { reason: "viewer_read_only", owner_name: ownerName });
+    }
+  }
+
+  /** 第 73 批（P3-3）：这台电脑能不能写这个事项（与 requireMatterWriter 同一口径，不抛错）——界面据此收起写入口。 */
+  function canWriteMatter(matterId: string, id: Identity): boolean {
+    try {
+      requireMatterWriter(db, matterId, id);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 第 73 批（P2-2）：这台电脑的主人已被负责人移出这个团队共享事项（据中继：不再是读者；见 ShareRelaySync.removedFrom）。 */
+  function removedFromMatter(matterId: string): boolean {
+    return !!deps.shareRelay?.removedFrom(matterId);
   }
 
   /** 成员链与同步引擎的依赖（第 12 批：带中继上的控制成员，锚定者与自动轮换据此判断）。 */

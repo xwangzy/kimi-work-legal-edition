@@ -42,6 +42,8 @@ export interface ShareRelayDeps extends SyncDeps {
   /** 摄取到新内容后（界面刷新）。 */
   onApplied?(segments: number): void;
   now?(): number;
+  /** 第 73 批：“是否已被移出”向中继核对的每事项最短间隔（缺省 60 秒；用例可设 0）。 */
+  probeMinMs?: number;
   /** 单段段体目标上限（缺省 96 MiB；测试用小值验证拆段）。 */
   partBytes?: number;
   /** 单段引用的新材料字节上限（缺省 1 GiB；测试用小值）。 */
@@ -122,6 +124,10 @@ export class ShareRelaySync {
   private readonly d: ShareRelayDeps;
   private cred: { token: string; expiresAt: number } | null = null;
   private credFailUntil = 0;
+  /** 第 73 批（P2-1）：最近一次申领中继凭据失败的原因（如 credential_no_seat）；退避期间照样报 credential_backoff，状态里如实给出这一项。成功即清。 */
+  private credFailCode: string | null = null;
+  /** 第 73 批（P2-2）：按事项的“是否已被移出”核对节流（事项 → 上次核对时刻）。 */
+  private readonly probedAt = new Map<string, number>();
   private pushing: Promise<RelayReport> | null = null;
   /** 本进程里按重置处理过的次数（手动同步据此决定是否再发一次）。 */
   private resetsSeen = 0;
@@ -178,6 +184,70 @@ export class ShareRelaySync {
     }
   }
 
+  /** 第 73 批（P2-1）：席位等变了（例如管理员刚分配了席位）——放下申领凭据的退避，下一次收发立即重新申领。 */
+  clearCredentialBackoff(): void {
+    this.credFailUntil = 0;
+    this.cred = null;
+  }
+
+  /** 最近一次申领中继凭据失败的原因（没有为 null）。 */
+  credentialError(): string | null {
+    return this.credFailCode;
+  }
+
+  // ─── 第 73 批（P2-2）：被负责人移出团队共享事项的这一侧 ───
+  // 负责人移出时轮换到新纪元、整体替换中继上的读者：被移出者拿不到新纪元的段，也就读不到那条移出事件（段体按新纪元加密），
+  // 本机投影里自己仍在册。中继是读者名单的执行方：它对本机（非负责人）答“不是读者”，即负责人已把本机移出（中继答错只能让本机停发，不泄露内容）。
+  // 记下后：本机该事项不再发出（已出的段丢弃）、事项转只读（已有内容保留）；之后又被加回（本机拿到更高纪元的包裹）即自动解除。
+
+  private ownMaxEpoch(matterId: string): number {
+    return this.d.db.get<{ e: number | null }>(`SELECT MAX(epoch) AS e FROM matter_keys WHERE matter_id = ? AND wrapped_for = ?`, [matterId, this.own])?.e ?? 0;
+  }
+
+  private markRemoved(matterId: string): void {
+    this.setKv(`removed:${matterId}`, JSON.stringify({ at: this.iso(), epoch: this.ownMaxEpoch(matterId) }));
+  }
+
+  /** 本机已被负责人移出这个事项（据中继）；之后拿到更高纪元的包裹（又被加回）即不算。 */
+  removedFrom(matterId: string): boolean {
+    const raw = this.kv(`removed:${matterId}`);
+    if (!raw) return false;
+    let epoch = 0;
+    try {
+      epoch = Number((JSON.parse(raw) as { epoch?: unknown }).epoch) || 0;
+    } catch {
+      epoch = 0;
+    }
+    if (this.ownMaxEpoch(matterId) > epoch || this.isOwner(matterId)) {
+      this.d.db.run(`DELETE FROM relay_kv WHERE k = ?`, [`removed:${matterId}`]);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * 向中继核对本机还是不是这个事项的读者（界面打开事项成员页、刷新同步状态时；没记为移出的每个事项至多每 60 秒联网一次）：
+   * 只对本机不是负责人、中继上已有的事项核；中继答“不是读者”即记为已被移出；答得上来即解除。连不上、不能收发时不改。
+   */
+  async probeRemoved(matterId: string): Promise<boolean> {
+    // 已记为移出的不再联网核（又被加回由本机拿到更高纪元的包裹自动解除）；负责人、不能收发时不核
+    if (this.removedFrom(matterId)) return true;
+    if (this.blocked() || this.isOwner(matterId)) return false;
+    const known = this.d.db.get<{ history_cursor: number }>(`SELECT history_cursor FROM relay_matters WHERE matter_id = ? AND known = 1`, [matterId]);
+    if (!known) return this.removedFrom(matterId);
+    const last = this.probedAt.get(matterId) ?? 0;
+    if (this.now() - last < (this.d.probeMinMs ?? 60_000)) return false;
+    this.probedAt.set(matterId, this.now());
+    try {
+      await this.call({ step: "history", matter_id: matterId, since: 0 });
+      this.d.db.run(`DELETE FROM relay_kv WHERE k = ?`, [`removed:${matterId}`]);
+      return false;
+    } catch (e) {
+      if (e instanceof RelayError && e.code === "not_reader" && !this.isOwner(matterId)) this.markRemoved(matterId);
+      return this.removedFrom(matterId);
+    }
+  }
+
   /** 不能收发的原因（null = 可以）。 */
   blocked(): string | null {
     if (this.closed) return "closed";
@@ -199,8 +269,10 @@ export class ShareRelaySync {
       this.cred = await this.d.credential();
     } catch (e) {
       this.credFailUntil = this.now() + 5 * 60_000;
-      throw new RelayError(`credential_${e instanceof Error ? e.message.replace(/[^a-z0-9_]/gi, "_").slice(0, 40) : "failed"}`);
+      this.credFailCode = `credential_${e instanceof Error ? e.message.replace(/[^a-z0-9_]/gi, "_").slice(0, 40) : "failed"}`;
+      throw new RelayError(this.credFailCode);
     }
+    this.credFailCode = null;
     return this.cred.token;
   }
 
@@ -361,6 +433,13 @@ export class ShareRelaySync {
       }
       const mid = seg.header.matter_id;
       const sid = seg.header.segment_id;
+      // 第 73 批（P2-2）：已被负责人移出的事项不再发出（中继也不会收），段丢弃、不再无限重试
+      if (this.removedFrom(mid)) {
+        rmSync(c.path, { force: true });
+        this.d.db.run(`DELETE FROM relay_outbox WHERE segment_id = ?`, [sid]);
+        report.dropped += 1;
+        continue;
+      }
       const st = this.d.db.get<{ state: string; next_at: string | null; attempts: number }>(`SELECT state, next_at, attempts FROM relay_outbox WHERE segment_id = ?`, [sid]);
       // 卡住的每 6 小时再试一次（中继状态可能已由运营修复，复核 S11A-21）；可恢复的按退避时刻
       if (!force && st?.next_at && st.next_at > this.iso()) continue;
@@ -467,6 +546,16 @@ export class ShareRelaySync {
         // 中继说本机不是读者，而本机仍是该事项的在册成员：中继上的事项状态异常（例如被抢先登记），留着、标为卡住待运营处理
         // （复核 S11A-21：不丢弃，处理后自动重发）；本机已被移出的才丢弃
         const stillMember = !!this.d.db.get(`SELECT 1 AS x FROM matter_members WHERE matter_id = ? AND user_id = ? AND removed_at IS NULL`, [mid, this.d.keyctx.device.cert.memberId]);
+        // 第 73 批（P2-2）：本机不是负责人而中继说不是读者——负责人已把本机移出（移出事件本机读不到）：记下、这一段丢弃、不再重试
+        if (code === "not_reader" && stillMember && !this.isOwner(mid)) {
+          this.markRemoved(mid);
+          rmSync(c.path, { force: true });
+          this.d.db.run(`DELETE FROM relay_outbox WHERE segment_id = ?`, [sid]);
+          report.errors.pop();
+          report.errors.push("removed_from_matter");
+          report.dropped += 1;
+          continue;
+        }
         if (code === "not_reader" && stillMember) {
           this.d.db.run(
             `INSERT INTO relay_outbox (segment_id, matter_id, state, attempts, next_at, last_error, updated_at) VALUES (?,?,'stuck',?,?,?,?)
@@ -1161,6 +1250,10 @@ export class ShareRelaySync {
       blocked: this.blocked(),
       configured: this.d.configured(),
       allowed: this.d.allowed(),
+      // 第 73 批（P2-1）：申领中继凭据失败的原因如实给出（如 credential_no_seat：没有席位）；退避期间收发报的是 credential_backoff
+      credential_error: this.credFailCode,
+      // 第 73 批（P2-2）：本机已被负责人移出、停止发出的事项数
+      removed_matters: this.d.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM relay_kv WHERE k LIKE 'removed:%'`, [])?.n ?? 0,
       // 策略回退（过期、认不出、没收到）而不是律所关闭（第六轮复核 S11B-51c）
       policy_fallback: !this.d.allowed() && !this.d.relayExplicitlyOff?.(),
       // 团队同步的持久告警（两种介质；第六轮复核 S11A-51/52）

@@ -19,6 +19,8 @@ export interface RosterMember {
   name: string;
   role: string;
   status: RosterStatus;
+  /** 第 73 批（P2-1）：这位成员有没有席位（没有席位时 AI 与同事之间同步都用不了）；旧云端不给为 null。 */
+  seat: boolean | null;
 }
 
 export interface RosterCache {
@@ -62,6 +64,7 @@ export function rosterFromReply(raw: unknown, tenantId: string): RosterMember[] 
       name: text(m.name, 40) || m.member_slug,
       role: typeof m.role === "string" && ROLE_RE.test(m.role) ? m.role : "lawyer",
       status,
+      seat: typeof m.seat === "boolean" ? m.seat : null,
     });
   }
   // 按姓名排序（云端已排，本机再排一次，缓存与现取一致）

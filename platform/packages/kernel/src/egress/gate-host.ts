@@ -18,7 +18,7 @@ import type { KernelDb } from "../db.ts";
 import { liveRunForClaims } from "../identity.ts";
 import { HIDE_WINDOW, parentHeartbeatEnv, runtimeReady, spawnNodeChild, startParentHeartbeat, windowsSystemEnv } from "../executor/child-env.ts";
 import { errFields, relayChildStderr, slog } from "@zr-legal/safe-log";
-import { AI_SUBPROCESSORS } from "../services/ai-authorization.ts";
+import { noticeVersionFor } from "../services/ai-authorization.ts";
 
 /**
  * 独立复核请求的令牌附加 scope（V16 第 41 批）：闸门见到它，整个模型请求只替换已知名单。只有内核给自己发起的复核请求签发
@@ -92,12 +92,21 @@ export function basisCompleteOf(m: { basis?: string | null; consent_status?: str
  * 闸门（模型推理、联网检索、网页抓取）、kap-host 事项运行策略、网关二次检查摘要、内核 modelBlockReason 都只经 aiAuthorizedOf 判定。
  */
 export type AuthorizationState = "valid" | "pending" | "needs_ref" | "reconfirm";
-export function authorizationStateOf(m: { basis?: string | null; consent_status?: string | null; model_endpoint?: string | null; basis_source?: string | null; basis_ref?: string | null; basis_notice_version?: string | null }): AuthorizationState {
+export function authorizationStateOf(m: {
+  basis?: string | null;
+  consent_status?: string | null;
+  model_endpoint?: string | null;
+  basis_source?: string | null;
+  basis_ref?: string | null;
+  basis_notice_version?: string | null;
+  /** 第 73 批（P2-3）：必填——团队共享事项按团队共享的次处理者清单版本核对（漏传会把团队事项按只有我核，故不设可选）。 */
+  collab_scope: string | null | undefined;
+}): AuthorizationState {
   if (!basisCompleteOf(m)) return "pending";
   if (m.consent_status === "refused") return "valid";
   if (!parseBasis(m.basis)) return "valid";
   if (!m.basis_source || !String(m.basis_ref ?? "").trim()) return "needs_ref";
-  if (m.basis_notice_version !== AI_SUBPROCESSORS.version) return "reconfirm";
+  if (m.basis_notice_version !== noticeVersionFor(m.collab_scope)) return "reconfirm";
   return "valid";
 }
 

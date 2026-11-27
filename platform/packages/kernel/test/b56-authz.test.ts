@@ -154,10 +154,10 @@ test("③旧数据（D-216 之前确认、没有出处与版本）：读时判�
   assert.equal(rec.matter.basis_state, "valid");
   assert.equal((await enforcement(matter.matter_id)).model, true);
   // 例外沿用原口径
-  assert.equal(authorizationStateOf({ basis: null, consent_status: "agreed" }), "valid", "没有四项 JSON 的最早期事项");
-  assert.equal(aiAuthorizedOf({ basis: JSON.stringify(FULL), consent_status: "refused", model_endpoint: "private" }), true, "拒绝云端、只用律所私有端点");
-  assert.equal(aiAuthorizedOf({ basis: JSON.stringify(FULL), consent_status: "refused", model_endpoint: "standard" }), false);
-  assert.equal(aiAuthorizedOf({ basis: JSON.stringify(FULL), consent_status: "agreed", model_endpoint: "none", basis_source: "engagement_terms", basis_ref: REF, basis_notice_version: AI_SUBPROCESSORS.version }), false, "不使用模型");
+  assert.equal(authorizationStateOf({ basis: null, consent_status: "agreed", collab_scope: "personal" }), "valid", "没有四项 JSON 的最早期事项");
+  assert.equal(aiAuthorizedOf({ basis: JSON.stringify(FULL), consent_status: "refused", model_endpoint: "private", collab_scope: "personal" }), true, "拒绝云端、只用律所私有端点");
+  assert.equal(aiAuthorizedOf({ basis: JSON.stringify(FULL), consent_status: "refused", model_endpoint: "standard", collab_scope: "personal" }), false);
+  assert.equal(aiAuthorizedOf({ basis: JSON.stringify(FULL), consent_status: "agreed", model_endpoint: "none", basis_source: "engagement_terms", basis_ref: REF, basis_notice_version: AI_SUBPROCESSORS.version, collab_scope: "personal" }), false, "不使用模型");
 });
 
 test("④内核不再替律师套用常用出处：开关开、存了常用出处，不给出处仍被拒；给了出处以本次为准", async () => {

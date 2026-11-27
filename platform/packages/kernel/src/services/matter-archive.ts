@@ -315,7 +315,7 @@ export function buildMatterArchive(d: ArchiveDeps, matterId: string, opts: { by:
       created_at: m.created_at,
     },
     authorization: {
-      state: authorizationStateOf(m),
+      state: authorizationStateOf({ ...m, collab_scope: m.collab_scope }),
       consent_status: m.consent_status ?? null,
       basis: parseJson(m.basis, null),
       basis_source: m.basis_source ?? null,

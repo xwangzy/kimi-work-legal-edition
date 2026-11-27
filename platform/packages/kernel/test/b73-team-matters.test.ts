@@ -20,10 +20,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { strictestTemplate } from "@zr-legal/firm-trust";
 import { startCloudCp, type CloudCp } from "./cloud-cp.ts";
-import { makeKernel, type TestKernel } from "./helpers.ts";
+import { importText, makeKernel, type TestKernel } from "./helpers.ts";
 import type { Kernel } from "../src/index.ts";
 import type { ProfileHandoff } from "../src/profiles.ts";
 import { rosterFromReply, rosterOfflineCode, rosterUnsupportedCode, rosterUserId } from "../src/services/team-roster.ts";
+import { AI_SUBPROCESSORS, AI_SUBPROCESSORS_TEAM, dataFlowsFor } from "../src/services/ai-authorization.ts";
 import { carriedRelaxations, daysLeftOf, enableBodyOf, expiringOf, sameBody, shareRelayStateOf, signerCount } from "../src/services/share-relay-policy.ts";
 
 /** 律师层的报错不讲这些词（D-310；第 73 批补四项第 2 条）。 */
@@ -65,7 +66,9 @@ test("同事名单答复：只认本租户；成员编号与控制面同式；�
       ["usr_b73unit_zhao", "赵律师", "admin", "disabled"],
     ].sort((a, b) => a[1]!.localeCompare(b[1]!, "zh")),
   );
-  for (const m of r) assert.deepEqual(Object.keys(m).sort(), ["member_slug", "name", "role", "status", "user_id"], "不带邮箱、手机号、账号编号");
+  for (const m of r) assert.deepEqual(Object.keys(m).sort(), ["member_slug", "name", "role", "seat", "status", "user_id"], "不带邮箱、手机号、账号编号");
+  assert.ok(r.every((m) => m.seat === null), "旧云端不给席位：为 null");
+  assert.deepEqual(rosterFromReply({ ok: true, tid, members: [{ member_slug: "qian", name: "钱", role: "lawyer", status: "active", seat: false }] }, tid)![0]!.seat, false);
   // 连不上 → 用缓存；旧云端 / 闸门没放行 → 不支持
   for (const c of ["cp_unreachable", "cp_timeout", "cp_tls_pin_mismatch", "gate_unavailable", "http_503"]) assert.equal(rosterOfflineCode(c), true, c);
   for (const c of ["cp_path_not_allowed", "team_only", "session_invalid", "not_found"]) assert.equal(rosterOfflineCode(c), false, c);
@@ -115,7 +118,8 @@ async function secondLegacy(slug: string): Promise<{ kernel: Kernel; inv: TestKe
   mkdirSync(join(ws, FIRM, "keys"), { recursive: true });
   copyFileSync(join(kA!.dir, FIRM, "keys", "firm-root.json"), join(ws, FIRM, "keys", "firm-root.json"));
   const { createKernel } = await import("../src/index.ts");
-  const kernel = await createKernel({ dataDir: ws, firmSlug: FIRM, userSlug: slug, env: { ...process.env, ...legacyCloud!.env, ZR_MODEL_PROVIDER: "upstream" } });
+  // ZR_RELAY_PROBE_MS=0：用例里“是否已被移出”的核对不节流（产品缺省每事项 60 秒）
+  const kernel = await createKernel({ dataDir: ws, firmSlug: FIRM, userSlug: slug, env: { ...process.env, ...legacyCloud!.env, ZR_MODEL_PROVIDER: "upstream", ZR_RELAY_PROBE_MS: "0" } });
   const k = { kernel, inv: (m: string, p?: any) => kernel.invoke(m, p) as Promise<any> };
   legacyOthers.push(k);
   return k;
@@ -265,13 +269,46 @@ test("旧律所体系：建团队事项同时加同事；事项成员视图与�
   });
   kA!.kernel.db.run(`DELETE FROM sync_alerts WHERE matter_id = ? AND kind = 'owner_unverifiable'`, [mid]);
 
-  // 负责人移出有结果说明（先把 B 改回一起办）
+  // 负责人移出有结果说明（先把 B 改回一起办，B 同步到“一起办”）
   await inv("matters.members.add", { matter_id: mid, user_id: usr("bob"), matter_role: "editor" });
+  await inv("relay.sync");
+  await kB.inv("relay.sync");
+  assert.equal((await kB.inv("matters.members.list", { matter_id: mid })).my_role, "editor");
   const rm = await inv("matters.members.remove", { matter_id: mid, user_id: usr("bob") });
   assert.match(rm.lawyer_note, /拿不到此后的新内容；已同步到他电脑上的不会被收回/);
   assert.doesNotMatch(rm.lawyer_note, JARGON);
   assert.ok(rm.new_epoch >= 2, "移出即轮换");
   assert.deepEqual((await inv("matters.members.list", { matter_id: mid })).members.map((m: any) => m.user_id), [usr("test-lawyer")]);
+
+  // ── P2-2（真实中继，被移出者这一侧）：B 读不到移出事件（新纪元的段只给在册成员），本机仍以为自己在册 ──
+  // B 不知情时加材料（本机写入照常）；A 把新纪元登记到中继（读者整体替换，不含 B）；B 推送被中继拒（不是读者）：记为已被移出、这一段丢弃，不再卡住重试
+  await importText(kB.inv, mid, "移出后B写.txt", "B 不知道自己已被移出时写的内容");
+  assert.deepEqual((await inv("relay.sync")).push.errors, []);
+  const pushB = await kB.inv("relay.sync");
+  assert.equal(pushB.pull.applied, 0, "B 收不到移出之后的段");
+  assert.ok(pushB.push.errors.includes("removed_from_matter"), JSON.stringify(pushB.push));
+  assert.ok(pushB.push.dropped >= 1);
+  const stB = await kB.inv("relay.status");
+  assert.deepEqual([stB.stuck, stB.removed_matters], [0, 1], JSON.stringify(stB));
+  const lR = await kB.inv("matters.members.list", { matter_id: mid });
+  assert.deepEqual([lR.removed_me, lR.sync, lR.can_manage], [true, "removed", false], JSON.stringify(lR));
+  const gR = (await kB.inv("matters.get", { matter_id: mid })).matter;
+  assert.deepEqual([gR.removed_me, gR.can_write], [true, false]);
+  assert.ok((await kB.inv("matters.get", { matter_id: mid })).documents.length >= 1, "已有内容留在本机、照常能看");
+  await assert.rejects(importText(kB.inv, mid, "再写.txt", "再写"), (e: any) => {
+    assert.equal(e.detail?.reason, "removed_from_matter");
+    assert.match(e.message, /负责人已把你移出这个事项：之后的改动不会再同步给同事；已有内容留在你的电脑上，只能查看/);
+    assert.doesNotMatch(e.message, JARGON);
+    return true;
+  });
+  const again = await kB.inv("relay.sync");
+  assert.ok(!again.push.errors.includes("removed_from_matter") && !again.push.errors.includes("relay_matter_conflict"), "不再重试");
+  assert.equal((await inv("matters.get", { matter_id: mid })).documents.some((d: any) => d.filename === "移出后B写.txt"), false, "没有写进负责人那边");
+  // 不写也能得知：清掉本机记号后，打开事项成员页即向中继核对（本机不是负责人、中继答不是读者）
+  kB.kernel.db.run(`DELETE FROM relay_kv WHERE k LIKE 'removed:%'`);
+  const lP = await kB.inv("matters.members.list", { matter_id: mid });
+  assert.deepEqual([lP.removed_me, lP.sync], [true, "removed"], "核对后同样如实");
+  assert.deepEqual(await kB.inv("team.refresh_share_state", { matter_id: mid }), { refreshed: false, sync: "removed" });
 
   // 补四项第 1 条：律所规则回退（签名的管理员电脑被停用 → 签名人不足门限）不是“所内没开通”——sync 回 unknown
   await inv("devices.revoke", { device_id: `dev_${FIRM}_bob`, reason: "用例：签名人不足" });
@@ -324,6 +361,93 @@ test("实拍补 1：team.refresh_share_state——管理员刚开通，成员电
     await kA2.kernel.close().catch(() => {});
     await bare.kernel.close().catch(() => {});
     await c.close();
+  }
+});
+
+test("P2-1：没有席位的成员——同事之间同步用不了如实报 no_seat（不说“连不上”），relay.status 给出 credential_no_seat", { timeout: 300_000 }, async () => {
+  const F3 = "b73s-firm";
+  const c = await startCloudCp({ tenant: `ten_${F3}`, seats: 1 });
+  const kA3 = await makeKernel({ ...c.env, ZR_MODEL_PROVIDER: "upstream" }, F3);
+  const ws = mkdtempSync(join(tmpdir(), "kwl-b73s-bob-"));
+  mkdirSync(join(ws, F3, "keys"), { recursive: true });
+  copyFileSync(join(kA3.dir, F3, "keys", "firm-root.json"), join(ws, F3, "keys", "firm-root.json"));
+  const { createKernel } = await import("../src/index.ts");
+  const bk = await createKernel({ dataDir: ws, firmSlug: F3, userSlug: "bob", env: { ...process.env, ...c.env, ZR_MODEL_PROVIDER: "upstream" } });
+  const kB3 = (m: string, p?: any) => bk.invoke(m, p) as Promise<any>;
+  try {
+    assert.equal((await kA3.inv("control_plane.sync")).report.steps.seat, "accepted");
+    const sb = await kB3("control_plane.sync");
+    assert.equal(sb.report.steps.seat, "no_seat", "1 个席位已被 A 占用");
+    assert.equal((await kA3.inv("firm_policy.share_relay_enable")).published, true);
+    await c.feed.refresh();
+    await kB3("control_plane.sync");
+    await kA3.inv("control_plane.sync");
+    const mB = (await kB3("matters.create", { title: "没有席位时建的团队事项", stance: "原告", consent_status: "not_required", collab_scope: "team" })).matter;
+    const r = await kB3("relay.sync");
+    assert.ok(r.push.errors.concat(r.pull.errors).some((e: string) => e.startsWith("credential_")), JSON.stringify(r));
+    const st = await kB3("relay.status");
+    assert.equal(st.credential_error, "credential_no_seat", JSON.stringify(st));
+    assert.equal(st.blocked, null);
+    assert.equal((await kB3("matters.members.list", { matter_id: mB.matter_id })).sync, "no_seat", "不是“连不上”");
+    assert.equal((await kB3("team.refresh_share_state")).sync, "no_seat");
+    // 有席位的 A 照常
+    const mA = (await kA3.inv("matters.create", { title: "有席位的团队事项", stance: "原告", consent_status: "not_required", collab_scope: "team" })).matter;
+    await kA3.inv("relay.sync");
+    assert.equal((await kA3.inv("matters.members.list", { matter_id: mA.matter_id })).sync, "ok");
+  } finally {
+    await bk.close().catch(() => {});
+    await kA3.kernel.close().catch(() => {});
+    await c.close();
+  }
+});
+
+test("P2-3：团队共享事项的客户授权按团队共享的次处理者清单与数据去向记录（同事电脑、中软加密副本）；只有我的事项照旧；只有我转团队须按新范围重新确认", async () => {
+  const tk = await makeKernel({}, "b73a-firm");
+  const FULL = { engagement: "confirmed", personal_info: "confirmed", sensitive: "not_applicable", subprocessor: "confirmed" };
+  const REF = "委托代理合同 第 12 条";
+  try {
+    // 清单与去向（纯函数口径）
+    assert.notEqual(AI_SUBPROCESSORS_TEAM.version, AI_SUBPROCESSORS.version);
+    assert.match(AI_SUBPROCESSORS_TEAM.items[0]!.role, /保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本/);
+    assert.deepEqual(dataFlowsFor("personal").map((f) => f.text), ["案卷只存这台电脑"]);
+    assert.deepEqual(dataFlowsFor("team", 2).map((f) => f.key), ["colleagues", "zr_relay"]);
+    // 团队共享事项：记录时按团队清单版本；授权记录里落下范围与去向
+    const team = (await tk.inv("matters.create", { title: "团队授权", stance: "原告", collab_scope: "team", basis: FULL, basis_source: "engagement_terms", basis_ref: REF })).matter;
+    assert.deepEqual([team.basis_notice_version, team.basis_state], [AI_SUBPROCESSORS_TEAM.version, "valid"]);
+    const gt = (await tk.inv("matters.get", { matter_id: team.matter_id })).matter;
+    assert.equal(gt.subprocessors.version, AI_SUBPROCESSORS_TEAM.version);
+    assert.deepEqual(gt.data_flows.map((f: any) => f.key), ["colleagues", "zr_relay"]);
+    assert.match(gt.data_flows[0].text, /经加密同步到事项成员的电脑（本所同事 0 人）/);
+    assert.equal(gt.authorization_history[0].scope, "team");
+    assert.deepEqual(gt.authorization_history[0].data_flows.map((f: any) => f.key), ["colleagues", "zr_relay"]);
+    assert.equal(gt.authorization_history[0].current_version, true);
+    const aa = await tk.inv("ai_authorization.get", { matter_id: team.matter_id });
+    assert.deepEqual([aa.scope, aa.subprocessors.version], ["team", AI_SUBPROCESSORS_TEAM.version]);
+    assert.ok(aa.data_flows.some((f: any) => f.key === "zr_relay"));
+    assert.equal((await tk.inv("ai_authorization.get")).subprocessors.version, AI_SUBPROCESSORS.version, "不给事项时照旧");
+    const est = await tk.inv("runs.estimate", { matter_id: team.matter_id, scenario: "s1.contract_review", document_version_ids: [] });
+    assert.deepEqual(est.data_where.data_flows.map((f: any) => f.key), ["colleagues", "zr_relay"]);
+    assert.equal(est.data_where.subprocessors.version, AI_SUBPROCESSORS_TEAM.version);
+    // 只有我的事项照旧
+    const solo = (await tk.inv("matters.create", { title: "只有我授权", stance: "原告", basis: FULL, basis_source: "engagement_terms", basis_ref: REF })).matter;
+    assert.deepEqual([solo.basis_notice_version, solo.basis_state], [AI_SUBPROCESSORS.version, "valid"]);
+    const gs = (await tk.inv("matters.get", { matter_id: solo.matter_id })).matter;
+    assert.deepEqual(gs.data_flows.map((f: any) => f.text), ["案卷只存这台电脑"]);
+    assert.equal(gs.authorization_history[0].scope, "personal");
+    // 只有我转为团队共享：原授权没覆盖同事之间同步 → 须按团队共享的清单重新确认（模型推理随之拦下）
+    const up = await tk.inv("matters.update", { matter_id: solo.matter_id, patch: { collab_scope: "team" } });
+    assert.equal(up.matter.basis_state, "reconfirm");
+    const est2 = await tk.inv("runs.estimate", { matter_id: solo.matter_id, scenario: "a1.agent_task", goal: "审一下" });
+    assert.equal(est2.data_where.reconfirm, true, JSON.stringify(est2.data_where));
+    const re = await tk.inv("matters.update", { matter_id: solo.matter_id, patch: { basis_source: "engagement_terms", basis_ref: REF } });
+    assert.deepEqual([re.matter.basis_notice_version, re.matter.basis_state], [AI_SUBPROCESSORS_TEAM.version, "valid"]);
+    const hist = (await tk.inv("matters.get", { matter_id: solo.matter_id })).matter.authorization_history;
+    assert.deepEqual(hist.map((h: any) => [h.scope, h.current_version]), [
+      ["team", true],
+      ["personal", false],
+    ]);
+  } finally {
+    await tk.kernel.close().catch(() => {});
   }
 });
 
@@ -420,7 +544,10 @@ test("账号体系：个人空间与未确认电脑不能选团队；同事名�
   const r1 = await call(kb, "team.roster");
   const a1 = r1.members.find((m: any) => m.user_id === userA);
   assert.deepEqual([a1?.name, a1?.role, a1?.status, a1?.can_receive, a1?.is_me], ["甲律师", "lawyer", "active", false, false], JSON.stringify(r1.members));
-  for (const m of r1.members) assert.deepEqual(Object.keys(m).sort(), ["can_receive", "is_me", "member_slug", "name", "role", "status", "user_id"], "不含邮箱、手机号、账号编号");
+  for (const m of r1.members) assert.deepEqual(Object.keys(m).sort(), ["can_receive", "is_me", "member_slug", "name", "role", "seat", "status", "user_id"], "不含邮箱、手机号、账号编号");
+  // P2-1：云端名单带席位（旧云端没有为 null）
+  assert.equal(r1.members.find((m: any) => m.is_me)?.seat, true, JSON.stringify(r1.members));
+  for (const m of r1.members) assert.ok(m.seat === true || m.seat === false, JSON.stringify(m));
   const files = rosterFiles(dirB);
   assert.equal(files.length, 1, "名单写了本机缓存");
   assert.ok(!readFileSync(files[0]!, "utf8").includes("example.cn"), "缓存里没有邮箱");
@@ -441,6 +568,8 @@ test("账号体系：个人空间与未确认电脑不能选团队；同事名�
   // 所内真的还没开通（生效规则来自控制面、没有放开同事之间同步）→ not_allowed，不是 unknown
   assert.equal((await call(kb, "relay.status")).policy_fallback, false);
   assert.deepEqual([l1.collab_scope, l1.is_owner, l1.can_manage, l1.sync], ["team", true, true, "not_allowed"], JSON.stringify(l1));
+  assert.ok(l1.members.every((m: any) => typeof m.seat === "boolean"), "事项成员同样带席位");
+  assert.equal(l1.removed_me, false);
   assert.deepEqual(l1.members.map((m: any) => [m.name, m.matter_role, m.can_receive, m.departed, m.is_me]), [
     ["乙律师", "owner", true, false, true],
     ["甲律师", "viewer", false, false, false],

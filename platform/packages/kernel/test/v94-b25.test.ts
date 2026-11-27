@@ -66,7 +66,7 @@ test("复核 Q6-08：只读成员不能把范本放进事项（不导入材料�
   const { matter } = await inv("matters.create", { title: "范本放入权限", stance: "买方", consent_status: "agreed" });
   const docs = () => kernel.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM document_versions WHERE matter_id = ?`, [matter.matter_id])!.n;
   kernel.db.run(`UPDATE matter_members SET matter_role = 'viewer' WHERE matter_id = ? AND user_id = ?`, [matter.matter_id, kernel.identity.userId]);
-  await assert.rejects(inv("firm_templates.to_matter", { template_id: tpl, matter_id: matter.matter_id }), (e: any) => e.code === "forbidden" && /只读/.test(e.message));
+  await assert.rejects(inv("firm_templates.to_matter", { template_id: tpl, matter_id: matter.matter_id }), (e: any) => e.code === "forbidden" && /只看/.test(e.message));
   assert.equal(docs(), 0, "被拒时没有导入材料");
   // 被移出的成员同样不能
   kernel.db.run(`UPDATE matter_members SET removed_at = ? WHERE matter_id = ? AND user_id = ?`, [new Date().toISOString(), matter.matter_id, kernel.identity.userId]);

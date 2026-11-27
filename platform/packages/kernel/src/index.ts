@@ -1015,8 +1015,11 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     onApplied: (n) => broadcastRef.current?.({ type: "sync.applied", segments: n }),
     // 开发与测试：小值验证大段拆分（下限 4 KiB）
     ...(env.ZR_RELAY_PART_BYTES ? { partBytes: Math.max(4096, Number(env.ZR_RELAY_PART_BYTES) || 0) } : {}),
+    ...(env.ZR_RELAY_PROBE_MS !== undefined && Number.isFinite(Number(env.ZR_RELAY_PROBE_MS)) ? { probeMinMs: Math.min(600_000, Math.max(0, Number(env.ZR_RELAY_PROBE_MS))) } : {}),
     ...(env.ZR_RELAY_PART_BLOB_BYTES ? { partBlobBytes: Math.max(1024, Number(env.ZR_RELAY_PART_BLOB_BYTES) || 0) } : {}),
   });
+  // 第 73 批（P2-1）：席位令牌变了（例如管理员刚分配了席位）：放下中继凭据的申领退避（原来要等 5 分钟才再申领）
+  governance.onSeatChange(() => shareRelay.clearCredentialBackoff());
   // 发件每 5 秒（导出没有新内容时不出段）；收件长轮询（有新段即返回，约 5 秒内可见）；出错或不能收发时 30 秒后再试。
   // ZR_RELAY_SYNC_MS=off 只在显式调用 relay.sync 时收发（测试）
   let relayPushTimer: NodeJS.Timeout | null = null;
@@ -1710,8 +1713,8 @@ export { ControlPlaneClient } from "./control-plane/client.ts";
  * 保密级别 → 数据级别；同意状态与模型端点 → 四项依据是否齐备；A1 开放任务的模式上限为默认档，不给预授权。
  */
 export function kapMatterPolicy(db: KernelDb, matterId: string, firm: FirmPolicyInput = firmPolicyInputOf(localDevPolicyBody(process.env))): KapMatterPolicy {
-  const m = db.get<{ confidentiality: string; consent_status: string; basis: string | null; basis_source: string | null; basis_ref: string | null; basis_notice_version: string | null; model_endpoint: string }>(
-    `SELECT confidentiality, consent_status, basis, basis_source, basis_ref, basis_notice_version, model_endpoint FROM matters WHERE matter_id = ?`,
+  const m = db.get<{ confidentiality: string; consent_status: string; basis: string | null; basis_source: string | null; basis_ref: string | null; basis_notice_version: string | null; model_endpoint: string; collab_scope: string }>(
+    `SELECT confidentiality, consent_status, basis, basis_source, basis_ref, basis_notice_version, model_endpoint, collab_scope FROM matters WHERE matter_id = ?`,
     [matterId],
   );
   // 数据级别与闸门同一口径（dataLevelOf：拒绝云端处理的记录按当事人限制 L3b——复核 S5-A15）；事项不存在按最严
