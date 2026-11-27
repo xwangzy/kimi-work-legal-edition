@@ -105,8 +105,9 @@ test("个人租户：新电脑登录即 needs_device_auto → 控制面签 accou
   assert.equal(t.personal, true);
   assert.ok(t.firm_bundle, "开通时存下律所公钥包");
   assert.equal(t.account_device_ca?.kid, "acct-ca-dev1");
-  // 第 68 批（D-295）：试用套餐每账号 1 台，个人账号同样受此限——云端把这个账号调到 3 台
-  assert.equal((await newComputer("p1@example.cn")).onb.state, "device_limit", "按套餐 1 台：第二台满了");
+  // 第 68 批（D-295）：电脑数按云端设置，个人账号同样受此限——第 72 批试用缺省改为 2 台（产品评分 F6），这里显式设 1 台测“满了 → 云端调到 3 台”
+  cp.ops.account("p1@example.cn")!.device_limit = 1;
+  assert.equal((await newComputer("p1@example.cn")).onb.state, "device_limit", "设为 1 台：第二台满了");
   cp.ops.account("p1@example.cn")!.device_limit = 3;
   const nc = await newComputer("p1@example.cn");
   assert.equal(nc.onb.state, "needs_device_auto", JSON.stringify(nc.onb));

@@ -148,6 +148,8 @@ test("电脑数已满（试用套餐 1 台）：新电脑登录给出已登记�
   a = await boot(dirA);
   assert.equal(((await a.invoke("control_plane.sync")) as any).report.steps.seat, "accepted");
   const tid = ((await a.invoke("kernel.status")) as any).tenant_id as string;
+  // 第 72 批：试用套餐缺省改为 2 台（产品评分 F6）——这条测“满额 → 就地移除一台”，显式把这个账号设成 1 台
+  cloud!.cp.ops.account("lim-b68@example.cn")!.device_limit = 1;
   const dirB = mkdtempSync(join(tmpdir(), "kwl-b68-lb-"));
   const b = await boot(dirB);
   const blocked = (await b.invoke("account.login", { email: "lim-b68@example.cn", password: PW })) as any;

@@ -150,9 +150,11 @@ test("自助注册 → 创始开通 → 登记即绑定会话；席位令牌要�
 
 test("同一账号第二台电脑：设备上限按套餐（试用 1 台）→ 运营调到 2 台 → 新设备凭账号认领入组（编号 _D2、无邀请码段），由已有的管理员设备人工核对后批准", async () => {
   const f = await signupFounder("founder2@example.cn", "二号律所");
+  // 第 72 批：试用套餐缺省改为 2 台（产品评分 F6）——这条测“满额 → 运营调高”的逻辑，显式把这个账号设成 1 台
+  cp.ops.account("founder2@example.cn")!.device_limit = 1;
   const second = await post("/v1/auth/login", { email: "founder2@example.cn", password: PW, client: { platform: "win32" } });
   assert.equal(second.status, 200);
-  assert.equal(second.json.onboarding.state, "device_limit", "试用套餐每账号 1 台");
+  assert.equal(second.json.onboarding.state, "device_limit", "这个账号设为 1 台");
   assert.equal(second.json.onboarding.devices.length, 1);
   cp.ops.account("founder2@example.cn")!.device_limit = 2;
   const again = await post("/v1/auth/login", { email: "founder2@example.cn", password: PW, client: { platform: "win32" } });

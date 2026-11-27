@@ -3872,7 +3872,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (om)
       return {
         perm: "account.manage",
-        danger: om[2] === "remove",
+        // 产品评分：改角色（含提为管理员）同样是改客户团队结构的危险操作——须复核
+        danger: true,
         action: om[2] === "remove" ? "team.member_remove" : "account.role",
         tid: at,
         target: () => om[1]!,
