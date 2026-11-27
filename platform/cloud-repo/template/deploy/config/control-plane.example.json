@@ -22,7 +22,7 @@
     "registration": { "registration": "code", "trial_plan": "trial", "trial_days": 14, "trial_seats": 1, "default_device_limit": 2 }
   },
   "routing": {
-    "bootstrap": { "provider": { "id": "maas", "label": "中软 MaaS", "vendor": "csi-maas", "base_url": "https://maas.jointpilot.com/v1" }, "models": { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k3.1-pro" } },
+    "bootstrap": { "provider": { "id": "maas", "label": "中软 MaaS", "vendor": "csi-maas", "base_url": "https://maas.jointpilot.com/v1" }, "models": { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k2.6" } },
     "public_key_file": "/etc/kwl/public/routing-public.txt"
   }
 }

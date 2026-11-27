@@ -33,6 +33,18 @@ const post = async (path: string, body: unknown, headers: Record<string, string>
   return { status: r.status, json: (await r.json()) as any };
 };
 
+/**
+ * 第 72 批（契约 §3.1，D-305）：取消“发第一张成员邀请就悄悄转团队”——个人工作室发成员邀请前须先就地升级为团队（同名）；
+ * 本文件验证的是成员新电脑经管理员批准的流程，所以另把成员电脑策略设为 approve（团队缺省 auto，D-304）。
+ */
+const toTeam = async (session: string) => {
+  const me = await (await fetch(`${base}/v1/auth/me`, { headers: { "x-kwl-session": session } })).json() as any;
+  const up = await fetch(`${base}/v1/workspace/upgrade`, { method: "POST", headers: { "content-type": "application/json", "x-kwl-session": session }, body: JSON.stringify({ name: me.firm.name }) });
+  assert.equal(up.status, 200, await up.clone().text());
+  const pol = await fetch(`${base}/v1/firm/policy/member-device`, { method: "PUT", headers: { "content-type": "application/json", "x-kwl-session": session }, body: JSON.stringify({ policy: "approve" }) });
+  assert.equal(pol.status, 200, await pol.clone().text());
+};
+
 async function founder(email: string, org: string) {
   const reg = await post("/v1/auth/register", { email, password: PW, name: "管理员", org_name: org, client: { version: "0.8.0", platform: "win32" } });
   const onb = reg.json.onboarding;
@@ -60,6 +72,7 @@ test("别的成员的设备签名登录：不再 device_mismatch；会话不绑�
   const meta = await fetch(`${base}/v1/meta`).then((r) => r.json() as Promise<any>);
   assert.equal(meta.account_switch, true);
   const f = await founder("adm-b68c@example.cn", "六十八号律所");
+  await toTeam(f.session);
   const admin = device(f.tid, f.root.privateKeyPem, f.slug, `dev_${f.tid.slice(4)}_${f.slug}`, "admin");
   assert.equal((await admin.register(f.session)).status, 200);
   // 成员乙凭邀请码注册（还没有电脑），设备上限 2
@@ -95,6 +108,7 @@ test("别的成员的设备签名登录：不再 device_mismatch；会话不绑�
 
 test("安全复核 C-4：能换账号的客户端不做“改绑”（同所从未入组的同事在一位没有账号的成员的电脑上登录，不会变成那位成员）", async () => {
   const f = await founder("adm2-b68c@example.cn", "六十八号乙所");
+  await toTeam(f.session);
   const admin = device(f.tid, f.root.privateKeyPem, f.slug, `dev_${f.tid.slice(4)}_${f.slug}`, "admin");
   assert.equal((await admin.register(f.session)).status, 200);
   // 成员丙：管理员发了邀请、电脑已登记（没有账号）

@@ -30,6 +30,8 @@ export interface PlanSpec {
   models: string[] | null;
   /** 来源说明（迁移来的套餐带“待商务确认”）。 */
   origin: "config" | "ops" | "migrated" | "default";
+  /** 第 72 批（契约 §1）：适用的工作空间类型；缺省 any。控制台按它过滤，给客户改套餐时校验。 */
+  audience?: "personal" | "team" | "any";
 }
 
 export interface RegistrationSettings {
@@ -161,6 +163,8 @@ export function validatePlan(id: string, raw: unknown, origin: PlanSpec["origin"
   if (!Array.isArray(th) || th.length > 5 || !th.every((x: unknown) => Number.isSafeInteger(x) && (x as number) >= 1 && (x as number) <= 100)) throw new PlanError(400, "plan_thresholds_invalid", "提醒阈值须为至多 5 个 1–100 的整数");
   const models = b.models ?? null;
   if (models !== null && (!Array.isArray(models) || models.length > 32 || !models.every((x: unknown) => typeof x === "string" && /^[a-z0-9][a-z0-9._/-]{1,47}$/.test(x)))) throw new PlanError(400, "plan_models_invalid", "可用模型须为别名列表或不限");
+  const audience = b.audience ?? "any";
+  if (audience !== "personal" && audience !== "team" && audience !== "any") throw new PlanError(400, "plan_audience_invalid", "适用对象须为 personal、team 或 any");
   return {
     id,
     label: b.label.trim(),
@@ -176,6 +180,7 @@ export function validatePlan(id: string, raw: unknown, origin: PlanSpec["origin"
     enforce_seat_quota: b.enforce_seat_quota === true,
     models,
     origin,
+    audience,
   };
 }
 

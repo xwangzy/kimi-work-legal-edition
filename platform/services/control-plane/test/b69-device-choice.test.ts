@@ -34,6 +34,18 @@ const post = async (path: string, body: unknown, headers: Record<string, string>
   return { status: r.status, json: (await r.json()) as any };
 };
 
+/**
+ * 第 72 批（契约 §3.1，D-305）：取消“发第一张成员邀请就悄悄转团队”——个人工作室发成员邀请前须先就地升级为团队（同名）；
+ * 本文件验证的是成员新电脑经管理员批准的流程，所以另把成员电脑策略设为 approve（团队缺省 auto，D-304）。
+ */
+const toTeam = async (session: string) => {
+  const me = await (await fetch(`${base}/v1/auth/me`, { headers: { "x-kwl-session": session } })).json() as any;
+  const up = await fetch(`${base}/v1/workspace/upgrade`, { method: "POST", headers: { "content-type": "application/json", "x-kwl-session": session }, body: JSON.stringify({ name: me.firm.name }) });
+  assert.equal(up.status, 200, await up.clone().text());
+  const pol = await fetch(`${base}/v1/firm/policy/member-device`, { method: "PUT", headers: { "content-type": "application/json", "x-kwl-session": session }, body: JSON.stringify({ policy: "approve" }) });
+  assert.equal(pol.status, 200, await pol.clone().text());
+};
+
 async function founder(email: string, org: string) {
   const reg = await post("/v1/auth/register", { email, password: PW, name: "管理员", org_name: org, client: { version: "0.8.0", platform: "win32" } });
   const onb = reg.json.onboarding;
@@ -82,6 +94,7 @@ test("电脑数已满：列表每台带平台、最近使用时刻、是否登�
 
 test("团队成员换过 9 台电脑（含已移除）之后仍能登记新电脑：编号与个人账号同一空间；同时在用的台数仍受云端上限", async () => {
   const f = await founder("adm-b69b@example.cn", "六十九号乙所");
+  await toTeam(f.session);
   const admin = device(f.tid, f.root.privateKeyPem, f.slug, `dev_${f.tid.slice(4)}_${f.slug}`, "admin");
   assert.equal((await admin.register(f.session)).status, 200);
   const inv = await admin.call("POST", "/v1/invitations", { member_slug: "bing", name: "丙律师", role: "lawyer" }, f.session);

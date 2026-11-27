@@ -155,8 +155,16 @@ test("个人租户：新电脑登录即 needs_device_auto → 控制面签 accou
   assert.equal((await nd.call("GET", "/v1/quota", undefined, nc.session)).json.error.code, "device_revoked");
 });
 
-test("团队租户仍须批准：发了成员邀请即转回团队租户——新电脑回到 needs_device_join，自动登记接口拒绝", async () => {
+// 第 72 批（D-305）：原“发了成员邀请即悄悄转回团队租户”取消——个人工作室发邀请回 409 upgrade_required，类型不变；
+// 显式就地升级后才是团队；团队把成员电脑策略设为 approve（D-304 缺省 auto）时，新电脑仍回到 needs_device_join、自动登记接口拒绝
+test("团队租户仍须批准：个人工作室发邀请 409 upgrade_required（不再悄悄转团队）；升级为团队且策略 approve 后新电脑回到 needs_device_join，自动登记接口拒绝", async () => {
   const f = await signupFounder("p2@example.cn", "孙律师团队");
+  const inv0 = await f.dev.call("POST", "/v1/invitations", { member_slug: "zhou", name: "周律师", role: "lawyer" }, f.session);
+  assert.deepEqual([inv0.status, inv0.json.error.code], [409, "upgrade_required"]);
+  assert.equal(cp.ops.tenant(f.tid)!.kind, "personal", "发邀请不再改类型");
+  assert.equal((await post("/v1/workspace/upgrade", { name: "孙律师团队" }, { "x-kwl-session": f.session })).status, 200);
+  const pol = await fetch(`${base}/v1/firm/policy/member-device`, { method: "PUT", headers: { "content-type": "application/json", "x-kwl-session": f.session }, body: JSON.stringify({ policy: "approve" }) });
+  assert.equal(pol.status, 200);
   const inv = await f.dev.call("POST", "/v1/invitations", { member_slug: "zhou", name: "周律师", role: "lawyer" }, f.session);
   assert.equal(inv.status, 200, JSON.stringify(inv.json));
   cp.ops.account("p2@example.cn")!.device_limit = 2;

@@ -254,8 +254,10 @@ test("本所接口：admin 读写、partner 只读、律师 403；不能停自�
   assert.equal((await as(F.boss, "POST", `/v1/firm/members/${F.lawyer.aid}/limits`, { quota_limit: total + 1 })).json.error.code, "quota_limit_too_large");
   assert.equal((await as(F.boss, "POST", `/v1/firm/members/${F.lawyer.aid}/limits`, { device_limit: 10 })).json.error.code, "device_limit_invalid");
   assert.equal((await as(F.boss, "POST", `/v1/firm/members/${F.lawyer.aid}/limits`, { device_limit: 0 })).json.error.code, "device_limit_invalid");
-  const lim = await as(F.boss, "POST", `/v1/firm/members/${F.lawyer.aid}/limits`, { quota_limit: 1_000_000, device_limit: 3 });
-  assert.deepEqual([lim.status, lim.json.member.quota_limit, lim.json.member.device_limit], [200, 1_000_000, 3]);
+  // 第 72 批（A3 R1）：团队侧电脑上限不得超过套餐（standard 每账号 2 台）
+  assert.equal((await as(F.boss, "POST", `/v1/firm/members/${F.lawyer.aid}/limits`, { device_limit: 3 })).json.error.code, "device_limit_over_plan");
+  const lim = await as(F.boss, "POST", `/v1/firm/members/${F.lawyer.aid}/limits`, { quota_limit: 1_000_000, device_limit: 2 });
+  assert.deepEqual([lim.status, lim.json.member.quota_limit, lim.json.member.device_limit], [200, 1_000_000, 2]);
   // 停用：会话吊销、登录被拒；启用：解锁；下线；重置码给本人在“忘记密码”里用
   const dis = await as(F.boss, "POST", `/v1/firm/members/${F.lawyer.aid}/disable`, { reason: "休假" });
   assert.deepEqual([dis.status, dis.json.sessions_revoked, dis.json.member.status], [200, 1, "disabled"]);
@@ -264,16 +266,19 @@ test("本所接口：admin 读写、partner 只读、律师 403；不能停自�
   assert.equal((await as(F.boss, "POST", `/v1/firm/members/${F.lawyer.aid}/enable`, {})).json.member.status, "active");
   F.lawyer.token = await login2("lawyer@firmweb.cn");
   assert.equal((await as(F.boss, "POST", `/v1/firm/members/${F.lawyer.aid}/sessions/revoke`, {})).json.revoked, 1);
+  // 第 72 批（A3 R3）：管理员不再拿到重置码明文——改为给成员本人绑定的手机号发找回密码短信；没绑手机号时如实说明（不回任何码）
   const rc = await as(F.boss, "POST", `/v1/firm/members/${F.lawyer.aid}/reset-code`, {});
-  assert.deepEqual([rc.status, rc.json.purpose], [200, "reset"]);
-  assert.equal((await call(base2, "POST", "/v1/auth/password-reset/confirm", { email: "lawyer@firmweb.cn", code: rc.json.code, password: "Counsel2027secure" })).status, 200);
+  assert.deepEqual([rc.status, rc.json.error.code, "code" in rc.json], [409, "phone_unbound", false]);
+  const orc = await ops("POST", `/v1/ops/accounts/${F.lawyer.aid}/reset-code`, {});
+  assert.equal(orc.status, 200, orc.text);
+  assert.equal((await call(base2, "POST", "/v1/auth/password-reset/confirm", { email: "lawyer@firmweb.cn", code: orc.json.reset_code, password: "Counsel2027secure" })).status, 200);
   F.lawyer.token = await login2("lawyer@firmweb.cn", "Counsel2027secure");
   // 第 46 批复核：管理员之间不互发重置码（拿到码即可接管对方账号）；给自己发不受限
   const admin2 = await ops("POST", "/v1/ops/accounts", { tid: F.tid, email: "admin2@firmweb.cn", name: "第二管理员", role: "admin" });
   assert.equal(admin2.status, 200, admin2.text);
   const rc2 = await as(F.boss, "POST", `/v1/firm/members/${admin2.json.account.aid}/reset-code`, {});
   assert.deepEqual([rc2.status, rc2.json.error.code], [403, "admin_reset_by_support"]);
-  assert.equal((await as(F.boss, "POST", `/v1/firm/members/${F.boss.aid}/reset-code`, {})).status, 200);
+  assert.equal((await as(F.boss, "POST", `/v1/firm/members/${F.boss.aid}/reset-code`, {})).json.error.code, "phone_unbound", "给自己发同样走短信（没绑手机号即说明）");
   // 月度上限：网页与设备签名 PUT /v1/quota/cap 同一字段；律所流水记账号
   assert.equal((await as(F.partner, "PUT", "/v1/firm/cap", { monthly_cap_pct: 70 })).status, 403);
   assert.equal((await as(F.boss, "PUT", "/v1/firm/cap", { monthly_cap_pct: 101 })).json.error.code, "cap_invalid");

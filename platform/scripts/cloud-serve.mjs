@@ -74,7 +74,7 @@
  *                "default_plan": "standard", "registration": { "registration": "code", "trial_plan": "trial", "trial_days": 14, "trial_seats": 1, "default_device_limit": 2 } },
  *   // 控制面可选（第 44 批）：API 路由初始值（首次启动导入；缺省取 upstream.base_url，密钥用网关本机文件）与网关路由公钥（控制台加密上游密钥用的那把）
  *   "routing": { "bootstrap": { "provider": { "id": "maas", "label": "中软 MaaS", "vendor": "csi-maas", "base_url": "https://maas.jointpilot.com/v1" },
- *                               "models": { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k3.1-pro" } },
+ *                               "models": { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k2.6" } },   // 第 72 批（D-299）：K2.6 指真实型号
  *                "public_key_file": "/etc/kwl/routing-public.txt" },
  * 支持、中继、通知没有 ops：运营路径一律 404（功能没开）。名册版本记录、换版记录、随机数与被拒记录在 <data_dir>/<角色>/ops/；名册不可用时业务照常、运营接口 503。
  * 全部密钥文件除格式外还核“是不是随机生成的”（scripts/lib/secret-strength.mjs：拒绝重复、递增、单一字符类、占位词）；服务间凭据同一要求。

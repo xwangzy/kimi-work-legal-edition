@@ -8,6 +8,7 @@
  * - 下发：`routingFeedBody` 由控制面签名（信封种类 kwl-routing-feed），网关每 15 秒取一次；网关本机另有上游主机白名单，
  *   控制面被攻破也不能把案卷请求改投名单外的主机。
  */
+import { randomBytes } from "node:crypto";
 
 export interface SealedKey {
   alg: "ECDH-P256+HKDF-SHA256+A256GCM";
@@ -94,12 +95,12 @@ export interface ModelMeta {
 }
 
 /**
- * 内置别名的缺省展示与能力（按第 65 批之前客户端写死的口径）：K3 问答与任务都可选、按强度思考；K2.6 只在问答可选、开关思考
- * （任务里它是子 Agent 的模型，主任务不选它——任务入口只列 scopes 含 task 的）。
+ * 内置别名的缺省展示与能力：K3 问答与任务都可选、按强度思考；K2.6 开关思考。
+ * 第 72 批（D-299）：K2.6 也进任务入口（scopes: qa + task——它本来就是带 tool_use 的 Agent 模型，任务里的子 Agent 就是它）；说明文案写实。
  */
 export const BUILTIN_MODEL_META: Readonly<Record<string, Omit<ModelMeta, "label"> & { label: string }>> = Object.freeze({
-  "legal/k3": { label: "K3", description: "适合复杂问题", sort: 10, thinking: "effort", efforts: ["low", "high", "max"], capabilities: ["tool_use", "thinking", "long_context"], scopes: ["qa", "task"], client_visible: true, max_context: 262_144 },
-  "legal/k2.6": { label: "K2.6", description: "更快、更省额度，复杂问题效果略弱", sort: 20, thinking: "toggle", efforts: [], capabilities: ["tool_use", "thinking"], scopes: ["qa"], client_visible: true, max_context: 262_144 },
+  "legal/k3": { label: "K3", description: "最强，复杂审查与起草", sort: 10, thinking: "effort", efforts: ["low", "high", "max"], capabilities: ["tool_use", "thinking", "long_context"], scopes: ["qa", "task"], client_visible: true, max_context: 262_144 },
+  "legal/k2.6": { label: "K2.6", description: "更快、更省额度，适合整理与摘要", sort: 20, thinking: "toggle", efforts: [], capabilities: ["tool_use", "thinking"], scopes: ["qa", "task"], client_visible: true, max_context: 262_144 },
 });
 /** 首次部署时内置别名的占位名称（第 44 批）：给律师看时换成 K3 / K2.6。 */
 const PLACEHOLDER_LABELS = new Set(["主任务模型", "子任务模型"]);
@@ -225,6 +226,11 @@ export interface RoutingState {
   prices: PriceTable[];
   /** 各网关实例最近一次上报的健康（按 holder）。 */
   health: Record<string, { at: string; providers: Record<string, ProviderHealth> }>;
+  /**
+   * 第 72 批（D-299 第 6 条，A1 M7）：路由状态的纪元——首次建立 / 重建 / 迁移（之前没有）时随机 16 字节 base64url，运营修改不换。
+   * 目录信封带上；客户端纪元不同即接受（签名照验），同一纪元内才比 version（修“状态重建后客户端钉在旧目录”）。
+   */
+  epoch?: string;
 }
 
 export class RoutingError extends Error {
@@ -261,8 +267,11 @@ export function validBaseUrl(v: unknown): string | null {
   return u.toString().replace(/\/+$/, "");
 }
 
+export const newRoutingEpoch = (): string => randomBytes(16).toString("base64url");
+const EPOCH_RE = /^[A-Za-z0-9_-]{22}$/;
+
 export function emptyRouting(t: number): RoutingState {
-  return { version: 1, updated_at: new Date(t).toISOString(), updated_by: null, providers: [], models: [], prices: [{ version: 1, effective_at: new Date(t).toISOString(), by: null, items: {} }], health: {} };
+  return { version: 1, updated_at: new Date(t).toISOString(), updated_by: null, providers: [], models: [], prices: [{ version: 1, effective_at: new Date(t).toISOString(), by: null, items: {} }], health: {}, epoch: newRoutingEpoch() };
 }
 
 /**
@@ -276,7 +285,8 @@ export function bootstrapRouting(t: number, b?: { provider?: { id?: string; labe
   const base = p ? validBaseUrl(p.base_url) : null;
   const pid = p?.id && PROVIDER_ID_RE.test(p.id) ? p.id : "maas";
   if (base) r.providers.push({ id: pid, label: p?.label ?? "中软 MaaS", vendor: p?.vendor && VENDOR_RE.test(p.vendor) ? p.vendor : "csi-maas", base_url: base, enabled: true, key_sealed: null, key_hint: null, key_set_at: null, key_set_by: null, use_local_key: true, max_concurrency: 64, header_timeout_ms: null, idle_timeout_ms: null, probe_requested_at: null, created_at: at, updated_at: at });
-  const defaults: Record<string, string> = { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k3.1-pro" };
+  // 第 72 批（D-299）：内置别名真实映射——K2.6 指 kimi-k2.6（原先两个别名都指 kimi-k3.1-pro：问答里切到 K2.6 实际仍是 K3.1 Pro，“伪切换”）
+  const defaults: Record<string, string> = { "legal/k3": "kimi-k3.1-pro", "legal/k2.6": "kimi-k2.6" };
   for (const alias of BUILTIN_ALIASES) {
     const model = b?.models?.[alias] ?? defaults[alias]!;
     r.models.push({ alias, label: BUILTIN_MODEL_META[alias]!.label, enabled: true, is_default: alias === "legal/k3", targets: base && MODEL_RE.test(model) ? [{ provider: pid, model, priority: 1 }] : [], allow_cross_vendor: false, default_max_tokens: 8192, updated_at: at });
@@ -820,7 +830,33 @@ function validateModelMeta(b: Record<string, unknown>, cur: ModelRouteRecord | u
 }
 
 /** 客户端模型目录里一项“为什么不可用”。 */
-export type CatalogReason = "not_in_plan" | "unpriced" | "no_route" | "disabled";
+export type CatalogReason = "not_in_plan" | "unpriced" | "no_route" | "disabled" | "same_upstream";
+/** 第 72 批：给律师看的原因说明（客户端可直接显示）。 */
+export const CATALOG_REASON_TEXT: Readonly<Record<CatalogReason, string>> = Object.freeze({
+  disabled: "运营已停用这个模型",
+  no_route: "这个模型暂时没有可用线路",
+  not_in_plan: "当前套餐不含这个模型",
+  unpriced: "这个模型还没有定价",
+  same_upstream: "运营尚未给它配置独立的模型",
+});
+
+/** 别名解析出的主上游型号：启用的上游里优先级最高的目标；没有目标（首次部署未配上游、网关用本机兜底）= null。 */
+export function primaryUpstreamOf(r: Pick<RoutingState, "providers">, m: Pick<ModelRouteRecord, "targets">): string | null {
+  const live = new Set(r.providers.filter((p) => p.enabled).map((p) => p.id));
+  const ts = [...m.targets].sort((a, b) => a.priority - b.priority);
+  return (ts.find((x) => live.has(x.provider)) ?? ts[0])?.model ?? null;
+}
+
+/**
+ * 第 72 批（D-299 第 3 条，A1 M2）：对客户端可见的非缺省别名里，主上游型号与缺省别名相同的（“名字不同、实际相同”的伪切换）。
+ * 目录里置灰（same_upstream），运营控制台“模型与路由”出告警 routing.same_upstream。
+ */
+export function sameUpstreamAliases(r: Pick<RoutingState, "providers" | "models">): { alias: string; default_alias: string; model: string }[] {
+  const def = r.models.find((m) => m.is_default) ?? r.models.find((m) => m.alias === "legal/k3");
+  const dm = def ? primaryUpstreamOf(r, def) : null;
+  if (!def || !dm) return [];
+  return r.models.filter((m) => m.alias !== def.alias && m.enabled && modelMetaOf(m).client_visible && primaryUpstreamOf(r, m) === dm).map((m) => ({ alias: m.alias, default_alias: def.alias, model: dm }));
+}
 
 /** 客户端模型目录的一项（第 66 批）：只有展示与能力字段——绝不含目标、上游、地址、密钥或上游型号。 */
 export interface ClientCatalogModel {
@@ -836,6 +872,8 @@ export interface ClientCatalogModel {
   default: boolean;
   available: boolean;
   reason: CatalogReason | null;
+  /** 第 72 批：原因的说明文字（可用时 null）。 */
+  reason_text: string | null;
 }
 
 /**
@@ -848,6 +886,7 @@ export function modelCatalogBody(r: RoutingState, plan: { models: readonly strin
   const table = currentPrices(r);
   const live = new Set(r.providers.filter((p) => p.enabled).map((p) => p.id));
   const def = r.models.find((m) => m.is_default)?.alias ?? "legal/k3";
+  const same = new Set(sameUpstreamAliases(r).map((x) => x.alias));
   const models: ClientCatalogModel[] = r.models
     .map((m) => ({ m, meta: modelMetaOf(m) }))
     .filter(({ meta }) => meta.client_visible)
@@ -858,10 +897,12 @@ export function modelCatalogBody(r: RoutingState, plan: { models: readonly strin
       else if (m.targets.length > 0 && !m.targets.some((x) => live.has(x.provider))) reason = "no_route";
       else if (plan.models && !plan.models.includes(m.alias)) reason = "not_in_plan";
       else if (plan.quota_unit === "cny" && unpricedAliasesIn(r, table, [m.alias]).length > 0) reason = "unpriced";
-      return { id: m.alias, label: meta.label, description: meta.description, sort: meta.sort, thinking: meta.thinking, efforts: [...meta.efforts], capabilities: [...meta.capabilities], scopes: [...meta.scopes], max_context: meta.max_context, default: m.alias === def, available: reason === null, reason };
+      // 第 72 批（D-299）：实际上游与缺省别名相同——照列但置灰（客户端永远看不到“名字不同、实际相同”的选项）
+      else if (same.has(m.alias)) reason = "same_upstream";
+      return { id: m.alias, label: meta.label, description: meta.description, sort: meta.sort, thinking: meta.thinking, efforts: [...meta.efforts], capabilities: [...meta.capabilities], scopes: [...meta.scopes], max_context: meta.max_context, default: m.alias === def, available: reason === null, reason, reason_text: reason ? CATALOG_REASON_TEXT[reason] : null };
     })
     .sort((a, b) => a.sort - b.sort || a.id.localeCompare(b.id));
-  return { version: r.version, issued_at: new Date(t).toISOString(), tid: who.tid, uid: who.uid, default: def, models };
+  return { version: r.version, epoch: r.epoch ?? null, issued_at: new Date(t).toISOString(), tid: who.tid, uid: who.uid, default: def, models };
 }
 
 export function deleteModel(r: RoutingState, alias: string, t: number, by: string | null): void {
@@ -938,6 +979,9 @@ export function routingView(r: RoutingState, keyId: string | null) {
     providers: r.providers.map((x) => ({ id: x.id, label: x.label, vendor: x.vendor, base_url: x.base_url, enabled: x.enabled, key_set: x.key_sealed !== null, use_local_key: x.use_local_key, key_hint: x.key_hint, key_set_at: x.key_set_at, max_concurrency: x.max_concurrency, header_timeout_ms: x.header_timeout_ms, idle_timeout_ms: x.idle_timeout_ms, probe_requested_at: x.probe_requested_at, health: mergedHealth(r, x.id) })),
     // 第 66 批：展示与能力字段按缺省补齐后给控制台（旧记录没有这些字段）
     models: r.models.map((m) => ({ ...m, ...modelMetaOf(m), label: m.label, builtin: (BUILTIN_ALIASES as readonly string[]).includes(m.alias) })),
+    // 第 72 批（D-299 第 3 条）：两个可见别名指向同一上游型号时的告警（控制台“模型与路由”显示）
+    warnings: sameUpstreamAliases(r).map((x) => ({ code: "routing.same_upstream", alias: x.alias, default_alias: x.default_alias, model: x.model, message: `“${x.alias}”与缺省模型“${x.default_alias}”实际都调用 ${x.model}：客户端已把它置灰（运营尚未给它配置独立的模型）` })),
+    epoch: r.epoch ?? null,
     prices: { version: p.version, effective_at: p.effective_at, items: p.items, basis: p.basis ?? "alias" },
     price_history: r.prices.map((x) => ({ version: x.version, effective_at: x.effective_at, by: x.by, basis: x.basis ?? "alias" })).reverse(),
   };
@@ -946,7 +990,8 @@ export function routingView(r: RoutingState, keyId: string | null) {
 export function migrateRouting(raw: unknown, t: number, bootstrap?: Parameters<typeof bootstrapRouting>[1]): RoutingState {
   const r = raw as RoutingState | undefined;
   if (!r || typeof r !== "object" || !Array.isArray(r.providers) || !Array.isArray(r.models) || !Array.isArray(r.prices) || r.prices.length === 0) return bootstrapRouting(t, bootstrap);
-  return { ...r, health: r.health && typeof r.health === "object" ? r.health : {} };
+  // 第 72 批：之前的路由状态没有纪元——迁移时生成一次（调用方随即写盘）
+  return { ...r, health: r.health && typeof r.health === "object" ? r.health : {}, epoch: typeof r.epoch === "string" && EPOCH_RE.test(r.epoch) ? r.epoch : newRoutingEpoch() };
 }
 
 /**

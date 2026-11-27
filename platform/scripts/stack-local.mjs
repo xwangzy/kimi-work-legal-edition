@@ -43,6 +43,8 @@ const basePort = Number(arg("base-port", "18400"));
 const P = { signer: basePort, cp: basePort + 1, gw: basePort + 2, console: basePort + 3, search: basePort + 4 };
 const upstream = arg("upstream", "https://maas.jointpilot.com/v1");
 const model = arg("model", "kimi-k3.1-pro");
+// 第 72 批（D-299）：K2.6 指真实的 kimi-k2.6（原先与 K3 同指 --model，问答里切 K2.6 实际仍是 K3.1 Pro）
+const modelK26 = arg("model-k26", "kimi-k2.6");
 const node = process.execPath;
 const useTls = process.argv.includes("--tls");
 const run = (script, args) => {
@@ -128,7 +130,7 @@ const cfgs = {
     // 第 69 批：回环形态（无 TLS）另让登录 / 找回 / 绑定的 dry-run 验证码也随应答返回——验证码登录与换账号可在本机端到端走通
     sms: { allow_dry_run: true, ...(useTls ? {} : { dry_run_reveal_all_loopback: true }) },
     console: { origins: [consoleOrigin], bootstrap_admin: ADMIN },
-    routing: { bootstrap: { provider: { id: "maas", label: "中软 MaaS", vendor: "csi-maas", base_url: upstream }, models: { "legal/k3": model, "legal/k2.6": model } }, public_key_file: pub("routing-public.txt") },
+    routing: { bootstrap: { provider: { id: "maas", label: "中软 MaaS", vendor: "csi-maas", base_url: upstream }, models: { "legal/k3": model, "legal/k2.6": modelK26 } }, public_key_file: pub("routing-public.txt") },
   },
   gw: {
     role: "gateway",

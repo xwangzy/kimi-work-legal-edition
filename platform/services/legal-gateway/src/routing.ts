@@ -156,10 +156,13 @@ export const LOCAL_PROVIDER = "local";
 const localRoute = (model: string, label: string, isDefault = false): ModelRoute =>
   Object.freeze({ label, enabled: true, isDefault, targets: Object.freeze([{ provider: LOCAL_PROVIDER, model, priority: 0 }]), allowCrossVendor: false, defaultMaxTokens: 8192 });
 
-/** 客户端写死的两个别名（主任务、子任务）指向本机上游。 */
+/**
+ * 客户端写死的两个别名指向本机上游（订阅取不到时的兜底）。第 72 批（D-299）：与控制面缺省路由、部署模板同口径——
+ * legal/k3 → kimi-k3.1-pro（原为 kimi-k3）、legal/k2.6 → kimi-k2.6。K2.6 的思考参数由客户端按 toggle 发 thinking:{type}，K3 按 effort 发 reasoning_effort，网关原样转发。
+ */
 export const DEFAULT_ROUTES: Readonly<Record<string, ModelRoute>> = Object.freeze({
-  "legal/k3": localRoute("kimi-k3", "K3（主任务）", true),
-  "legal/k2.6": localRoute("kimi-k2.6", "K2.6（子任务）"),
+  "legal/k3": localRoute("kimi-k3.1-pro", "K3", true),
+  "legal/k2.6": localRoute("kimi-k2.6", "K2.6"),
 });
 
 const MODEL_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;

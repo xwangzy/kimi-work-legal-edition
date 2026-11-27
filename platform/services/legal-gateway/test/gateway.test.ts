@@ -75,7 +75,7 @@ describe("法律模型网关 v0", () => {
     assert.match(text, /^data: /);
     assert.ok(text.endsWith("data: [DONE]\n\n"));
     const sent = provider.seen.at(-1)!;
-    assert.equal(sent.model, "kimi-k3");
+    assert.equal(sent.model, "kimi-k3.1-pro", "第 72 批（D-299）：本机兜底 legal/k3 → kimi-k3.1-pro（与控制面缺省路由同口径）");
     assert.deepEqual(sent.stream_options, { include_usage: true });
     const u = extractUsage(text)!;
     assert.ok(u.input > 0 && u.output > 0);
@@ -88,7 +88,7 @@ describe("法律模型网关 v0", () => {
     assert.equal(rec.uid, "u1");
     assert.equal(rec.dev, "d1");
     assert.equal(rec.upstream_request_id, "mock-1", "上游请求编号取响应体 id");
-    assert.equal(rec.upstream_model, "kimi-k3");
+    assert.equal(rec.upstream_model, "kimi-k3.1-pro");
     assert.equal(rec.attempts.length, 1);
   });
 

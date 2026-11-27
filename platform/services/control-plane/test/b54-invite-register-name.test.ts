@@ -37,6 +37,18 @@ const post = async (path: string, body: unknown, headers: Record<string, string>
   const r = await fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
   return { status: r.status, json: (await r.json()) as any };
 };
+
+/**
+ * 第 72 批（契约 §3.1，D-305）：取消“发第一张成员邀请就悄悄转团队”——个人工作室发成员邀请前须先就地升级为团队（同名）；
+ * 本文件验证的是成员新电脑经管理员批准的流程，所以另把成员电脑策略设为 approve（团队缺省 auto，D-304）。
+ */
+const toTeam = async (session: string) => {
+  const me = await (await fetch(`${base}/v1/auth/me`, { headers: { "x-kwl-session": session } })).json() as any;
+  const up = await fetch(`${base}/v1/workspace/upgrade`, { method: "POST", headers: { "content-type": "application/json", "x-kwl-session": session }, body: JSON.stringify({ name: me.firm.name }) });
+  assert.equal(up.status, 200, await up.clone().text());
+  const pol = await fetch(`${base}/v1/firm/policy/member-device`, { method: "PUT", headers: { "content-type": "application/json", "x-kwl-session": session }, body: JSON.stringify({ policy: "approve" }) });
+  assert.equal(pol.status, 200, await pol.clone().text());
+};
 const get = async (path: string, headers: Record<string, string> = {}) => {
   const r = await fetch(`${base}${path}`, { headers });
   return { status: r.status, json: (await r.json()) as any };
@@ -78,6 +90,7 @@ async function signupFounder(email: string, org = "测试律所") {
 
 test("凭邀请码注册：律师填的名字与邀请上的不同，回给客户端的成员姓名仍是邀请上的；账号显示名是律师自己填的；创始开通码照旧用自己填的", async () => {
   const f = await signupFounder("founder-b54@example.cn", "五十四号律所");
+  await toTeam(f.session);
   assert.equal(f.account.name, "张律师", "创始：账号与成员都是自己填的名字");
   const inv = await f.dev.call("POST", "/v1/invitations", { member_slug: "wangwu", name: "王五", role: "lawyer" }, f.session);
   assert.equal(inv.status, 200, JSON.stringify(inv.json));
@@ -95,6 +108,7 @@ test("凭邀请码注册：律师填的名字与邀请上的不同，回给客�
 
 test("第 56 批：被拒后重新受邀——账号原来绑的成员从未入组、获批的电脑属于还没有账号的新成员时，登录即改绑；已入组成员的账号不能借此换到别人的电脑上", async () => {
   const f = await signupFounder("founder-b56@example.cn", "五十六号改绑律所");
+  await toTeam(f.session);
   const slugOf = (tid: string, s: string) => `usr_${tid.slice(4)}_${s}`;
   // 第一份邀请：注册了账号，但入组申请被拒（从未登记设备、没有席位）
   const inv1 = await f.dev.call("POST", "/v1/invitations", { member_slug: "zhao-a", name: "赵律师", role: "lawyer" }, f.session);

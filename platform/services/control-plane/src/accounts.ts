@@ -21,7 +21,8 @@ export interface PasswordHash {
 
 export interface AccountRecord {
   aid: string;
-  email: string;
+  /** 第 72 批（D-305）：关联账号（person 有值）为 null——邮箱、手机号、密码只在主账号上。 */
+  email: string | null;
   name: string;
   status: "active" | "disabled";
   disabled_reason: string | null;
@@ -32,7 +33,7 @@ export interface AccountRecord {
   pw: PasswordHash | null;
   pw_changed_at: string | null;
   created_at: string;
-  created_via: "self" | "founder_code" | "invite_code" | "ops";
+  created_via: "self" | "founder_code" | "invite_code" | "ops" | "team_invite";
   last_login_at: string | null;
   failed: { count: number; first_at: string | null; locked_until: string | null };
   device_limit: number | null;
@@ -49,6 +50,17 @@ export interface AccountRecord {
    * （IPv4 前两段、IPv6 前两组；不存完整 IP、不做地理定位）——“登录过的电脑”与“新电脑登录”提醒、短时多地判断用。
    */
   logins?: LoginRecord[];
+  /**
+   * 第 72 批（D-305，契约 §1）：关联账号——这个人在另一工作空间的成员身份，指向其主账号的 aid；主账号没有这个字段。
+   * 关联账号 email / pw / phone 一律为 null，登录凭证与手机号一律取主账号的（phoneOfPerson）。
+   */
+  person?: string;
+  /** 第 72 批（A3 R2）：谁停用的——平台停用的，团队侧不能启用。 */
+  disabled_by?: "platform" | "team" | null;
+  /** 第 72 批（契约 §4）：账号级上手状态（只存时间；挂在主账号上，代表这个人）。 */
+  onboarding?: { completed_at?: string; dismissed_at?: string };
+  /** 第 72 批（契约 §2.1）：主账号上记最近使用的工作空间（账号 aid）；登录缺省进这个。 */
+  last_workspace?: string;
 }
 
 export interface LoginRecord {
@@ -223,8 +235,8 @@ export function validName(v: unknown): v is string {
 }
 
 /** 由邮箱前缀生成成员标识 / 律所标识的基底（小写字母数字，3–20 位，不足补随机）。 */
-export function slugBase(email: string): string {
-  const local = email.split("@")[0]!.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16);
+export function slugBase(email: string | null): string {
+  const local = (email ?? "").split("@")[0]!.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16);
   return local.length >= 3 ? local : `u${randomBytes(3).toString("hex")}`;
 }
 
@@ -256,8 +268,9 @@ export function clientInfo(v: unknown): { version: string | null; platform: stri
 }
 
 /** 对外的账号视图（不含哈希与失败计数细节）。 */
-export function accountView(a: AccountRecord, extra: { org?: { slug: string; name: string } } = {}) {
-  return { aid: a.aid, email: a.email, name: a.name, role: a.role, status: a.status, tid: a.tid, member_slug: a.member_slug, has_password: a.pw !== null, created_at: a.created_at, last_login_at: a.last_login_at, phone: a.phone?.masked ?? null, ...(extra.org ? { org: extra.org } : {}) };
+export function accountView(a: AccountRecord, extra: { org?: { slug: string; name: string }; email?: string | null; phone?: string | null } = {}) {
+  // 第 72 批：关联账号没有自己的邮箱与手机号——视图显示主账号的（调用方传入）；没传即账号自己的
+  return { aid: a.aid, email: extra.email !== undefined ? extra.email : a.email, name: a.name, role: a.role, status: a.status, tid: a.tid, member_slug: a.member_slug, has_password: a.pw !== null, created_at: a.created_at, last_login_at: a.last_login_at, phone: extra.phone !== undefined ? extra.phone : (a.phone?.masked ?? null), ...(a.person ? { person: a.person } : {}), ...(extra.org ? { org: extra.org } : {}) };
 }
 
 export function sessionView(s: SessionRecord, currentSid: string | null) {

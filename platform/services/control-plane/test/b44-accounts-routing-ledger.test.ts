@@ -35,6 +35,18 @@ const post = async (path: string, body: unknown, headers: Record<string, string>
   const r = await fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
   return { status: r.status, json: (await r.json()) as any };
 };
+
+/**
+ * 第 72 批（契约 §3.1，D-305）：取消“发第一张成员邀请就悄悄转团队”——个人工作室发成员邀请前须先就地升级为团队（同名）；
+ * 本文件验证的是成员新电脑经管理员批准的流程，所以另把成员电脑策略设为 approve（团队缺省 auto，D-304）。
+ */
+const toTeam = async (session: string) => {
+  const me = await (await fetch(`${base}/v1/auth/me`, { headers: { "x-kwl-session": session } })).json() as any;
+  const up = await fetch(`${base}/v1/workspace/upgrade`, { method: "POST", headers: { "content-type": "application/json", "x-kwl-session": session }, body: JSON.stringify({ name: me.firm.name }) });
+  assert.equal(up.status, 200, await up.clone().text());
+  const pol = await fetch(`${base}/v1/firm/policy/member-device`, { method: "PUT", headers: { "content-type": "application/json", "x-kwl-session": session }, body: JSON.stringify({ policy: "approve" }) });
+  assert.equal(pol.status, 200, await pol.clone().text());
+};
 const get = async (path: string, headers: Record<string, string> = {}) => {
   const r = await fetch(`${base}${path}`, { headers });
   return { status: r.status, json: (await r.json()) as any };
@@ -214,6 +226,7 @@ test("运营代建账号（设置码）→ 本人设密码 → 登录；停用�
 
 test("凭邀请码注册成员：账号绑邀请对应的成员，返回成员认领（设备编号为第一台），客户端仍按邀请码本机段做入组 HMAC", async () => {
   const f = await signupFounder("founder4@example.cn", "四号律所");
+  await toTeam(f.session);
   const inv = await f.dev.call("POST", "/v1/invitations", { member_slug: "lisi", name: "李四", role: "lawyer" }, f.session);
   assert.equal(inv.status, 200, JSON.stringify(inv.json));
   const reg = await post("/v1/auth/register", { email: "lisi@example.cn", password: PW, name: "李四", code: inv.json.code });
@@ -234,7 +247,8 @@ test("API 路由：初始路由由配置导入；运营改上游、模型、价�
   const body = o1.ok ? o1.body : null;
   assert.equal(body.providers[0].id, "maas");
   assert.equal(body.providers[0].use_local_key, true);
-  assert.deepEqual(body.models.map((m: any) => [m.alias, m.targets[0].model]), [["legal/k3", "kimi-k3.1-pro"], ["legal/k2.6", "kimi-k3.1-pro"]]);
+  // 第 72 批（D-299）：内置别名真实映射——K2.6 指 kimi-k2.6（原先两个别名同指 kimi-k3.1-pro，是“伪切换”）
+  assert.deepEqual(body.models.map((m: any) => [m.alias, m.targets[0].model]), [["legal/k3", "kimi-k3.1-pro"], ["legal/k2.6", "kimi-k2.6"]]);
   assert.equal((await get("/v1/feed/routing", { authorization: "Bearer nope" })).status, 401);
   // 健康上报：只收短代码；两个网关实例，状态最差者显示
   assert.equal((await service("/v1/feed/routing-health", { holder: "gw-a", at: new Date().toISOString(), providers: { maas: { state: "up", latency_ms: 812, consecutive_failures: 0, last_error: "上游原文<b>不收</b>" } } })).status, 200);

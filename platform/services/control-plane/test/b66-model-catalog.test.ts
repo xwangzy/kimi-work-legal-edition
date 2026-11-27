@@ -32,7 +32,8 @@ test("目录（纯函数）：只列客户端可见的；按排序；停用标 d
   const by = Object.fromEntries(doc.models.map((m) => [m.id, m]));
   assert.equal(by["legal/k3"]!.label, "K3", "首次部署的占位名“主任务模型”给律师看时换成 K3");
   assert.deepEqual(by["legal/k3"]!.scopes, ["qa", "task"]);
-  assert.deepEqual(by["legal/k2.6"]!.scopes, ["qa"], "K2.6 是子 Agent 的模型：主任务入口不列");
+  // 第 72 批（D-299）：K2.6 也进任务入口（带 tool_use 的 Agent 模型；原先只在问答可选，Work 首页只剩 K3）
+  assert.deepEqual(by["legal/k2.6"]!.scopes, ["qa", "task"], "K2.6 问答与任务都可选");
   assert.equal(by["legal/k2.6"]!.thinking, "toggle");
   assert.deepEqual([by["legal/k3-fast"]!.available, by["legal/k3-fast"]!.description, by["legal/k3-fast"]!.thinking, by["legal/k3-fast"]!.efforts.join(",")], [true, "更快出结果", "effort", "low,high"]);
   assert.deepEqual([by["legal/off"]!.available, by["legal/off"]!.reason], [false, "disabled"]);
@@ -40,7 +41,7 @@ test("目录（纯函数）：只列客户端可见的；按排序；停用标 d
   assert.equal(doc.version, r.version);
   const json = JSON.stringify(doc);
   for (const s of UPSTREAM_SECRETS) assert.equal(json.includes(s), false, `目录里不得出现 ${s}`);
-  for (const m of doc.models) assert.deepEqual(Object.keys(m).sort(), ["available", "capabilities", "default", "description", "efforts", "id", "label", "max_context", "reason", "scopes", "sort", "thinking"]);
+  for (const m of doc.models) assert.deepEqual(Object.keys(m).sort(), ["available", "capabilities", "default", "description", "efforts", "id", "label", "max_context", "reason", "reason_text", "scopes", "sort", "thinking"]);
 });
 
 test("目录（纯函数）：套餐不含 → not_in_plan；金额套餐未定价 → unpriced；上游停用 → no_route", () => {
@@ -73,7 +74,7 @@ test("运营改模型：新字段逐项校验；运营视图带出（缺省补�
   const v = routingView(r, null).models.find((m) => m.alias === "legal/k3-fast")!;
   assert.deepEqual([v.sort, v.description, v.thinking, v.scopes.join(",")], [5, "更快出结果", "effort", "qa,task"]);
   const k26 = routingView(r, null).models.find((m) => m.alias === "legal/k2.6")!;
-  assert.deepEqual([k26.scopes.join(","), k26.thinking, k26.client_visible], ["qa", "toggle", true], "旧记录没有新字段：内置别名按缺省补齐");
+  assert.deepEqual([k26.scopes.join(","), k26.thinking, k26.client_visible], ["qa,task", "toggle", true], "旧记录没有新字段：内置别名按缺省补齐（第 72 批起 K2.6 问答 + 任务）");
   const feed = routingFeedBody(r, T0);
   for (const m of feed.models) assert.deepEqual(Object.keys(m).sort(), ["alias", "allow_cross_vendor", "default_max_tokens", "enabled", "is_default", "label", "targets"], "网关订阅只给网关要的字段");
 });

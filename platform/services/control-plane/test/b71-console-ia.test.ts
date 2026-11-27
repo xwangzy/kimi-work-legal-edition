@@ -35,7 +35,8 @@ test("开通两家客户：律所（多人）与个人；客户行带 personal�
   ok(await ops("op_0201", "POST", "/v1/ops/tenants", { tid: "ten_b71solo", name: "王某某", seats: 1, subscription_days: 30, edition: "team" }), "开通个人");
   firmAdmin = ok(await ops("op_0201", "POST", "/v1/ops/accounts", { tid: "ten_b71firm", email: "admin@b71firm.example", name: "所主任", role: "admin" }), "律所管理员").json.account.aid;
   soloAdmin = ok(await ops("op_0201", "POST", "/v1/ops/accounts", { tid: "ten_b71solo", email: "solo@b71.example", name: "王律师", role: "admin" }), "个人账号").json.account.aid;
-  cp.ops.tenant("ten_b71solo")!.personal = true;
+  // 第 72 批（D-305）：类型是显式字段 kind（personal 只是兼容字段）；用例直接把这家定为个人
+  Object.assign(cp.ops.tenant("ten_b71solo")!, { personal: true, kind: "personal" });
   const list = ok(await ops("op_0201", "GET", "/v1/ops/tenants"), "客户列表").json;
   const row = (tid: string) => list.tenants.find((t: { tid: string }) => t.tid === tid);
   assert.equal(row("ten_b71firm").personal, false);
