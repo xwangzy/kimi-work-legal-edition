@@ -7,6 +7,9 @@
  *               工作台  总览、告警
  *               客户    客户、账号、电脑、注册管理（注册策略 / 邀请码 / 短信服务）
  *             第 71 批（V45）：以“客户”为主轴——客户详情含成员与电脑；账号详情是页面 #/ops/accounts/<aid>；账号、电脑两页是查找入口
+ *             第 72 批（D-306）：“人”和“组织”两条主轴——客户分“团队客户 / 个人客户”两个页签；“账号”改“用户”（#/ops/people，一行 = 一个人），
+ *               旧 #/ops/accounts[/<aid>] 转到用户；代建成员只留组织详情“邀请成员”一个入口
+ *   个人用户（第 72 批）：没有“本所 / 我的工作室”分区——用量、账单、电脑、账号与安全都在“我的”；团队管理员才有“本所”
  *               经营    套餐、模型与价目、计费、用量
  *               平台    模型与路由、人员与权限、系统
  *             旧地址照认：#/ops/plans?tab=settings → 注册管理 · 注册策略；?tab=alerts → 告警；#/ops/routing?tab=prices → 模型与价目
@@ -19,7 +22,7 @@
 import * as api from "./api.js";
 import { initAuth, setMeta, showLogin, showReset } from "./auth.js";
 import { reauthDialog } from "./reauth.js";
-import { canAny, ctx, go, isFirmManager, PLATFORM_ROLES, roleLabel, ROLE, SECTIONS } from "./domain.js";
+import { canAny, ctx, go, isFirmManager, isPersonalSpace, KIND_LABEL, PLATFORM_ROLES, roleLabel, ROLE, SECTIONS, workspaceKind } from "./domain.js";
 import { $, btn, clear, closeDrawer, errorBlock, fmt, h, icon, toast } from "./ui.js";
 import * as meOverview from "./pages/me-overview.js";
 import * as meSecurity from "./pages/me-security.js";
@@ -31,7 +34,7 @@ import * as firmUsage from "./pages/firm-usage.js";
 import * as firmBilling from "./pages/firm-billing.js";
 import * as overview from "./pages/overview.js";
 import * as tenants from "./pages/tenants.js";
-import * as accounts from "./pages/accounts.js";
+import * as people from "./pages/people.js";
 import * as devices from "./pages/devices.js";
 import * as routing from "./pages/routing.js";
 import * as usage from "./pages/usage.js";
@@ -54,6 +57,9 @@ export const NAV = [
     items: [
       { id: "overview", label: "我的概览", icon: "home", mod: meOverview, member: true },
       { id: "devices", label: "我的电脑", icon: "laptop", mod: meDevices, member: true },
+      // 第 72 批（D-306 第 5 条）：个人用户的用量与账单在“我的”里（读同一份 /v1/firm/usage*、/v1/firm/billing；个人空间不开放团队写接口，C-11）
+      { id: "usage", label: "用量", icon: "usage", mod: firmUsage, member: true, personal: true },
+      { id: "billing", label: "账单", icon: "billing", mod: firmBilling, member: true, personal: true },
       { id: "security", label: "账号与安全", icon: "shield", mod: meSecurity },
     ],
   },
@@ -75,7 +81,8 @@ export const NAV = [
       { id: "overview", label: "总览", icon: "overview", mod: overview, perms: ["tenant.read"], group: "工作台" },
       { id: "alerts", label: "告警", icon: "bell", mod: alerts, perms: ["tenant.read"], group: "工作台" },
       { id: "tenants", label: "客户", icon: "tenants", mod: tenants, perms: ["tenant.read"], group: "客户" },
-      { id: "accounts", label: "账号", icon: "accounts", mod: accounts, perms: ["account.read", "account.support"], group: "客户" },
+      // 第 72 批（契约 §8，C-9）：用户 = 一个人（GET /v1/ops/people 按 account.read）
+      { id: "people", label: "用户", icon: "accounts", mod: people, perms: ["account.read"], group: "客户" },
       // GET /v1/ops/devices 控制面按“查看账号”（account.read）鉴权：只有“查看客户”的财务看得到菜单却永远 403
       { id: "devices", label: "电脑", icon: "devices", mod: devices, perms: ["account.read"], group: "客户" },
       {
@@ -158,11 +165,9 @@ function setMe(me) {
   } else ctx.perms = new Set();
   ctx.tenants = null;
 }
-const sectionVisible = (s) => (s === "me" ? true : s === "firm" ? ctx.kind === "member" && isFirmManager(ctx.firmRole) : s === "ops" ? ctx.kind === "staff" : false);
-/** 第 71 批（第二轮，13）：个人客户（一人一所）的“本所”改叫“我的工作室”，只留用量与账单——没有成员、电脑在“我的电脑”里 */
-const personalFirm = () => ctx.kind === "member" && ctx.me?.personal === true;
-const PERSONAL_FIRM_ITEMS = new Set(["usage", "billing"]);
-const itemVisible = (s, it) => sectionVisible(s) && (!it.member || ctx.kind === "member") && (s !== "ops" || canAny(it.perms)) && !(s === "firm" && personalFirm() && !PERSONAL_FIRM_ITEMS.has(it.id));
+/** 第 72 批（D-306 第 5 条）：“本所”只给团队空间的管理员 / 合伙人；个人用户侧栏不出现任何“本所 / 我的工作室” */
+const sectionVisible = (s) => (s === "me" ? true : s === "firm" ? ctx.kind === "member" && isFirmManager(ctx.firmRole) && !isPersonalSpace() : s === "ops" ? ctx.kind === "staff" : false);
+const itemVisible = (s, it) => sectionVisible(s) && (!it.member || ctx.kind === "member") && (!it.personal || isPersonalSpace()) && (s !== "ops" || canAny(it.perms));
 function landing() {
   if (ctx.kind === "staff") {
     const first = NAV[2].items.find((it) => itemVisible("ops", it));
@@ -282,8 +287,7 @@ function buildNav() {
       for (const g of groups) nav.append(h("div", { class: "nav-section", "aria-label": g || s.label }, h("div", { class: "nav-heading" }, g || s.label), items.filter((it) => (it.group ?? "") === g).map((it) => link(s, it))));
       continue;
     }
-    const label = s.id === "firm" && personalFirm() ? "我的工作室" : s.label;
-    nav.append(h("div", { class: "nav-section", "aria-label": label }, h("div", { class: "nav-heading" }, label), items.map((it) => link(s, it))));
+    nav.append(h("div", { class: "nav-section", "aria-label": s.label }, h("div", { class: "nav-heading" }, s.label), items.map((it) => link(s, it))));
   }
 }
 /** 侧栏数字角标；不带分区的 id 归平台运营（总览与告警页调 setNavBadge("alerts", 未确认告警数)） */
@@ -299,7 +303,9 @@ function buildUser() {
   const sub =
     ctx.kind === "staff"
       ? (a.roles ?? []).map((r) => roleLabel(r)).join("、") || "平台人员"
-      : [ctx.me.firm?.name ?? a.org?.name, ROLE[ctx.firmRole] ?? ctx.firmRole].filter(Boolean).join(" · ");
+      : isPersonalSpace()
+        ? "个人"
+        : [ctx.me.workspace?.name ?? ctx.me.firm?.name ?? a.org?.name, workspaceKind() ? KIND_LABEL[workspaceKind()] : null, ROLE[ctx.firmRole] ?? ctx.firmRole].filter(Boolean).join(" · ");
   const initials = String(a.name || a.email || "?").trim().slice(0, 1).toUpperCase();
   clear(
     $("#sidebar-foot"),
@@ -336,8 +342,8 @@ function buildSearch() {
     menu.hidden = true;
     input.blur();
     // 第 71 批：账号只命中一个时直接进账号详情（jump=1，由账号页判断）
-    if (kind === "account") go(`ops/accounts?q=${encodeURIComponent(q)}&jump=1`);
-    else if (kind === "account_id") go(`ops/accounts/${encodeURIComponent(q)}`);
+    if (kind === "account") go(`ops/people?q=${encodeURIComponent(q)}&jump=1`);
+    else if (kind === "account_id") go(`ops/people/${encodeURIComponent(q)}`);
     else if (kind === "device") go(`ops/devices?status=&q=${encodeURIComponent(q)}`);
     else if (kind === "tenant") go(`ops/tenants?q=${encodeURIComponent(q)}`);
     else if (kind === "request") go(`ops/usage?request_id=${encodeURIComponent(q)}&view=records`);
@@ -347,10 +353,10 @@ function buildSearch() {
     if (!q) return void (menu.hidden = true);
     const first = guess(q);
     const all = [
-      ["account", `在账号里搜“${q}”`, "手机号、邮箱或姓名；只命中一个时直接打开", "account.read"],
-      ["account_id", `打开账号 ${q}`, "账号编号", "account.read"],
+      ["account", `在用户里搜“${q}”`, "手机号、邮箱、姓名或团队名；只命中一个人时直接打开", "account.read"],
+      ["account_id", `打开用户 ${q}`, "账号编号（团队成员身份的编号也认）", "account.read"],
       ["device", `在电脑里搜“${q}”`, "电脑编号、名称或版本", "account.read"],
-      ["tenant", `在客户里搜“${q}”`, "律所名称或编号", "tenant.read"],
+      ["tenant", `在客户里搜“${q}”`, "团队名称、个人姓名或客户编号", "tenant.read"],
       ["request", `按请求编号查“${q}”`, "逐请求明细", "usage.read"],
     ].filter((x) => canAny([x[3]]) && (x[0] !== "account_id" || /^acc_/i.test(q)));
     items = [...all.filter((x) => x[0] === first), ...all.filter((x) => x[0] !== first)];
@@ -400,6 +406,10 @@ function route() {
   const r = parseHash(location.hash);
   const moved = MOVED.find(([pg, k, v]) => pg === `${r.section}/${r.page}` && r.params[k] === v);
   if (moved) return void location.replace(`#/${moved[3]}`);
+  // 第 72 批：旧“账号”地址转到“用户”（#/ops/accounts/<aid> → 这个人的用户详情；查询串照带）；个人用户的旧“我的工作室”地址转到“我的”
+  const q0 = String(location.hash).split("?")[1];
+  if (r.section === "ops" && r.page === "accounts") return void location.replace(`#/ops/people${r.arg ? `/${encodeURIComponent(r.arg)}` : ""}${q0 ? `?${q0}` : ""}`);
+  if (r.section === "firm" && isPersonalSpace() && (r.page === "usage" || r.page === "billing")) return void location.replace(`#/me/${r.page}${q0 ? `?${q0}` : ""}`);
   const sec = NAV.find((s) => s.id === r.section);
   const item = sec?.items.find((it) => it.id === r.page);
   if (!item) return void (location.hash = `#/${landing()}`);
@@ -420,8 +430,8 @@ function route() {
   $("#sidebar-foot .user")?.classList.toggle("active", key === "me/security" && ctx.kind === "staff");
   // 第 71 批（第二轮，05）：账号列表页自带搜手机号 / 邮箱的搜索框，顶栏全局搜索在这一页收起，免得同屏两个搜索框
   // 第五轮：全站同一规则——列表页自带搜索框的（客户、账号、电脑）收起顶栏搜索；其余页（含详情页）保留
-  if ($("#gsearch")) $("#gsearch").hidden = !ctx.gsearchOn || (["ops/tenants", "ops/accounts", "ops/devices"].includes(key) && !r.arg);
-  const secLabel = r.section === "firm" && personalFirm() ? "我的工作室" : sec.label;
+  if ($("#gsearch")) $("#gsearch").hidden = !ctx.gsearchOn || (["ops/tenants", "ops/people", "ops/devices"].includes(key) && !r.arg);
+  const secLabel = sec.label;
   clear($("#crumbs"), h("span", { class: "crumb-sec" }, secLabel), icon("chevron", "crumb-sep"), sub ? [h("span", { class: "crumb-sec" }, item.label), icon("chevron", "crumb-sep"), h("b", {}, sub[1])] : h("b", {}, item.label));
   $("#app").classList.remove("nav-open");
   closeDrawer();
@@ -433,7 +443,7 @@ function route() {
   main.scrollTop = 0;
   ctx.reload = () => route();
   if (!itemVisible(r.section, item)) {
-    page.append(errorBlock({ status: 403, message: r.section === "firm" ? "只有本所管理员或合伙人能查看“本所”" : r.section === "ops" ? "只有有相应角色的中软平台人员能查看" : "这一页不适用于你的账号" }));
+    page.append(errorBlock({ status: 403, message: r.section === "firm" ? (isPersonalSpace() ? "个人空间没有“本所”：用量、账单在“我的”里" : "只有本所管理员或合伙人能查看“本所”") : r.section === "ops" ? "只有有相应角色的中软平台人员能查看" : "这一页不适用于你的账号" }));
     return;
   }
   try {
@@ -463,7 +473,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Escape") $("#app").classList.remove("nav-open");
 });
 // 第 71 批（V45）：账号详情是页面（有网址、可后退），不再是抽屉
-ctx.openAccount = (aid) => go(`ops/accounts/${encodeURIComponent(aid)}`);
+ctx.openAccount = (aid) => go(`ops/people/${encodeURIComponent(aid)}`);
 /** 详情页把面包屑写到对象名：parts = [[文字, 路径?], …]，最后一项加粗 */
 ctx.setCrumbs = (parts) => {
   const r = parseHash(location.hash);

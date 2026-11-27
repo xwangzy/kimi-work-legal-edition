@@ -37,7 +37,9 @@ test("build-console：dist 含页面、全部模块与 tokens.css（与桌面端
   // 桌面端引用同一份令牌由客户端一侧的门禁核对（apps/desktop/test/style-tokens.test.ts）；本用例随独立云端仓库导出，不读客户端源码
   assert.deepEqual(verifyDist(out), []);
   for (const need of ["app.js", "api.js", "ui.js", "domain.js", "auth.js", "reauth.js", "seal-key.js"]) assert.ok(files.includes(need), `缺 ${need}`);
-  for (const p of ["me-overview", "me-security", "me-devices", "firm-overview", "firm-members", "firm-devices", "firm-usage", "firm-billing", "overview", "tenants", "accounts", "devices", "routing", "usage", "plans", "billing", "staff", "system"]) assert.ok(files.includes(`pages/${p}.js`), `缺页面 ${p}`);
+  // 第 72 批（D-306 第 3 条）：“账号”页改为“用户”（pages/people.js，一行 = 一个人）；旧 #/ops/accounts[/<aid>] 由 app.js 转到用户，accounts.js 不再发布
+  for (const p of ["me-overview", "me-security", "me-devices", "firm-overview", "firm-members", "firm-devices", "firm-usage", "firm-billing", "overview", "tenants", "people", "devices", "routing", "usage", "plans", "billing", "staff", "system"]) assert.ok(files.includes(`pages/${p}.js`), `缺页面 ${p}`);
+  assert.ok(!files.includes("pages/accounts.js"), "旧“账号”页已并入“用户”");
 });
 
 test("build-console --control-plane：connect-src 收紧为 'self' + 控制面来源；非 https（回环除外）与带路径的来源拒绝", async () => {
@@ -342,4 +344,35 @@ test("第 47 批走查：额度说法（重置时刻、周期）；5xx 不露合
     }
   }
   assert.deepEqual(bad, []);
+});
+
+test("第 72 批（D-305/D-306）：工作空间类型取显式 kind、团队移出与平台停用分开说、席位一个说法；客户类型按 kind 不再推断", async () => {
+  const { kindOf, wsStatus, WS_STATUS, SEAT_NOTE, CREATED_VIA } = await mod("apps/console/domain.js");
+  assert.equal(kindOf({ kind: "team", personal: true }), "team", "显式 kind 优先于旧 personal 布尔");
+  assert.equal(kindOf({ personal: true }), "personal", "旧云端只给 personal 时照认");
+  assert.equal(kindOf({ status: "active" }), "team");
+  assert.equal(wsStatus({ status: "active", disabled_by: "team" }), "active");
+  assert.equal(wsStatus({ status: "disabled", disabled_by: "platform" }), "platform");
+  assert.equal(wsStatus({ status: "disabled", disabled_by: "team" }), "team");
+  assert.equal(wsStatus({ status: "disabled" }), "disabled");
+  assert.deepEqual([WS_STATUS.team[0], WS_STATUS.platform[0]], ["已移出团队", "平台停用"]);
+  assert.equal(SEAT_NOTE, "席位 = 能用 AI 的名额");
+  assert.equal(CREATED_VIA.team_invite, "团队邀请");
+  const { isPersonal } = await mod("apps/console/pages/tenants.js");
+  assert.equal(isPersonal({ kind: "team", personal: true, created_via: "self", accounts: 1 }), false, "升级后的团队不再按形状当个人");
+  assert.equal(isPersonal({ kind: "personal" }), true);
+  assert.equal(isPersonal({ personal: false, created_via: "self", accounts: 1 }), false);
+});
+
+test("第 72 批（W-3）：组织详情“成员与席位”运营可改角色、移出团队（接口 /v1/ops/tenants/{tid}/members/{aid}/role|remove），不再置灰指路；移出 / 平台停用分开", async () => {
+  const { memberOpsActions } = await mod("apps/console/pages/tenants.js");
+  const t = { tid: "ten_x", name: "某团队", kind: "team", seats: 3, seats_used: 1 };
+  const labels = (m: Record<string, unknown>) => (memberOpsActions(t, m, () => {}) as ({ label: string; disabled?: boolean } | null)[]).filter(Boolean).map((x) => `${x!.label}${x!.disabled ? "（置灰）" : ""}`);
+  const active = labels({ aid: "acc_aaaaaaaaaaaaaaaa", name: "甲", role: "lawyer", seated: false, acc: { aid: "acc_aaaaaaaaaaaaaaaa", status: "active" } });
+  assert.deepEqual(active, ["打开用户详情", "分配席位…", "改角色…", "停用（平台停用）…", "移出团队…"]);
+  assert.ok(!active.some((l) => /团队管理员操作/.test(l)), "不再有“由团队管理员完成”的置灰项");
+  const removed = labels({ aid: "acc_bbbbbbbbbbbbbbbb", name: "乙", role: "lawyer", seated: false, acc: { aid: "acc_bbbbbbbbbbbbbbbb", status: "disabled", disabled_by: "team" } });
+  assert.deepEqual(removed, ["打开用户详情", "启用…（置灰）"], "团队移出的成员：运营不代为启用（由团队重新邀请）");
+  const platformOff = labels({ aid: "acc_cccccccccccccccc", name: "丙", role: "lawyer", seated: false, acc: { aid: "acc_cccccccccccccccc", status: "disabled", disabled_by: "platform" } });
+  assert.deepEqual(platformOff, ["打开用户详情", "启用…"]);
 });

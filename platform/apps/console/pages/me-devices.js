@@ -27,6 +27,8 @@ function draw(box, me, reload) {
   const limit = Number(me.account?.device_limit) || 0;
   const full = limit > 0 && on.length >= limit;
   const personal = me.personal === true;
+  // 第 72 批（D-304）：团队成员新电脑缺省也直接登录（member_device_policy = auto）；只有“须确认”的团队才等管理员
+  const direct = personal || me.workspace?.member_device_policy === "auto";
   const signout = async (d) => {
     const r = await confirmAction({
       title: "让这台电脑退出登录",
@@ -54,7 +56,7 @@ function draw(box, me, reload) {
       consequences: [
         "这台电脑立即不能再用本账号调用 AI，上面的登录一并退出；",
         "电脑上的本地事项与材料不会被删除；",
-        personal ? "不可撤销：要再用这台电脑，重新登录即可，会作为一台新电脑登记。" : "不可撤销：要再用这台电脑，须重新登录并由律所管理员批准。",
+        direct ? "不可撤销：要再用这台电脑，重新登录即可，会作为一台新电脑登记。" : "不可撤销：要再用这台电脑，须重新登录并由团队管理员确认。",
         "只想腾出名额、以后还要用，请选“退出登录”。",
       ],
       fields: [{ name: "password", label: "输入你的密码以确认", type: "password", required: true, autocomplete: "current-password" }],
@@ -83,7 +85,7 @@ function draw(box, me, reload) {
           "div",
           { class: "seat-card-text" },
           full ? h("b", { class: "tone-text-warn" }, "要在新电脑上登录，先让一台退出登录。") : null,
-          h("p", { class: "muted small" }, personal ? "换电脑：在新电脑上直接登录即可；同时登录的电脑数达到上限时，由你选择让哪台退出登录。不再使用或丢失的电脑请移除。" : me.account?.role === "admin" || ctx.firmRole === "admin" ? "换电脑：在新电脑上登录提交申请 → 回到这台电脑批准 → 新电脑打开时会请你选择让哪台退出登录。不再使用或丢失的电脑请移除。" : "换电脑：在新电脑上登录后，需律所管理员批准才能使用。不再使用或丢失的电脑请移除。"),
+          h("p", { class: "muted small" }, direct ? "换电脑：在新电脑上直接登录即可；同时登录的电脑数达到上限时，由你选择让哪台退出登录。不再使用或丢失的电脑请移除。" : me.account?.role === "admin" || ctx.firmRole === "admin" ? "换电脑：在新电脑上登录提交申请 → 回到这台电脑确认 → 新电脑打开时会请你选择让哪台退出登录。不再使用或丢失的电脑请移除。" : "换电脑：本团队要求新电脑经团队管理员确认后才能使用。不再使用或丢失的电脑请移除。"),
         ),
         full && others.length ? btn(others.length === 1 ? `让「${deviceLabel(others[0])}」退出登录…` : "让一台退出登录…", pickSignout, { kind: "primary" }) : null,
       ),

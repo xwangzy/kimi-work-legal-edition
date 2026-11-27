@@ -13,7 +13,7 @@ export function render(page) {
   const months = Array.from({ length: 12 }, (_, i) => monthShift(cur, -i));
   const box = h("div", { class: "stack" });
   const sel = selectEl(months.map((m) => [m, m === cur ? `${m}（本期）` : m]), st.period, (v) => ((st.period = v), reload()), { "aria-label": "账期" });
-  page.append(pageHead("本所账单", "北京时间自然月；金额以元计，保留两位小数", sel), box);
+  page.append(pageHead(location.hash.startsWith("#/me/") ? "账单" : "本所账单", "北京时间自然月；金额以元计，保留两位小数", sel), box);
   const reload = () => load(box, () => api.get("/v1/firm/billing", { period: st.period }), (d) => draw(box, d), "正在读取账单…");
   reload();
 }

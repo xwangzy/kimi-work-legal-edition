@@ -8,9 +8,8 @@ import { alertList, ctx, go, pageHead, roleText, seatNote, tenantBadge } from ".
 import { btn, clear, clientOnlyList, confirmAction, facts, fmt, h, icon, load, metaLine, panel, periodBars, quotaCard, stat, toast } from "../ui.js";
 
 export const CLIENT_ONLY = [
-  ["批准入组", "新成员或换电脑的成员提交申请后，在管理员电脑上核对校验码并批准"],
-  ["生成邀请码", "邀请码的本机核对段只在管理员电脑上生成"],
-  ["移除电脑", "只能在管理员电脑上做；让电脑退出登录可在网页“成员”里做"],
+  ["确认新电脑", "“须确认”时的新电脑、要接收团队共享事项的电脑：在管理员电脑上核对校验码后确认（邀请成员、移出、席位已可在网页“成员”里做）"],
+  ["移除电脑", "只能在管理员电脑上做；让电脑退出登录可在网页“成员”或“电脑”里做"],
   ["策略与连接器发布", "本所策略由管理员电脑发布后才会下发"],
   ["恢复包与备份", "律所根密钥的备份与恢复只在本机完成"],
   ["离所交接", "成员离所时的事项与材料交接"],

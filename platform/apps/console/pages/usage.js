@@ -275,7 +275,7 @@ function openRecord(r) {
           ["周期", r.period ?? "—"],
           // 第 71 批（V45，P-11）：律所与账号可点，直达客户详情与账号详情（原先是纯文字，要复制邮箱再搜一次）
           ["律所", r.tid ? h("button", { type: "button", class: "link", onclick: () => goTo(`ops/tenants/${encodeURIComponent(r.tid)}`) }, `${r.tenant_name ?? r.tid}（${r.tid}）`) : "—"],
-          ["账号", r.aid ? h("button", { type: "button", class: "link", onclick: () => goTo(`ops/accounts/${encodeURIComponent(r.aid)}`) }, r.email ?? r.aid) : r.email ?? "—"],
+          ["账号", r.aid ? h("button", { type: "button", class: "link", onclick: () => goTo(`ops/people/${encodeURIComponent(r.aid)}`) }, r.email ?? r.aid) : r.email ?? "—"],
           ["成员 / 会话 / 设备", h("span", {}, mono(r.uid ?? "—"), " / ", mono(r.sid ?? "—"), " / ", mono(r.dev ?? "—"))],
           ["模型", h("span", {}, mono(r.alias), " → ", mono(r.provider ?? "—"), " · ", mono(r.upstream_model ?? "—"))],
           ["流式", r.stream ? "是" : "否"],

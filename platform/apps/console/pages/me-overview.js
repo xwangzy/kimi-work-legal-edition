@@ -4,8 +4,8 @@
  * 三种数字分开写、不互相换算：配额百分比（ratio）、实际消耗（token）、计费金额（元，按价目计）。
  */
 import * as api from "../api.js";
-import { ctx, deviceLabel, go, pageHead, PAUSED, roleText } from "../domain.js";
-import { badge, btn, clear, confirmAction, emptyBlock, fmt, h, hbars, icon, load, meter, panel, quotaCard, stat, toast, trendChart } from "../ui.js";
+import { ctx, deviceLabel, go, isPersonalSpace, kindOf, pageHead, PAUSED, roleText, wsStatusCell } from "../domain.js";
+import { add, badge, btn, clear, confirmAction, dataTable, emptyBlock, fmt, h, hbars, icon, load, meter, panel, quotaCard, stat, toast, trendChart } from "../ui.js";
 
 /** 个人额度的分母与是否限制（不同说法只出一句；分母名称与客户端 firm-usage.ts 的 ownDenominatorText 一致） */
 const ownNote = (own) =>
@@ -31,13 +31,16 @@ export function render(page) {
   const me = ctx.me;
   const a = me.account ?? {};
   const firm = me.firm?.name ?? a.org?.name ?? "";
-  page.append(pageHead(`你好，${a.name ?? a.email ?? ""}`, [firm, roleText(ctx.firmRole)].filter(Boolean).join(" · ")));
+  const ws = me.workspace ?? null;
+  page.append(pageHead(`你好，${a.name ?? a.email ?? ""}`, isPersonalSpace() ? "个人空间" : [ws?.name ?? firm, "团队", roleText(ctx.firmRole)].filter(Boolean).join(" · ")));
   const usageBox = h("div", { class: "stack" });
-  page.append(usageBox, h("div", { class: "grid-2" }, devicesPanel(me), securityPanel(me)));
-  load(usageBox, () => api.get("/v1/me/usage", { days: 30 }), (u) => draw(usageBox, u), "正在读取用量…");
+  // 个人空间：额度只有一张卡，“我的工作空间”挪到它旁边；团队成员放在页尾
+  const wsPanel = workspacesPanel(me);
+  add(page, usageBox, h("div", { class: "grid-2" }, devicesPanel(me), securityPanel(me)), isPersonalSpace() ? null : wsPanel);
+  load(usageBox, () => api.get("/v1/me/usage", { days: 30 }), (u) => draw(usageBox, u, wsPanel), "正在读取用量…");
 }
 
-function draw(box, u) {
+function draw(box, u, wsPanel) {
   const own = u.own ?? {};
   const firm = u.firm ?? {};
   const resets = u.period?.resets_at;
@@ -46,10 +49,11 @@ function draw(box, u) {
   const cny = daily.some((d) => d.value_cny === null) ? null : daily.reduce((s, d) => s + (Number(d.value_cny) || 0), 0);
   clear(
     box,
+    // 第 72 批（A3 IA-9）：个人空间只有一个人——“每人额度”与“全所额度”是同一份数，只留一张“本期额度”
     h(
       "div",
       { class: "grid-2" },
-      panel(
+      isPersonalSpace() ? null : panel(
         "我的用量",
         quotaCard({
           title: own.denominator === "account_limit" ? "本期个人上限" : "本期每人额度",
@@ -64,18 +68,19 @@ function draw(box, u) {
         { sub: u.period ? fmt.period(u.period) : undefined },
       ),
       panel(
-        "本所本期额度",
+        isPersonalSpace() ? "本期额度" : "本所本期额度",
         quotaCard({
-          title: "全所本期已用",
+          title: isPersonalSpace() ? "本期已用" : "全所本期已用",
           ratio: firm.used_ratio ?? (firm.remaining_ratio !== undefined && firm.remaining_ratio !== null ? 1 - Number(firm.remaining_ratio) : null),
           unit: u.unit,
           resetsAt: resets,
           capPct: firm.cap_pct,
           paused: firm.paused && firm.paused !== "seat" ? firm.paused : null,
-          note: firm.paused ? `本所已暂停：${PAUSED[firm.paused] ?? firm.paused}，请联系律所管理员。` : "全所共用；律所管理员可设月度上限。",
+          note: isPersonalSpace() ? (firm.paused ? `已暂停：${PAUSED[firm.paused] ?? firm.paused}。可在“用量”里看明细，加量请联系中软。` : "个人空间的本期总额度。") : firm.paused ? `本所已暂停：${PAUSED[firm.paused] ?? firm.paused}，请联系团队管理员。` : "全团队共用；团队管理员可设月度上限。",
           extra: u.burst ? burstBlock(u.burst) : null,
         }),
       ),
+      isPersonalSpace() ? wsPanel : null,
     ),
     h(
       "div",
@@ -91,6 +96,30 @@ function draw(box, u) {
       panel("近 30 日", daily.length ? trendChart({ labels: daily.map((d) => d.day), series: [{ name: "请求", values: daily.map((d) => Number(d.requests) || 0), kind: "bar" }], format: (v) => `${fmt.int(v)} 次`, tick: (l) => l.slice(5), height: 150 }) : emptyBlockSafe("近 30 日还没有用量")),
       panel("按模型", hbars((u.by_model ?? []).map((m) => ({ label: m.label ?? m.alias, value: Number(m.requests) || 0, note: fmt.pct(m.share), title: m.alias })), { format: (v) => `${fmt.int(v)} 次`, empty: "本期还没有模型用量" })),
     ),
+  );
+}
+
+/**
+ * 我的工作空间（第 72 批，D-306 第 5 条）：一个人、一个账号；个人空间与已加入的团队各是一个工作空间——只读：名称、角色、状态。
+ * 切换工作空间在客户端侧栏底部账号区；这里只列出来。
+ */
+function workspacesPanel(me) {
+  const list = me.workspaces ?? (me.workspace ? [{ ...me.workspace, status: "active", current: true }] : []);
+  if (!list.length) return null;
+  return panel(
+    "我的工作空间",
+    dataTable({
+      state: {},
+      rows: list,
+      empty: "没有工作空间",
+      rowClass: (w) => (w.status === "disabled" ? "dim" : ""),
+      columns: [
+        { key: "name", label: "名称", sortable: false, render: (w) => h("div", { class: "cell-2" }, h("b", {}, kindOf(w) === "personal" ? "个人空间" : w.name ?? "—", w.current ? h("span", { class: "kind-tag" }, "当前") : null), h("small", {}, kindOf(w) === "personal" ? w.name ?? "" : "团队")) },
+        { key: "role", label: "角色", sortable: false, render: (w) => (kindOf(w) === "personal" ? h("span", { class: "muted" }, "本人") : roleText(w.role)) },
+        { key: "status", label: "状态", sortable: false, render: (w) => wsStatusCell(w) },
+      ],
+    }),
+    { flush: true, sub: "切换工作空间在客户端左下角账号区；网页控制台显示的是当前工作空间" },
   );
 }
 

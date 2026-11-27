@@ -15,10 +15,13 @@ export function render(page, r) {
   st.view = r.params.view === "records" ? "records" : "summary";
   const tabs = h("div");
   const box = h("div", { class: "stack" });
-  page.append(pageHead("本所用量", "逐请求只记用量，不含任何内容"), tabs, box);
+  // 第 72 批（D-306 第 5 条）：个人用户在“我的 · 用量”看同一页（#/me/usage）；团队管理员在“本所 · 用量”
+  const sec = r.section === "me" ? "me" : "firm";
+  st.sec = sec;
+  page.append(pageHead(sec === "me" ? "用量" : "本所用量", sec === "me" ? "个人空间的本期用量；逐请求只记用量，不含任何内容" : "逐请求只记用量，不含任何内容"), tabs, box);
   const draw = () => {
     clear(tabs, tabBar([{ id: "summary", label: "汇总" }, { id: "records", label: "逐请求明细" }], st.view, (id) => {
-      const want = id === "records" ? "#/firm/usage?view=records" : "#/firm/usage";
+      const want = id === "records" ? `#/${sec}/usage?view=records` : `#/${sec}/usage`;
       if (location.hash === want) return;
       location.hash = want;
     }));
@@ -46,13 +49,13 @@ function summary(box) {
         stat("请求", fmt.int(t.requests), `近 ${st.days} 日`, { hero: true }),
         stat("实际消耗", `${fmt.tokens(tokensOf(t) || t.tokens)} token`, `输入 ${fmt.tokens(t.tokens_in)}（缓存 ${fmt.tokens(t.tokens_cached)}）· 输出 ${fmt.tokens(t.tokens_out)}`, { hero: true }),
         stat("计费金额", fmt.cny(t.value_cny), "按价目计的用量价值（元）"),
-        stat("活跃成员", fmt.int((d.by_member ?? []).filter((m) => Number(m.requests) > 0).length), "有请求的成员"),
+        st.sec === "me" ? stat("用了的模型", fmt.int((d.by_model ?? []).filter((m) => Number(m.requests) > 0).length), "有请求的模型") : stat("活跃成员", fmt.int((d.by_member ?? []).filter((m) => Number(m.requests) > 0).length), "有请求的成员"),
       ),
       panel("按日", daily.length ? trendChart({ labels: daily.map((x) => x.day), series: [{ name: "输入 token", values: daily.map((x) => Number(x.tokens_in) || 0), kind: "bar", stack: true }, { name: "输出 token", values: daily.map((x) => Number(x.tokens_out) || 0), kind: "bar", stack: true, cls: "s2" }], format: (v) => fmt.tokens(v), tick: (l) => l.slice(5), height: 220 }) : emptyBlock("这段时间没有用量"), { sub: "实际消耗（token），北京时间日" }),
       h(
         "div",
-        { class: "grid-2" },
-        panel(
+        { class: st.sec === "me" ? "stack" : "grid-2" },
+        st.sec === "me" ? null : panel(
           "按成员",
           dataTable({
             rows: d.by_member ?? [],
@@ -62,8 +65,8 @@ function summary(box) {
             onRow: (m) => {
               st.aid = m.aid;
               st.view = "records";
-              if (location.hash === "#/firm/usage?view=records") ctx.reload?.();
-              else location.hash = "#/firm/usage?view=records";
+              if (location.hash === `#/${st.sec}/usage?view=records`) ctx.reload?.();
+              else location.hash = `#/${st.sec}/usage?view=records`;
             },
             columns: [
               { key: "name", label: "成员", render: (m) => h("div", { class: "cell-2" }, h("b", {}, m.name ?? "—"), h("small", {}, m.email ?? "")) },

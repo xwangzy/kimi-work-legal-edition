@@ -4,7 +4,7 @@
  */
 import * as api from "../api.js";
 import { passwordHint } from "../auth.js";
-import { CREATED_VIA, ctx, pageHead, roleLabel, roleText } from "../domain.js";
+import { CREATED_VIA, ctx, isPersonalSpace, pageHead, roleLabel, roleText } from "../domain.js";
 import { badge, btn, clear, closeDrawer, confirmAction, dataTable, errText, facts, fmt, h, load, mono, panel, segmented, toast } from "../ui.js";
 
 const KIND = { web: "网页", desktop: "Windows 客户端" };
@@ -32,13 +32,13 @@ function draw(box, me) {
         facts([
           ["姓名", a.name],
           ["邮箱", a.email],
-          staff ? ["角色", h("span", { class: "badges" }, (a.roles ?? []).map((r) => badge(roleLabel(r), "neutral")))] : ["律所", me.firm?.name ?? a.org?.name ?? a.tid],
-          staff ? null : ["本所角色", roleText(ctx.firmRole)],
+          staff ? ["角色", h("span", { class: "badges" }, (a.roles ?? []).map((r) => badge(roleLabel(r), "neutral")))] : isPersonalSpace() ? ["工作空间", "个人空间"] : ["团队", me.workspace?.name ?? me.firm?.name ?? a.org?.name ?? a.tid],
+          staff || isPersonalSpace() ? null : ["团队角色", roleText(ctx.firmRole)],
           staff ? null : ["加入方式", CREATED_VIA[a.created_via] ?? a.created_via ?? "—"],
           ["注册于", fmt.full(a.created_at)],
           ["上次登录", fmt.full(a.last_login_at)],
         ]),
-        { sub: staff ? "中软平台人员" : "律所成员" },
+        { sub: staff ? "中软平台人员" : isPersonalSpace() ? "个人空间" : "团队成员" },
       ),
       passwordPanel(a),
     ),

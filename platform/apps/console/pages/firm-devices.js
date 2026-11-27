@@ -4,9 +4,12 @@
  *   本所管理员可在网页上“让它退出登录”（POST /v1/firm/members/{aid}/devices/{id}/signout）；移除与批准仍在管理员电脑上完成（行菜单里写明）；
  *   异常标记与平台口径一致；只有一个版本时不单列版本卡。
  * 接口：GET /v1/firm/devices、GET /v1/firm/members（pending_joins）。
+ * 第 72 批（D-304、契约 §3.5）：账号签发钥签的电脑（issuer: account_ca）能登录、用 AI、处理自己的事项，但还不能接收团队共享事项——
+ *   标“待确认（可接收团队共享事项前）”，确认沿用入组批准，在管理员电脑上完成。控制面的电脑行带 issuer 时才显示（见 03 契约变更记录 W-1）。
  */
 import * as api from "../api.js";
-import { deviceCell, deviceState, deviceStateCell, FIRM_DEVICE_FLAG, firmFlagBadge, pageHead, pendingRow, platformText, versionText } from "../domain.js";
+import { CONFIRM_TIP, deviceCell, deviceState, deviceStateCell, FIRM_DEVICE_FLAG, firmFlagBadge, pageHead, pendingRow, platformText, unconfirmed, versionText } from "../domain.js";
+import { badge } from "../ui.js";
 import { readOnly } from "./firm-overview.js";
 import { clear, confirmAction, dataTable, fmt, h, hbars, load, matches, mono, panel, rowMenu, searchInput, segmented, toast } from "../ui.js";
 
@@ -16,15 +19,17 @@ const STATUS = [
   ["signed_in", "登录中", (d) => deviceState(d) === "signed_in"],
   ["signed_out", "已退出登录", (d) => deviceState(d) === "signed_out"],
   ["pending", "待批准", (d) => deviceState(d) === "pending"],
+  ["confirm", "待确认", (d) => unconfirmed(d)],
   ["revoked", "已移除", (d) => deviceState(d) === "revoked"],
   ["", "全部", () => true],
 ];
+
 
 export function render(page) {
   const tools = h("div", { class: "toolbar" });
   const tools2 = h("div", { class: "toolbar" });
   const box = h("div", { class: "stack" });
-  page.append(pageHead("电脑", "本所成员登录过的电脑。让电脑退出登录可在这里做；移除与批准新电脑在管理员电脑的“设置 → 管理”里完成"), tools, tools2, box);
+  page.append(pageHead("电脑", "本团队成员登录过的电脑。让电脑退出登录可在这里做；移除、确认新电脑在管理员电脑的“设置 → 管理”里完成"), tools, tools2, box);
   let rows = [];
   const signout = async (d, reload) => {
     const r = await confirmAction({
@@ -67,7 +72,7 @@ export function render(page) {
           { key: "platform", label: "系统", value: (d) => platformText(d.platform) },
           { key: "version", label: "客户端", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.version && d.version !== "legacy" ? mono(d.version) : h("span", { class: "muted" }, versionText(d.version))) },
           { key: "last_seen_at", label: "最近在线", value: (d) => d.last_seen_at ?? "", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.last_active_at ? h("span", { title: fmt.full(d.last_active_at) }, fmt.ago(d.last_active_at)) : h("span", { title: fmt.full(d.last_seen_at) }, d.last_seen_at ? fmt.ago(d.last_seen_at) : "从未在线")) },
-          { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)], render: (d) => deviceStateCell(d) },
+          { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)] - (unconfirmed(d) ? 0.5 : 0), render: (d) => (unconfirmed(d) ? h("span", { class: "cell-2" }, deviceStateCell(d), h("small", {}, badge("待确认（可接收团队共享事项前）", "warn", CONFIRM_TIP))) : deviceStateCell(d)) },
           anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => ((d.flags ?? []).length ? h("span", { class: "badges" }, d.flags.map(firmFlagBadge)) : "") } : null,
           {
             key: "_act",
@@ -80,6 +85,7 @@ export function render(page) {
                 : d.pending
                   ? rowMenu([{ label: "在管理员电脑上核对校验码后批准", disabled: true, title: "批准只能在管理员电脑上完成" }])
                   : rowMenu([
+                      unconfirmed(d) ? { label: "在管理员电脑上确认（接收团队共享事项）", disabled: true, title: CONFIRM_TIP } : null,
                       deviceState(d) === "signed_in" ? { label: "让它退出登录…", onClick: () => signout(d, reload), disabled: readOnly() || !d.aid, title: readOnly() ? "只有本所管理员能操作" : undefined } : null,
                       { label: "移除（在管理员电脑上完成）", disabled: true, title: "移除只能在管理员电脑的“设置 → 管理”里完成" },
                     ], { aria: `操作：${d.name || d.member || d.device_id}` }),

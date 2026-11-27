@@ -74,7 +74,7 @@ export const isFirmManager = (role) => role === "admin" || role === "partner";
 export const TENANT_STATUS = { active: ["正常", "ok"], pending: ["待开通", "info"], expired: ["已到期", "warn"], terminated: ["已终止", "neutral"] };
 /** 第 71 批（V45，V-2）：危险色只给“正在影响使用”的情况；运营主动做的结果（已停用）用中性色 */
 export const ACCOUNT_STATUS = { active: ["正常", "ok"], disabled: ["已停用", "neutral"], pending: ["待设置密码", "info"] };
-export const CREATED_VIA = { self: "自助注册", founder_code: "开通码", invite_code: "邀请码", ops: "运营代建" };
+export const CREATED_VIA = { self: "自助注册", founder_code: "开通码", invite_code: "邀请码", ops: "运营代建", team_invite: "团队邀请" };
 /**
  * 电脑的异常标记（第 71 批，B-6 / P-09）：运营侧与本所侧同一口径与说法——
  *   30 天未报到；低于最低版本（云端设置的 min_version）；未登录（账号闸开着且这台电脑没有有效登录：只是暂停，不是“仍有请求”，中性色）。
@@ -120,7 +120,7 @@ export const PROVIDER_STATE = {
   disabled: ["已停用", "neutral"],
   unknown: ["未上报", "neutral"],
 };
-export const ALERT_KIND = { threshold: "跨过阈值", cap: "到上限", exhausted: "额度用完", anomaly: "用量异常", route_down: "上游不可用", device_flag: "设备异常", usage_missing: "上游未给用量" };
+export const ALERT_KIND = { threshold: "跨过阈值", cap: "到上限", exhausted: "额度用完", anomaly: "用量异常", route_down: "上游不可用", device_flag: "设备异常", usage_missing: "上游未给用量", new_device: "新电脑登录" };
 export const ALERT_LEVEL = { info: ["提示", "info"], warn: ["注意", "warn"], critical: ["严重", "danger"] };
 export const OUTCOME = { ok: ["成功", "ok"], client_gone: ["客户端断开", "warn"], upstream_error: ["上游出错", "danger"], timeout: ["超时", "danger"], blocked: ["已拦截", "neutral"] };
 /** 用量来源。第 62 批起 estimated 行不计费、不扣额度，待与上游账单对账（契约 contract-b62-pricing §3、§6） */
@@ -163,7 +163,7 @@ export function alertList(alerts, { onAck, compact } = {}) {
       const [lv, tone] = pick(ALERT_LEVEL, a.level);
       // 第 71 批（P-12）：告警里的客户与账号可点
       const link = (text, to) => h("button", { type: "button", class: "link", onclick: () => go(to) }, text);
-      const whoParts = [a.tid ? link(a.tenant_name ?? a.tid, `ops/tenants/${encodeURIComponent(a.tid)}`) : null, a.aid ? link(a.email ?? a.aid, `ops/accounts/${encodeURIComponent(a.aid)}`) : a.email ?? null, a.provider ? `上游 ${a.provider}` : null].filter(Boolean);
+      const whoParts = [a.tid ? link(a.tenant_name ?? a.tid, `ops/tenants/${encodeURIComponent(a.tid)}`) : null, a.aid ? link(a.email ?? a.aid, `ops/people/${encodeURIComponent(a.aid)}`) : a.email ?? null, a.provider ? `上游 ${a.provider}` : null].filter(Boolean);
       const who = whoParts.length ? whoParts.flatMap((x, i) => (i ? [" · ", x] : [x])) : null;
       const ack = onAck && !a.acked_at
         ? btn("确认", async (ev) => {
@@ -274,17 +274,24 @@ export const canSupport = () => can("account.manage") || can("account.support");
  * 电脑表（电脑页、客户详情、账号详情共用；第 71 批重做）：首列是律师起的名字，编号放第二行；状态用圆点；
  * 退出登录 / 移除收进行尾菜单。o.showTenant / o.showMember 控制“客户”“成员”两列；o.onRow 点行（缺省进账号详情）。
  */
-export function deviceTable(rows, { state, after, showTenant = true, showMember = true, empty, onRow } = {}) {
-  const openRow = onRow === false ? undefined : onRow ?? ((d) => d.aid && go(`ops/accounts/${encodeURIComponent(d.aid)}?section=devices`));
+/**
+ * 团队里“待确认”的电脑（第 72 批，D-304、契约 §3.5）：账号签发钥登记（issuer = account_ca）的电脑能登录、用 AI、处理自己的事项，
+ * 但还不能接收团队共享事项，须团队管理员在管理员电脑上确认。个人空间的电脑都是这样登记的，不算待确认——只在团队范围内标（o.team）。
+ */
+export const CONFIRM_TIP = "能登录、用 AI、处理自己的事项；要接收团队共享事项前，须团队管理员在管理员电脑“设置 → 管理”里确认这台电脑";
+export const unconfirmed = (d) => d?.issuer === "account_ca" && !d?.pending && deviceState(d) !== "revoked";
+export function deviceTable(rows, { state, after, showTenant = true, showMember = true, empty, onRow, memberLabel = "成员", team = false } = {}) {
+  // 第 72 批（D-306）：行与“成员”列进用户详情（一个人）；用户详情按工作空间分组列电脑
+  const openRow = onRow === false ? undefined : onRow ?? ((d) => d.aid && go(`ops/people/${encodeURIComponent(d.aid)}?section=devices`));
   const anyFlag = rows.some((d) => (d.flags ?? []).some((f) => f !== "suspended"));
   const cols = [
     { key: "name", label: "电脑", value: (d) => deviceLabel(d), render: (d) => deviceCell(d) },
-    showMember ? { key: "member", label: "成员", value: (d) => d.member_name ?? d.email ?? "", render: (d) => (d.aid ? h("button", { type: "button", class: "link", title: d.email ?? undefined, onclick: () => go(`ops/accounts/${encodeURIComponent(d.aid)}`) }, d.member_name ?? d.email ?? d.aid) : h("span", { class: "muted" }, "未建账号")) } : null,
-    showTenant ? { key: "tenant_name", label: "客户", value: (d) => d.tenant_name ?? d.tid, render: (d) => h("button", { type: "button", class: "link", onclick: () => go(`ops/tenants/${encodeURIComponent(d.tid)}`) }, d.tenant_name ?? d.tid) } : null,
+    showMember ? { key: "member", label: memberLabel, value: (d) => d.member_name ?? d.email ?? "", render: (d) => (d.aid ? h("button", { type: "button", class: "link", title: d.email ?? undefined, onclick: () => go(`ops/people/${encodeURIComponent(d.aid)}`) }, d.member_name ?? d.email ?? d.aid) : h("span", { class: "muted" }, "未建账号")) } : null,
+    showTenant ? { key: "tenant_name", label: "工作空间", value: (d) => d.tenant_name ?? d.tid, render: (d) => h("button", { type: "button", class: "link", title: "打开客户详情", onclick: () => go(`ops/tenants/${encodeURIComponent(d.tid)}`) }, d.tenant_name ?? d.tid) } : null,
     { key: "platform", label: "系统", value: (d) => platformText(d.platform) },
     { key: "client_version", label: "客户端", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.client_version && d.client_version !== "legacy" ? mono(d.client_version) : h("span", { class: "muted" }, versionText(d.client_version))) },
     { key: "last_seen_on", label: "最近在线", value: (d) => d.last_seen_on ?? "", render: (d) => (d.pending ? h("span", { class: "muted" }, "—") : d.last_active_at ? h("span", { title: fmt.full(d.last_active_at) }, fmt.ago(d.last_active_at)) : h("span", { title: fmt.full(d.last_seen_on) }, d.last_seen_on ? fmt.ago(d.last_seen_on) : "从未在线")) },
-    { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)], render: (d) => deviceStateCell(d) },
+    { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[deviceState(d)], render: (d) => (team && unconfirmed(d) ? h("span", { class: "cell-2" }, deviceStateCell(d), h("small", {}, badge("待确认（可接收团队共享事项前）", "warn", CONFIRM_TIP))) : deviceStateCell(d)) },
     anyFlag ? { key: "flags", label: "标记", value: (d) => (d.flags ?? []).length, render: (d) => ((d.flags ?? []).filter((f) => f !== "suspended").length ? h("span", { class: "badges" }, d.flags.filter((f) => f !== "suspended").map((f) => badge(...pick(DEVICE_FLAG, f)))) : "") } : null,
     { key: "_act", label: "", sortable: false, class: "act", render: (d) => rowMenu(deviceActions(d, after), { aria: `操作：${deviceLabel(d)}` }) },
   ].filter(Boolean);
@@ -302,7 +309,51 @@ export function seatNote(unseated, total, used) {
     ? { full: false, free, tone: "neutral", text: `另有 ${n} 个账号未占席：第一次用 AI 时自动占用（还有 ${free} 个空席）` }
     : { full: true, free: 0, tone: "warn", text: `席位已满：另有 ${n} 个账号用不了 AI，请改套餐或席位` };
 }
-export const UNSEATED_TIP = "还没占席：有空席时，第一次在电脑上用 AI 会自动占用；席位已满时用不了 AI";
+export const UNSEATED_TIP = "还没占席：有空席时，第一次在电脑上用 AI 会自动占用（管理员也可以直接分配）；席位已满时用不了 AI";
+/** 第 72 批（D-306 第 6 条，全站一个说法）：席位 = 能用 AI 的名额；个人空间不讲席位 */
+export const SEAT_NOTE = "席位 = 能用 AI 的名额";
+
+/**
+ * 工作空间（第 72 批，D-305）：一个人 = 一个账号；工作空间 = 这个人在某个租户里的成员身份，类型是显式字段 kind（personal | team）。
+ * 旧云端没给 kind 时按 personal 布尔近似（只读，不推断别的）。
+ */
+export const KIND_LABEL = { personal: "个人", team: "团队" };
+export const kindOf = (x) => (x?.kind === "personal" || x?.kind === "team" ? x.kind : x?.personal === true ? "personal" : "team");
+/** 当前登录的成员在哪种工作空间（/v1/auth/me 的 workspace.kind；旧云端看 personal） */
+export const workspaceKind = () => ctx.me?.workspace?.kind ?? (ctx.me?.personal === true ? "personal" : ctx.me?.personal === false ? "team" : null);
+export const isPersonalSpace = () => ctx.kind === "member" && workspaceKind() === "personal";
+/** 工作空间状态：团队移出 / 平台停用（disabled_by，A3 R2）分开说 */
+export const WS_STATUS = { active: ["正常", "ok"], team: ["已移出团队", "neutral"], platform: ["平台停用", "warn"], disabled: ["已停用", "neutral"] };
+export const wsStatus = (w) => (w?.status !== "disabled" ? "active" : w.disabled_by === "platform" ? "platform" : w.disabled_by === "team" ? "team" : "disabled");
+export const wsStatusCell = (w) => ((k) => stateCell(WS_STATUS[k][0], WS_STATUS[k][1], k === "platform" ? "由中软平台停用：团队管理员不能启用" : k === "team" ? "团队管理员已把他移出（或本人退出）：凭证保留，团队里的电脑记录保留" : undefined))(wsStatus(w));
+/** 团队邀请（契约 §3.2；运营侧 GET /v1/ops/tenants/{tid}/invites 与本所 GET /v1/team/invites 同一形状，不含码） */
+export const INVITE_STATUS = { open: ["待接受", "info"], accepted: ["已接受", "ok"], revoked: ["已撤销", "neutral"], expired: ["已过期", "neutral"] };
+export function inviteTable(rows, { state, onRevoke, revokeTitle } = {}) {
+  return dataTable({
+    state: state ?? { sort: "created_at", asc: false },
+    rows,
+    empty: "还没有发过邀请",
+    rowClass: (x) => (x.status === "open" ? "" : "dim"),
+    caption: "团队邀请",
+    columns: [
+      { key: "name", label: "被邀请人", render: (x) => h("div", { class: "cell-2" }, h("b", {}, x.name ?? "—"), h("small", {}, x.phone_hint ?? "未填手机号")) },
+      { key: "role", label: "角色", value: (x) => roleText(x.role) },
+      { key: "status", label: "状态", value: (x) => x.status, render: (x) => stateCell(...(INVITE_STATUS[x.status] ?? [x.status, "neutral"])) },
+      { key: "created_at", label: "发出", value: (x) => x.created_at ?? "", render: (x) => h("div", { class: "cell-2" }, fmt.time(x.created_at), h("small", {}, x.created_by === "platform" ? "中软运营代发" : "团队管理员")) },
+      { key: "expires_at", label: "有效至", value: (x) => x.expires_at ?? "", render: (x) => (x.status === "accepted" ? h("span", { class: "muted" }, `${fmt.time(x.accepted_at)} 接受`) : fmt.time(x.expires_at)) },
+      { key: "_act", label: "", sortable: false, class: "act", render: (x) => (x.status === "open" && onRevoke ? rowMenu([{ label: "撤销邀请…", danger: true, disabled: !!revokeTitle, title: revokeTitle, onClick: () => onRevoke(x) }], { aria: `操作：${x.name}` }) : null) },
+    ],
+  });
+}
+/** 一枚工作空间标签：“个人” 或 “团队名 · 角色” */
+export const wsChip = (w, o = {}) =>
+  h(
+    "span",
+    { class: ["ws-chip", w.status === "disabled" && "off", o.link && "clickable"], title: [KIND_LABEL[kindOf(w)], w.name, ROLE[w.role] ?? w.role, w.status === "disabled" ? WS_STATUS[wsStatus(w)][0] : null].filter(Boolean).join(" · ") },
+    kindOf(w) === "personal" ? h("span", { class: "ws-kind" }, "个人") : [h("span", { class: "ws-kind team" }, "团队"), h("span", { class: "ws-name" }, w.name ?? w.tid)],
+    kindOf(w) === "team" && w.role ? h("small", {}, ROLE[w.role] ?? w.role) : null,
+    w.status === "disabled" ? h("small", {}, WS_STATUS[wsStatus(w)][0]) : null,
+  );
 
 /** 详情页的面包屑（第 71 批，V-11）：parts = [[文字, 路径?], …] */
 export const setCrumbs = (parts) => ctx.setCrumbs?.(parts);

@@ -926,3 +926,14 @@ dialog { color: var(--text-primary); }
 .banner.warn.soft > .icon, .banner.warn.soft b { color: var(--status-warning-text); }
 .btn.danger-solid:disabled { opacity: 1; background: var(--bg-muted); color: var(--text-secondary); border-color: var(--border-default); }
 .row-chevron { display: none; }
+
+/* ─── 第 72 批：工作空间标签（用户列表、个人客户行）——沿用 badge / kind-tag 的令牌，不另起色板 ─── */
+.ws-chips { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); }
+.ws-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 0 8px 0 0; border: 1px solid var(--border-subtle); border-radius: var(--r-xs); font-size: var(--fs-caption); line-height: 22px; color: var(--text-primary); background: var(--bg-surface); white-space: nowrap; overflow: hidden; }
+.ws-chip .ws-kind { align-self: stretch; display: inline-flex; align-items: center; padding: 0 6px; font-size: var(--fs-meta); font-weight: 500; color: var(--status-neutral-text); background: var(--status-neutral-bg); }
+.ws-chip .ws-kind.team { color: var(--accent-text); background: var(--accent-bg); }
+.ws-chip .ws-name { overflow: hidden; text-overflow: ellipsis; }
+.ws-chip small { color: var(--text-secondary); font-size: var(--fs-meta); }
+.ws-chip:has(.ws-kind:only-child) { padding-right: 0; }
+.ws-chip.off { color: var(--text-secondary); border-style: dashed; }
+.ws-chip.off .ws-kind { color: var(--text-secondary); background: var(--bg-subtle); }
