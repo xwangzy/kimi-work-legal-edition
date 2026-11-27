@@ -393,7 +393,8 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
         {rows.map((m) => {
           const name = memberName(m);
           const note = memberRowNote(m);
-          const editable = manage && !m.is_me && (m.matter_role === "editor" || m.matter_role === "viewer");
+          // 已离开团队的人不能再改角色（内核也拒：名单里不是在用）——只留“移出”（实拍发现）
+          const editable = manage && !m.is_me && !m.departed && (m.matter_role === "editor" || m.matter_role === "viewer");
           const removable = manage && !m.is_me && m.matter_role !== "owner";
           return (
             <li key={m.user_id} className={`mm-row${m.departed ? " is-off" : ""}${asking === m.user_id ? " is-asking" : ""}`}>
@@ -406,7 +407,6 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
                     <span className="mm-name">{name}</span>
                     {m.is_me && <span className="tag tag-this">我</span>}
                     {m.departed && <span className="tag tag-gray">已离开团队</span>}
-                    {note && !m.departed && <small className="mm-note">{note.text}</small>}
                   </span>
                 </span>
                 <span className="mm-role">
@@ -431,6 +431,8 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
                   )}
                 </span>
               </div>
+              {/* 实拍：长句放在名字下面整行（原来挤在人名那一栏里折成三行） */}
+              {note && !m.departed && <p className="mm-sub">{note.text}</p>}
               {asking === m.user_id && (
                 // 原位两步（D-308）：后果写清，确认按钮红色实心，默认焦点在“取消”
                 <div className="mm-confirm" role="alertdialog" aria-label={`移出${name}`}>

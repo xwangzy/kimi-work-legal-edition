@@ -23,6 +23,9 @@
 .authz-exits .authz-exit-why { flex-basis: 100%; color: var(--text-secondary); line-height: 1.6; }
 .authz-exits .btn-link:disabled { color: var(--text-secondary); opacity: 0.6; cursor: not-allowed; }
 
+/* 新建事项弹窗（实拍）：内容区滚动时标题栏也留在顶上（底部按钮已吊底） */
+.modal:has(.nm-actions) > .modal-head { position: sticky; top: 0; z-index: 2; background: var(--bg-elevated); }
+
 /* 谁能看到（两处表单） */
 .scope-field > p { margin: 0; }
 .scope-field .seg-btn { display: inline-flex; align-items: center; gap: 6px; }
@@ -88,7 +91,7 @@
 .mm-name { font-size: var(--fs-body); color: var(--text-primary); font-weight: var(--fw-medium); }
 .mm-row.is-off .mm-name { color: var(--text-secondary); font-weight: var(--fw-regular); }
 .mm-who .tag-gray { margin-left: 0; }
-.mm-who small.mm-note { line-height: 1.5; font-variant-numeric: normal; }
+.mm-sub { margin: 2px 0 0 36px; font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.6; }
 .mm-role { min-width: 0; }
 .mm-role-select { width: 100%; }
 .mm-role-text { font-size: var(--fs-body); color: var(--text-label); white-space: nowrap; }

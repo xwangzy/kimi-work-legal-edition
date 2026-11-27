@@ -222,7 +222,7 @@ export function NewMatterDialog({ onClose, onCreated, initial }: { onClose: () =
         </div>
       )}
       {/* 第 73 批：底部按钮吊底（与开始面板、发起前确认同一修法），出错的一句写在按钮旁 */}
-      <div className="modal-actions modal-actions-sticky">
+      <div className="modal-actions modal-actions-sticky nm-actions">
         {err && <div className="banner banner-red" role="alert">{err}</div>}
         <button className="btn-ghost" onClick={onClose}>取消</button>
         <button className="btn-primary" disabled={busy} onClick={() => void submit()}>创建事项</button>

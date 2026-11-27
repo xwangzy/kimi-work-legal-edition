@@ -60,6 +60,7 @@ import { sidebarFoot } from "../src/lib/user-card.ts";
 import { teamShareLine } from "../src/lib/relay-text.ts";
 import type { MatterMemberRow, ShareRelayStatus, TeamRosterMember } from "../src/api.ts";
 
+const css0 = () => readFileSync(fileURLToPath(new URL("../src/styles-team-matters.css", import.meta.url)), "utf8");
 const src = (p: string) => readFileSync(fileURLToPath(new URL(`../src/${p}`, import.meta.url)), "utf8");
 const code = (p: string) => src(p).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1");
 
@@ -192,7 +193,7 @@ test("谁能调整成员：内核 can_manage 优先（最先同步它的是另�
   assert.equal(canManageMembers(v({ can_manage: true }), true), false, "结案只读");
   assert.equal(canManageMembers({ is_owner: false, can_manage: true }, false), false);
   assert.equal(manageBlockedText(v({ can_manage: true }), false), null);
-  assert.equal(manageBlockedText(v({ can_manage: false, relay_controller: "o2" }), false), "这个事项的成员由最先同步它的负责人李律师调整：要加人、改角色或移出，请找他；也可以请他把这件事交给你。");
+  assert.equal(manageBlockedText(v({ can_manage: false, relay_controller: "o2" }), false), "这个事项的同事名单由李律师管理：要加人、改角色或移出，请找他。");
   assert.match(manageBlockedText(v({ can_manage: false, relay_controller: null }), false)!, /联网同步一次后再试/);
   assert.equal(manageBlockedText(v({}), true), "事项已结案（只读）：不能再加同事、改角色或移出。");
   assert.equal(manageBlockedText({ is_owner: false, can_manage: false, members: [] }, false), null, "非负责人看表尾“请找负责人”");
@@ -208,8 +209,9 @@ test("事项成员页上方一句（sync 非 ok 时；不知道不说）；管�
 
 test("加人结果一句（A5 §7.2）：谁下次同步时收到、谁的电脑还要申请、所内没开通时如实说、没加上的单列原因", () => {
   assert.equal(addResultText([{ name: "陈律师", can_receive: true }, { name: "李助理", can_receive: false }], [], "ok"), "已加入陈律师、李助理。陈律师的电脑下次同步时收到；李助理的电脑还不能接收，申请并经管理员确认后自动收到。");
-  assert.equal(addResultText([{ name: "陈律师", can_receive: true }], [], "not_allowed"), "已加入陈律师。所内开通同事之间同步后才会收到。");
-  assert.equal(addResultText([{ name: "李助理", can_receive: false }], [], "not_configured"), "已加入李助理。所内开通同事之间同步后才会收到；李助理的电脑还要先申请并经管理员确认。");
+  // 所内没开通：上方一句已说，结果句不重复（实拍发现同一页说两遍）
+  assert.equal(addResultText([{ name: "陈律师", can_receive: true }], [], "not_allowed"), "已加入陈律师。");
+  assert.equal(addResultText([{ name: "李助理", can_receive: false }], [], "not_configured"), "已加入李助理。李助理的电脑还要先申请并经管理员确认。");
   assert.equal(addResultText([], [{ name: "赵合伙人", why: "不在团队名单里（可能已离开团队）" }], "ok"), "没有加上：赵合伙人（不在团队名单里（可能已离开团队））。");
   assert.equal(addResultText([], [], "ok"), "");
 });
@@ -247,7 +249,14 @@ test("错误按内核终版 code + detail.reason 分支（03 第 W2 行 ⑥）�
   assert.match(teamFaultText(err("roster_unavailable", "not_supported")), /请联系 Kimi Work 客服/);
   assert.match(teamFaultText(err("validation", "relay_not_configured")), /中软还没为本所开通/);
   assert.equal(teamFaultText(err("validation", "not_enabled")), "同事之间同步还没开通：请先开通。");
-  assert.deepEqual(teamFaultOf(err("member_not_in_team", "left", { user_id: "usr_t_a" })), { code: "member_not_in_team", reason: "left", userId: "usr_t_a", message: "内核原句" });
+  assert.deepEqual(teamFaultOf(err("member_not_in_team", "left", { user_id: "usr_t_a" })), { code: "member_not_in_team", reason: "left", userId: "usr_t_a", manager: null, message: "内核原句" });
+  // 内核收尾（cdd366a0）：同事名单由别人管理——detail.controller_name 写“由某某管理”；编号不露
+  assert.equal(teamFaultText({ code: "forbidden", message: "这个事项的同事名单由李律师管理：请他来加人或移出", detail: { reason: "relay_controller_other", controller_user_id: "usr_t_li", controller_name: "李律师" } }), "这个事项的同事名单由李律师管理：要加人、改角色或移出，请找他。");
+  assert.equal(teamFaultText({ code: "forbidden", message: "这个事项的同事名单由usr_t_li管理：请他来加人或移出", detail: { reason: "relay_controller_other", controller_name: "usr_t_li" } }), "这个事项的同事名单由usr_t_li管理：请他来加人或移出", "不认识姓名：用内核原句");
+  assert.equal(memberErrorText({ code: "forbidden", message: "李律师负责这个事项与同事之间的同步，不能改成只看：请联系管理员", detail: { reason: "relay_controller_role_change", controller_name: "李律师" } }), "李律师负责这个事项与同事之间的同步，不能改成只看：请联系管理员");
+  assert.equal(memberErrorText({ code: "internal", message: "这台电脑还没拿到这个事项的最新内容，暂时不能加人：同步一次后再试", detail: { reason: "own_wrap_missing" } }), "这台电脑还没拿到这个事项的最新内容，暂时不能加人：同步一次后再试", "内核给了律师层原因时不换成泛泛一句");
+  // RunSheet“记为客户要求不上云”在团队事项上收到 team_scope_conflict：按 code 显示
+  assert.equal(teamFaultText({ code: "team_scope_conflict", message: "这个事项已和同事一起办…", detail: { reason: "consent_refused" } }), TEAM_SCOPE_CONFLICT_TEXT);
   // 某位同事没加上：名单类给短语
   assert.equal(memberErrorText(err("member_not_in_team", "not_in_roster")), "不在团队同事名单里");
   assert.equal(memberErrorText(err("member_not_in_team", "disabled")), "已停用");
@@ -403,7 +412,8 @@ test("接线：两处新建表单都有“谁能看到”（完整弹窗在“�
   const k = nm.indexOf("更多设置（事件时点");
   assert.ok(i > 0 && j > i && k > j, "顺序：怎么处理 → 谁能看到 → 更多设置");
   assert.match(nm, /\.\.\.sc\.submit,/, "一个事务里建事项、加人（matters.create 带 collab_scope 与 members）");
-  assert.match(nm, /<div className="modal-actions modal-actions-sticky">\s*\{err && <div className="banner banner-red" role="alert">\{err\}<\/div>\}/);
+  assert.match(nm, /<div className="modal-actions modal-actions-sticky nm-actions">\s*\{err && <div className="banner banner-red" role="alert">\{err\}<\/div>\}/);
+  assert.match(css0(), /\.modal:has\(\.nm-actions\) > \.modal-head \{ position: sticky; top: 0;/, "实拍：滚动时标题栏留在顶上");
   assert.match(nm, /initial\?: \{ title\?: string; stance\?: string; confidentiality\?: string; scope\?: CollabScope; members\?: string\[\] \}/);
   const mp = code("components/MatterPlace.tsx");
   assert.match(mp, /<ScopeField variant="place" scope=\{sc\.scope\}/);
@@ -430,6 +440,8 @@ test("接线：事项页胶囊与“⋯ → 事项成员 / 和同事一起办…
   assert.match(mt, /members: "事项成员"/);
   const tm = code("components/TeamMatter.tsx");
   assert.match(tm, /const manage = canManageMembers\(view, closed\);/);
+  assert.match(tm, /const editable = manage && !m\.is_me && !m\.departed && /, "实拍：已离开团队的人不给改角色，只留移出");
+  assert.match(tm, /\{note && !m\.departed && <p className="mm-sub">\{note\.text\}<\/p>\}/, "实拍：长句放在名字下面整行");
   assert.match(tm, /\{manage && \(\s*<button type="button" className="btn-ghost btn-sm mm-add"/);
   assert.match(tm, /const removable = manage && !m\.is_me && m\.matter_role !== "owner";/, "负责人行不给移出");
   assert.match(tm, /role="alertdialog"[\s\S]{0,200}removeQuestion\(name\)/, "原位两步：后果写在行内");

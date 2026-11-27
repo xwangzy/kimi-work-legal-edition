@@ -182,7 +182,7 @@ export function manageBlockedText(v: { is_owner: boolean; can_manage?: boolean; 
   if (closed) return "事项已结案（只读）：不能再加同事、改角色或移出。";
   if (v.can_manage !== false) return null;
   const ctl = v.relay_controller ? v.members.find((m) => m.user_id === v.relay_controller && !m.is_me) : null;
-  if (ctl) return `这个事项的成员由最先同步它的负责人${memberName(ctl)}调整：要加人、改角色或移出，请找他；也可以请他把这件事交给你。`;
+  if (ctl) return `这个事项的同事名单由${memberName(ctl)}管理：要加人、改角色或移出，请找他。`;
   return "这台电脑暂时不能调整这个事项的成员（负责人暂时无法确认，或还在等第一次同步）：联网同步一次后再试。";
 }
 
@@ -215,7 +215,8 @@ export function addResultText(added: readonly { name: string; can_receive: boole
     const later = added.filter((a) => !a.can_receive).map((a) => a.name);
     const now = added.filter((a) => a.can_receive).map((a) => a.name);
     let tail: string;
-    if (sync === "not_allowed" || sync === "not_configured") tail = `所内开通同事之间同步后才会收到${later.length > 0 ? `；${later.join("、")}的电脑还要先申请并经管理员确认` : ""}。`;
+    // 所内没开通同步：列表上方那句已经说了“要等开通后才收得到”（实拍：同一页说两遍），这里只说各人电脑的情况
+    if (sync === "not_allowed" || sync === "not_configured") tail = later.length > 0 ? `${later.join("、")}的电脑还要先申请并经管理员确认。` : "";
     else
       tail = [now.length > 0 ? `${now.join("、")}的电脑下次同步时收到` : "", later.length > 0 ? `${later.join("、")}的电脑还不能接收，申请并经管理员确认后自动收到` : ""].filter(Boolean).join("；") + "。";
     parts.push(`已加入${names}。${tail}`);
@@ -255,15 +256,26 @@ export function levelOfMatter(m: { data_level?: string | null; confidentiality?:
  * - validation：relay_not_configured / not_enabled（开通 / 续期）、patch_missing（调用方错误，界面不会发）
  */
 export type TeamFaultCode = "team_scope_unavailable" | "member_not_in_team" | "roster_unavailable" | "scope_irreversible" | "team_scope_conflict";
-export function teamFaultOf(e: unknown): { code: string | null; reason: string | null; userId: string | null; message: string } {
-  const x = e as { code?: unknown; detail?: { reason?: unknown; user_id?: unknown }; message?: unknown } | null;
+export function teamFaultOf(e: unknown): { code: string | null; reason: string | null; userId: string | null; manager: string | null; message: string } {
+  const x = e as { code?: unknown; detail?: { reason?: unknown; user_id?: unknown; controller_name?: unknown; manager_name?: unknown; controller_user_id?: unknown }; message?: unknown } | null;
+  const d = x?.detail;
+  const manager = typeof d?.controller_name === "string" ? d.controller_name : typeof d?.manager_name === "string" ? d.manager_name : null;
   return {
     code: typeof x?.code === "string" ? x.code : null,
-    reason: typeof x?.detail?.reason === "string" ? x.detail.reason : null,
-    userId: typeof x?.detail?.user_id === "string" ? x.detail.user_id : null,
+    reason: typeof d?.reason === "string" ? d.reason : null,
+    userId: typeof d?.user_id === "string" ? d.user_id : null,
+    // 内核不认识姓名时给的是编号：律师层不露编号
+    manager: manager && manager.trim() && !/^usr_/.test(manager) ? manager.trim() : null,
     message: typeof x?.message === "string" ? x.message.trim() : "",
   };
 }
+
+/**
+ * 内核终版补的事项成员页拒绝原因（cdd366a0，detail.reason；原句已是律师层的话，另带 controller_name）：
+ * 同事名单由别人管理 / 规则要更新 / 正在确认由谁管理 / 状态异常 / 管理人已不是负责人 / 管理人电脑都已停用 / 不能给管理人降角色 /
+ * 负责人暂时确认不了 / 成员事件不成立 / 这台电脑还没拿到最新内容。
+ */
+const KERNEL_LAWYER_REASONS = new Set(["relay_policy_stale", "relay_controller_pending", "relay_state_broken", "relay_controller_not_owner", "relay_controller_departed", "relay_controller_role_change", "owner_unverifiable", "member_event_invalid", "own_wrap_missing", "consent_refused", "strict"]);
 
 const SCOPE_UNAVAILABLE_TEXT: Readonly<Record<string, string>> = {
   personal_workspace: "个人空间里的事项只在你自己的电脑上：要和同事一起办，请先切换到团队空间。",
@@ -296,6 +308,10 @@ export function teamFaultText(e: unknown): string {
   if (f.code === "roster_unavailable") return `${ROSTER_REASON_TEXT[f.reason ?? ""] ?? "暂时取不到同事名单"}：${f.reason === "not_supported" ? "请联系 Kimi Work 客服。" : "联网后再试。"}`;
   if (f.reason === "relay_not_configured") return "中软还没为本所开通同事之间同步的服务：请联系 Kimi Work 客服。";
   if (f.reason === "not_enabled") return "同事之间同步还没开通：请先开通。";
+  // 同事名单由别人管理（经中软同步的事项，只有最先同步它的负责人能调整成员）：写“由某某管理”，与成员页表尾同一说法
+  if (f.reason === "relay_controller_other" && f.manager) return `这个事项的同事名单由${f.manager}管理：要加人、改角色或移出，请找他。`;
+  // 其余已知原因：内核原句就是律师层的话（仍过一遍兜底替换）
+  if (f.reason && (KERNEL_LAWYER_REASONS.has(f.reason) || f.reason === "relay_controller_other") && f.message) return lawyerize(null, f.message);
   return lawyerize(f.code, f.message);
 }
 

@@ -29,9 +29,10 @@ function useShareRelay(): [ShareRelayStatus | null | undefined, (s: ShareRelaySt
   return [s, setS];
 }
 
-function doneText(s: ShareRelayStatus, renew: boolean, now = Date.now()): string {
+function doneText(s: ShareRelayStatus, renew: boolean): string {
   if (s.state === "pending_second_signature") return `已确认：还需另一位管理员在自己的电脑上确认后${renew ? "续期" : "开通"}。`;
-  if (s.state === "allowed") return `${renew ? "已续期" : "已开通"}：团队共享事项会在同事电脑之间同步${s.expires_at ? `，${dueLabel(s.expires_at, now)} 前有效` : ""}。`;
+  // 有效期就在上面那一行（实拍：同一个日期说了两遍）
+  if (s.state === "allowed") return `${renew ? "已续期" : "已开通"}：团队共享事项会在同事电脑之间同步。`;
   return "已提交，稍后生效。";
 }
 
