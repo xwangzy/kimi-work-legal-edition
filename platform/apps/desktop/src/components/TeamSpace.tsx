@@ -271,7 +271,7 @@ export function TeamHeader({ ws, children }: { ws: WorkspaceState; children?: Re
       {!ws.features.teamRead && (
         <p className="team-privacy" role="note">
           {Icon.lock()}
-          <span>事项内容只在成员自己的电脑上，管理员看不到；要一起办，在事项里开启团队共享。</span>
+          <span>事项内容只在成员自己的电脑上，管理员看不到；团队共享事项需要所内先配置共享通道。</span>
         </p>
       )}
       {children}

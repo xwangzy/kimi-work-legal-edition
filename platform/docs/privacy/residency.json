@@ -1271,7 +1271,7 @@
       "rows": [
         19
       ],
-      "reason": "第 72 批（U-2）：团队共享事后确认的本机状态 share-confirm.json（0600，原子写）：申请编号、状态、入组核对码、时刻；不含私钥与案件信息。换证时旧证书按 rekeyed 留档（沿用 archiveDeviceCert）"
+      "reason": "第 72 批（U-2）：团队共享事后确认的本机状态 share-confirm.json（0600，原子写）：申请编号、申请时刻、结果与处理时刻（被拒 / 过期保留到重新申请或点“知道了”）；入组核对码不落盘，不含私钥与案件信息。换证时旧证书按 rekeyed 留档（沿用 archiveDeviceCert）"
     }
   },
   "renderer_storage": {

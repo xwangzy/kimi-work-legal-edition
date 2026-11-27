@@ -137,6 +137,11 @@ export function upgradeTitle(r: { name?: string | null; device_name?: string | n
   return `${r.name ?? "本所成员"}${role} 的${r.device_name ? ` ${r.device_name} ` : "电脑"}申请接收团队共享事项`;
 }
 
+/** 第 72 批（补测 D4）：输入框里是不是正好 12 位数字（忽略空格与连字符）——是才能点“确认”，逐位比对在内核。纯函数。 */
+export function twelveDigits(typed: string): boolean {
+  return /^\d{12}$/.test(typed.replace(/[\s-]/g, ""));
+}
+
 /** 第 72 批（U-2b）：输入的核对码与这台电脑算出的是否逐位一致（只比数字，忽略空格与连字符；须满 12 位）。纯函数。 */
 export function sameCheckCode(typed: string, code: string): boolean {
   const d = (v: string) => v.replace(/[\s-]/g, "");

@@ -1944,6 +1944,8 @@ export const team = {
     status: () => invoke<DeviceShareStatus>("team.deviceShare.status").catch(() => ({ supported: false }) as DeviceShareStatus),
     request: () => invoke<DeviceShareStatus>("team.deviceShare.request"),
     withdraw: () => invoke<DeviceShareStatus>("team.deviceShare.withdraw"),
+    /** 补测 D5：被拒 / 过期的结果“知道了”。 */
+    dismiss: () => invoke<DeviceShareStatus>("team.deviceShare.dismiss"),
   },
 };
 /** 第 72 批（U-2）：confirmed = 已可接收；pending 带 12 位核对码；restart = 刚换上新证书、客户端即将重新载入。 */
@@ -1953,6 +1955,8 @@ export interface DeviceShareStatus {
   issuer?: "firm_root" | "account_ca";
   request_id?: string;
   requested_at?: string;
+  /** 被拒 / 过期的时刻。 */
+  decided_at?: string | null;
   check_code?: string;
   checked?: boolean;
   problem?: string;

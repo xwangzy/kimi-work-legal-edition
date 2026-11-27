@@ -5761,6 +5761,13 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         if (!ds) return unsupported();
         return { supported: true, ...(await ds.withdraw()) };
       },
+      // 第 72 批（补测 D5）：被拒 / 过期的结果一直保留到重新申请或这里“知道了”
+      "team.deviceShare.dismiss": async () => {
+        requireCpAccount();
+        const ds = deps.deviceShare;
+        if (!ds) return unsupported();
+        return { supported: true, ...ds.dismiss() };
+      },
       "account.onboarding": async (p) => {
         const cp = requireCpAccount();
         if (!(await has("onboarding_state"))) return unsupported({ completed_at: null, dismissed_at: null });

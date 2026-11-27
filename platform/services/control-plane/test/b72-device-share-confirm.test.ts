@@ -176,6 +176,9 @@ test("S4：管理员电脑列出的申请里，编号与两把公钥就是成员
   const x = (await pendingList()).find((j) => j.device_id === L.dev.cert.deviceId);
   assert.ok(x, "律所根管理员电脑看得到");
   assert.deepEqual([x.kind, x.via, x.role, x.account.name, x.account.email], ["upgrade", "upgrade", "lawyer", "乙律师", null]);
+  // 补测 D3：没起名的电脑按最近一次桌面登录的平台与第几台派生（与客户端电脑选择页同一口径）
+  const nth = /_D(\d+)$/.exec(L.dev.cert.deviceId)?.[1] ?? "1";
+  assert.equal(x.device_name, `Mac 电脑 · 第 ${nth} 台`);
   const memberSide = joinCheckCode({ tid: A.tid, deviceId: L.dev.cert.deviceId, signPublicKeyPem: L.dev.k.signPublicKeyPem, encPublicKeyPem: L.dev.k.encPublicKeyPem });
   const adminSide = joinCheckCode({ tid: A.tid, deviceId: x.device_id, signPublicKeyPem: x.sign_pub, encPublicKeyPem: x.enc_pub });
   assert.match(memberSide, /^\d{3} \d{3} \d{3} \d{3}$/);
@@ -336,7 +339,9 @@ test("S2（角色）：申请之后成员被调低角色——原申请作废（
   assert.equal((await pendingList()).find((j) => j.id === r2.json.join_request_id).role, "lawyer");
   // 拒绝 → 成员电脑取回 rejected，设备记录不变
   assert.equal((await admin().call("POST", `/v1/join-requests/${r2.json.join_request_id}/reject`, {})).status, 200);
-  assert.equal((await P.dev.call("POST", `/v1/join-requests/${r2.json.join_request_id}/fetch`, {})).json.status, "rejected");
+  const rj = await P.dev.call("POST", `/v1/join-requests/${r2.json.join_request_id}/fetch`, {});
+  assert.equal(rj.json.status, "rejected");
+  assert.ok(Date.parse(rj.json.decided_at) > 0, "带处理时刻（补测 D5）");
   assert.equal(cp.ops.tenant(A.tid)!.devices.get(P.dev.cert.deviceId)!.cert.issuer, "account_ca");
   assert.ok(auditLog.list(A.tid, 0, 500).some((e: any) => e.action === "device.upgrade_reject"));
 });

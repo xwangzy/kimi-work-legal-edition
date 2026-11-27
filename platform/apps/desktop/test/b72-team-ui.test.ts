@@ -17,6 +17,7 @@ import {
   roleOfMember,
   shareConfirmLine,
   shareIssuerNote,
+  shareNoteVisible,
   teamErrorText,
   teamNameOk,
   templatesLabel,
@@ -26,7 +27,7 @@ import {
   workspaceMenuMeta,
   workspaceRoleTag,
 } from "../src/lib/workspace.ts";
-import { adminErrorText, devicesCell, MEMBER_DEVICE_POLICY, memberActions, memberMenu, memberStatus, removeLines, sameCheckCode, seatSummary, splitInvites, upgradeTitle, type TeamMemberRow } from "../src/lib/team-admin.ts";
+import { adminErrorText, devicesCell, MEMBER_DEVICE_POLICY, twelveDigits, memberActions, memberMenu, memberStatus, removeLines, sameCheckCode, seatSummary, splitInvites, upgradeTitle, type TeamMemberRow } from "../src/lib/team-admin.ts";
 import { deviceLimitOf, switchOutcome, waitForProfileSwitch } from "../src/lib/account-switch.ts";
 
 const src = (p: string) => readFileSync(fileURLToPath(new URL(`../src/${p}`, import.meta.url)), "utf8");
@@ -89,6 +90,9 @@ test("危险操作的后果写清（D-305）：升级四件事（不可撤回在
   assert.equal(up.length, 4);
   assert.match(up[0]!, /同一个工作空间.*「某某律师事务所」.*原地不动/);
   assert.match(up[1]!, /仍只属于你/);
+  // 补测 D6：事项级“开启团队共享”的入口本批不做——不承诺入口
+  assert.doesNotMatch(up.join(""), /在事项里|逐个开启/);
+  assert.match(up[1]!, /团队共享事项需要所内先配置共享通道/);
   assert.match(up[2]!, /邀请同事/);
   assert.match(up[3]!, /不能撤回/);
   const lv = leaveLines("某某所", "王律师的工作室");
@@ -322,8 +326,15 @@ test("申请接收团队共享事项（U-2b）：各状态一句话；不支持�
   assert.match(shareConfirmLine({ supported: true, state: "pending" })!, /请管理员在团队设置 · 电脑待确认里核对下面的入组核对码后确认/);
   assert.match(shareConfirmLine({ supported: true, state: "pending", problem: "cert_invalid" })!, /核对不通过，没有采用/);
   assert.equal(shareConfirmLine({ supported: true, state: "confirmed" }), "这台电脑已可接收团队共享事项");
-  assert.match(shareConfirmLine({ supported: true, state: "confirmed", restart: true })!, /正在重新载入/);
+  assert.match(shareConfirmLine({ supported: true, state: "confirmed", restart: true })!, /正在刷新/);
   assert.match(shareConfirmLine({ supported: true, state: "rejected" })!, /可以重新申请/);
+  // 补测 D5：被拒写明时刻（北京时间）
+  assert.equal(shareConfirmLine({ supported: true, state: "rejected", decided_at: "2026-11-27T06:20:00.000Z" }, Date.parse("2026-11-27T08:00:00.000Z")), "管理员没有确认这次申请（今天 14:20）。需要时可以重新申请");
+  // 补测 D2 / D9：橙色“还不能接收”只在还没申请、已撤回、不支持时出现；已申请、被拒、已可接收时只留状态那一块
+  for (const st of ["none", "withdrawn"]) assert.equal(shareNoteVisible({ supported: true, state: st }), true, st);
+  for (const st of ["pending", "rejected", "expired", "confirmed"]) assert.equal(shareNoteVisible({ supported: true, state: st }), false, st);
+  assert.equal(shareNoteVisible(null), true);
+  assert.equal(shareNoteVisible({ supported: false }), true);
   assert.match(shareConfirmLine({ supported: true, state: "expired" })!, /7 天没有处理/);
   assert.match(shareConfirmLine({ supported: true, state: "withdrawn", offline: true })!, /7 天后自动过期/);
   for (const st of ["pending", "confirmed", "rejected", "expired", "withdrawn"]) assert.doesNotMatch(shareConfirmLine({ supported: true, state: st })!, /律所根|签发钥|证书|租户/);
@@ -334,7 +345,25 @@ test("申请接收团队共享事项（U-2b）：各状态一句话；不支持�
   assert.equal(sameCheckCode("014926557894", "014 926 557 893"), false);
   assert.equal(sameCheckCode("01492655789", "014 926 557 893"), false, "不满 12 位不算");
   assert.equal(sameCheckCode("", ""), false);
+  // 补测 D4：界面拿不到本机算出的核对码——填满 12 位才可点“确认”，逐位比对在内核
+  assert.equal(twelveDigits("014 926 557 893"), true);
+  assert.equal(twelveDigits("01492655789"), false);
+  assert.equal(twelveDigits("01492655789a"), false);
   assert.doesNotMatch(MEMBER_DEVICE_POLICY.auto.hint, /暂不能/);
   assert.match(MEMBER_DEVICE_POLICY.auto.hint, /申请一次、你在“电脑待确认”里核对确认一次即可/);
   assert.equal(adminErrorText({ detail: { reason: "check_code_mismatch" } }).startsWith("入组核对码不一致"), true);
+});
+
+test("补测 D2 / D4 / D9 / D6：团队共享处两条提示不同时出现、换证后重取工作空间状态；待确认的升级行不显示核对码；角色列不折行；不承诺事项里的共享入口", () => {
+  const read = (f: string) => readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8");
+  const ts = read("../src/components/TeamShare.tsx");
+  assert.match(ts, /shareNoteVisible\(share\.s\)/);
+  assert.match(ts, /notifyWorkspaceChanged\(\)/, "已可接收后让工作空间状态重取（不再停在“正在重新载入…”）");
+  assert.match(ts, /team\.deviceShare\.dismiss\(\)/, "被拒后可点“知道了”");
+  const ma = read("../src/components/MembersAdmin.tsx");
+  assert.match(ma, /r\.kind === "upgrade" \? <td className="muted members-code-hint">请让对方读出他屏幕上的 12 位入组核对码/);
+  assert.doesNotMatch(ma.slice(ma.indexOf("function UpgradeConfirm("), ma.indexOf("export function PendingDevices(")), /r\.check_code/, "升级行不拿本机核对码比");
+  assert.match(ma, /<td className="members-nowrap">\{ROLE_LABEL\[r\.role\] \?\? r\.role\}<\/td>/);
+  assert.match(read("../src/styles-team.css"), /\.members-table \.members-nowrap \{ white-space: nowrap; \}/);
+  assert.doesNotMatch(read("../src/components/TeamSpace.tsx"), /在事项里开启团队共享/);
 });

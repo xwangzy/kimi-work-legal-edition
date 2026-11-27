@@ -1180,10 +1180,21 @@ export const membersApi = (d: MembersDeps) => {
     });
     const r = await call("POST", `/v1/join-requests/${snap.id}/approve`, { cert });
     if (!r.ok) cpFail(r);
-    d.db.run(`INSERT OR IGNORE INTO memberships (membership_id, tenant_id, user_id, role) VALUES (?, ?, ?, ?)`, [`membership_${snap.member_slug}`, d.identity.tenantId, userId, MEMBERSHIP_ROLE[snap.role]]);
-    // 第 72 批：本机已有“加进事项”时插入的占位行（随机编号、角色 lawyer）——管理员核对过申请人角色后，按批准的角色更正
-    d.db.run(`UPDATE memberships SET role = ? WHERE tenant_id = ? AND user_id = ? AND membership_id <> ?`, [MEMBERSHIP_ROLE[snap.role], d.identity.tenantId, userId, `membership_${snap.member_slug}`]);
-    if (snap.account_name) d.db.run(`INSERT OR IGNORE INTO users (user_id, tenant_id, display_name) VALUES (?, ?, ?)`, [userId, d.identity.tenantId, snap.account_name]);
+    // 云端已批准（这台电脑此后就是律所根签发的）：本机成员记录写入失败不能让管理员以为没确认成功——记日志、照常审计与同步，下次确认 / 同步时幂等补写
+    // 第 72 批（补测 D1）：memberships.user_id 外键引用 users——先写 users（成员还没进过本机任何事项时没有这一行），再写 / 更正 memberships
+    try {
+      d.db.tx(() => {
+        const displayName = snap.account_name ?? `成员 ${snap.member_slug}`;
+        d.db.run(`INSERT OR IGNORE INTO users (user_id, tenant_id, display_name) VALUES (?, ?, ?)`, [userId, d.identity.tenantId, displayName]);
+        // “加进事项”时以成员编号作显示名的占位行：换成账号上的姓名
+        if (snap.account_name) d.db.run(`UPDATE users SET display_name = ? WHERE tenant_id = ? AND user_id = ? AND display_name = user_id`, [snap.account_name, d.identity.tenantId, userId]);
+        d.db.run(`INSERT OR IGNORE INTO memberships (membership_id, tenant_id, user_id, role) VALUES (?, ?, ?, ?)`, [`membership_${snap.member_slug}`, d.identity.tenantId, userId, MEMBERSHIP_ROLE[snap.role]]);
+        // 第 72 批：本机已有“加进事项”时插入的占位行（随机编号、角色 lawyer）——管理员核对过申请人角色后，按批准的角色更正
+        d.db.run(`UPDATE memberships SET role = ? WHERE tenant_id = ? AND user_id = ? AND membership_id <> ?`, [MEMBERSHIP_ROLE[snap.role], d.identity.tenantId, userId, `membership_${snap.member_slug}`]);
+      });
+    } catch {
+      slog.event("KERNEL_SHARE_APPROVE_LOCAL_FAILED", {});
+    }
     snapshots.delete(snap.id);
     attentionCache = null;
     d.audit("member.device_share_approve", "device", snap.device_id);
@@ -1240,7 +1251,8 @@ export const membersApi = (d: MembersDeps) => {
           name: local?.display_name ?? memberName,
           role: local?.role ?? snap.role,
           requested_at: x.created_at,
-          check_code: snap.check_code,
+          // 第 72 批（补测 D4）：“接收团队共享事项”的确认要管理员输入对方念出的核对码——本机算出的那串不给界面（否则照抄即“一致”），只留在快照里逐位比对
+          check_code: snap.via === "upgrade" ? null : snap.check_code,
           // 第 44 批：账号新设备（同一成员换电脑或加电脑）——没有邀请可对，须当面或电话核对核对码
           via: snap.via,
           account_email: snap.account_email,

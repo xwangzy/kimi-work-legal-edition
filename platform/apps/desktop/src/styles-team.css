@@ -134,6 +134,11 @@
 .share-confirm p { margin: 0 0 var(--sp-1); }
 .share-confirm .members-check { font-size: var(--fs-body); color: var(--text-primary); margin-right: var(--sp-2); }
 .members-code-input { width: 17ch; max-width: 100%; letter-spacing: 0.04em; }
+/* 补测 D9：电脑待确认表在宽屏下“角色”“申请时间”被挤成竖排——这两列不折行；说明列可折行；已申请等状态块用中性底色（不再与橙色提示并列） */
+.members-table .members-nowrap { white-space: nowrap; }
+.members-table .members-code-hint { min-width: 14em; }
+.share-confirm-box { margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--bg-muted); border: 1px solid var(--border-subtle); font-size: var(--fs-caption); line-height: 1.6; }
+.share-confirm-box p:last-child { margin-bottom: 0; }
 
 /* 个人空间：备份与安全页底的技术支持折叠 */
 .help-support { margin-top: var(--sp-4); font-size: var(--fs-caption); }

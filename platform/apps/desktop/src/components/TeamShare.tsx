@@ -5,7 +5,8 @@
  */
 import { useEffect, useState } from "react";
 import { api, team, type DeviceShareStatus, type RelayStatus } from "../api.ts";
-import { shareConfirmLine } from "../lib/workspace.ts";
+import { shareConfirmLine, shareNoteVisible } from "../lib/workspace.ts";
+import { notifyWorkspaceChanged } from "./WorkspaceSwitch.tsx";
 import { canResyncMembers, relayErrorText, syncAlertAction, syncAlertSummary, syncAlertText, syncOutcomeText, teamShareLine } from "../lib/relay-text.ts";
 import { fmtTime } from "../lib/labels.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
@@ -38,11 +39,18 @@ export function TeamShare({ admin = false, note = null }: { admin?: boolean; not
         .catch(() => setOwners((o) => ({ ...o, [id]: false })));
     }
   }, [rootIds]);
+  // 第 72 批（补测 D2 / D9）：申请状态提到这里——已申请、被拒、已可接收时不再同时显示橙色“还不能接收”，两条提示只出现一条
+  const share = useShareConfirm(!!note);
   const noteLine = note ? (
-    <div className="share-note" role="note">
-      {note}
-      <ShareConfirm />
-    </div>
+    <>
+      {shareNoteVisible(share.s) && (
+        <div className="share-note" role="note">
+          {note}
+          {share.s?.supported === true && share.s.state !== "rejected" && share.s.state !== "expired" && <ShareConfirmActions share={share} />}
+        </div>
+      )}
+      {!shareNoteVisible(share.s) && <ShareConfirmBox share={share} />}
+    </>
   ) : null;
   if (!st || (st.blocked === "not_configured" && alerts.length === 0))
     return noteLine ? (
@@ -150,13 +158,17 @@ export function TeamShare({ admin = false, note = null }: { admin?: boolean; not
 
 /**
  * 第 72 批（U-2b，D-304）：这台直接登录的电脑“申请接收团队共享事项”。申请后显示 12 位入组核对码（请管理员在团队设置 · 电脑待确认里核对后确认），可撤回；
- * 待处理期间每 15 秒问一次内核（内核取回确认结果、核验并换上律所根签的证书后自动重新载入）。旧云端 / 旧内核没有这一步时不出现。
+ * 待处理期间每 15 秒问一次内核。内核取回确认结果、核验并换上律所根签的证书后重启：这里等内核回来、本机证书确为律所根签的，
+ * 再通知工作空间状态重取（补测 D2：团队共享处随之刷新，不再停在“正在重新载入…”）。被拒 / 过期的结果一直显示到重新申请或点“知道了”（补测 D5）。
+ * 旧云端 / 旧内核没有这一步时不出现。
  */
-function ShareConfirm() {
+type ShareConfirmState = ReturnType<typeof useShareConfirm>;
+function useShareConfirm(enabled: boolean) {
   const [s, setS] = useState<DeviceShareStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => {
+    if (!enabled) return;
     let live = true;
     const load = () => void team.deviceShare.status().then((x) => live && setS(x)).catch(() => undefined);
     load();
@@ -165,8 +177,35 @@ function ShareConfirm() {
       live = false;
       clearInterval(t);
     };
-  }, []);
-  if (!s || s.supported !== true) return null;
+  }, [enabled]);
+  // 已可接收：内核换证后会重启——每 2 秒看一次，内核回来且本机证书已是律所根签的，就让工作空间状态重取（至多约 1 分钟）
+  const confirmed = s?.state === "confirmed";
+  useEffect(() => {
+    if (!enabled || !confirmed) return;
+    let live = true;
+    let n = 0;
+    const later: ReturnType<typeof setTimeout>[] = [];
+    const t = setInterval(() => {
+      n += 1;
+      void api
+        .kernelStatus()
+        .then((st: any) => {
+          if (!live) return;
+          if (st?.device_issuer === "firm_root" || n >= 30) {
+            clearInterval(t);
+            // 换证后内核随即重启：立即重取一次，内核重启完再各取一次（重启期间那一次取不到也不要紧）
+            notifyWorkspaceChanged();
+            later.push(setTimeout(notifyWorkspaceChanged, 5_000), setTimeout(notifyWorkspaceChanged, 15_000));
+          }
+        })
+        .catch(() => undefined);
+    }, 2_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+      for (const x of later) clearTimeout(x);
+    };
+  }, [enabled, confirmed]);
   const act = async (fn: () => Promise<DeviceShareStatus>) => {
     setBusy(true);
     setErr("");
@@ -178,12 +217,40 @@ function ShareConfirm() {
       setBusy(false);
     }
   };
+  return { s, busy, err, act };
+}
+
+/** 还没申请（或已撤回）时，橙色提示里的“申请”按钮。 */
+function ShareConfirmActions({ share }: { share: ShareConfirmState }) {
+  const { s, busy, err, act } = share;
   const line = shareConfirmLine(s);
-  const canRequest = s.state !== "pending" && s.state !== "confirmed";
   return (
     <div className="share-confirm">
       {line && (
         <p className="muted" role="status">
+          {line}
+        </p>
+      )}
+      <span className="settings-choice">
+        <button type="button" className="btn-primary btn-sm" disabled={busy} onClick={() => void act(() => team.deviceShare.request())}>
+          申请接收团队共享事项
+        </button>
+      </span>
+      {err && <p className="activate-error">{err}</p>}
+    </div>
+  );
+}
+
+/** 已申请 / 被拒 / 已过期 / 已可接收：只这一块（不再并列橙色“还不能接收”）。 */
+function ShareConfirmBox({ share }: { share: ShareConfirmState }) {
+  const { s, busy, err, act } = share;
+  if (!s || s.supported !== true) return null;
+  const line = shareConfirmLine(s);
+  const retry = s.state === "rejected" || s.state === "expired";
+  return (
+    <div className="share-confirm share-confirm-box">
+      {line && (
+        <p role="status" className={s.state === "confirmed" ? "share-confirm-ok" : undefined}>
           {line}
         </p>
       )}
@@ -194,10 +261,15 @@ function ShareConfirm() {
         </p>
       )}
       <span className="settings-choice">
-        {canRequest && (
-          <button type="button" className="btn-primary btn-sm" disabled={busy} onClick={() => void act(() => team.deviceShare.request())}>
-            申请接收团队共享事项
-          </button>
+        {retry && (
+          <>
+            <button type="button" className="btn-primary btn-sm" disabled={busy} onClick={() => void act(() => team.deviceShare.request())}>
+              重新申请
+            </button>
+            <button type="button" className="btn-ghost btn-sm" disabled={busy} onClick={() => void act(() => team.deviceShare.dismiss())}>
+              知道了
+            </button>
+          </>
         )}
         {s.state === "pending" && <ConfirmButton label="撤回申请" question="撤回这次申请？之后需要时可以重新申请。" confirmLabel="撤回" onConfirm={() => act(() => team.deviceShare.withdraw())} />}
       </span>

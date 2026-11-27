@@ -98,19 +98,19 @@ test("申请 → 管理员核对核对码后确认 → 管理员本机设备表�
   assert.equal(stateFiles(dir).length, 1, "本机记下了申请编号（无秘密）");
   await close(k);
 
-  // ── 乙：确认前，团队共享事项的密钥包不给甲这台；电脑待确认里看到申请，核对码与甲屏幕上的一致 ──
+  // ── 乙：确认前甲这台不在本机设备表；电脑待确认里看到申请（带派生的电脑名），本机算出的核对码不给界面 ──
+  // 补测 D1：乙本机 users 表里还没有甲（甲没被加进乙的任何事项）——这正是最常见的首次确认，曾报 FOREIGN KEY constraint failed
   kb = await boot(dirB);
   assert.equal(((await kb.invoke("control_plane.sync")) as any).report.steps.register, "ok");
   assert.ok(!((await kb.invoke("devices.list")) as any).devices.some((d: any) => d.device_id === myDevice), "account_ca 电脑不进本机设备表");
-  const m0 = (await kb.invoke("matters.create", { title: "团队共享事项一", stance: "原告", consent_status: "not_required" })) as any;
-  const add0 = (await kb.invoke("matters.members.add", { matter_id: m0.matter.matter_id, user_id: myUser, matter_role: "editor" })) as any;
-  assert.equal(add0.devices_wrapped, 0, "确认前：没有可包给的设备");
   const ls = (await kb.invoke("members.list")) as any;
   const row = ls.join_requests.find((x: any) => x.id === rq.request_id);
   assert.ok(row, JSON.stringify(ls.join_requests));
   assert.deepEqual([row.kind, row.via, row.name, row.role, row.verified, row.local_invite], ["upgrade", "upgrade", "甲律师", "lawyer", true, true]);
-  assert.equal(row.check_code, rq.check_code, "两端各自算出的核对码逐位一致");
-  assert.equal(row.check_code, joinCheckCode({ tid: stT.tenant_id, deviceId: myDevice, signPublicKeyPem: cloud.cp.ops.tenant(stT.tenant_id)!.devices.get(myDevice)!.cert.signPublicKeyPem, encPublicKeyPem: cloud.cp.ops.tenant(stT.tenant_id)!.devices.get(myDevice)!.cert.encPublicKeyPem }));
+  assert.match(String(row.device_name), /^(Mac|Windows|Linux) 电脑 · 第 \d+ 台$|^电脑 · 第 \d+ 台$/, "没起名的电脑按平台与第几台派生（补测 D3）");
+  assert.equal(row.check_code, null, "补测 D4：本机算出的核对码不给界面，管理员只能输入对方念出的");
+  // 两端按同一函数、同一份公钥算核对码：甲屏幕上的就是乙本机快照里的
+  assert.equal(rq.check_code, joinCheckCode({ tid: stT.tenant_id, deviceId: myDevice, signPublicKeyPem: cloud.cp.ops.tenant(stT.tenant_id)!.devices.get(myDevice)!.cert.signPublicKeyPem, encPublicKeyPem: cloud.cp.ops.tenant(stT.tenant_id)!.devices.get(myDevice)!.cert.encPublicKeyPem }));
   // 核对码不一致 / 没填：不能确认
   await assert.rejects(kb.invoke("members.approve", { join_request_id: rq.request_id }), /12 位入组核对码/);
   const wrong = rq.check_code.replace(/\d$/, (x: string) => String((Number(x) + 1) % 10));
@@ -124,7 +124,11 @@ test("申请 → 管理员核对核对码后确认 → 管理员本机设备表�
   const got = devB.devices.find((d: any) => d.device_id === myDevice);
   assert.ok(got, "确认后管理员本机设备表含这台");
   assert.deepEqual([got.member_id, got.status], [myUser, "active"]);
-  const m1 = (await kb.invoke("matters.create", { title: "团队共享事项二", stance: "原告", consent_status: "not_required" })) as any;
+  // 补测 D1：本机原来没有甲的 users 行——确认时先写 users（账号上的姓名）再写成员记录
+  const ro = (await kb.invoke("members.roster")) as any;
+  const mine2 = ro.members.find((x: any) => x.member_id === myUser);
+  assert.equal(mine2?.name, "甲律师", JSON.stringify(ro.members));
+  const m1 = (await kb.invoke("matters.create", { title: "团队共享事项", stance: "原告", consent_status: "not_required" })) as any;
   const add1 = (await kb.invoke("matters.members.add", { matter_id: m1.matter.matter_id, user_id: myUser, matter_role: "editor" })) as any;
   assert.equal(add1.devices_wrapped, 1, JSON.stringify(add1));
   assert.ok(!((await kb.invoke("members.list")) as any).join_requests.some((x: any) => x.id === rq.request_id), "已确认的不再列出");
@@ -207,4 +211,56 @@ test("成员电脑换证的核验：只认本机律所根签的、签发者为�
   const upd = rows.find((r) => r.sql.startsWith("UPDATE devices"))!;
   assert.equal(upd.args[0], JSON.stringify(good));
   assert.deepEqual(audits, ["device.share_confirmed"]);
+});
+
+test("补测 D5：被拒的结果一直保留（不再只闪一个轮询周期）——之后不再联网取、重启后仍在；“知道了”放下；重新申请覆盖", async () => {
+  const keys = generateDeviceKeys();
+  const own = issueDeviceCertificate(generateFirmRoot().privateKeyPem, { certId: "c0", memberId: "usr_f_m", deviceId: "dev_f_m_D2", role: "lawyer", signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem, issuedAt: new Date(Date.now() - 1000).toISOString(), expiresAt: new Date(Date.now() + 86400_000).toISOString(), issuer: "account_ca" } as any);
+  const calls: string[] = [];
+  let reply: Record<string, unknown> = { ok: true, join_request_id: "jr_AAAAAAAAAAAAAAAA", status: "pending", created_at: new Date().toISOString() };
+  const ws = mkdtempSync(join(tmpdir(), "kwl-u2-d5-"));
+  const mk = () =>
+    new DeviceShareConfirm({
+      db: {} as unknown as KernelDb,
+      tenantId: "ten_f",
+      userId: "usr_f_m",
+      device: { deviceId: "dev_f_m_D2", cert: own as DeviceCertificate, keys: { signPublicKeyPem: keys.signPublicKeyPem, encPublicKeyPem: keys.encPublicKeyPem, encPrivateKeyPem: keys.encPrivateKeyPem } as any },
+      firm: { rootPublicKeyPem: generateFirmRoot().publicKeyPem },
+      workspaceDir: ws,
+      call: async (_m, path) => {
+        calls.push(path);
+        return { ok: true, status: 200, json: reply };
+      },
+      requestRestart: () => undefined,
+      audit: () => undefined,
+      pollMs: 3_600_000,
+    });
+  const s = mk();
+  try {
+    assert.equal(((await s.request()) as any).state, "pending");
+    reply = { ok: true, status: "rejected", decided_at: "2026-11-27T06:20:00.000Z" };
+    const r1 = (await s.status()) as any;
+    assert.deepEqual([r1.state, r1.decided_at], ["rejected", "2026-11-27T06:20:00.000Z"]);
+    const n = calls.length;
+    reply = { ok: false };
+    const r2 = (await s.status()) as any;
+    assert.equal(r2.state, "rejected", "下一次轮询仍是被拒");
+    assert.equal(calls.length, n, "已有结果：不再联网取");
+    s.stop();
+    const again = mk();
+    assert.equal(((await again.status()) as any).state, "rejected", "重启内核后仍在");
+    assert.equal((again.dismiss() as any).state, "none", "知道了");
+    assert.equal(((await again.status()) as any).state, "none");
+    // 过期同样保留；重新申请覆盖
+    reply = { ok: true, join_request_id: "jr_BBBBBBBBBBBBBBBB", status: "pending", created_at: new Date().toISOString() };
+    assert.equal(((await again.request()) as any).request_id, "jr_BBBBBBBBBBBBBBBB");
+    reply = { ok: true, status: "expired", decided_at: "2026-12-04T06:20:00.000Z" };
+    assert.equal(((await again.status()) as any).state, "expired");
+    reply = { ok: true, join_request_id: "jr_CCCCCCCCCCCCCCCC", status: "pending", created_at: new Date().toISOString() };
+    const re = (await again.request()) as any;
+    assert.deepEqual([re.state, re.request_id], ["pending", "jr_CCCCCCCCCCCCCCCC"], "被拒 / 过期后重新申请");
+    again.stop();
+  } finally {
+    s.stop();
+  }
 });

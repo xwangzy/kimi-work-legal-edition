@@ -9,7 +9,7 @@ import { ConfirmButton } from "./ConfirmButton.tsx";
 import { fmtTime } from "../lib/labels.ts";
 import { memberLabel, memberStatusText, removalLines } from "../lib/offboarding.ts";
 import { Select } from "./Select.tsx";
-import { sameCheckCode, upgradeTitle } from "../lib/team-admin.ts";
+import { twelveDigits, upgradeTitle } from "../lib/team-admin.ts";
 
 const ROLES: [string, string][] = [
   ["lawyer", "律师"],
@@ -171,8 +171,8 @@ export function JoinRequestTable({ requests, act }: { requests: any[]; act: (fn:
         <thead>
           <tr>
             <th>姓名</th>
-            <th>角色</th>
-            <th>申请时间</th>
+            <th className="members-nowrap">角色</th>
+            <th className="members-nowrap">申请时间</th>
             <th>入组核对码（请对方念出，一致再批准）</th>
             <th />
           </tr>
@@ -185,9 +185,10 @@ export function JoinRequestTable({ requests, act }: { requests: any[]; act: (fn:
                 {/* 第 44 批（D-186）：同一账号的新电脑——没有邀请可对，只能人工核对核对码 */}
                 {r.via === "account" && <div className="muted">同一账号的新电脑{r.account_email && r.name ? ` · ${r.account_email}` : ""}</div>}
               </td>
-              <td>{ROLE_LABEL[r.role] ?? r.role}</td>
-              <td>{fmtTime(r.requested_at)}</td>
-              <td className="members-check">{r.check_code}</td>
+              <td className="members-nowrap">{ROLE_LABEL[r.role] ?? r.role}</td>
+              <td className="members-nowrap">{fmtTime(r.requested_at)}</td>
+              {/* 第 72 批（补测 D4）：“接收团队共享事项”的行不显示本机算出的核对码（否则照抄即“一致”）——只请对方读出、在右边输入 */}
+              {r.kind === "upgrade" ? <td className="muted members-code-hint">请让对方读出他屏幕上的 12 位入组核对码，填在右边</td> : <td className="members-check">{r.check_code}</td>}
               <td>
                 {r.kind === "upgrade" ? (
                   r.verified === false ? (
@@ -228,16 +229,16 @@ export function JoinRequestTable({ requests, act }: { requests: any[]; act: (fn:
  */
 function UpgradeConfirm({ r, act }: { r: any; act: (fn: () => Promise<unknown>, ok: string) => Promise<void> }) {
   const [typed, setTyped] = useState("");
-  const match = sameCheckCode(typed, String(r.check_code ?? ""));
+  // 第 72 批（补测 D4）：界面拿不到本机算出的核对码——填满 12 位即可点“确认”，由内核按本机独立算出的逐位比对（不一致不签发，原因写在下面）
   const typedDigits = typed.replace(/[\s-]/g, "");
+  const ready = twelveDigits(typed);
   return (
     <span className="settings-choice">
-      <input className="members-code-input mono" inputMode="numeric" maxLength={16} placeholder="输入对方念出的 12 位入组核对码" aria-label="对方念出的入组核对码" value={typed} onChange={(e) => setTyped(e.target.value)} />
-      <button type="button" className="btn btn-primary btn-sm" disabled={!match} onClick={() => void act(() => members.approve(r.id, typedDigits), `已确认${r.name ? ` ${r.name} 的电脑` : ""}：同步后即可接收团队共享事项`)}>
+      <input className="members-code-input mono" inputMode="numeric" maxLength={16} placeholder="对方念出的 12 位入组核对码" aria-label="对方念出的入组核对码" value={typed} onChange={(e) => setTyped(e.target.value)} />
+      <button type="button" className="btn-primary btn-sm" disabled={!ready} onClick={() => void act(() => members.approve(r.id, typedDigits), `已确认${r.name ? ` ${r.name} 的电脑` : ""}：同步后即可接收团队共享事项`)}>
         确认
       </button>
       <ConfirmButton label="拒绝" question="拒绝这份申请？对方可以重新申请。" confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
-      {typedDigits.length === 12 && !match && <span className="activate-error">入组核对码不一致：不要确认，请让对方重新念一遍</span>}
     </span>
   );
 }

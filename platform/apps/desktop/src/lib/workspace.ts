@@ -1,3 +1,4 @@
+import { momentLabel } from "./account.ts";
 /**
  * 第 72 批（V46，D-304、D-305，契约 02 §7）：个人 / 团队工作空间在界面这一侧的纯函数。
  *
@@ -112,7 +113,8 @@ export function teamNameOk(v: string): boolean {
 export function upgradeLines(name: string): string[] {
   return [
     `还是同一个工作空间，名称改为「${name.trim() || "新的团队名"}」；事项、材料、成果和电脑都原地不动。`,
-    "你原有的事项仍只属于你，同事看不到；要一起办的事项，之后在事项里逐个开启团队共享。",
+    // 第 72 批（补测 D6，主会话决定）：事项级“开启团队共享 / 把同事加进事项”的界面本批不做——不承诺入口
+    "你原有的事项仍只属于你，同事看不到；团队共享事项需要所内先配置共享通道。",
     "升级后可以邀请同事加入；同事的事项内容只在他们自己的电脑上，你也看不到。",
     "升级不能撤回：之后不能再变回个人工作室。",
   ];
@@ -177,22 +179,32 @@ export function shareIssuerNote(issuer: unknown, kind: WorkspaceKind | null, adm
  * 第 72 批（U-2b）：“申请接收团队共享事项”各状态的一句话（团队共享处）。pending 时另显示核对码。纯函数。
  * state 取自内核 team.deviceShare.*；不支持（旧云端 / 旧内核）返回 null，界面只留上面那句提示。
  */
-export function shareConfirmLine(s: { supported?: boolean; state?: string; restart?: boolean; problem?: string; offline?: boolean } | null): string | null {
+export function shareConfirmLine(s: { supported?: boolean; state?: string; restart?: boolean; problem?: string; offline?: boolean; decided_at?: string | null } | null, now = Date.now()): string | null {
   if (!s || s.supported !== true) return null;
+  const at = s.decided_at ? momentLabel(s.decided_at, now) : "";
   switch (s.state) {
     case "confirmed":
-      return s.restart ? "这台电脑已可接收团队共享事项，正在重新载入…" : "这台电脑已可接收团队共享事项";
+      return s.restart ? "这台电脑已可接收团队共享事项，正在刷新…" : "这台电脑已可接收团队共享事项";
     case "pending":
       return s.problem ? "收到的确认结果核对不通过，没有采用：请管理员拒绝后你重新申请；仍不行请联系 Kimi Work 客服" : "已申请：请管理员在团队设置 · 电脑待确认里核对下面的入组核对码后确认";
     case "rejected":
-      return "管理员没有确认这次申请。需要时可以重新申请";
+      return `管理员没有确认这次申请${at ? `（${at}）` : ""}。需要时可以重新申请`;
     case "expired":
-      return "申请 7 天没有处理，已过期。需要时可以重新申请";
+      return `申请 7 天没有处理，已过期${at ? `（${at}）` : ""}。需要时可以重新申请`;
     case "withdrawn":
       return s.offline ? "已撤回（联不上云端：云端那份申请 7 天后自动过期）" : "已撤回申请";
     default:
       return null;
   }
+}
+
+/**
+ * 第 72 批（补测 D2 / D9）：团队共享处的橙色“还不能接收”什么时候显示——还没申请、已撤回、旧云端不支持时显示（带“申请”按钮）；
+ * 已申请、被拒、已过期、已可接收时不显示（由申请状态那一块单独说明，两条提示不同时出现）。纯函数。
+ */
+export function shareNoteVisible(s: { supported?: boolean; state?: string } | null): boolean {
+  if (!s || s.supported !== true) return true;
+  return s.state === "none" || s.state === "withdrawn" || s.state === undefined;
 }
 
 /**

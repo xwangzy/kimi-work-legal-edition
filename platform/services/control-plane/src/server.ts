@@ -5710,7 +5710,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         return send(res, 200, { ok: true, status: expired ? "expired" : jr.status });
       }
       const status = expired ? "expired" : jr.status;
-      return sendRaw(res, 200, { ok: true, status, ...(status === "approved" ? { cert: jr.cert, root_public_key_pem: t.root_public_key_pem } : {}) });
+      // 第 72 批（补测 D5）：带处理时刻（过期的按到期时刻），成员电脑据此一直显示“管理员没有确认这次申请（时刻）”
+      const decidedAt = expired ? iso(Date.parse(jr.created_at) + 7 * DAY_MS) : jr.decided_at;
+      return sendRaw(res, 200, { ok: true, status, decided_at: decidedAt, ...(status === "approved" ? { cert: jr.cert, root_public_key_pem: t.root_public_key_pem } : {}) });
     }
     if (method === "GET" && p === "/v1/join-requests") {
       requireAdmin(t, dev);
@@ -5721,7 +5723,11 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           if (x.kind === "upgrade") {
             const acc = accounts.get(x.aid ?? "");
             const d = t.devices.get(x.device_id);
-            return { id: x.id, kind: "upgrade", activation_id: null, member_slug: x.member_slug, role: x.role, device_id: x.device_id, sign_pub: x.sign_pub, enc_pub: x.enc_pub, created_at: x.created_at, mac: null, via: "upgrade", account: acc ? { email: null, name: acc.name } : null, device_name: d?.name ?? null };
+            // 第 72 批（补测 D3）：律师没给这台电脑起名时，按最近一次桌面登录的平台派生“Mac 电脑 · 第 N 台”（与客户端电脑选择页同一口径；第 N 台取编号 _D<n>，没有为第 1 台）
+            const plat = acc?.logins?.find((l) => l.device_id === x.device_id && l.platform)?.platform ?? [...sessions.values()].filter((y) => y.device_id === x.device_id && y.kind === "desktop" && accounts.get(y.aid)?.tid === t.tid).sort((y, z) => z.last_seen_at.localeCompare(y.last_seen_at))[0]?.client?.platform ?? null;
+            const kindLabel = plat === "win32" ? "Windows 电脑" : plat === "darwin" ? "Mac 电脑" : plat === "linux" ? "Linux 电脑" : "电脑";
+            const nth = accountDeviceIndex(firmSlugOf(t.tid) ?? "", x.member_slug, x.device_id) || 1;
+            return { id: x.id, kind: "upgrade", activation_id: null, member_slug: x.member_slug, role: x.role, device_id: x.device_id, sign_pub: x.sign_pub, enc_pub: x.enc_pub, created_at: x.created_at, mac: null, via: "upgrade", account: acc ? { email: null, name: acc.name } : null, device_name: d?.name ?? `${kindLabel} · 第 ${nth} 台` };
           }
           const r = t.activations.get(x.activation_id);
           const acc = r?.via_account ? accounts.get(r.via_account) : undefined;

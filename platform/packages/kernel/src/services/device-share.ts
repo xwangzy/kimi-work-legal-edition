@@ -42,6 +42,9 @@ interface ShareConfirmFile {
   v: 1;
   request_id: string;
   requested_at: string;
+  /** 第 72 批（补测 D5）：管理员拒绝 / 7 天未处理——保留这一结果直到成员重新申请或点“知道了”（不再只闪一个轮询周期）。 */
+  outcome?: "rejected" | "expired";
+  decided_at?: string;
 }
 
 export type ShareConfirmState = "confirmed" | "none" | "pending" | "rejected" | "expired" | "withdrawn";
@@ -107,7 +110,8 @@ export class DeviceShareConfirm {
       if (existsSync(this.path())) this.drop();
       return;
     }
-    if (this.read()) this.poll();
+    const f = this.read();
+    if (f && !f.outcome) this.poll();
   }
   stop(): void {
     if (this.timer) clearInterval(this.timer);
@@ -125,7 +129,13 @@ export class DeviceShareConfirm {
   }
 
   private view(state: ShareConfirmState, f: ShareConfirmFile | null, extra: Record<string, unknown> = {}): Record<string, unknown> {
-    return { state, issuer: this.issuer(), ...(state === "pending" && f ? { request_id: f.request_id, requested_at: f.requested_at, check_code: this.checkCode() } : {}), ...extra };
+    return {
+      state,
+      issuer: this.issuer(),
+      ...(state === "pending" && f ? { request_id: f.request_id, requested_at: f.requested_at, check_code: this.checkCode() } : {}),
+      ...((state === "rejected" || state === "expired") && f ? { requested_at: f.requested_at, decided_at: f.decided_at ?? null } : {}),
+      ...extra,
+    };
   }
 
   /** 发起（或取回已有的待处理申请）。 */
@@ -145,10 +155,18 @@ export class DeviceShareConfirm {
     return this.view("pending", f);
   }
 
+  /** 被拒 / 过期的结果看过了（“知道了”）：放下本机记录，回到可以申请。 */
+  dismiss(): Record<string, unknown> {
+    const f = this.read();
+    if (f?.outcome) this.drop();
+    return this.view(this.issuer() === "firm_root" ? "confirmed" : f && !f.outcome ? "pending" : "none", f && !f.outcome ? f : null);
+  }
+
   /** 撤回待处理的申请（云端联不上也在本机放下，云端 7 天后自行过期）。 */
   async withdraw(): Promise<Record<string, unknown>> {
     const f = this.read();
     if (!f) return this.view(this.issuer() === "firm_root" ? "confirmed" : "none", null);
+    if (f.outcome) return this.dismiss();
     const r = await this.d.call("POST", `/v1/join-requests/${f.request_id}/withdraw`, {});
     if (r.ok && r.json.status === "approved") return this.status();
     this.drop();
@@ -169,6 +187,7 @@ export class DeviceShareConfirm {
     if (this.issuer() === "firm_root") return this.view("confirmed", null);
     const f = this.read();
     if (!f) return this.view("none", null);
+    if (f.outcome) return this.view(f.outcome, f);
     const r = await this.d.call("POST", `/v1/join-requests/${f.request_id}/fetch`, {});
     if (!r.ok) {
       if (r.error === "join_unknown") {
@@ -192,9 +211,17 @@ export class DeviceShareConfirm {
       this.stop();
       return this.view("confirmed", null, { restart: true });
     }
-    this.drop();
     this.stop();
-    return this.view(st === "expired" ? "expired" : st === "withdrawn" ? "withdrawn" : "rejected", null);
+    if (st === "withdrawn") {
+      this.drop();
+      return this.view("withdrawn", null);
+    }
+    // 被拒 / 过期：记下结果与时刻，界面一直显示到成员重新申请或点“知道了”
+    const outcome: "rejected" | "expired" = st === "expired" ? "expired" : "rejected";
+    const decided = typeof r.json.decided_at === "string" && !Number.isNaN(Date.parse(r.json.decided_at)) ? r.json.decided_at : new Date().toISOString();
+    const kept: ShareConfirmFile = { ...f, outcome, decided_at: decided };
+    this.write(kept);
+    return this.view(outcome, kept);
   }
 
   /**
