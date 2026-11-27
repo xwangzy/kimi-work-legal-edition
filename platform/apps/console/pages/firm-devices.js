@@ -87,7 +87,7 @@ export function render(page) {
                   : rowMenu([
                       unconfirmed(d) ? { label: "在管理员电脑上确认（接收团队共享事项）", disabled: true, title: CONFIRM_TIP } : null,
                       deviceState(d) === "signed_in" ? { label: "让它退出登录…", onClick: () => signout(d, reload), disabled: readOnly() || !d.aid, title: readOnly() ? "只有本所管理员能操作" : undefined } : null,
-                      { label: "移除（在管理员电脑上完成）", disabled: true, title: "移除只能在管理员电脑的“设置 → 管理”里完成" },
+                      { label: "移除（在管理员电脑上完成）", disabled: true, title: "移除只能在管理员电脑的“设置 → 团队”里完成" },
                     ], { aria: `操作：${d.name || d.member || d.device_id}` }),
           },
         ].filter(Boolean),

@@ -79,7 +79,7 @@ export const CREATED_VIA = { self: "自助注册", founder_code: "开通码", in
  * 电脑的异常标记（第 71 批，B-6 / P-09）：运营侧与本所侧同一口径与说法——
  *   30 天未报到；低于最低版本（云端设置的 min_version）；未登录（账号闸开着且这台电脑没有有效登录：只是暂停，不是“仍有请求”，中性色）。
  */
-/** 第 72 批评审（K5/K10/K13）：巡检标记改中性色——警示色只留给要人处理的行（待管理员确认） */
+/** 第 72 批评审（K5/K10/K13）：巡检标记改中性色——警示色只留给要人处理的行（待确认共享） */
 export const FIRM_DEVICE_FLAG = { stale_30d: ["30 天没在线", "neutral"], old_client: ["低于最低版本", "neutral"], rejected_after_logout: ["未登录", "neutral"] };
 export const DEVICE_FLAG = { stale: ["30 天没在线", "neutral"], outdated: ["低于最低版本", "neutral"], suspended: ["未登录", "neutral"] };
 /** 没上报版本时不断言“低于最低版本”，写“版本未知”（客户端列已写“未上报版本”） */
@@ -194,7 +194,9 @@ export function alertList(alerts, { onAck, compact } = {}) {
       // 第 72 批评审（跨页 7）：新电脑登录告警的正文是写给律师本人的，运营 / 管理员看到的改成第三人称与可做的事（原文放悬停）
       const ip = a.kind === "new_device" ? /（[^（）]*）/.exec(String(a.message ?? ""))?.[0] ?? "" : "";
       const person = a.member_name ?? a.email ?? null;
-      const msg = a.kind === "new_device" ? `${person ? `${person}${/[A-Za-z0-9]$/.test(person) ? " " : ""}在` : "有成员在"}一台新电脑上登录${ip}。若本人否认，可在“电脑”里移除这台电脑，并提醒本人改密码。` : a.message ?? "";
+      // 评审第三轮：团队管理员（成员账号）在网页上不能移除电脑，指到管理员电脑；运营可在“电脑”里直接移除
+      const fix = ctx.kind === "member" ? "请到管理员电脑上的 Kimi Work：设置 → 团队里移除这台电脑，并提醒本人改密码。" : "可在“电脑”里移除这台电脑，并提醒本人改密码。";
+      const msg = a.kind === "new_device" ? `${person ? `${person}${/[A-Za-z0-9]$/.test(person) ? " " : ""}在` : "有成员在"}一台新电脑上登录${ip}。若本人否认，${fix}` : a.message ?? "";
       return h(
         "li",
         { class: `alert lv-${tone}` },
@@ -297,7 +299,7 @@ export const unconfirmed = (d) => d?.issuer === "account_ca" && !d?.pending && d
 /** 工作空间的叫法：个人空间一律叫“个人空间”（不再写“某某的工作室”）；类型取 d.kind / 客户列表缓存的 kind，旧数据按名称近似 */
 export const wsKindOfTid = (tid, name) => ctx.tenants?.find((t) => t.tid === tid)?.kind ?? (/的工作室$/.test(String(name ?? "")) ? "personal" : "team");
 export const wsNameOf = (d) => ((d?.kind ?? wsKindOfTid(d?.tid, d?.tenant_name)) === "personal" ? "个人空间" : d?.tenant_name ?? d?.tid);
-/** 待管理员确认（D-304）：状态格两行——主状态 + 灰字说明与下一步 */
+/** 待确认共享（D-304）：状态格两行——主状态 + 灰字说明与下一步 */
 export const confirmCell = (d, hint) => h("span", { class: "cell-2" }, stateCell("待确认共享", "warn", CONFIRM_TIP), h("small", {}, hint ?? "确认后才能接收团队共享事项"));
 export function deviceTable(rows, { state, after, showTenant = true, showMember = true, empty, onRow, memberLabel = "成员", team = false, confirmHint } = {}) {
   const isTeam = typeof team === "function" ? team : () => !!team;

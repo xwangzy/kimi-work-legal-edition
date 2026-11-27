@@ -57,7 +57,7 @@ export function render(page) {
     clear(box);
     if (pending.length)
       box.append(
-        h("div", { class: "banner warn soft" }, icon("info"), h("span", { class: "spacer" }, pending.map((p, i) => [i ? "、" : null, h("b", {}, `${p.member_name ?? "成员"}的新电脑`), `（申请于 ${fmt.time(p.created_at)}）`]), "等你确认：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。")),
+        h("div", { class: "banner warn soft" }, icon("info"), h("span", { class: "spacer" }, pending.map((p, i) => [i ? "、" : null, h("b", {}, `${p.member_name ?? "成员"}的新电脑`), `（申请于 ${fmt.time(p.created_at)}）`]), "等你确认：请在管理员电脑的“设置 → 团队 → 电脑待确认”里核对校验码与本人一致后再批准。")),
       );
     const rows = members.filter((m) => f(m) && matches(st.q, m.name, m.email, m.person_phone_masked, m.member_slug, roleText(m.role)));
     box.append(
@@ -122,7 +122,7 @@ function policyPanel() {
       danger: next === "approve",
       consequences:
         next === "approve"
-          ? ["新成员、换电脑的成员：新电脑要等你在管理员电脑“设置 → 管理”里核对校验码并确认后才能登录；", "确认之前，他们在那台新电脑上用不了 AI，也处理不了事项（已登录的电脑不受影响）；", "你不在时没人能确认：请确保至少有一位管理员能及时处理。"]
+          ? ["新成员、换电脑的成员：新电脑要等你在管理员电脑“设置 → 团队 → 电脑待确认”里核对校验码并确认后才能登录；", "确认之前，他们在那台新电脑上用不了 AI，也处理不了事项（已登录的电脑不受影响）；", "你不在时没人能确认：请确保至少有一位管理员能及时处理。"]
           : ["成员的新电脑直接登录，能用 AI、处理自己的事项；", "要接收团队共享事项前，那台电脑仍须你在管理员电脑上确认（共享事项的密钥只给确认过的电脑）；", "正在等确认的新电脑不会自动通过：请在管理员电脑上处理。"],
       confirmLabel: "保存",
       run: () => api.put("/v1/firm/policy/member-device", { policy: next }),
@@ -312,7 +312,7 @@ function openMember(m, pending, reload) {
             { key: "version", label: "客户端", render: (d) => (d.pending ? "—" : d.version && d.version !== "legacy" ? mono(d.version) : h("span", { class: "muted" }, versionText(d.version))) },
             { key: "last_seen_at", label: "最近在线", render: (d) => (d.pending ? "—" : d.last_seen_at ? fmt.ago(d.last_seen_at) : "从未在线") },
             { key: "state", label: "状态", value: (d) => ({ pending: 0, signed_in: 1, signed_out: 2, revoked: 3 })[d.state ?? (d.revoked ? "revoked" : "signed_out")], render: (d) => deviceStateCell(d) },
-            { key: "_act", label: "", sortable: false, class: "act", render: (d) => (d.pending ? null : rowMenu([d.state === "signed_in" ? { label: "让它退出登录…", onClick: () => signoutOne(d), disabled: ro, title: ro ? "只有团队管理员能操作" : undefined } : null, d.state === "revoked" ? null : { label: "移除（在管理员电脑上完成）", disabled: true, title: "移除只能在管理员电脑的“设置 → 管理”里完成" }])) },
+            { key: "_act", label: "", sortable: false, class: "act", render: (d) => (d.pending ? null : rowMenu([d.state === "signed_in" ? { label: "让它退出登录…", onClick: () => signoutOne(d), disabled: ro, title: ro ? "只有团队管理员能操作" : undefined } : null, d.state === "revoked" ? null : { label: "移除（在管理员电脑上完成）", disabled: true, title: "移除只能在管理员电脑的“设置 → 团队”里完成" }])) },
           ],
         }),
         { flush: true, sub: "让电脑退出登录可在这里做；移除与确认新电脑在管理员电脑上完成" },

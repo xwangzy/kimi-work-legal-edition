@@ -39,7 +39,7 @@ function draw(head, box, d, reload) {
       lead: h("p", {}, "全所本期用量到这个比例后暂停调用 AI（本机流程不受影响），下一期自动恢复。"),
       fields: [{ name: "pct", label: "上限（占本期总额度的 %）", type: "number", min: 1, max: 100, value: capPct ?? "", hint: "1–100；留空 = 不设上限" }],
       validate: (v) => (v.pct !== null && !(Number.isInteger(v.pct) && v.pct >= 1 && v.pct <= 100) ? "请填 1–100 的整数，或留空" : null),
-      consequences: ["立即生效：当前已用超过新上限时，全所马上暂停调用 AI；", "客户端“设置 → 管理”里的月度上限是同一个值，会同步改变。"],
+      consequences: ["立即生效：当前已用超过新上限时，全所马上暂停调用 AI；", "客户端“设置 → 团队”里的月度上限是同一个值，会同步改变。"],
       confirmLabel: "保存上限",
       run: (v) => api.put("/v1/firm/cap", { monthly_cap_pct: v.pct ?? null }),
     });
@@ -55,7 +55,7 @@ function draw(head, box, d, reload) {
     clear(todoSub, n > 0 ? "在管理员电脑上处理" : "没有待处理的电脑");
     if (n > 0) todoStat.classList.add("tone-warn");
   }, () => {});
-  const joinBanner = h("div", { class: "banner warn soft" }, icon("info"), h("span", { class: "spacer" }, `有 ${pending} 台新电脑等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。`), btn("查看成员", () => go("firm/members"), { size: "sm" }));
+  const joinBanner = h("div", { class: "banner warn soft" }, icon("info"), h("span", { class: "spacer" }, `有 ${pending} 台新电脑等你批准：请在管理员电脑的“设置 → 团队 → 电脑待确认”里核对校验码与本人一致后再批准。`), btn("查看成员", () => go("firm/members"), { size: "sm" }));
   const seatSub = h("span", {}, "能用 AI 的名额");
   // 评审第二轮（K14）：成员数与 7 日活跃只算当前有效成员（已移出 / 停用的不算），拿到成员清单后改写
   const memVal = h("span", {}, fmt.int(c.members));
@@ -69,7 +69,7 @@ function draw(head, box, d, reload) {
     const since = Date.now() - 7 * 86_400_000;
     clear(memVal, fmt.int(act.length));
     clear(memSub, `近 7 日登录 ${fmt.int(act.filter((x) => x.last_login_at && Date.parse(x.last_login_at) >= since).length)} 人`);
-    if (p.length) clear(joinBanner.querySelector(".spacer"), p.map((x, i) => [i ? "、" : null, h("b", {}, `${x.member_name ?? "成员"}的新电脑`), `（申请于 ${fmt.time(x.created_at)}）`]), "等你批准：请在管理员电脑的“设置 → 管理”里核对校验码与本人一致后再批准。");
+    if (p.length) clear(joinBanner.querySelector(".spacer"), p.map((x, i) => [i ? "、" : null, h("b", {}, `${x.member_name ?? "成员"}的新电脑`), `（申请于 ${fmt.time(x.created_at)}）`]), "等你批准：请在管理员电脑的“设置 → 团队 → 电脑待确认”里核对校验码与本人一致后再批准。");
     const n = (m.members ?? []).filter((x) => x.seat_used === false).length;
     const sn = seatNote(n, seats.total, seats.used);
     // 评审（K14 第 3 条）：席位格说明缩成一行，细节放悬停
@@ -127,6 +127,6 @@ function draw(head, box, d, reload) {
       ),
       (q.history ?? []).length ? panel("历史周期", periodBars(q.history ?? []), { sub: "每期已用比例" }) : panel("历史周期", h("p", { class: "muted small" }, "从下个账期开始出现每期已用比例。")),
     ].filter(Boolean)),
-    panel("在管理员电脑上完成", h("div", { class: "stack-sm" }, h("p", { class: "muted small" }, "下面这些只能在管理员电脑的“设置 → 管理”里完成；网页能查看状态。"), clientOnlyList(CLIENT_ONLY), pending > 0 ? btn(`查看待批准的 ${pending} 个申请`, () => go("firm/members"), { size: "sm" }) : null)),
+    panel("在管理员电脑上完成", h("div", { class: "stack-sm" }, h("p", { class: "muted small" }, "下面这些只能在管理员电脑的“设置 → 团队”里完成；网页能查看状态。"), clientOnlyList(CLIENT_ONLY), pending > 0 ? btn(`查看待批准的 ${pending} 个申请`, () => go("firm/members"), { size: "sm" }) : null)),
   );
 }
