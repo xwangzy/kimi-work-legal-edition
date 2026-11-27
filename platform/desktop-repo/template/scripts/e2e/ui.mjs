@@ -24,6 +24,7 @@
  *                                      （按框架区域截图数深色像素，文档载入了但没画出来也判失败），截图存证
  *   shot <名字>                        截主窗口到 $KWL_E2E_OUT/<名字>.png
  *   gallery [标签]                     第 72 批：逐页截图（深浅）+ 窗口尺寸、devicePixelRatio、实际渲染字体（CDP），标签如 100 / 150
+ *   winfacts [标签]                    第 72 批：记一次窗口事实（尺寸、位置、工作区、DPR、是否铺满工作区）
  * 保存对话框：Windows 上由 scripts/e2e/win-save-dialog.ps1 按 $KWL_E2E_OUT/next-save-path.txt 填路径并点“保存”；
  * macOS 上没有辅助功能权限时由人点“存储”（脚本等文件出现，最多 5 分钟）。
  */
@@ -310,10 +311,15 @@ async function register() {
     if (await phoneInput.count()) await fillPhone();
   }
   await shot("01-注册表单");
+  // 第 72 批（F5）：Windows 安装包形态的登记耗时——点“注册并继续”到出现工作区，每 200 ms 采一次过渡页文案（阶段序列带相对时刻）
+  const clickAt = Date.now();
+  const phases = [];
   await btnExact("注册并继续").click();
   const outcome = await until(
     async () => {
       const t = await text();
+      const ph = (t.match(/正在[^\n]{1,30}?…|这台电脑已登记[^\n]{0,30}/) ?? [])[0];
+      if (ph && phases[phases.length - 1]?.text !== ph) phases.push({ at_ms: Date.now() - clickAt, text: ph });
       if (/等待管理员批准|等待批准这台电脑/.test(t)) return "pending";
       const err = await optText(page.locator(".activate-error"));
       if (err) return `error:${err}`;
@@ -321,9 +327,12 @@ async function register() {
       return null;
     },
     180000,
-    1000,
+    200,
     "注册结果",
   );
+  state.register_timing = { outcome: outcome.startsWith("error:") ? "error" : outcome, click_to_result_ms: Date.now() - clickAt, phases };
+  saveState();
+  log("注册耗时：", JSON.stringify(state.register_timing));
   if (outcome.startsWith("error:")) {
     await shot("01-注册失败");
     throw new Error(`注册失败：${mask(outcome.slice(6))}`);
@@ -447,6 +456,7 @@ async function loginSms() {
   log("已填入转交的短信验证码");
   await shot("登录-验证码已填");
   // 开通页上“登录”既是外层分段（登录｜注册）也是提交按钮：只点表单里的提交按钮（第 63 批 Windows 运行 45427882175 点到了分段）
+  const clickAt = Date.now();
   await page.locator('form button[type="submit"]:visible').filter({ hasText: /^\s*登录\s*$/ }).first().click();
   const r = await until(
     async () => {
@@ -461,10 +471,13 @@ async function loginSms() {
       return null;
     },
     180000,
-    1000,
+    200,
     "验证码登录结果",
   );
-  log("验证码登录结果：", mask(r));
+  // 第 72 批（F5）：验证码登录点“登录”到进入的耗时（开通页 = 新电脑登记；就地登录 = 已登记电脑重新登录）
+  (state.login_timing ??= []).push({ where: onActivate ? "activate" : "relogin", outcome: r.split(":")[0], click_to_result_ms: Date.now() - clickAt });
+  saveState();
+  log("验证码登录结果：", mask(r), `${Date.now() - clickAt} ms`);
   if (r === "pending") {
     const check = (await page.locator('[aria-label="入组核对码"]').textContent()).trim();
     state.check_code = check;
@@ -1123,7 +1136,22 @@ async function gallery(tag = "100") {
   await go("#/");
 }
 
-const phases = { ready, gallery, "auth-pages": authPages, register, login, "login-sms": loginSms, logout, "approve-join": approveJoin, "await-approval": awaitApproval, diagnose, qa, task, export: exportAll, preview, usage, shot: (n) => shot(n ?? "shot") };
+/** 第 72 批（F1）：记一次窗口事实（尺寸、位置、工作区、DPR、是否铺满工作区），供“再次启动恢复尺寸 / 最大化后再次启动恢复最大化”核对。 */
+async function winfacts(label = "now") {
+  await ready();
+  const f = await page.evaluate(() => ({
+    outer: [window.outerWidth, window.outerHeight],
+    screen_pos: [window.screenX, window.screenY],
+    screen_avail: [screen.availWidth, screen.availHeight],
+    dpr: window.devicePixelRatio,
+  }));
+  f.fills_work_area = Math.abs(f.outer[0] - f.screen_avail[0]) <= 16 && Math.abs(f.outer[1] - f.screen_avail[1]) <= 16;
+  (state.window_facts ??= {})[label] = f;
+  saveState();
+  log(`窗口事实（${label}）：`, JSON.stringify(f));
+}
+
+const phases = { ready, gallery, winfacts, "auth-pages": authPages, register, login, "login-sms": loginSms, logout, "approve-join": approveJoin, "await-approval": awaitApproval, diagnose, qa, task, export: exportAll, preview, usage, shot: (n) => shot(n ?? "shot") };
 if (!phases[phase]) {
   console.error(`未知阶段：${phase}`);
   process.exit(2);

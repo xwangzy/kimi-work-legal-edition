@@ -260,7 +260,7 @@ jobs:
       # 再以 150% 缩放（--force-device-scale-factor=1.5，与 1080p 笔记本缺省缩放同一渲染比例）重开一次、同样截图，然后恢复 100% 继续后面的步骤
       - name: 双端统一实机截图（100% 与 150%）
         if: inputs.entry != 'install-only'
-        timeout-minutes: 12
+        timeout-minutes: 16
         shell: pwsh
         run: |
           node scripts/e2e/ui.mjs gallery 100
@@ -281,6 +281,21 @@ jobs:
           $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
           $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
           $bmp.Save((Join-Path $env:KWL_E2E_OUT "00-桌面-再次启动窗口位置.png")); $g.Dispose(); $bmp.Dispose()
+          node scripts/e2e/ui.mjs winfacts restart
+          # 第 72 批（F1）：最大化后关闭再开，应恢复为最大化（窗口记忆含 maximized）
+          Add-Type -Namespace Kwl -Name Win -MemberDefinition '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);'
+          $p = Get-Process KimiWorkLegal -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+          if ($p) { [Kwl.Win]::ShowWindow($p.MainWindowHandle, 3) | Out-Null }
+          Start-Sleep -Seconds 3
+          node scripts/e2e/ui.mjs winfacts maximized
+          Get-Process KimiWorkLegal -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null }
+          Start-Sleep -Seconds 12
+          Start-Process $env:KWL_APP -ArgumentList "--remote-debugging-port=$env:KWL_CDP_PORT"
+          node scripts/e2e/ui.mjs ready
+          node scripts/e2e/ui.mjs winfacts maximized-restart
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save((Join-Path $env:KWL_E2E_OUT "00-桌面-最大化后再次启动.png")); $g.Dispose(); $bmp.Dispose()
           exit 0
       - name: 问答（真实模型）
         if: inputs.entry != 'install-only'
