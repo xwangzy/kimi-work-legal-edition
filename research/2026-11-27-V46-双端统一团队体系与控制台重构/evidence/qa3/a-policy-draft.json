@@ -1,0 +1,30 @@
+{
+ "draft": {
+  "draft_id": "drf_5f518ecb744dfa64",
+  "kind": "policy",
+  "created_at": "2026-11-27T07:09:17.849Z",
+  "doc": {
+   "kind": "kwl-firm-policy",
+   "v": 1,
+   "tid": "ten_qa3jia",
+   "version": 2,
+   "issued_at": "2026-11-27T07:09:17.849Z",
+   "expires_at": "2026-12-27T07:09:17.849Z",
+   "body": {
+    "max_mode": "default",
+    "auto_preauthorizations": [],
+    "fetch_allowlist_extra": [],
+    "l3a_standard_model": "deny",
+    "share_relay": "allow"
+   }
+  },
+  "digest": "wRbbvkpWco-ETshxJgrqk1zPwPyIvLO8GHl3qwJIrN0",
+  "relaxations": [
+   "share_relay:allow"
+  ],
+  "signed_by": [],
+  "signed_by_me": false,
+  "valid": true,
+  "problem": null
+ }
+}

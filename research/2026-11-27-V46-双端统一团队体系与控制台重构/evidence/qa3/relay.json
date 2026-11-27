@@ -1,0 +1,5 @@
+{ "role": "relay", "listen": { "host": "127.0.0.1", "port": 18806 }, "insecure_loopback_for_test": true,
+  "service_secret_file": "/private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal/0d6e0c1f-ceda-4025-9dcf-13a576f15bc5/scratchpad/tools/stack/init/secrets/service-secret",
+  "control_plane": { "url": "http://127.0.0.1:18741", "keys_file": "/private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal/0d6e0c1f-ceda-4025-9dcf-13a576f15bc5/scratchpad/tools/stack/init/public/cp-public-keys.json" },
+  "seat_keys_file": "/private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal/0d6e0c1f-ceda-4025-9dcf-13a576f15bc5/scratchpad/tools/stack/init/public/seat-relay-public-keys.json",
+  "data_dir": "/private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal/0d6e0c1f-ceda-4025-9dcf-13a576f15bc5/scratchpad/tools/qa3w/relay-data" }

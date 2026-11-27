@@ -1,0 +1,55 @@
+ROWINFO: {
+ "tds": [
+  {
+   "th": "姓名",
+   "text": "郑二宁（律师） 的 Mac 电脑 · 第 1 台 申请接收团队共享事项",
+   "lines": 2,
+   "ws": "normal",
+   "w": 207
+  },
+  {
+   "th": "角色",
+   "text": "律师",
+   "lines": 1,
+   "ws": "nowrap",
+   "w": 42
+  },
+  {
+   "th": "申请时间",
+   "text": "2026年11月27日 14:56",
+   "lines": 1,
+   "ws": "nowrap",
+   "w": 152
+  },
+  {
+   "th": "入组核对码（请对方念出，一致再批准）",
+   "text": "请让对方读出他屏幕上的 12 位入组核对码，填在右边",
+   "lines": 2,
+   "ws": "normal",
+   "w": 272
+  },
+  {
+   "th": "",
+   "text": "确认 拒绝",
+   "lines": 3,
+   "ws": "normal",
+   "w": 197
+  }
+ ],
+ "codeInRow": false,
+ "codeInPage": false,
+ "codeInDom": false
+}
+SIDEBAR: Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 还没有事项，新建一个 任务 还没有任务 周 周一航 试用 有 1 台电脑等你确认 账号与设置
+2026-11-27T06:57:26.157Z WRONG typed 404269087348 confirm disabled: false
+2026-11-27T06:57:26.215Z INVOKE members.approve {"join_request_id":"jr_S5JzhXzhQiXdyBDV","check_code":"404269087348"} → {"ok":false,"error":{"code":"conflict","message":"入组核对码不一致：不要确认。请让对方重新念一遍；仍不一致请点“拒绝”，并联系 Kimi Work 客服","detail":{"reason":"check_code_mismatch"}}}
+WRONG after click ROW: 郑二宁（律师） 的 Mac 电脑 · 第 1 台 申请接收团队共享事项 律师 2026年11月27日 14:56 请让对方读出他屏幕上的 12 位入组核对码，填在右边 确认 拒绝
+WRONG page errors: 
+2026-11-27T06:57:29.697Z RIGHT typed, confirm disabled: false
+2026-11-27T06:57:29.818Z CONFIRM CLICKED
+2026-11-27T06:57:29.872Z INVOKE members.approve {"join_request_id":"jr_S5JzhXzhQiXdyBDV","check_code":"404269087347"} → {"ok":true,"result":{"ok":true,"status":"approved","kind":"upgrade"}}
+AFTER SECTION: 电脑待确认 成员的电脑登录后可正常工作；要接收团队共享事项，成员申请后需要你在这里核对入组核对码、确认一次。 没有待确认的电脑。 已确认 郑二宁 的电脑：同步后即可接收团队共享事项 团队策略 成员新电脑 直接登录 须管理员确认 成员在新电脑上用手机号验证码登录后即可使用（推荐）。这台电脑要接收团队共享事项时，成员申请一次、你在“电脑待确认”里核对确认一次即可。 生效策略 本所规则第 1 版（最严设置，Kimi Work 服务签发）· 12 月 27 日 14:54 前有效 AI 最多能自己做到哪一步 标准 官方网站之外还能打开的网站 没有（只限法院、政府等官方网站） 敏感事项能否用通用 AI 服务 不可
+ROW STILL: 0
+ERRORS:  | FK in page: false
+TOASTS: 已确认 郑二宁 的电脑：同步后即可接收团队共享事项
+SIDEBAR: Kimi Work 法律版 Work Chat 新建任务 ⌘ K 成果 期限提醒 方法库 事项 还没有事项，新建一个 任务 还没有任务 周 周一航 试用 有 1 台电脑等你确认 账号与设置

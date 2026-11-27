@@ -1,0 +1,37 @@
+{
+ "report": {
+  "at": "2026-11-27T07:09:26.182Z",
+  "ok": true,
+  "steps": {
+   "register": "ok",
+   "pending_actions": "sent:0",
+   "license": "accepted",
+   "salt": "unchanged",
+   "directory": "unchanged",
+   "policy": "accepted",
+   "connectors": "unchanged",
+   "seat": "valid",
+   "summaries": "pushed:0"
+  },
+  "ms": {
+   "register": 3,
+   "docs": 31,
+   "seat": 0,
+   "total": 34
+  }
+ },
+ "status": {
+  "mode": "control_plane",
+  "unconfigured": false,
+  "admin_threshold": 1,
+  "admin_threshold_pinned": true,
+  "policy": {
+   "source": "control_plane",
+   "version": 2,
+   "issued_at": "2026-11-27T07:09:17.849Z",
+   "expires_at": "2026-12-27T07:09:17.849Z",
+   "body": {
+    "max_mode": "default",
+    "auto_preauthorizations": [],
+    "fetch_allowlist_extra": [],
+    "l3a_standard_model

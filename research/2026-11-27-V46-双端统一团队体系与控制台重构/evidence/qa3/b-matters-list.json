@@ -1,0 +1,52 @@
+{
+ "matters": [
+  {
+   "matter_id": "mat_199fd38f-b4a9-443f-a3d7-6e4c663dbf70",
+   "title": "复测共享事项：某租赁合同纠纷（虚构）",
+   "client_name": null,
+   "counterparty": null,
+   "stance": "原告（出租方）",
+   "jurisdiction": "内地民商事",
+   "confidentiality": "normal",
+   "model_endpoint": "standard",
+   "collab_scope": "team",
+   "consent_status": "pending",
+   "basis": {
+    "engagement": "pending",
+    "personal_info": "pending",
+    "sensitive": "not_applicable",
+    "subprocessor": "pending"
+   },
+   "basis_source": null,
+   "basis_ref": null,
+   "basis_notice_version": null,
+   "full_pseudonym": false,
+   "key_dates": {},
+   "status": "active",
+   "created_at": "2026-11-27T07:09:40.995Z",
+   "stage": null,
+   "event_date": null,
+   "region": null,
+   "lifecycle": "active",
+   "closed_at": null,
+   "retention_until": null,
+   "legal_hold": false,
+   "legal_hold_reason": null,
+   "purged_at": null,
+   "data_level": "L2",
+   "basis_complete": false,
+   "basis_state": "pending",
+   "basis_reconfirm": false,
+   "purge_eligible": false,
+   "basis_recorded_at": null,
+   "basis_recorded_by": null,
+   "activity": {
+    "waiting": 0,
+    "running": 0,
+    "waiting_run_id": null,
+    "pending_review": 0,
+    "last_at": "2026-11-27T07:09:40.995Z"
+   }
+  }
+ ]
+}

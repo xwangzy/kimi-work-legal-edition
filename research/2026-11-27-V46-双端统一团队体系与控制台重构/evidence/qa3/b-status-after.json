@@ -1,0 +1,186 @@
+{
+ "version": "v5.0.0-g0",
+ "app_version": null,
+ "edition": "release",
+ "firm_name": "周氏复测律师事务所",
+ "workspace_dir": "/private/tmp/claude-501/-Users-wangzeyu-Documents-Coding-Kimi-Work-Legal/0d6e0c1f-ceda-4025-9dcf-13a576f15bc5/scratchpad/tools/qa3-b/qa3jia",
+ "firm": "qa3jia",
+ "user": "u005705",
+ "tenant_id": "ten_qa3jia",
+ "user_id": "usr_qa3jia_u005705",
+ "sync_configured": false,
+ "member_role": "lawyer",
+ "model_routes": [
+  "legal/k3",
+  "legal/k2.6"
+ ],
+ "model_choices": [
+  {
+   "alias": "legal/k3",
+   "label": "K3",
+   "note": "缺省，最强，复杂审查与起草",
+   "default": true,
+   "thinking": "effort"
+  },
+  {
+   "alias": "legal/k2.6",
+   "label": "K2.6",
+   "note": "更快、更省额度，适合整理与摘要",
+   "default": false,
+   "thinking": "toggle"
+  }
+ ],
+ "model_provider": "upstream",
+ "demo_samples": false,
+ "endpoints_configured": {
+  "standard": true,
+  "byok": false,
+  "private": false
+ },
+ "queue": {
+  "pending": 0,
+  "running": 0
+ },
+ "log_level": "info",
+ "local_server": {
+  "rejected_path_requests": 0,
+  "rejected_paths": [],
+  "rejected_tool_calls": 0
+ },
+ "ocr": {
+  "available": true,
+  "mock_engine": false,
+  "note": "本机 OCR 就绪（PP-OCRv5 mobile，全程本机零外发）"
+ },
+ "lawdb_package": "g0.ztXo-XOlrjR2",
+ "control_plane": {
+  "mode": "control_plane",
+  "unconfigured": false,
+  "admin_threshold": 1,
+  "admin_threshold_pinned": true,
+  "policy": {
+   "source": "control_plane",
+   "version": 1,
+   "issued_at": "2026-11-27T06:54:35.247Z",
+   "expires_at": "2026-12-27T06:54:35.247Z",
+   "body": {
+    "max_mode": "default",
+    "auto_preauthorizations": [],
+    "fetch_allowlist_extra": [],
+    "l3a_standard_model": "deny"
+   },
+   "relaxations": [],
+   "signers": [],
+   "fallback_reason": null
+  },
+  "license": {
+   "state": "valid",
+   "edition": "team",
+   "seats": 3,
+   "expires_at": "2026-12-11T06:54:35.247Z"
+  },
+  "seat": {
+   "has_token": true,
+   "sid": "seat_ten_qa3jia_2",
+   "expires_at": "2026-12-01T06:55:34.000Z"
+  },
+  "directory": {
+   "version": 6,
+   "devices": 3,
+   "revoked_devices": 0,
+   "expires_at": "2026-12-27T06:57:34.023Z",
+   "stale": false
+  },
+  "connectors": [],
+  "exit_mode": null,
+  "key_changes": [],
+  "pending_actions": [],
+  "alerts": [],
+  "last_sync": {
+   "at": "2026-11-27T06:57:34.059Z",
+   "ok": true,
+   "steps": {
+    "register": "ok",
+    "pending_actions": "sent:0",
+    "license": "accepted",
+    "salt": "unchanged",
+    "directory": "unchanged",
+    "policy": "unchanged",
+    "connectors": "unchanged",
+    "seat": "valid",
+    "summaries": "pushed:0"
+   },
+   "ms": {
+    "register": 116,
+    "docs": 39,
+    "seat": 0,
+    "total": 155
+   }
+  }
+ },
+ "account": {
+  "logged_in": true,
+  "email": "qa3-yi@kwl-local.example",
+  "name": "郑二宁",
+  "login_required": false,
+  "reason": null,
+  "last_email": "qa3-yi@kwl-local.example"
+ },
+ "egress_gate": {
+  "socket": "/var/folders/6j/8mqtz4fs4dgfhlzm75vcfybr0000gn/T/kwl-1855d1db10ad6af4/gate.sock",
+  "running": true,
+  "routes": {
+   "search": true,
+   "fetch": true
+  },
+  "search_configured": true,
+  "support_configured": false,
+  "notify_configured": false,
+  "support_upload_allowed": false,
+  "relay_configured": false,
+  "share_relay_allowed": false,
+  "fetch": "local",
+  "fetch_allowlist_size": 29,
+  "stats": {
+   "starts": 1,
+   "exits": 0,
+   "records": 0,
+   "recordFailures": 0,
+   "tokenEntries": 0
+  },
+  "transport": {
+   "model": "insecure_loopback",
+   "byok": "none",
+   "private": "none",
+   "search": "insecure_loopback",
+   "control_plane": "insecure_loopback",
+   "dist": "none",
+   "support": "none",
+   "notify": "none",
+   "relay": "none"
+  },
+  "sole_exit": "应用层约束",
+  "unresolved": 0
+ },
+ "note": "真实模型链路：出站一律经出站闸门进程（唯一出口）",
+ "onboarding": null,
+ "content_key": "dev",
+ "activation": {
+  "firm": {
+   "name": "周氏复测律师事务所"
+  },
+  "member": {
+   "name": "郑二宁",
+   "role": "lawyer"
+  },
+  "kind": "member",
+  "activated_at": "2026-11-27T06:55:34.377Z",
+  "firm_check_code": "034 777 893 621"
+ },
+ "profile": {
+  "id": "36de51c71766633f"
+ },
+ "workspace_kind": "team",
+ "device_issuer": "firm_root",
+ "restored_from_backup_at": null
+}

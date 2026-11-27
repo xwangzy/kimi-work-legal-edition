@@ -1,0 +1,7 @@
+{
+ "matter_id": "mat_199fd38f-b4a9-443f-a3d7-6e4c663dbf70",
+ "user_id": "usr_qa3jia_u005705",
+ "epoch": 1,
+ "devices_wrapped": 1,
+ "note": "已按当前密钥纪元为对方 active 设备补包裹（对方设备方可解事项密钥）；变更已记入成员链"
+}
