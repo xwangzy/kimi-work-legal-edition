@@ -1,0 +1,68 @@
+{
+ "auth_first_screen": {
+  "form_ready_ms": 42,
+  "saw_skeleton": false,
+  "methods": [
+   "验证码登录",
+   "密码登录"
+  ],
+  "app_uptime_s": 0
+ },
+ "login_timing": [
+  {
+   "where": "activate",
+   "outcome": "in",
+   "click_to_result_ms": 2540
+  }
+ ],
+ "window_facts": {
+  "restart": {
+   "outer": [
+    1068,
+    651
+   ],
+   "screen_pos": [
+    426,
+    195
+   ],
+   "screen_avail": [
+    1920,
+    1032
+   ],
+   "dpr": 1,
+   "fills_work_area": false
+  },
+  "maximized": {
+   "outer": [
+    1920,
+    1032
+   ],
+   "screen_pos": [
+    0,
+    0
+   ],
+   "screen_avail": [
+    1920,
+    1032
+   ],
+   "dpr": 1,
+   "fills_work_area": true
+  },
+  "maximized-restart": {
+   "outer": [
+    1920,
+    1032
+   ],
+   "screen_pos": [
+    0,
+    0
+   ],
+   "screen_avail": [
+    1920,
+    1032
+   ],
+   "dpr": 1,
+   "fills_work_area": true
+  }
+ }
+}

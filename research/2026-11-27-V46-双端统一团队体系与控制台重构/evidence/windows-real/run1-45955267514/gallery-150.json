@@ -1,0 +1,57 @@
+{
+ "facts": {
+  "inner": [
+   1284,
+   689
+  ],
+  "outer": [
+   1300,
+   696
+  ],
+  "screen_avail": [
+   1280,
+   688
+  ],
+  "screen_pos": [
+   -7,
+   0
+  ],
+  "dpr": 1.5,
+  "html_class": "frameless plat-win32",
+  "body_font_family": "\"Segoe UI Variable Text\", \"Segoe UI\", \"Noto Sans SC\", \"Microsoft YaHei UI\", sans-serif",
+  "noto_500": false,
+  "noto_600": false
+ },
+ "fonts": {
+  "首页": {
+   "main h1, main .home-title, main": "",
+   ".sidebar": ""
+  },
+  "方法库": {
+   "main h1, main .page-title": "Noto Sans SC Thin SemiBold（随包）×3",
+   "main": ""
+  },
+  "问答": {
+   "main": "",
+   "textarea": "Noto Sans SC Thin（随包）×34"
+  },
+  "成果": {
+   "main": ""
+  },
+  "期限提醒": {
+   "main": ""
+  },
+  "设置-通用": {
+   "main": ""
+  },
+  "设置-账号": {
+   "main": ""
+  },
+  "设置-用量": {
+   "main": ""
+  },
+  "品牌": {
+   "sidebar": ""
+  }
+ }
+}
