@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
-const rows = readFileSync(join(here, process.argv.includes("--prod") ? "results-prod.jsonl" : "results.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const rows = readFileSync(join(here, process.argv.includes("--in") ? process.argv[process.argv.indexOf("--in") + 1] : process.argv.includes("--prod") ? "results-prod.jsonl" : "results.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
 const latArg = process.argv.indexOf("--lat") >= 0 ? Number(process.argv[process.argv.indexOf("--lat") + 1]) : null;
 const runs = rows.filter((r) => (process.argv.includes("--include-warm") || !/^(w\d|seed)/.test(r.tag)) && (latArg === null || r.lat === latArg));
 const med = (xs) => { const s = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b); if (!s.length) return null; return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
