@@ -90,7 +90,7 @@ test("登录后不能直接继续的状态：待激活与正常模式同一份�
   assert.doesNotMatch(onboardingStateText("device_mismatch"), /另一位成员|那位成员/);
   assert.equal(onboardingStateText("device_limit", { admin: true }), onboardingStateText("device_limit"), "个人账号的管理员就是本人：不给“调高本所成员上限”的说法");
   assert.match(onboardingStateText("needs_device_join"), /还没有登记这台电脑/);
-  assert.match(onboardingStateText("waiting_founder"), /律所还没有完成开通/);
+  assert.match(onboardingStateText("waiting_founder"), /团队还没有完成开通：请团队创建人（管理员）先在自己的电脑上打开 Kimi Work 法律版并登录一次/);
   assert.match(onboardingStateText("ready"), /从备份恢复/);
   assert.doesNotMatch(onboardingStateText("ready"), /联系客服/, "ready 不再落到兜底文案");
   for (const s of ["device_limit", "needs_device_join", "waiting_founder", "needs_founder_setup", "device_mismatch"]) assert.doesNotMatch(onboardingStateText(s), /登录已失效/, s);

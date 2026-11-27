@@ -1,6 +1,6 @@
 {
   "format": "kwl-residency/1",
-  "updated": "2026-10-20",
+  "updated": "2026-11-27",
   "basis": "v9.2 §3.2 数据驻留面清单（每版门禁）；调研 Y5 §1.2 主表、§1.4 门禁做法",
   "gate": "packages/kernel/test/privacy-residency.test.ts：字段齐全、强制点（文件 + 符号）存在、测试文件存在；写盘面与渲染存储键与源码扫描逐一相符——新增未登记的写盘点即失败",
   "forms": {
@@ -1241,6 +1241,27 @@
         28
       ],
       "reason": "备份位置里的内容寻址对象（全是密文）与加密签名清单；从备份恢复时写进数据根下的暂存目录再整体改名；本机备份状态与摘要索引（只有位置、序号、时刻、错误代码与相对路径摘要）"
+    },
+    "apps/desktop/electron/window-state.cjs": {
+      "apis": [
+        "renameSync",
+        "writeFileSync"
+      ],
+      "rows": [
+        19
+      ],
+      "reason": "第 72 批（D-300）：窗口位置、尺寸与是否最大化（逻辑像素与所在显示器范围），写在 Electron userData/window-state.json（防抖、临时文件写完再改名）；只有几何数字，不含账号、事项或任何案件信息"
+    },
+    "packages/kernel/src/services/workspaces.ts": {
+      "apis": [
+        "renameSync",
+        "writeFileSync"
+      ],
+      "rows": [
+        19,
+        29
+      ],
+      "reason": "第 72 批（D-305 / D-302）：每个账号档案的工作区里写一份 account-meta.json（0600，原子写）：当前工作空间是个人还是团队、账号级上手状态的两个时间戳（完成 / 收起）；取自登录与 me 应答，不含秘密与案件信息"
     }
   },
   "renderer_storage": {

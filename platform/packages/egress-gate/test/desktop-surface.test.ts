@@ -150,7 +150,8 @@ test("预加载脚本只暴露最小接口；渲染进程源码里只有 api.ts 
   // openSaved（v9.4 第 21 批：在 Word / WPS 中打开）：只认成果保存成功后主进程发的一次性句柄，页面给不了路径
   // exportPdf（第 29 批：律师指定要 PDF）：只收成果编号；主进程向内核取打印页、选保存位置、打印并写文件，页面拿不到路径
   // frameless / setWindowTheme（第 64 批无边框窗口）：一个只读布尔；换色只发 light / dark 两个取值（主进程另判主框架），不碰内核
-  assert.deepEqual(exposed.sort(), ["exportPdf", "fileHandleFor", "frameless", "installUpdate", "invoke", "onEvent", "openSaved", "pickFiles", "pickFolder", "pickSave", "platform", "rendererNet", "saveText", "setWindowTheme", "updateStatus"].sort());
+  // restartKernel：第 72 批（A1 H5）应用内重拉内核——主进程只认应用主窗口、两次至少隔 15 秒、走按身份重启（不带换账号交接），不能借它切换身份（09 安全审查重点 7 已核）
+  assert.deepEqual(exposed.sort(), ["exportPdf", "fileHandleFor", "frameless", "installUpdate", "invoke", "onEvent", "openSaved", "pickFiles", "pickFolder", "pickSave", "platform", "rendererNet", "restartKernel", "saveText", "setWindowTheme", "updateStatus"].sort());
 });
 
 test("对外口径（第 02 篇 §12 禁用词；复核 S5-A03）：界面、确认卡、告知函与估价文字不出现绝对化承诺", () => {
