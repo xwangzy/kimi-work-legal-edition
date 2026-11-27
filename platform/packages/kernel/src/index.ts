@@ -36,6 +36,7 @@ import { onboardingStateText } from "./account-session.ts";
 import { accountErrorText, dropAccountSession, dropLoginRequired, maskedPhoneOrNull, modelRejectionProblem, readAccountSession, readLoginRequired, writeAccountSession, writeLoginRequired, type AccountSessionFile } from "./account-session.ts";
 import { allocateWorkspace, findProfile, listProfiles, profileScopeId, validHandoff, writeProfile, type ProfileHandoff } from "./profiles.ts";
 import { writeActivationFile } from "./services/onboarding.ts";
+import { DeviceShareConfirm } from "./services/device-share.ts";
 import { activationInfo, dropActivationClaim, membersApi, OnboardingService, ONBOARDING_METHODS, readActivationClaim, reconcilePendingRestore, removePendingWorkspace, writeJoinFailure, writePendingActivation } from "./services/onboarding.ts";
 import { FirmGovernance, localDevPolicyBody, firmPolicyInputOf, type FirmPolicyInput } from "./control-plane/governance.ts";
 import { ControlPlaneClient } from "./control-plane/client.ts";
@@ -424,8 +425,12 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   let accountClearedAt = Number.NEGATIVE_INFINITY;
   /** 第 66 批：云端模型目录（下面建好后填入；登录成功、网关按模型拒绝时据此刷新）。 */
   const modelCatalogRef: { current: ModelCatalogService | null } = { current: null };
+  /** 第 72 批（F5）：上一次控制面同步是否成功（null = 还没同步过）；由失败转为成功时通知界面重取。 */
+  let lastSyncOk: boolean | null = null;
   /** 第 71 批：控制面客户端的引用（会话核对在客户端建好之前就要定义）。 */
   const controlPlaneRef: { current: ControlPlaneClient | null } = { current: null };
+  // 第 72 批（U-2）：成员电脑“接收团队共享事项”的事后确认（控制面客户端建好之后再建；同步发现证书已被换发时据此取回）
+  const deviceShareRef: { current: DeviceShareConfirm | null } = { current: null };
   /** 退出登录后仍记住上次的邮箱与姓名（不含令牌）：重新登录页预填与称呼；第 64 批起重启后也记得（读本机记录）。 */
   // 第 71 批：另记打码手机号（重新登录页称呼本人、只填验证码的那一行显示用）
   let lastAccount: { email: string; name: string; role: string; phone?: string } | null = accountSession
@@ -686,7 +691,18 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
             markAccountProblem(code, "sync");
           },
           // 退出模式下启动时暂停的任务：退出模式解除后（同步取得许可）入队（复核 S6-B34）
-          onSynced: () => {
+          onSynced: (report) => {
+            // 第 72 批（F5 故障注入）：同步由失败转为成功（含首次同步重试后才成功）时，重取模型目录并通知界面重取账号与额度——
+            // 原来注册阶段失败过的那段时间里界面取套餐 / 模型目录都失败了，恢复后不会再取，侧栏“试用”标识与模型列表停在旧状态
+            if (report.ok && lastSyncOk !== true) {
+              if (lastSyncOk === false) {
+                void modelCatalogRef.current?.refresh("sync_recovered", { minIntervalMs: 5_000 });
+                broadcast({ type: "cloud.synced" });
+              }
+            }
+            lastSyncOk = report.ok;
+            // 第 72 批（U-2）：管理员已在律所根电脑上确认这台电脑，云端设备记录换成了律所根证书、本机还没取回——立即取回并换证（随后重启）
+            if (report.steps.register === "device_cert_superseded") void deviceShareRef.current?.status().catch(() => undefined);
             if (governance.exitMode()) return;
             const n = queue.resumeParked();
             if (n > 0) slog.event("KERNEL_EXIT_MODE_LIFTED", { resumed: n });
@@ -1008,6 +1024,24 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
   }
 
   const shutdownHooks: (() => void)[] = [];
+  const deviceShare = controlPlane
+    ? new DeviceShareConfirm({
+        db,
+        tenantId: identity.tenantId,
+        userId: identity.userId,
+        device,
+        firm,
+        workspaceDir: config.workspaceDir,
+        call: (m, path, body) => controlPlane.request(m, path, body),
+        requestRestart: () => broadcastRef.current?.({ type: "kernel.restart_for_identity" }),
+        audit: (action, objectId) => appendAuditEvent(db, signer, { tenantId: identity.tenantId, actorId: identity.userId, action, kind: "device", objectId, matterId: null }),
+      })
+    : null;
+  deviceShareRef.current = deviceShare;
+  if (deviceShare) {
+    deviceShare.start();
+    shutdownHooks.push(() => deviceShare.stop());
+  }
   const api = createApi({
     purgeAgentData: purgeAgentDataFor,
     backupConfigured: () => !!readBackupState(join(config.workspaceDir, "backup.json")).dir,
@@ -1041,6 +1075,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     ...(controlPlane ? { account: accountDeps } : {}),
     reminders,
     shareRelay,
+    deviceShare,
   });
 
   // 本设备被吊销（第 02 篇 §9.13；复核 S6-A02、S6-B01）：终止进行中的任务（闸门在退出模式下已拒绝一切出站）；
@@ -1345,6 +1380,7 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
     keysDir,
     call: controlPlane ? (m, p, b) => controlPlane.request(m, p, b) : null,
     audit: (action, kind, objectId) => appendAuditEvent(db, signer, { tenantId: identity.tenantId, actorId: identity.userId, action, kind, objectId, matterId: null }),
+    ...(controlPlane ? { afterApprove: () => controlPlane.sync() } : {}),
   });
   api["members.invite"] = (p) => members.invite(p ?? {});
   api["members.list"] = () => members.list();
@@ -1538,7 +1574,8 @@ export async function createKernel(opts: KernelOptions = {}): Promise<Kernel> {
       // 这台电脑的证书是谁签的：firm_root = 律所根（能接收团队共享事项），account_ca = 云端账号签发钥（D-304：能登录、用 AI、处理自己的事项，
       // 还不能接收团队共享事项——团队共享处提示“请管理员确认这台电脑”）
       workspace_kind: config.onboarding ? null : (accountMeta?.workspace_kind ?? null),
-      device_issuer: config.onboarding ? null : (device.cert as { issuer?: unknown }).issuer === "account_ca" ? "account_ca" : "firm_root",
+      // 第 72 批（U-2）：事后确认取回律所根证书之后、重启之前即报 firm_root
+      device_issuer: config.onboarding ? null : (deviceShare?.issuer() ?? ((device.cert as { issuer?: unknown }).issuer === "account_ca" ? "account_ca" : "firm_root")),
       // 这台电脑何时从备份恢复（复核 R2A-14 / R2B-22：界面据此提醒“原电脑丢了请找管理员”）
       restored_from_backup_at: config.onboarding ? null : (db.get<{ at: string }>(`SELECT created_at AS at FROM audit_events WHERE action = 'device.restored_from_backup' AND tenant_id = ? ORDER BY audit_event_id DESC LIMIT 1`, [identity.tenantId])?.at ?? null),
     });

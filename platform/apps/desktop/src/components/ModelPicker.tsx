@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./Icons.tsx";
-import { api, type ModelCatalogView, type ModelScope } from "../api.ts";
+import { api, onKernelEvent, type ModelCatalogView, type ModelScope } from "../api.ts";
 
 export interface ModelChoice {
   id: string;
@@ -104,9 +104,12 @@ export function useModelCatalog(scope: ModelScope, enabled = true): [ModelCatalo
     // 第 72 批（D-299 第 6 条）：窗口重新获得焦点时真刷新（向云端取，内核按 5 秒节流），云端改了模型目录客户端不重启也能看到
     const onFocus = () => void load(true);
     window.addEventListener("focus", onFocus);
+    // 第 72 批（F5）：云端同步恢复后重读目录（内核同时已向云端重取）
+    const offSync = onKernelEvent((m) => (m?.type === "cloud.synced" ? onFocus() : undefined));
     return () => {
       live = false;
       window.removeEventListener("focus", onFocus);
+      offSync();
     };
   }, [scope, enabled]);
   return [view, setView];

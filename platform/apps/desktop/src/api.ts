@@ -1744,7 +1744,8 @@ export const members = {
   /** 侧栏提醒：有几份入组申请等这台电脑批准（内核 60 秒内复用上次结果）。 */
   attention: () => invoke<{ pending_joins: number }>("members.attention"),
   invite: (name: string, role: string) => invoke<any>("members.invite", { name, role }),
-  approve: (joinRequestId: string) => invoke<any>("members.approve", { join_request_id: joinRequestId }),
+  /** 第 72 批（U-2）：“接收团队共享事项”的确认要带对方念出的 12 位核对码（内核逐位核对，不一致不签发）。 */
+  approve: (joinRequestId: string, checkCode?: string) => invoke<any>("members.approve", { join_request_id: joinRequestId, ...(checkCode ? { check_code: checkCode } : {}) }),
   reject: (joinRequestId: string) => invoke<any>("members.reject", { join_request_id: joinRequestId }),
   revokeInvitation: (activationId: string) => invoke<any>("members.revoke_invitation", { activation_id: activationId }),
   // 成员离所（B-10）：成员列表、移出前提醒、移出律所（停用全部电脑 + 释放席位）、停用一台电脑
@@ -1905,6 +1906,8 @@ export interface WorkspaceItem {
   name: string;
   role: "admin" | "partner" | "lawyer" | "assistant" | null;
   status: "active" | "disabled";
+  /** 停用的来由：停用 / 被团队移出 / 本人退出（新云端 + 新内核才有）。 */
+  disabled_kind?: "disabled" | "removed" | "left" | null;
   current: boolean;
   /** 这台电脑上已有这个工作空间的账号档案（切过去不用再登记这台电脑）。 */
   local_profile: boolean;
@@ -1936,4 +1939,23 @@ export const team = {
   role: (aid: string, role: string) => invoke<{ supported: boolean; ok?: boolean }>("team.members.role", { aid, role }),
   seat: (aid: string, assign: boolean) => invoke<{ supported: boolean; ok?: boolean }>("team.members.seat", { aid, assign }),
   memberDevicePolicy: (policy: "auto" | "approve") => invoke<{ supported: boolean; ok?: boolean; policy?: "auto" | "approve" }>("team.policy.memberDevice", { policy }),
+  /** 第 72 批（U-2，D-304）：这台直接登录的电脑申请接收团队共享事项（状态 / 申请 / 撤回）；旧内核没有这些方法时按不支持处理。 */
+  deviceShare: {
+    status: () => invoke<DeviceShareStatus>("team.deviceShare.status").catch(() => ({ supported: false }) as DeviceShareStatus),
+    request: () => invoke<DeviceShareStatus>("team.deviceShare.request"),
+    withdraw: () => invoke<DeviceShareStatus>("team.deviceShare.withdraw"),
+  },
 };
+/** 第 72 批（U-2）：confirmed = 已可接收；pending 带 12 位核对码；restart = 刚换上新证书、客户端即将重新载入。 */
+export interface DeviceShareStatus {
+  supported: boolean;
+  state?: "confirmed" | "none" | "pending" | "rejected" | "expired" | "withdrawn";
+  issuer?: "firm_root" | "account_ca";
+  request_id?: string;
+  requested_at?: string;
+  check_code?: string;
+  checked?: boolean;
+  problem?: string;
+  restart?: boolean;
+  offline?: boolean;
+}

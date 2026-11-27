@@ -297,7 +297,8 @@ export function TeamAdmin({ canEdit, myAid }: { canEdit: boolean; myAid: string 
             <button className="btn-ghost btn-sm" autoFocus onClick={() => setAsk(null)}>
               取消
             </button>
-            <button className="btn-danger-solid btn-sm" disabled={busy !== null} onClick={() => void run(`dis-${ask.m.aid}`, () => team.disable(ask.m.aid), `已停用${nameOf(ask.m)}`)}>
+            {/* 第二轮评分：停用可随时重新启用，不用危险红（危险红只给“移出团队”） */}
+            <button className="btn-primary btn-sm" disabled={busy !== null} onClick={() => void run(`dis-${ask.m.aid}`, () => team.disable(ask.m.aid), `已停用${nameOf(ask.m)}`)}>
               {busy ? "正在停用…" : "停用"}
             </button>
           </div>
@@ -464,7 +465,9 @@ function RowMenu({ who, items, disabled, onPick }: { who: string; items: ReturnT
           const r = btn.current!.getBoundingClientRect();
           // 靠近窗口底部时向上展开（菜单约 200px 高）
           const right = Math.max(8, window.innerWidth - r.right);
-          setPos(r.bottom + 220 > window.innerHeight ? { bottom: window.innerHeight - r.top + 6, right } : { top: r.bottom + 6, right });
+          // 菜单高度按项数估（每项约 50px + 分隔），离底边不足时向上弹出（第二轮评分 C10 第 5 条）
+          const need = items.length * 52 + 24;
+          setPos(r.bottom + need + 12 > window.innerHeight ? { bottom: window.innerHeight - r.top + 6, right } : { top: r.bottom + 6, right });
         }}
       >
         {Icon.more()}

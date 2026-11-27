@@ -319,3 +319,15 @@ test("第 72 批（设计评分 C12 / C16）：工作空间项转交 disabled_ki
   const by = Object.fromEntries(items.map((x) => [x.name, x.disabled_kind]));
   assert.deepEqual(by, { 甲: null, 乙所: "removed", 丙所: "left", 丁所: null });
 });
+
+test("第 72 批（F5 故障注入）：同步由失败转为成功时广播 cloud.synced 并重取模型目录；首次就成功、持续成功不广播；界面侧栏与模型目录订阅它", async () => {
+  const src = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+  const i = src.indexOf("onSynced: (report) => {");
+  const seg = src.slice(i, i + 900);
+  assert.match(seg, /if \(report\.ok && lastSyncOk !== true\) \{\s*if \(lastSyncOk === false\) \{[\s\S]*?refresh\("sync_recovered"[\s\S]*?broadcast\(\{ type: "cloud\.synced" \}\)/);
+  assert.match(seg, /lastSyncOk = report\.ok;/);
+  const side = readFileSync(new URL("../../../apps/desktop/src/components/Sidebar.tsx", import.meta.url), "utf8");
+  assert.match(side, /"cloud\.synced" \? loadQuota\(\)/);
+  const mp = readFileSync(new URL("../../../apps/desktop/src/components/ModelPicker.tsx", import.meta.url), "utf8");
+  assert.match(mp, /"cloud\.synced" \? onFocus\(\)/);
+});

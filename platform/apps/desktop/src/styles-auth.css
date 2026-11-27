@@ -101,7 +101,7 @@
 .auth-card .auth-input-group .auth-input, .auth-card .auth-input-group .auth-input:focus, .auth-card .auth-input-group .auth-input:hover { height: 44px; border: 0; background: transparent; box-shadow: none; }
 
 /* 第 71 批（V45）：重新登录时手机号只读（发出验证码后显示云端回的打码号），不是输入框：无底色、虚线描边 */
-.auth-card .auth-input-group.is-readonly { background: transparent; border: 1px dashed var(--border-default); }
+.auth-card .auth-input-group.is-readonly { background: var(--bg-subtle); border: 1px solid transparent; } /* 第 72 批第三轮：只读不用虚线（虚线只表示空槽） */
 .auth-card .auth-input-group.is-readonly:hover { border-color: var(--border-default); }
 .auth-card .auth-input-group.is-readonly .auth-prefix { padding-top: 15px; color: var(--text-secondary); }
 .auth-readonly { flex: 1 1 auto; min-width: 0; padding: 15px 16px 0; font-size: var(--fs-md); color: var(--text-primary); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }

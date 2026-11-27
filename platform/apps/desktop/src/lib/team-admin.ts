@@ -125,10 +125,23 @@ export function splitInvites(list: readonly TeamInviteRow[]): { open: TeamInvite
 
 /** 成员新电脑策略的说明（D-304）。纯函数。 */
 export const MEMBER_DEVICE_POLICY: Readonly<Record<"auto" | "approve", { label: string; hint: string }>> = {
-  // 第 72 批（U-2，如实）：直接登录的电脑暂不能接收团队共享事项，本批还没有“事后确认”这一步——要用团队共享事项的团队选“须确认”
-  auto: { label: "直接登录", hint: "成员在新电脑上用手机号验证码登录后即可使用（推荐）。这样登录的电脑暂不能接收团队共享事项；团队要共享事项，请选“须管理员确认”。" },
+  // 第 72 批（U-2b）：直接登录的电脑可“事后确认”——成员在团队共享处申请一次，你在“电脑待确认”里核对确认一次即可接收团队共享事项
+  auto: { label: "直接登录", hint: "成员在新电脑上用手机号验证码登录后即可使用（推荐）。这台电脑要接收团队共享事项时，成员申请一次、你在“电脑待确认”里核对确认一次即可。" },
   approve: { label: "须管理员确认", hint: "成员的新电脑要等你在“电脑待确认”里确认后才能登录使用，确认过的电脑可以接收团队共享事项。已登录的电脑不受影响。" },
 };
+
+/** 第 72 批（U-2b）：电脑待确认里一行的标题——“<姓名> 的 <电脑名> 申请接收团队共享事项”（电脑没起名时写“电脑”）。纯函数。 */
+export function upgradeTitle(r: { name?: string | null; device_name?: string | null; role?: string | null }): string {
+  // 第 72 批：写出申请人的角色（证书将按它签发）——管理员核对，防止云端借申请提权
+  const role = r.role && r.role in WS_ROLE_LABEL ? `（${WS_ROLE_LABEL[r.role as WorkspaceRole]}）` : "";
+  return `${r.name ?? "本所成员"}${role} 的${r.device_name ? ` ${r.device_name} ` : "电脑"}申请接收团队共享事项`;
+}
+
+/** 第 72 批（U-2b）：输入的核对码与这台电脑算出的是否逐位一致（只比数字，忽略空格与连字符；须满 12 位）。纯函数。 */
+export function sameCheckCode(typed: string, code: string): boolean {
+  const d = (v: string) => v.replace(/[\s-]/g, "");
+  return /^\d{12}$/.test(d(typed)) && d(typed) === d(code);
+}
 
 /** 管理员操作的错误补充（内核没有映射的原因码）。 */
 const ADMIN_ERROR_TEXT: Readonly<Record<string, string>> = {
@@ -141,6 +154,8 @@ const ADMIN_ERROR_TEXT: Readonly<Record<string, string>> = {
   invites_too_many: "未使用的邀请太多：请先撤回不用的邀请",
   device_limit_over_plan: "电脑上限不能超过套餐设定：需要更多请联系中软",
   phone_hint_invalid: "手机号提示只填手机号或后四位",
+  check_code_mismatch: "入组核对码不一致：不要确认，请让对方重新念一遍；仍不一致请点“拒绝”，并联系 Kimi Work 客服",
+  upgrade_stale: "这台电脑或它的成员身份已变化（已移除、已停用、已移出团队或角色已调整）：请刷新",
 };
 export function adminErrorText(e: unknown): string {
   return teamErrorText(e, ADMIN_ERROR_TEXT);

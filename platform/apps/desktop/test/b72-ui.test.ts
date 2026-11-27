@@ -181,10 +181,25 @@ test("第二轮 C2：浮层固定定位、放不下就翻到上方或居中，�
   assert.match(src("components/Composer.tsx"), /\{props\.suggestion && menu !== "place" && \(/);
 });
 
-test("第二轮 Q-8：连不上云端时首页一行提示（额度查询报 provider_unavailable），连上即收起；不让清单与模型消失", () => {
-  const h = src("pages/Home.tsx");
-  assert.match(h, /setCloudDown\(\(e as \{ code\?: string \}\)\.code === "provider_unavailable"\);/);
-  assert.match(h, /连不上云端：AI 暂时不可用，本机的事项和材料照常可看/);
-  assert.match(h, /window\.addEventListener\("online", checkCloud\);/);
+test("第二轮 Q-8 / 第三轮：连不上云端时首页与问答页同口径一行提示（额度查询报 provider_unavailable），连上即收起", () => {
+  const n = src("components/CloudNotice.tsx");
+  assert.match(n, /setDown\(\(e as \{ code\?: string \}\)\.code === "provider_unavailable"\);/);
+  assert.match(n, /连不上云端：AI 暂时不可用，\{what\}/);
+  assert.match(n, /window\.addEventListener\("online", check\);/);
+  assert.match(src("pages/Home.tsx"), /const cloudDown = useCloudDown\(setQuota\);/);
+  const chat = src("pages/Chat.tsx");
+  assert.match(chat, /const cloudDown = useCloudDown\(\);/);
+  assert.match(chat, /<CloudDownNotice what="问答记录照常可看" \/>/);
+});
+
+test("第三轮：深度思考开 / 关两态可辨（关灰描边、开浅蓝底）；就地归属“我方立场”标必填、未选时按钮旁说原因；只读框不用虚线", () => {
+  const css = src("styles.css");
+  assert.match(css, /\.deep-toggle \{[^}]*border: 1px solid var\(--border-default\);/);
+  assert.match(css, /\.deep-toggle\.on, \.deep-toggle\.on:hover \{ border-color: var\(--accent-border\); background: var\(--accent-bg\); color: var\(--accent-text\); \}/);
+  assert.match(src("pages/Chat.tsx"), /role="switch" aria-checked=\{deep\}/);
+  const mp = src("components/MatterPlace.tsx");
+  assert.match(mp, /我方立场<span className="place-req">必填<\/span>/);
+  assert.match(mp, /\{!stance && !busy && <span className="place-need">选好我方立场后可发起<\/span>\}/);
+  assert.doesNotMatch(src("styles-auth.css"), /\.is-readonly \{[^}]*dashed/);
 });
 

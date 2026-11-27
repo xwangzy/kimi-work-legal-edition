@@ -9,6 +9,7 @@ import { ConfirmButton } from "./ConfirmButton.tsx";
 import { fmtTime } from "../lib/labels.ts";
 import { memberLabel, memberStatusText, removalLines } from "../lib/offboarding.ts";
 import { Select } from "./Select.tsx";
+import { sameCheckCode, upgradeTitle } from "../lib/team-admin.ts";
 
 const ROLES: [string, string][] = [
   ["lawyer", "律师"],
@@ -180,7 +181,7 @@ export function JoinRequestTable({ requests, act }: { requests: any[]; act: (fn:
           {requests.map((r) => (
             <tr key={r.id}>
               <td>
-                {r.name ?? (r.via === "account" ? (r.account_email ?? "本所成员") : "（不是在这台电脑上邀请的）")}
+                {r.kind === "upgrade" ? upgradeTitle(r) : (r.name ?? (r.via === "account" ? (r.account_email ?? "本所成员") : "（不是在这台电脑上邀请的）"))}
                 {/* 第 44 批（D-186）：同一账号的新电脑——没有邀请可对，只能人工核对核对码 */}
                 {r.via === "account" && <div className="muted">同一账号的新电脑{r.account_email && r.name ? ` · ${r.account_email}` : ""}</div>}
               </td>
@@ -188,7 +189,16 @@ export function JoinRequestTable({ requests, act }: { requests: any[]; act: (fn:
               <td>{fmtTime(r.requested_at)}</td>
               <td className="members-check">{r.check_code}</td>
               <td>
-                {r.local_invite && r.verified === false ? (
+                {r.kind === "upgrade" ? (
+                  r.verified === false ? (
+                    <span className="settings-choice">
+                      <span className="activate-error">这份申请的电脑编号或角色与成员对不上，不要确认；请拒绝，并联系 Kimi Work 客服</span>
+                      <ConfirmButton label="拒绝" question="拒绝这份申请？对方可以重新申请。" confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
+                    </span>
+                  ) : (
+                    <UpgradeConfirm r={r} act={act} />
+                  )
+                ) : r.local_invite && r.verified === false ? (
                   <span className="settings-choice">
                     <span className="activate-error">这份申请在传送中被改动过，不要批准；请拒绝并重新发邀请，同时告知 Kimi Work 客服</span>
                     {/* 第 54 批真实联调：原来只有这句提示、没有“拒绝”按钮，管理员照提示做不了 */}
@@ -209,6 +219,26 @@ export function JoinRequestTable({ requests, act }: { requests: any[]; act: (fn:
       </table>
       <p className="muted">批准前，请先电话或当面联系对方，请他读出自己屏幕上的入组核对码，与这里逐位对照。号码对不上？不要批准，点“拒绝”，并联系 Kimi Work 客服。</p>
     </>
+  );
+}
+
+/**
+ * 第 72 批（U-2b）：确认成员电脑接收团队共享事项——请对方念出他屏幕上的 12 位核对码、在这里输入，逐位一致才能“确认”
+ * （内核另行逐位核对，不一致不签发）。
+ */
+function UpgradeConfirm({ r, act }: { r: any; act: (fn: () => Promise<unknown>, ok: string) => Promise<void> }) {
+  const [typed, setTyped] = useState("");
+  const match = sameCheckCode(typed, String(r.check_code ?? ""));
+  const typedDigits = typed.replace(/[\s-]/g, "");
+  return (
+    <span className="settings-choice">
+      <input className="members-code-input mono" inputMode="numeric" maxLength={16} placeholder="输入对方念出的 12 位入组核对码" aria-label="对方念出的入组核对码" value={typed} onChange={(e) => setTyped(e.target.value)} />
+      <button type="button" className="btn btn-primary btn-sm" disabled={!match} onClick={() => void act(() => members.approve(r.id, typedDigits), `已确认${r.name ? ` ${r.name} 的电脑` : ""}：同步后即可接收团队共享事项`)}>
+        确认
+      </button>
+      <ConfirmButton label="拒绝" question="拒绝这份申请？对方可以重新申请。" confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
+      {typedDigits.length === 12 && !match && <span className="activate-error">入组核对码不一致：不要确认，请让对方重新念一遍</span>}
+    </span>
   );
 }
 
@@ -246,7 +276,7 @@ export function PendingDevices() {
   const requests: any[] = data?.join_requests ?? [];
   return (
     <div className="team-pending">
-      <p className="team-pending-lead">这台电脑登录后可正常工作；要接收团队共享事项，需要你在这里确认一次。</p>
+      <p className="team-pending-lead">成员的电脑登录后可正常工作；要接收团队共享事项，成员申请后需要你在这里核对入组核对码、确认一次。</p>
       {requests.length > 0 ? (
         <JoinRequestTable requests={requests} act={act} />
       ) : (

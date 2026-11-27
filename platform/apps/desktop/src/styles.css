@@ -668,10 +668,10 @@ dl.cc-body dd { margin: 0; word-break: break-word; }
 .chat-wait-hint { font-size: var(--fs-caption); line-height: 1.5; }
 
 /* 深度思考开关（第 48 批；第 72 批与任务输入框的运行模式同一种语言：无边框胶囊 + 线性图标，开启时强调色底） */
-.deep-toggle { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 8px; border: 0; border-radius: var(--r-full); background: transparent; color: var(--text-strong); font-size: var(--fs-body); cursor: pointer; white-space: nowrap; margin-left: -6px; }
-.deep-toggle:hover { background: var(--bg-hover); }
-.deep-toggle.on { background: var(--accent-bg); color: var(--accent-text); }
-.deep-toggle svg { width: 16px; height: 16px; color: var(--text-label); }
+.deep-toggle { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px 0 10px; border: 1px solid var(--border-default); border-radius: var(--r-full); background: transparent; color: var(--text-label); font-size: var(--fs-body); cursor: pointer; white-space: nowrap; }
+.deep-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
+.deep-toggle.on, .deep-toggle.on:hover { border-color: var(--accent-border); background: var(--accent-bg); color: var(--accent-text); }
+.deep-toggle svg { width: 16px; height: 16px; color: var(--text-secondary); }
 .deep-toggle.on svg { color: var(--accent-text); }
 
 @media (max-width: 980px) {

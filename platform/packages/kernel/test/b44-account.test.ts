@@ -120,6 +120,8 @@ test("同一账号第二台电脑：设备上限（试用 1 台）→ 调到 2 �
   await ra;
   a = await reboot(a, dirA);
   assert.equal(((await a.invoke("control_plane.sync")) as any).report.steps.seat, "accepted");
+  // 第 72 批：试用缺省改为同时登录 2 台（产品评分 F6）——这条测“满额 → 调高”，显式设成 1 台
+  cloud!.cp.ops.account("zhao@example.cn")!.device_limit = 1;
   const dirB = mkdtempSync(join(tmpdir(), "kwl-b44-d-"));
   let b = await boot(dirB);
   const blocked = (await b.invoke("account.login", { email: "zhao@example.cn", password: PW })) as any;

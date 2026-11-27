@@ -54,6 +54,8 @@ const PATHS: readonly RegExp[] = [
   /^\/v1\/activation\/redeem$/,
   /^\/v1\/join-requests$/,
   /^\/v1\/join-requests\/jr_[A-Za-z0-9_-]{16}\/(?:fetch|approve|reject|withdraw)$/,
+  // 第 72 批（U-2，D-304）：账号签发钥登记的团队成员电脑申请“接收团队共享事项”（设备签名 + 账号会话；请求体为空，申请只引用本机现有的设备编号与公钥）
+  /^\/v1\/join-requests\/upgrade$/,
   /^\/v1\/invitations$/,
   /^\/v1\/invitations\/act_[A-Za-z0-9_-]{16}\/revoke$/,
   // 第 62 批：版本与注册策略（无鉴权、无请求体；注册页按其中的能力字段决定显示手机号与邀请码）

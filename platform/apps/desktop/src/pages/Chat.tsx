@@ -12,6 +12,7 @@ import { nav } from "../App.tsx";
 import { Icon } from "../components/Icons.tsx";
 import { ModelPicker, useModelCatalog } from "../components/ModelPicker.tsx";
 import { ComposerFrame, SendButton, sendOnEnter } from "../components/ComposerFrame.tsx";
+import { CloudDownNotice, useCloudDown } from "../components/CloudNotice.tsx";
 import { modelChoices } from "../lib/model-choices.ts";
 import { Markdown } from "../components/Markdown.tsx";
 import { QA_CITATION_KIND, qaCitationLine, type QaCitationsView } from "../lib/qa-citations.ts";
@@ -93,6 +94,8 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   // 不可用的置灰写原因），所选走 models.select("qa")——与内核 model_prefs 统一；本机旧的 kwl.chat.model 只作一次性迁移。
   // 旧内核没有目录时退回 chat.models（只为取“深度思考”缺省与兜底选项）。
   const [qaCatalog, setQaCatalog] = useModelCatalog("qa");
+  // 第 72 批第三轮：连不上云端时与首页同口径的一行提示（输入框上沿）
+  const cloudDown = useCloudDown();
   const [legacyModels, setLegacyModels] = useState<ChatModelChoice[]>([]);
   useEffect(() => {
     void api
@@ -377,12 +380,18 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           <div ref={endRef} />
         </div>
         <div className="chat-composer-wrap">
+          {cloudDown && (
+            <div className="composer-notice">
+              <CloudDownNotice what="问答记录照常可看" />
+            </div>
+          )}
           <ComposerFrame
             className="chat-composer"
             // 左槽：深度思考（与任务输入框的运行模式同一种胶囊）；模型不可控时不显示开关，免得点了不起作用
             left={
               selectedModel?.thinking !== "none" ? (
-                <button type="button" className={`deep-toggle${deep ? " on" : ""}`} aria-pressed={deep} onClick={toggleDeep} title={deepToggleTitle(deep, selectedModel?.thinking, selectedModel?.label)}>
+                // 第三轮：开 / 关两态一眼可辨（关：灰描边；开：浅蓝底 + 蓝字 + 蓝图标，与 Kimi 原厂同类开关同口径）
+                <button type="button" className={`deep-toggle${deep ? " on" : ""}`} role="switch" aria-checked={deep} aria-pressed={deep} onClick={toggleDeep} title={deepToggleTitle(deep, selectedModel?.thinking, selectedModel?.label)}>
                   <Icon.sparkle />
                   深度思考
                 </button>

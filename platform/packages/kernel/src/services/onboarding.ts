@@ -1029,6 +1029,8 @@ export interface MembersDeps {
   keysDir: string;
   call: SignedCall | null;
   audit: (action: string, kind: string, objectId: string) => void;
+  /** 第 72 批（U-2）：确认成员电脑接收团队共享事项之后立即同步一次（设备目录随之更新）。 */
+  afterApprove?: () => Promise<unknown>;
 }
 
 /** 管理员本机记录的律所名称（与成员机兑换时的取法一致：激活记录里的名称，开发形态没有激活记录时用律所标识）。 */
@@ -1063,9 +1065,15 @@ interface JoinSnapshot {
   sign_pub: string;
   enc_pub: string;
   check_code: string;
-  /** 第 44 批：invitation = 凭邀请码入组；account = 同一账号的新设备（D-186，人工核对核对码）。 */
-  via: "invitation" | "account";
+  /**
+   * 第 44 批：invitation = 凭邀请码入组；account = 同一账号的新设备（D-186，人工核对核对码）。
+   * 第 72 批（U-2，D-304）：upgrade = 账号签发钥已登记的团队成员电脑申请接收团队共享事项（同编号、同公钥换律所根证书；批准须输入对方念出的核对码）。
+   */
+  via: "invitation" | "account" | "upgrade";
   account_email: string | null;
+  /** upgrade：账号上的姓名与律师给电脑起的名字（只作显示）。 */
+  account_name?: string | null;
+  device_name?: string | null;
 }
 
 interface LocalInvite {
@@ -1095,9 +1103,23 @@ export const membersApi = (d: MembersDeps) => {
       sign_pub: String(x.sign_pub),
       enc_pub: String(x.enc_pub),
       check_code: joinCheckCode({ tid: d.identity.tenantId, deviceId: String(x.device_id), signPublicKeyPem: String(x.sign_pub), encPublicKeyPem: String(x.enc_pub) }),
-      via: x.via === "account" ? "account" : "invitation",
+      via: x.kind === "upgrade" && x.via === "upgrade" ? "upgrade" : x.via === "account" ? "account" : "invitation",
       account_email: typeof x.account?.email === "string" ? x.account.email : null,
+      account_name: typeof x.account?.name === "string" && x.account.name.trim() ? String(x.account.name).trim().slice(0, 40) : null,
+      device_name: typeof x.device_name === "string" && x.device_name.trim() ? String(x.device_name).trim().slice(0, 20) : null,
     };
+    if (snap.via === "upgrade") {
+      // 接收团队共享事项（U-2）：设备编号须属于这位成员（dev_<律所>_<成员>，或第 2 台起 _D<n>）、角色合规；本机成员表里有这位成员时角色须一致
+      // （控制面不能借此提权）。核对码由本机按申请里的公钥独立算出；批准时须输入对方屏幕上的核对码，逐位一致才签发
+      const m = d.db.get<{ role: string; membership_id: string }>(`SELECT role, membership_id FROM memberships WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, `usr_${d.config.firmSlug}_${snap.member_slug}`]);
+      const base = expectedJoinDeviceId(d.config.firmSlug, snap.member_slug);
+      const tail = snap.device_id.slice(base.length);
+      // 第 72 批（U-2 风险点）：只有入组批准写下的权威成员行（membership_<成员标识>）才比对角色；“加进事项”时插入的占位行（随机编号、
+      // 角色一律 lawyer）不作数——否则先被加进事项的合伙人 / 管理员永远确认不了。申请人角色在确认行上显示给管理员核对（见 MembersAdmin）
+      const authoritative = !!m && m.membership_id === `membership_${snap.member_slug}`;
+      const ok = MEMBER_SLUG_PATTERN.test(snap.member_slug) && ROLES.includes(snap.role) && snap.device_id.startsWith(base) && (tail === "" || /^_D(?:[2-9]|[1-9]\d{1,2})$/.test(tail)) && (!authoritative || ROLE_OF_MEMBERSHIP[m!.role] === snap.role);
+      return { local: undefined, snap, verified: ok };
+    }
     if (snap.via === "account") {
       // 账号新设备（D-186）：成员须是本所已有成员、角色与本机记录一致（控制面不能借此提权）、设备编号属于这位成员（_D2～_D9）
       const m = d.db.get<{ role: string }>(`SELECT role FROM memberships WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, `usr_${d.config.firmSlug}_${snap.member_slug}`]);
@@ -1130,6 +1152,45 @@ export const membersApi = (d: MembersDeps) => {
   };
   const inviteOf = (activationId: string) =>
     d.db.get<LocalInvite>(`SELECT activation_id, member_slug, role, display_name, invite_secret, status FROM member_invitations WHERE activation_id = ? AND tenant_id = ?`, [activationId, d.identity.tenantId]);
+  /**
+   * 第 72 批（U-2，D-304）：确认成员电脑接收团队共享事项——须输入对方屏幕上的 12 位核对码、与本机按申请公钥算出的逐位一致；
+   * 用律所根签发证书（字段与新入组一致：同一设备编号、申请里的两把公钥、本所成员编号与申请角色）。不需要律所公钥包与批准核对段。
+   */
+  const approveUpgrade = async (call: SignedCall, snap: JoinSnapshot, typed: unknown): Promise<Record<string, unknown>> => {
+    const digits = (v: unknown) => (typeof v === "string" ? v.replace(/[\s-]/g, "") : "");
+    if (!/^\d{12}$/.test(digits(typed))) throw new DomainError("validation", "请输入对方屏幕上的 12 位入组核对码", 400);
+    if (digits(typed) !== digits(snap.check_code)) throw new DomainError("conflict", "入组核对码不一致：不要确认。请让对方重新念一遍；仍不一致请点“拒绝”，并联系 Kimi Work 客服", 409, { reason: "check_code_mismatch" });
+    let root: { publicKeyPem: string; privateKeyPem: string };
+    try {
+      root = getFirmRootPrivateKey(d.keysDir);
+    } catch {
+      throw new DomainError("forbidden", "这台电脑不能确认（需要在团队开通时的那台电脑上操作）", 409);
+    }
+    const userId = `usr_${d.config.firmSlug}_${snap.member_slug}`;
+    const now = Date.now();
+    const cert = issueDeviceCertificate(root.privateKeyPem, {
+      certId: `cert_${snap.device_id}_${now.toString(36)}`,
+      memberId: userId,
+      deviceId: snap.device_id,
+      role: snap.role as DeviceRole,
+      signPublicKeyPem: snap.sign_pub,
+      encPublicKeyPem: snap.enc_pub,
+      issuedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + 365 * 24 * 3600 * 1000).toISOString(),
+    });
+    const r = await call("POST", `/v1/join-requests/${snap.id}/approve`, { cert });
+    if (!r.ok) cpFail(r);
+    d.db.run(`INSERT OR IGNORE INTO memberships (membership_id, tenant_id, user_id, role) VALUES (?, ?, ?, ?)`, [`membership_${snap.member_slug}`, d.identity.tenantId, userId, MEMBERSHIP_ROLE[snap.role]]);
+    // 第 72 批：本机已有“加进事项”时插入的占位行（随机编号、角色 lawyer）——管理员核对过申请人角色后，按批准的角色更正
+    d.db.run(`UPDATE memberships SET role = ? WHERE tenant_id = ? AND user_id = ? AND membership_id <> ?`, [MEMBERSHIP_ROLE[snap.role], d.identity.tenantId, userId, `membership_${snap.member_slug}`]);
+    if (snap.account_name) d.db.run(`INSERT OR IGNORE INTO users (user_id, tenant_id, display_name) VALUES (?, ?, ?)`, [userId, d.identity.tenantId, snap.account_name]);
+    snapshots.delete(snap.id);
+    attentionCache = null;
+    d.audit("member.device_share_approve", "device", snap.device_id);
+    // 设备目录随之更新：立即同步一次，本机设备表即含这台电脑（团队共享事项的密钥此后可包给它）
+    await d.afterApprove?.().catch(() => undefined);
+    return { ok: true, status: "approved", kind: "upgrade" };
+  };
   return {
     /** 邀请成员：本机生成邀请码的秘密段（不经控制面）并记下成员与角色，再向中软申请一次性的控制面码；两段拼成 36 位邀请码，只显示这一次。 */
     async invite(p: { name?: unknown; role?: unknown }): Promise<Record<string, unknown>> {
@@ -1169,11 +1230,13 @@ export const membersApi = (d: MembersDeps) => {
         const { local, snap, verified } = checkJoin(x);
         if (verified) snapshots.set(snap.id, snap);
         // 账号新电脑：本机成员表的姓名；本机记的只是成员标识（创始管理员的旧记录）时，用控制面账号上的姓名（第 47 批真实走查：显示成了“admin”）
-        const localName = snap.via === "account" ? (d.db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, `usr_${d.config.firmSlug}_${snap.member_slug}`])?.display_name ?? null) : null;
+        const localName = snap.via === "account" || snap.via === "upgrade" ? (d.db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE tenant_id = ? AND user_id = ?`, [d.identity.tenantId, `usr_${d.config.firmSlug}_${snap.member_slug}`])?.display_name ?? null) : null;
         const accountName = typeof x.account?.name === "string" && x.account.name.trim() ? String(x.account.name).trim().slice(0, 40) : null;
-        const memberName = snap.via === "account" ? (localName && localName !== snap.member_slug ? localName : (accountName ?? localName)) : null;
+        const memberName = snap.via === "account" || snap.via === "upgrade" ? (localName && localName !== snap.member_slug && localName !== `usr_${d.config.firmSlug}_${snap.member_slug}` ? localName : (accountName ?? localName)) : null;
         return {
           id: snap.id,
+          // 第 72 批（U-2）：kind = upgrade 时是“<姓名> 的 <电脑名> 申请接收团队共享事项”
+          ...(snap.via === "upgrade" ? { kind: "upgrade", device_name: snap.device_name ?? null } : {}),
           name: local?.display_name ?? memberName,
           role: local?.role ?? snap.role,
           requested_at: x.created_at,
@@ -1182,7 +1245,7 @@ export const membersApi = (d: MembersDeps) => {
           via: snap.via,
           account_email: snap.account_email,
           // 本机没有发过这个邀请（例如另一台管理员设备发出）：不能在这台电脑上批准
-          local_invite: !!local || snap.via === "account",
+          local_invite: !!local || snap.via === "account" || snap.via === "upgrade",
           // 申请在传送中被改动过（HMAC、设备编号或角色核对不通过）：不要批准
           verified,
         };
@@ -1219,11 +1282,12 @@ export const membersApi = (d: MembersDeps) => {
     },
 
     /** 批准：只用列表时核对过的快照（复核 A-01）；成员编号与角色取本机邀请记录；证书 + 律所公钥包 + 用秘密段对批准结果做的 HMAC。 */
-    async approve(p: { join_request_id?: unknown }): Promise<Record<string, unknown>> {
+    async approve(p: { join_request_id?: unknown; check_code?: unknown }): Promise<Record<string, unknown>> {
       const call = requireCp(d);
       const id = String(p.join_request_id ?? "");
       const snap = snapshots.get(id);
       if (!snap) throw new DomainError("conflict", "请先刷新成员页、核对数字后再批准（只能批准核对通过的申请）", 409);
+      if (snap.via === "upgrade") return approveUpgrade(call, snap, p.check_code);
       const viaAccount = snap.via === "account";
       const local = viaAccount ? undefined : inviteOf(snap.activation_id);
       if (!viaAccount && (!local || local.status !== "open" || local.member_slug !== snap.member_slug || local.role !== snap.role)) throw new DomainError("conflict", "这个邀请已处理过，或不是在这台电脑上发出的", 409);

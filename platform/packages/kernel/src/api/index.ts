@@ -26,6 +26,7 @@ import { SUPPORT_MAX_UPLOAD_BYTES } from "@zr-legal/egress-gate";
 import { supportErrorText } from "../services/support-errors.ts";
 import { parseReminderInput, type ReminderService } from "../services/reminders.ts";
 import { syncAlertsView, type ShareRelaySync } from "../services/share-relay.ts";
+import type { DeviceShareConfirm } from "../services/device-share.ts";
 import { recordSuspectReview, sendPreview, summarizeSend, type SendSummary, type SuspectView } from "../services/send-preview.ts";
 import {
   ConsentStatus,
@@ -211,6 +212,8 @@ export interface ApiDeps {
   reminders?: ReminderService;
   /** 团队事项经中软共享中继同步（第 11 批 S11）。 */
   shareRelay?: ShareRelaySync;
+  /** 第 72 批（U-2，D-304）：账号签发钥登记的团队成员电脑“事后确认”为可接收团队共享事项（成员电脑一侧）。 */
+  deviceShare?: DeviceShareConfirm | null;
 }
 
 type Handler = (params: any, id: Identity) => unknown | Promise<unknown>;
@@ -4331,7 +4334,18 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         const mine = devRows.filter((x) => x.member_id === d.member_id);
         return { n: mine.findIndex((x) => x.device_id === deviceId) + 1, of: mine.length };
       };
-      const nameOfAccount = (aid: string): string | null => (session && session.aid === aid && session.name ? session.name : null);
+      // 第 72 批（设计评分 C10）：团队管理员 / 合伙人看操作记录时，别人的账号编号经团队成员名单对上姓名（凭团队邀请加入的成员原来解析不出名字，
+      // 只能写“成员（编号 xxxx）”）；取不到名单（旧云端、个人空间、离线）就只认本人，与原来相同。名单只在这次调用里用、不落盘
+      const roster = new Map<string, string>();
+      try {
+        if (deps.controlPlane && deps.account && ((await deps.account.features?.()) ?? []).includes("workspaces")) {
+          const r = (await deps.controlPlane.account("GET", "/v1/firm/members")) as { members?: { aid?: unknown; name?: unknown }[] };
+          for (const m of r?.members ?? []) if (typeof m.aid === "string" && typeof m.name === "string" && m.name.trim()) roster.set(m.aid, m.name.trim().slice(0, 40));
+        }
+      } catch {
+        // 名单取不到不影响操作记录本身
+      }
+      const nameOfAccount = (aid: string): string | null => (session && session.aid === aid && session.name ? session.name : roster.get(aid) ?? null);
       // 目标是设备编号或席位编号（复核 S9A-11 后成员相关的对象改记席位编号）：本机自己的席位是本人的；
       // 签发凭据与分配席位的席位属于执行者本人（复核 S9A-24）；收回别人的席位本机不知道是谁的，不写人名
       const mySid = deps.governance?.seatInfo().sid ?? null;
@@ -5722,6 +5736,30 @@ export function createApi(deps: ApiDeps): Record<string, Handler> {
         const r = await accountCp(() => cp.account("PUT", "/v1/firm/policy/member-device", { policy }));
         audit(db, id, "team.policy_member_device", "tenant", id.tenantId, sha256Hex(policy), keyctx);
         return { supported: true, ok: true, ...r };
+      },
+      // 第 72 批（U-2，D-304）：这台由账号签发钥登记的团队成员电脑申请接收团队共享事项（管理员在律所根电脑上核对 12 位核对码后确认）。
+      // state：confirmed（已可接收）/ none / pending（带核对码）/ rejected / expired / withdrawn；云端没有这项能力时 { supported: false }
+      "team.deviceShare.status": async () => {
+        requireCpAccount();
+        const ds = deps.deviceShare;
+        if (!ds) return unsupported();
+        if (ds.issuer() === "firm_root") return { supported: true, state: "confirmed", issuer: "firm_root" };
+        if (!(await has("device_share_confirm"))) return unsupported({ issuer: ds.issuer() });
+        return { supported: true, ...(await ds.status()) };
+      },
+      "team.deviceShare.request": async () => {
+        requireCpAccount();
+        const ds = deps.deviceShare;
+        if (!ds) return unsupported();
+        if (ds.issuer() === "firm_root") return { supported: true, state: "confirmed", issuer: "firm_root" };
+        if (!(await has("device_share_confirm"))) return unsupported({ issuer: ds.issuer() });
+        return { supported: true, ...(await ds.request()) };
+      },
+      "team.deviceShare.withdraw": async () => {
+        requireCpAccount();
+        const ds = deps.deviceShare;
+        if (!ds) return unsupported();
+        return { supported: true, ...(await ds.withdraw()) };
       },
       "account.onboarding": async (p) => {
         const cp = requireCpAccount();

@@ -17,6 +17,8 @@ export interface WorkspaceLike {
   name: string;
   role: WorkspaceRole | null;
   status?: "active" | "disabled";
+  /** 停用的来由（云端 0c91ce19、内核 ac641d4c 转交）：停用 / 被团队移出 / 本人退出。 */
+  disabled_kind?: "disabled" | "removed" | "left" | null;
   current?: boolean;
   local_profile?: boolean;
 }
@@ -165,10 +167,32 @@ export function parseLeftNotice(raw: string | null): { team: string; how: "remov
  */
 export function shareIssuerNote(issuer: unknown, kind: WorkspaceKind | null, admin: boolean): string | null {
   if (kind !== "team" || issuer !== "account_ca") return null;
-  // 第 72 批（U-2，如实）：直接登录的电脑本批还不能事后确认——只说清现状与怎么办，不承诺“确认一下就行”
+  // 第 72 批（U-2b）：已有“事后确认”——申请一次、管理员在团队开通时用的那台电脑上核对确认一次即可接收
   return admin
-    ? "这台电脑是直接登录的，暂不能接收团队共享事项，其它功能不受影响。团队共享事项请在团队开通时用的那台电脑上处理。"
-    : "这台电脑是直接登录的，暂不能接收团队共享事项，其它功能不受影响。团队需要共享事项时，请联系管理员。";
+    ? "这台电脑是直接登录的，还不能接收团队共享事项，其它功能不受影响。申请后，在团队开通时用的那台电脑上“团队设置 · 电脑待确认”里核对确认一次即可接收。"
+    : "这台电脑是直接登录的，还不能接收团队共享事项，其它功能不受影响。申请后请管理员确认一次即可接收。";
+}
+
+/**
+ * 第 72 批（U-2b）：“申请接收团队共享事项”各状态的一句话（团队共享处）。pending 时另显示核对码。纯函数。
+ * state 取自内核 team.deviceShare.*；不支持（旧云端 / 旧内核）返回 null，界面只留上面那句提示。
+ */
+export function shareConfirmLine(s: { supported?: boolean; state?: string; restart?: boolean; problem?: string; offline?: boolean } | null): string | null {
+  if (!s || s.supported !== true) return null;
+  switch (s.state) {
+    case "confirmed":
+      return s.restart ? "这台电脑已可接收团队共享事项，正在重新载入…" : "这台电脑已可接收团队共享事项";
+    case "pending":
+      return s.problem ? "收到的确认结果核对不通过，没有采用：请管理员拒绝后你重新申请；仍不行请联系 Kimi Work 客服" : "已申请：请管理员在团队设置 · 电脑待确认里核对下面的入组核对码后确认";
+    case "rejected":
+      return "管理员没有确认这次申请。需要时可以重新申请";
+    case "expired":
+      return "申请 7 天没有处理，已过期。需要时可以重新申请";
+    case "withdrawn":
+      return s.offline ? "已撤回（联不上云端：云端那份申请 7 天后自动过期）" : "已撤回申请";
+    default:
+      return null;
+  }
 }
 
 /**
@@ -189,7 +213,7 @@ export function teamErrorText(e: unknown, extra: Readonly<Record<string, string>
 
 /** 工作空间切换菜单里一项的小字：首次在这台电脑打开要先登记这台电脑；停用的不能进。纯函数。 */
 export function workspaceMenuMeta(w: WorkspaceLike): string | null {
-  if (w.status === "disabled") return "已停用或已移出";
+  if (w.status === "disabled") return w.disabled_kind === "removed" ? "已移出" : w.disabled_kind === "left" ? "已退出" : w.disabled_kind === "disabled" ? "已停用" : "已停用或已移出";
   if (!w.current && w.local_profile === false) return "首次在这台电脑打开";
   return null;
 }

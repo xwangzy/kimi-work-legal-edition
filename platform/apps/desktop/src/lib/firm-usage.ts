@@ -169,7 +169,7 @@ const ACTIONS: Readonly<Record<string, string>> = {
   "draft.publish": "发布律所策略或律所系统接入",
   "connector.remove": "撤下律所系统接入",
   "device.revoke": "停用设备",
-  "seat.revoke": "收回席位",
+  "seat.revoke": "释放席位",
   "seat.assign": "分配席位",
   "support_token.issue": "签发支持凭据（诊断包上传）",
   "quota.grant": "加量",
@@ -312,12 +312,15 @@ export function auditTime(iso: string, now = Date.now()): string {
   return `${y}${d.getUTCMonth() + 1} 月 ${d.getUTCDate()} 日 ${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 
-/** “谁”：本所成员写姓名（解析不到写“本所成员”）；开通时的根钥匙写“本所（开通时）”；运营写“Kimi Work 运营人员”（不显示工号）；申请人；其余“系统”。 */
+/**
+ * “谁”：本所成员写姓名；解析不到姓名时写“成员（编号后 4 位）”（第 72 批评分 C10：不再笼统写“本所成员”，同一个人的几条记录能对得上）；
+ * 开通时的根钥匙写“本所（开通时）”；运营写“Kimi Work 运营人员”（不显示工号）；申请人；其余“系统”。
+ */
 export function auditWho(r: Pick<AuditRowLike, "actor" | "actor_name">): string {
   switch (r.actor.kind) {
     case "device":
     case "account":
-      return r.actor_name || "本所成员";
+      return r.actor_name || (r.actor.id ? `成员（编号 ${r.actor.id.replace(/[^A-Za-z0-9]/g, "").slice(-4)}）` : "本所成员");
     case "root":
       return "本所（开通时）";
     case "ops":
@@ -341,9 +344,12 @@ export function auditSentence(r: AuditRowLike): { who: string; what: string; imp
     const ord = r.target_ordinal && r.target_ordinal.of > 1 ? `第 ${r.target_ordinal.n} 台电脑` : "电脑";
     return name ? `${name}的${ord}` : "一台电脑";
   };
-  const seat = name ? `${name}的席位` : "一个席位";
-  const account = name ? `${name}的账号` : "一个成员账号";
-  const person = name ?? "一位成员";
+  // 第 72 批评分 C10：对象解析不到姓名时写编号后 4 位（“成员（编号 ab12）”），不再笼统写“一位成员”“一个成员账号”
+  const tail = r.target ? r.target.replace(/[^A-Za-z0-9]/g, "").slice(-4) : "";
+  const anon = tail && (r.target_kind === "account" || /^acc_/.test(r.target ?? "")) ? `成员（编号 ${tail}）` : null;
+  const seat = name ? `${name}的席位` : anon ? `${anon}的席位` : "一个席位";
+  const account = name ? `${name}的账号` : anon ? `${anon}的账号` : "一个成员账号";
+  const person = name ?? anon ?? "一位成员";
   const sameAsActor = !!r.actor_name && r.actor_name === name;
   const S: Record<string, () => string> = {
     "tenant.create": () => (d.seats ? `开通本所（${d.seats} 个席位）` : "开通本所"),
@@ -357,7 +363,7 @@ export function auditSentence(r: AuditRowLike): { who: string; what: string; imp
     "device.revoke": () => `停用了${device()}`,
     "account.device_unbind": () => `解绑了${device()}`,
     "seat.assign": () => (sameAsActor ? "领取了一个席位" : name ? `给${name}分配了席位` : "分配了一个席位"),
-    "seat.revoke": () => `收回了${seat}`,
+    "seat.revoke": () => `释放了${seat}`,
     "seat_token.issue": () => "领取了日常使用凭据",
     "support_token.issue": () => "领取了上传诊断信息的凭据",
     "notify_token.issue": () => "领取了期限提醒的凭据",
@@ -373,7 +379,7 @@ export function auditSentence(r: AuditRowLike): { who: string; what: string; imp
     "account.register": () => "注册了账号",
     "account.read": () => `查看了${account}`,
     "account.disable": () => `停用了${account}`,
-    "account.enable": () => `恢复了${account}`,
+    "account.enable": () => `重新启用了${account}`,
     "account.limits": () => `调整了${person}的个人上限或电脑数`,
     "account.reset_code": () => `给${person}发出了密码重置码`,
     "account.sessions_revoke": () => `让${person}在所有地方退出登录`,
@@ -397,9 +403,56 @@ export function auditSentence(r: AuditRowLike): { who: string; what: string; imp
     "draft.sign": () => "签名同意了律所策略或系统接入的改动",
     "draft.publish": () => "发布了律所策略或系统接入的改动",
     "connector.remove": () => "撤下了一项律所系统接入",
+    // ─── 第 71、72 批新增的动作（团队、工作空间、电脑登录状态；第 72 批评分 C10 第 2 条：每条写清动作与对象） ───
+    "account.role": () => (d.admin === 1 ? `把${person}设为管理员` : d.admin === 0 ? `调整了${person}的角色（非管理员）` : `调整了${person}的角色`),
+    "account.reset_sms": () => `给${person}的手机发了找回密码的验证码`,
+    "account.rebind": () => `给${person}重新绑定了电脑`,
+    "account.device_signout": () => `让${device()}退出了登录`,
+    "account.workspace_switch": () => "切换到这个工作空间",
+    "device.signout": () => `让${device()}退出了登录`,
+    "device.rename": () => `给${device()}改了名字`,
+    "device.auto_enroll": () => (sameAsActor || !name ? "用账号直接登记了一台电脑" : `用账号直接登记了${device()}`),
+    "device.auto_revoke": () => `自动停用了${device()}`,
+    "device.upgrade_request": () => "申请让这台电脑接收团队共享事项",
+    "device.upgrade_withdraw": () => "撤回了接收团队共享事项的申请",
+    "team.member_remove": () => `把${person}移出了团队`,
+    "team.leave": () => "退出了团队",
+    "team.invite_create": () => "发出了一份团队邀请",
+    "team.invite_revoke": () => "撤回了一份团队邀请",
+    "team.invite_accept": () => "用邀请码加入了团队",
+    "team.invite_list": () => "查看了团队邀请",
+    "team.member_device_policy": () => (d.approve === 1 ? "把成员新电脑改为须管理员确认" : d.approve === 0 ? "把成员新电脑改为直接登录" : "调整了成员新电脑的登录方式"),
+    "workspace.upgrade_team": () => (d.seats_to !== undefined && d.seats_from !== undefined && d.seats_to !== d.seats_from ? `把工作室升级为团队（席位 ${d.seats_from} → ${d.seats_to}）` : "把工作室升级为团队"),
+    "tenant.audit": () => "查看了操作记录",
+    "alert.ack": () => "确认了一条用量提醒",
+    "invite.read": () => "查看了注册邀请码",
+    "invite.batch_create": () => "批量生成了注册邀请码",
+    "invite.disable": () => "停用了一个注册邀请码",
+    "invite.disable_many": () => "停用了多个注册邀请码",
+    "invite.batch_disable": () => "停用了一批注册邀请码",
+    "invite.enable": () => "恢复了一个注册邀请码",
+    "people.read": () => `查看了${person}的账号信息`,
+    "roles.read": () => "查看了平台人员角色",
+    "plan.upsert": () => "调整了套餐目录",
+    "pricing.update": () => "调整了计费价格",
+    "registration.policy_update": () => "调整了注册方式",
+    "settings.update": () => "调整了平台设置",
+    "sms.settings_update": () => "调整了短信设置",
+    "sms.test_connection": () => "测试了短信服务连接",
+    "sms.test_send": () => "发送了一条测试短信",
+    "staff.create": () => "新增了平台人员",
+    "usage.backfill": () => "补记了用量",
+    "billing.migration_revert": () => "回退了计费口径迁移",
+    "routing.model_upsert": () => "调整了模型配置",
+    "routing.model_delete": () => "删除了一个模型配置",
+    "routing.provider_upsert": () => "调整了模型服务商",
+    "routing.provider_delete": () => "删除了一个模型服务商",
+    "routing.prices": () => "调整了模型价格",
+    "routing.probe": () => "检测了模型服务连通",
   };
   const f = S[r.action];
-  return { who: auditWho(r), what: f ? f() : "做了一项操作", important: r.actor.kind === "ops" || !ROUTINE_ACTIONS.has(r.action), known: !!f };
+  // 仍不认识的动作写出原始事件名（不再笼统写“做了一项操作”），IT 与客服能据此查
+  return { who: auditWho(r), what: f ? f() : `执行了“${r.action}”`, important: r.actor.kind === "ops" || !ROUTINE_ACTIONS.has(r.action), known: !!f };
 }
 
 export type AuditFilter = "important" | "all";

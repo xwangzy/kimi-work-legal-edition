@@ -15,6 +15,7 @@ import {
   leaveLines,
   resolveKind,
   roleOfMember,
+  shareConfirmLine,
   shareIssuerNote,
   teamErrorText,
   teamNameOk,
@@ -25,7 +26,7 @@ import {
   workspaceMenuMeta,
   workspaceRoleTag,
 } from "../src/lib/workspace.ts";
-import { adminErrorText, devicesCell, memberActions, memberMenu, memberStatus, removeLines, seatSummary, splitInvites, type TeamMemberRow } from "../src/lib/team-admin.ts";
+import { adminErrorText, devicesCell, MEMBER_DEVICE_POLICY, memberActions, memberMenu, memberStatus, removeLines, sameCheckCode, seatSummary, splitInvites, upgradeTitle, type TeamMemberRow } from "../src/lib/team-admin.ts";
 import { deviceLimitOf, switchOutcome, waitForProfileSwitch } from "../src/lib/account-switch.ts";
 
 const src = (p: string) => readFileSync(fileURLToPath(new URL(`../src/${p}`, import.meta.url)), "utf8");
@@ -106,10 +107,10 @@ test("危险操作的后果写清（D-305）：升级四件事（不可撤回在
 });
 
 test("团队共享提示（D-304）：只在团队空间、账号直接登记的电脑上出现；管理员与成员说法不同；个人空间不出现", () => {
-  // 第 72 批（U-2）：直接登录的电脑本批不能事后确认——提示只说现状与找谁，不承诺“管理员确认一下就行”
-  assert.match(shareIssuerNote("account_ca", "team", false)!, /^这台电脑是直接登录的，暂不能接收团队共享事项，其它功能不受影响。团队需要共享事项时，请联系管理员。$/);
-  assert.doesNotMatch(shareIssuerNote("account_ca", "team", false)!, /确认/);
-  assert.match(shareIssuerNote("account_ca", "team", true)!, /团队开通时用的那台电脑/);
+  // 第 72 批（U-2b）：已有事后确认——申请一次、管理员确认一次即可接收
+  assert.match(shareIssuerNote("account_ca", "team", false)!, /^这台电脑是直接登录的，还不能接收团队共享事项，其它功能不受影响。申请后请管理员确认一次即可接收。$/);
+  assert.match(shareIssuerNote("account_ca", "team", true)!, /团队开通时用的那台电脑上“团队设置 · 电脑待确认”里核对确认一次即可接收/);
+  for (const admin of [false, true]) assert.doesNotMatch(shareIssuerNote("account_ca", "team", admin)!, /律所根|签发钥|证书|暂不能/);
   assert.equal(shareIssuerNote("firm_root", "team", false), null);
   assert.equal(shareIssuerNote("account_ca", "personal", false), null);
   assert.equal(shareIssuerNote(null, "team", false), null);
@@ -240,7 +241,9 @@ test("接线：团队共享提示、范本库名称、团队管理的危险操�
   // 评分 C10：停用 / 释放 / 移出收进行尾菜单，各有确认框（释放可逆，用中性按钮；停用、移出红色）
   assert.match(a, /<RowMenu/);
   assert.match(a, /ask\?\.kind === "release"[\s\S]{0,600}className="btn-primary btn-sm"/);
-  assert.match(a, /ask\?\.kind === "disable"[\s\S]{0,700}className="btn-danger-solid btn-sm"/);
+  // 第二轮评分：停用可逆，不用危险红；危险红只给移出
+  assert.match(a, /ask\?\.kind === "disable"[\s\S]{0,900}className="btn-primary btn-sm"/);
+  assert.match(a, /ask\?\.kind === "remove"[\s\S]{0,1400}className="btn-danger-solid btn-sm"/);
   assert.match(a, /\{dueLabel\(x\.expires_at\)\} 前有效/, "C10 第 4 条：日期通用写法");
   assert.match(a, /<ConfirmButton label="撤回"/);
   assert.match(a, /disabled=\{!ask\.ack \|\| busy !== null\} onClick=\{\(\) => void run\(`rm-/, "移出要勾选“已交接完”");
@@ -285,4 +288,53 @@ test("评分第一轮：日期通用写法、被移出后的一次性提示、�
   const sb = code("components/Sidebar.tsx");
   assert.match(sb, /leftNoticeText\(leftNote!, wsCur!\.name\)/);
   assert.match(sb, /localStorage\.removeItem\(LEFT_NOTICE_KEY\)/, "显示一次即清");
+});
+
+test("第二轮评分 C10 / C16：设置页签不折行；操作记录写清动作与人；工作空间菜单按 disabled_kind 写状态；化名效果检测", async () => {
+  const css = readFileSync(fileURLToPath(new URL("../src/styles-team.css", import.meta.url)), "utf8");
+  assert.match(css, /\.set-page\.set-page > \.tabs-line \{ flex-wrap: nowrap; overflow-x: auto;/);
+  assert.match(css, /\.set-page > \.tabs-line > \.tab\.tab \{ flex: none; white-space: nowrap; \}/);
+  assert.match(css, /@media \(max-width: 1200px\) \{ \.set-page > \.tabs-line > \.tab\.tab \{ padding-left: var\(--sp-2\)/, "960 宽下九个页签一行放得下");
+  const { auditSentence, auditWho } = await import("../src/lib/firm-usage.ts");
+  const row = (action: string, o: Record<string, unknown> = {}) => ({ actor: { kind: "account", id: "acc_ab12" }, actor_name: "陈律师", action, target: "acc_x", target_name: "李律师", result: "ok", detail: undefined, ...o }) as never;
+  assert.equal(auditSentence(row("team.member_remove")).what, "把李律师移出了团队");
+  assert.equal(auditSentence(row("account.role", { detail: { admin: 1 } })).what, "把李律师设为管理员");
+  assert.equal(auditSentence(row("team.member_device_policy", { detail: { approve: 1 } })).what, "把成员新电脑改为须管理员确认");
+  assert.equal(auditSentence(row("seat.revoke")).what, "释放了李律师的席位");
+  for (const a of ["team.invite_create", "team.invite_revoke", "team.invite_accept", "team.leave", "workspace.upgrade_team", "account.device_signout", "device.auto_enroll", "account.reset_sms", "account.workspace_switch"]) assert.equal(auditSentence(row(a)).known, true, a);
+  assert.doesNotMatch(auditSentence(row("x.new_thing")).what, /做了一项操作/);
+  assert.equal(auditWho({ actor: { kind: "account", id: "acc_9z8y7x" }, actor_name: null }), "成员（编号 8y7x）");
+  assert.equal(workspaceMenuMeta({ aid: "a", kind: "team", name: "x", role: "lawyer", current: false, status: "disabled", disabled_kind: "removed" }), "已移出");
+  assert.equal(workspaceMenuMeta({ aid: "a", kind: "team", name: "x", role: "lawyer", current: false, status: "disabled", disabled_kind: "left" }), "已退出");
+  assert.equal(workspaceMenuMeta({ aid: "a", kind: "team", name: "x", role: "lawyer", current: false, status: "disabled", disabled_kind: "disabled" }), "已停用");
+  const c = code("pages/Connections.tsx");
+  assert.match(c, /\["recall", "化名效果检测"\]/);
+  assert.doesNotMatch(c, /代号准确度"\]/);
+  const policy = c.slice(c.indexOf("function PolicyTab("));
+  assert.match(policy, /<dl className="policy-rules">/, "生效策略逐条分行");
+  assert.doesNotMatch(policy.slice(0, 6000), /有效至 \$\{fmtTime/, "日期用通用写法");
+});
+
+test("申请接收团队共享事项（U-2b）：各状态一句话；不支持时不出现；电脑待确认的标题与核对码逐位比对；成员新电脑策略不再说“暂不能”", () => {
+  assert.equal(shareConfirmLine(null), null);
+  assert.equal(shareConfirmLine({ supported: false }), null);
+  assert.equal(shareConfirmLine({ supported: true, state: "none" }), null, "还没申请：只有按钮");
+  assert.match(shareConfirmLine({ supported: true, state: "pending" })!, /请管理员在团队设置 · 电脑待确认里核对下面的入组核对码后确认/);
+  assert.match(shareConfirmLine({ supported: true, state: "pending", problem: "cert_invalid" })!, /核对不通过，没有采用/);
+  assert.equal(shareConfirmLine({ supported: true, state: "confirmed" }), "这台电脑已可接收团队共享事项");
+  assert.match(shareConfirmLine({ supported: true, state: "confirmed", restart: true })!, /正在重新载入/);
+  assert.match(shareConfirmLine({ supported: true, state: "rejected" })!, /可以重新申请/);
+  assert.match(shareConfirmLine({ supported: true, state: "expired" })!, /7 天没有处理/);
+  assert.match(shareConfirmLine({ supported: true, state: "withdrawn", offline: true })!, /7 天后自动过期/);
+  for (const st of ["pending", "confirmed", "rejected", "expired", "withdrawn"]) assert.doesNotMatch(shareConfirmLine({ supported: true, state: st })!, /律所根|签发钥|证书|租户/);
+  assert.equal(upgradeTitle({ name: "张律师", device_name: "办公室 iMac" }), "张律师 的 办公室 iMac 申请接收团队共享事项");
+  assert.equal(upgradeTitle({ name: "张律师", device_name: null }), "张律师 的电脑申请接收团队共享事项");
+  assert.equal(sameCheckCode("014926557893", "014 926 557 893"), true);
+  assert.equal(sameCheckCode("014-926-557-893", "014 926 557 893"), true);
+  assert.equal(sameCheckCode("014926557894", "014 926 557 893"), false);
+  assert.equal(sameCheckCode("01492655789", "014 926 557 893"), false, "不满 12 位不算");
+  assert.equal(sameCheckCode("", ""), false);
+  assert.doesNotMatch(MEMBER_DEVICE_POLICY.auto.hint, /暂不能/);
+  assert.match(MEMBER_DEVICE_POLICY.auto.hint, /申请一次、你在“电脑待确认”里核对确认一次即可/);
+  assert.equal(adminErrorText({ detail: { reason: "check_code_mismatch" } }).startsWith("入组核对码不一致"), true);
 });

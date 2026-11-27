@@ -33,7 +33,7 @@ import { MembersAdmin } from "../components/MembersAdmin.tsx";
 import { MemberDevicePolicy, TeamAdmin } from "../components/TeamAdmin.tsx";
 import { LeaveTeam, TeamHeader, WorkspaceSection } from "../components/TeamSpace.tsx";
 import { useWorkspace, type WorkspaceState } from "../components/WorkspaceSwitch.tsx";
-import { shareIssuerNote } from "../lib/workspace.ts";
+import { dueLabel, shareIssuerNote } from "../lib/workspace.ts";
 import { BackupTrack } from "../components/RecoveryBackup.tsx";
 import { AuthorizationOverview } from "../components/AuthorizationOverview.tsx";
 import { Offboarding } from "../components/Offboarding.tsx";
@@ -1010,7 +1010,8 @@ function AdminTab({ legacyMembers = false, withPolicy = true, ...props }: { caps
             ...(withPolicy ? ([["policy", "团队策略"]] as const) : []),
             ["cp_audit", "操作记录"],
             ["support", "技术支持"],
-            ["recall", "代号准确度"],
+            // 第 72 批评分 C10 第 4 条：“代号准确度”是内部说法——测的是姓名、机构等能不能都被换成化名
+            ["recall", "化名效果检测"],
           ] as const
         ).map(([k, label]) => (
           <button key={k} role="tab" aria-selected={sub === k} className={`tab${sub === k ? " active" : ""}`} onClick={() => setSub(k)}>
@@ -1447,7 +1448,8 @@ function policyLine(st: ControlPlaneStatus): string {
   }
   // 第 56 批：签名人是成员编号（usr_…），不显示给律师——只说有几名管理员确认过；是谁、何时，在“操作记录”里
   const who = p.signers.length > 0 ? `已由 ${p.signers.length} 名管理员确认` : "最严设置，Kimi Work 服务签发";
-  return `律所策略第 ${p.version} 版（${who}）· 有效至 ${fmtTime(p.expires_at ?? "")}`;
+  // 第 72 批评分 C10 第 3 条：日期统一“12 月 27 日 12:00”（跨年写年份），与操作记录同一写法
+  return `本所规则第 ${p.version} 版（${who}）· ${dueLabel(p.expires_at)} 前有效`;
 }
 
 function PolicyTab() {
@@ -1486,12 +1488,22 @@ function PolicyTab() {
           <div className="device-k">生效策略</div>
           <div>
             <b>{policyLine(st)}</b>
+            {/* 第 72 批评分 C10 第 4 条：逐条分行（规则名：取值），取值不在词中折行 */}
             {pol && (
-              <div className="muted">
-                AI 最高档位：{MODE_TEXT[pol.body.max_mode] ?? pol.body.max_mode} ·
-                官方网站之外还可打开的网站：{pol.body.fetch_allowlist_extra.length > 0 ? pol.body.fetch_allowlist_extra.join("、") : "无（只限法院、政府等官方网站）"} ·
-                敏感事项用通用 AI 服务：{pol.body.l3a_standard_model === "allow" ? "可以（全部化名）" : "不可以"}
-              </div>
+              <dl className="policy-rules">
+                <div>
+                  <dt>AI 最多能自己做到哪一步</dt>
+                  <dd>{MODE_TEXT[pol.body.max_mode] ?? pol.body.max_mode}</dd>
+                </div>
+                <div>
+                  <dt>官方网站之外还能打开的网站</dt>
+                  <dd>{pol.body.fetch_allowlist_extra.length > 0 ? pol.body.fetch_allowlist_extra.join("、") : "没有（只限法院、政府等官方网站）"}</dd>
+                </div>
+                <div>
+                  <dt>敏感事项能否用通用 AI 服务</dt>
+                  <dd>{pol.body.l3a_standard_model === "allow" ? "可以（全部化名后发送）" : "不可以"}</dd>
+                </div>
+              </dl>
             )}
             {pol && pol.relaxations.length > 0 && <div className="muted">比最严设置宽的地方：{pol.relaxations.map(relaxationText).join("；")}</div>}
           </div>
@@ -1501,25 +1513,27 @@ function PolicyTab() {
             <div className="device-row">
               <div className="device-k">许可</div>
               <div>
-                {st.license?.state === "valid" ? `有效至 ${fmtTime(st.license.expires_at ?? "")}（${st.license.edition === "firm" ? "律所版" : "团队版"}，${st.license.seats} 席）` : st.license?.state === "expired" ? "已到期：不能再发起新任务，已有成果可以查看和导出" : "尚未取得"}
+                {st.license?.state === "valid" ? `${dueLabel(st.license.expires_at)} 前有效（${st.license.edition === "firm" ? "律所版" : "团队版"}，${st.license.seats} 个席位）` : st.license?.state === "expired" ? "已到期：不能再发起新任务，已有成果可以查看和导出" : "尚未取得"}
                 <div className="muted">
                   {st.admin_threshold_pinned === false
-                    ? "首次取得许可前，不能放宽本所规则。"
-                    : `放宽本所规则须 ${st.admin_threshold ?? 1} 名管理员各自在自己电脑上确认。`}
+                    ? "取得许可之前，本所规则只能比最严设置更严。"
+                    : (st.admin_threshold ?? 1) > 1
+                      ? `要把本所规则放宽，需要 ${st.admin_threshold} 位管理员分别在自己的电脑上同意。`
+                      : "要把本所规则放宽，需要管理员在自己的电脑上同意。"}
                 </div>
               </div>
             </div>
             <div className="device-row">
               <div className="device-k">离线可用</div>
               <div>
-                {st.seat?.has_token && st.seat.expires_at ? `断网也能用到 ${fmtTime(st.seat.expires_at)}；联网后会自动延长` : "暂时用不了 Kimi 和联网检索（还没连上中软，或本所许可已失效），本机功能不受影响"}
+                {st.seat?.has_token && st.seat.expires_at ? `断网也能用到 ${dueLabel(st.seat.expires_at)}；联网后会自动延长` : "暂时用不了 Kimi 和联网检索（还没连上中软，或本所许可已失效），本机功能不受影响"}
 
               </div>
             </div>
             <div className="device-row">
               <div className="device-k">Kimi Work 服务</div>
               <div>
-                {st.last_sync ? `上次同步 ${fmtTime(st.last_sync.at)} · ${st.last_sync.ok ? "正常" : "部分未完成（本机已接受的内容继续有效）"}` : "尚未同步"}
+                {st.last_sync ? `上次同步 ${dueLabel(st.last_sync.at)} · ${st.last_sync.ok ? "正常" : "部分未完成（本机已接受的内容继续有效）"}` : "尚未同步"}
                 {st.directory?.stale && <div className="muted">已登记电脑的名单过期未更新：已知的停用保持，新的停用信息可能不完整。</div>}
                 {(st.pending_actions ?? []).length > 0 && (
                   <div className="muted">
@@ -1582,7 +1596,7 @@ function PolicyTab() {
       )}
       <div className="section-title">已登记的律所系统接入</div>
       {(st.connectors ?? []).length === 0 ? (
-        <p className="muted">没有。还没有接入本所系统（如 OA、案件管理）。接入须管理员在自己电脑上确认；本所规则失效、改按最严设置运行时一律不可用。</p>
+        <p className="muted">还没有接入本所系统（如 OA、案件管理）。接入要管理员在自己的电脑上同意；本所规则过期时，接入会暂停使用。</p>
       ) : (
         <table className="data">
           <thead><tr><th>律所系统接入</th><th>版本</th><th>服务地址</th><th>可接收至</th><th>工具数</th><th>签名管理员</th></tr></thead>

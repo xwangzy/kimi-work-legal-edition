@@ -239,6 +239,9 @@ export function validName(v: unknown): v is string {
 /** 由邮箱前缀生成成员标识 / 律所标识的基底（小写字母数字，3–20 位，不足补随机）。 */
 export function slugBase(email: string | null): string {
   const local = (email ?? "").split("@")[0]!.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 16);
+  // 第 72 批（控制台评审）：邮箱前缀里有连续 7 位以上数字（多半是手机号、证件号，如 13912345678@163.com）时不用它——
+  // 律所 / 成员编号会写进设备编号、证书与控制台，不能带出这类号码；改用随机标识（已有编号不变）
+  if (/\d{7,}/.test(local)) return `u${randomBytes(3).toString("hex")}`;
   return local.length >= 3 ? local : `u${randomBytes(3).toString("hex")}`;
 }
 

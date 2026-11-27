@@ -128,7 +128,12 @@ export function Sidebar({ route }: { route: Route }) {
   useEffect(() => {
     loadQuota();
     const t = setInterval(loadQuota, 5 * 60_000);
-    return () => clearInterval(t);
+    // 第 72 批（F5）：云端同步由失败转为成功时内核广播 cloud.synced——立即重取（原来要等 5 分钟，套餐标识一直缺失）
+    const off = onKernelEvent((m) => (m?.type === "cloud.synced" ? loadQuota() : undefined));
+    return () => {
+      clearInterval(t);
+      off();
+    };
   }, []);
   useEffect(() => onDataChanged(() => setTick((t) => t + 1)), []);
   // 任务状态变化（开始等待、结束）时刷新侧栏状态点；运行中另每 5 秒刷新一次

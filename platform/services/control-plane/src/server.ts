@@ -225,6 +225,13 @@ export interface JoinRequestRecord {
   mac?: string;
   /** 管理员机用同一秘密对批准结果做的 HMAC（复核 A-03：成员机据此认律所根与证书，不再首次信任）。 */
   admin_mac?: string | null;
+  /**
+   * 第 72 批（U-2，D-304）：upgrade = 已由账号签发钥登记的团队成员电脑申请“接收团队共享事项”（事后确认）——没有邀请（activation_id 为空串），
+   * 设备编号与两把公钥取自这台电脑现有的设备记录；律所根电脑的管理员批准后，控制面把设备记录的证书原位换成律所根签的新证书。缺省 = 入组申请。
+   */
+  kind?: "upgrade";
+  /** upgrade：发起申请的成员身份（账号编号）。 */
+  aid?: string;
 }
 
 export interface TenantRecord {
@@ -1266,6 +1273,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
           codeIndex.delete(r.code_mac);
           removed += 1;
         }
+        // 第 72 批（U-2）：电脑“接收团队共享事项”申请没有邀请——处理完（或 7 天未处理过期）31 天后删掉
+        for (const jr of [...t.joinRequests.values()]) {
+          if (jr.kind !== "upgrade") continue;
+          const end = jr.status === "pending" ? Date.parse(jr.created_at) + 7 * DAY_MS : Date.parse(jr.decided_at ?? "") || Date.parse(jr.created_at) + 7 * DAY_MS;
+          if (end + 31 * DAY_MS > t0) continue;
+          t.joinRequests.delete(jr.id);
+          removed += 1;
+        }
       }
       return { names_cleared: names, records_removed: removed };
     },
@@ -1551,6 +1566,22 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (effectiveRoleOf(t, dev) !== "admin") throw new CpError(403, "admin_required", "需要管理员设备");
     // 第 66 批（V40，D-292）：控制面签的账号设备证书不能做团队管理动作（批准成员、发邀请、发布策略与连接器、设律所上限）——只认律所根签发的电脑
     if (certIssuerOf(dev.cert) === "account_ca") throw new CpError(403, "firm_root_device_required", "这项操作只能在律所开通时的那台电脑上进行");
+  };
+
+  /**
+   * 第 72 批（U-2）：一份“接收团队共享事项”申请此刻还能不能批准——设备记录仍在、未吊销、仍是账号签发钥签的、两把公钥与申请一致；
+   * 成员身份有效（未停用 / 未移出、这个人未被平台停用）、就是这台电脑证书上的成员；申请里的角色不高于账号当前角色。
+   */
+  /** 第 72 批（U-2）：这台电脑有没有一份仍有效、等管理员确认的“接收团队共享事项”申请（电脑行只读显示用）。 */
+  const sharePending = (t: TenantRecord, deviceId: string): boolean =>
+    [...t.joinRequests.values()].some((x) => x.kind === "upgrade" && x.device_id === deviceId && x.status === "pending" && Date.parse(x.created_at) + 7 * DAY_MS > now());
+  const upgradeLive = (t: TenantRecord, jr: JoinRequestRecord): boolean => {
+    const d = t.devices.get(jr.device_id);
+    if (!d || d.revoked_at || certIssuerOf(d.cert) !== "account_ca") return false;
+    if (d.cert.signPublicKeyPem !== jr.sign_pub || d.cert.encPublicKeyPem !== jr.enc_pub) return false;
+    const acc = accounts.get(jr.aid ?? "");
+    if (!acc || acc.tid !== t.tid || uidOfAccount(acc) !== d.cert.memberId || !memberActive(acc)) return false;
+    return (ROLE_RANK[jr.role] ?? 99) <= (ROLE_RANK[acc.role] ?? -1) && (ROLE_RANK[jr.role] ?? 99) <= (ROLE_RANK[d.cert.role] ?? -1);
   };
 
   /**
@@ -1895,11 +1926,16 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
    * 第 72 批（验收 Q-1）：电脑“最近使用” = 这台电脑最近一次真实活动——它上面的会话核对（aid 给了只看这个账号的）、设备签名请求、网关计量里这台的最近一条，取最近者。
    * 原来只取会话 last_seen_at（按小时才续写，网关调用也不更新），正在用的电脑会显示成很久没用、被“预选最久没用的”选中而打断任务。
    */
+  // 第 72 批（F6 真实复测）：“最近使用”只算真实使用——这台电脑最近一次 AI 调用（网关计量）、在这台电脑上登录 / 会话建立的时刻；
+  // **不算**客户端每 2 分钟一次的会话核对与设备签名的后台同步（原口径把它们算进来，闲置的电脑永远是“刚刚用过”，两台打平时
+  // 按顺序预选了正在跑任务的那台——正是 Q-1 要避免的）。会话核对与设备签名仍记在内存里，只用于会话视图的“在线”判断。
   const deviceLastActive = (tid: string, deviceId: string, aid: string | null): string | null => {
-    let best = deviceSeen.get(`${tid}\u0000${deviceId}`) ?? 0;
+    let best = 0;
     const u = book.deviceLastAt(tid, deviceId);
     if (u) best = Math.max(best, Date.parse(u) || 0);
-    for (const x of sessions.values()) if (x.device_id === deviceId && (aid ? x.aid === aid : accounts.get(x.aid)?.tid === tid)) best = Math.max(best, sessionSeenAt(x));
+    for (const x of sessions.values()) if (x.device_id === deviceId && (aid ? x.aid === aid : accounts.get(x.aid)?.tid === tid)) best = Math.max(best, Date.parse(x.created_at) || 0);
+    const owners = aid ? [accounts.get(aid)] : [...accounts.values()].filter((y) => y.tid === tid);
+    for (const a of owners) for (const l of a?.logins ?? []) if (l.device_id === deviceId) best = Math.max(best, Date.parse(l.at) || 0);
     return best > 0 ? new Date(best).toISOString() : null;
   };
   /**
@@ -2546,7 +2582,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 第 71 批（第二轮，07）：成员姓名与系统（最近一次桌面登录上报的），界面用来显示“某某的 Mac”这类派生名
     const lastDesk = [...sessions.values()].filter((x) => x.device_id === d.cert.deviceId && x.kind === "desktop" && accounts.get(x.aid)?.tid === t.tid).sort((x, y) => y.last_seen_at.localeCompare(x.last_seen_at))[0];
     // 第 72 批（D-304）：issuer——firm_root（律所根签发，可接收团队共享事项）/ account_ca（账号签发钥直接登记，团队共享前待管理员确认）
-    return { tid: t.tid, tenant_name: t.name ?? t.tid.replace(/^ten_/, ""), issuer: certIssuerOf(d.cert), device_id: a ? d.cert.deviceId : `fp:${certFingerprint(d.cert)}`, name: d.name ?? null, member_name: a?.name ?? null, platform: lastDesk?.client.platform ?? null, uid: a ? d.cert.memberId : null, aid: a?.aid ?? null, email: a?.email ?? null, role: d.cert.role, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, last_active_at: deviceLastActive(t.tid, d.cert.deviceId, null), registered_at: d.registered_at, revoked_at: d.revoked_at, session: live ? "active" : "none", state, flags };
+    return { tid: t.tid, tenant_name: t.name ?? t.tid.replace(/^ten_/, ""), issuer: certIssuerOf(d.cert), share_pending: sharePending(t, d.cert.deviceId), device_id: a ? d.cert.deviceId : `fp:${certFingerprint(d.cert)}`, name: d.name ?? null, member_name: a?.name ?? null, platform: lastDesk?.client.platform ?? null, uid: a ? d.cert.memberId : null, aid: a?.aid ?? null, email: a?.email ?? null, role: d.cert.role, client_version: d.client_version ?? null, last_seen_on: d.client_seen_on ?? null, last_active_at: deviceLastActive(t.tid, d.cert.deviceId, null), registered_at: d.registered_at, revoked_at: d.revoked_at, session: live ? "active" : "none", state, flags };
   };
   const cmpVer = (x: string, y: string): number => {
     const px = x.split(/[.-]/).map((n) => Number(n) || 0);
@@ -2615,7 +2651,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       locked: locked(a, now()) > 0,
       locked_s: locked(a, now()),
       // 第四轮（05）：待律所管理员批准的新电脑台数；是否占席（个人客户不讲席位，给 null）
-      devices_pending: t ? [...t.joinRequests.values()].filter((j) => j.status === "pending" && j.member_slug === a.member_slug).length : 0,
+      devices_pending: t ? [...t.joinRequests.values()].filter((j) => j.status === "pending" && j.kind !== "upgrade" && j.member_slug === a.member_slug).length : 0,
       seat_used: t && !personalOf(t) ? ((s) => !!s && !s.revoked_at)(t.seatsByUser.get(uidOfAccount(a))) : null,
     };
   };
@@ -3386,7 +3422,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
               uid: uidOfAccount(a),
               seat: seat ? { sid: seat.sid, revoked_at: seat.revoked_at } : null,
               tenant: tr ? { tid: tr.tid, name: tr.name, status: tr.status, personal: tr.personal, edition: tr.edition, plan: tr.plan, paused: tr.paused, used_ratio: tr.used_ratio, cap_pct: tr.cap_pct, subscription_until: tr.subscription_until, accounts_required: tr.accounts_required, seats: tr.seats, seats_used: tr.seats_used } : null,
-              join_requests_pending: t ? [...t.joinRequests.values()].filter((j) => j.status === "pending" && j.member_slug === a.member_slug).map((j) => ({ id: j.id, created_at: j.created_at })) : [],
+              join_requests_pending: t ? [...t.joinRequests.values()].filter((j) => j.status === "pending" && j.kind !== "upgrade" && j.member_slug === a.member_slug).map((j) => ({ id: j.id, created_at: j.created_at })) : [],
               // 第 71 批（第二轮，09）：律所管理员（有效的）——诊断里写出该找谁批准新电脑；手机号只给打码
               firm_admins: t && a.role !== "admin" ? [...accounts.values()].filter((y) => y.tid === t.tid && y.role === "admin" && y.status === "active").map((y) => ({ aid: y.aid, name: y.name, email: emailOf(y), phone: phoneOfPerson(y)?.masked ?? null })) : [],
               devices: t ? accountDevices(a).map((d) => deviceRow(t, d)) : [],
@@ -3479,7 +3515,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         if (status === "revoked") list = list.filter((d) => d.revoked_at);
         if (flag) list = list.filter((d) => d.flags.includes(flag));
         // 第 71 批（第二轮，G2）：待律所管理员批准的新电脑（入组申请），单列给出；界面并进电脑表，状态“待批准”
-        const pending = [...tenants.values()].filter((t) => !tid || t.tid === tid).flatMap((t) => [...t.joinRequests.values()].filter((j) => j.status === "pending").map((j) => {
+        const pending = [...tenants.values()].filter((t) => !tid || t.tid === tid).flatMap((t) => [...t.joinRequests.values()].filter((j) => j.status === "pending" && j.kind !== "upgrade").map((j) => {
           const acc = [...accounts.values()].find((y) => y.tid === t.tid && y.member_slug === j.member_slug);
           return { tid: t.tid, tenant_name: t.name ?? t.tid.replace(/^ten_/, ""), join_id: j.id, aid: acc?.aid ?? null, email: acc ? emailOf(acc) : null, member_name: acc?.name ?? null, created_at: j.created_at, state: "pending" };
         }));
@@ -3758,7 +3794,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
             devices: canAcc ? [...t.devices.values()].map((d) => deviceRow(t, d)) : [],
             // 第 71 批（I-4）：待本所管理员批准的入组申请（只读；核对码只在管理员电脑上显示，这里不给）
             join_requests: canAcc
-              ? [...t.joinRequests.values()].filter((j) => j.status === "pending").map((j) => {
+              ? [...t.joinRequests.values()].filter((j) => j.status === "pending" && j.kind !== "upgrade").map((j) => {
                   // 账号登录发起的入组没有成员邀请（activation 查不到）：姓名取账号上的，不露成员标识
                   const acc = [...accounts.values()].find((y) => y.tid === t.tid && y.member_slug === j.member_slug);
                   return { id: j.id, member_name: acc?.name ?? t.activations.get(j.activation_id)?.member.name ?? null, aid: acc?.aid ?? null, created_at: j.created_at };
@@ -4962,7 +4998,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 第 62 批：registration_policy / sms_available / features 是能力字段——客户端按它们做特性检测（旧云端没有，客户端照旧流程注册）
     if (method === "GET" && p === "/v1/meta") {
       const pol = registrationPolicy();
-      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites", "phone_login", "phone_bind", "account_switch", "device_limit_unbind", "device_name", "usage_request_ids", "device_signout", ...(accountCa() ? ["device_auto_enroll"] : []), "workspaces", "team_invites", ...(accountCa() ? ["team_member_auto_enroll"] : []), "onboarding_state", "catalog_epoch"], account_switch: true, ...(accountCa() ? { account_device_ca: { kid: accountCa()!.kid } } : {}) });
+      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites", "phone_login", "phone_bind", "account_switch", "device_limit_unbind", "device_name", "usage_request_ids", "device_signout", ...(accountCa() ? ["device_auto_enroll"] : []), "workspaces", "team_invites", ...(accountCa() ? ["team_member_auto_enroll", "device_share_confirm"] : []), "onboarding_state", "catalog_epoch"], account_switch: true, ...(accountCa() ? { account_device_ca: { kid: accountCa()!.kid } } : {}) });
     }
     if (p.startsWith("/v1/me/") || p.startsWith("/v1/firm/") || p === "/v1/workspace/upgrade" || p.startsWith("/v1/team/") || p.startsWith("/v1/teams/")) return memberRoute(req, res, method, path, p, url, raw);
 
@@ -5023,6 +5059,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const body: DeviceRevocationNotice = { tid: t.tid, device_id: cert.deviceId, revoked_at: revokedAt };
         throw new CpError(403, "device_revoked", "设备已吊销", { notice: await seal("kwl-device-revoked", body) });
       }
+      // 第 72 批（U-2）：已确认可接收团队共享事项（设备记录是律所根签的证书）的电脑，不再接受它旧的账号签发钥证书——不降级、不覆盖
+      if (existing && certIssuerOf(existing.cert) === "firm_root" && cv.issuer === "account_ca") throw new CpError(409, "device_cert_superseded", "这台电脑的证书已由律所根换发：请重新启动客户端取回新证书");
       const changed = !existing || existing.cert.signature !== cert.signature;
       if (changed) {
         t.devices.set(cert.deviceId, { cert, registered_at: iso(), revoked_at: null });
@@ -5163,7 +5201,8 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     // 成员取回申请结果（凭认领凭据；批准后附证书与律所根公钥）
     const rjf = /^\/v1\/join-requests\/([A-Za-z0-9_-]{1,64})\/fetch$/.exec(p);
-    if (method === "POST" && rjf) {
+    // 第 72 批（U-2）：带设备签名的取回 / 撤回是“接收团队共享事项”申请（凭这台电脑的设备签名），在下面设备签名一节处理
+    if (method === "POST" && rjf && req.headers["x-kwl-device"] === undefined) {
       const b = parseJson(raw);
       const t = claimTenant(b.tid);
       const jr = t.joinRequests.get(rjf[1]!);
@@ -5177,7 +5216,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     }
     // 成员撤回自己的待批准申请（复核 A-09：“重新输入”时让控制面也放下，不必等 7 天）
     const rjw = /^\/v1\/join-requests\/([A-Za-z0-9_-]{1,64})\/withdraw$/.exec(p);
-    if (method === "POST" && rjw) {
+    if (method === "POST" && rjw && req.headers["x-kwl-device"] === undefined) {
       const b = parseJson(raw);
       const t = claimTenant(b.tid);
       const jr = t.joinRequests.get(rjw[1]!);
@@ -5620,11 +5659,70 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       viaRoute(() => ops.revokeActivationCode(t.tid, r.id, { by: dev.cert.deviceId }));
       return send(res, 200, { ok: true });
     }
+    // ─── 第 72 批（U-2，D-304）：账号签发钥登记的团队成员电脑申请“接收团队共享事项”（事后确认） ───
+    // 发起：本人账号会话 + 这台 account_ca 电脑的设备签名；成员身份有效、团队空间；同一台同时只一个待处理申请（重发原样返回）。
+    // 申请只引用这台电脑现有设备记录里的编号与两把公钥（请求体不带公钥——控制面与成员都改不了申请里的公钥）
+    if (method === "POST" && p === "/v1/join-requests/upgrade") {
+      const me = sessionOf(req, true)!;
+      if (me.a.tid !== t.tid || uidOfAccount(me.a) !== dev.cert.memberId) throw new CpError(403, "session_member_mismatch", "登录的账号不是这台电脑上的成员：请用本机成员的账号重新登录");
+      if (me.s.kind !== "desktop" || me.s.device_id !== dev.cert.deviceId) throw new CpError(401, "session_invalid", "登录已失效，请重新登录");
+      requireDeviceMemberActive(t, dev);
+      if (personalOf(t)) throw new CpError(409, "team_only", "个人工作空间没有团队共享事项");
+      if (certIssuerOf(dev.cert) !== "account_ca") throw new CpError(409, "already_firm_root", "这台电脑已可接收团队共享事项");
+      if (!t.root_public_key_pem) throw new CpError(409, "root_not_enrolled", "团队还没有完成开通");
+      const open = [...t.joinRequests.values()].find((x) => x.kind === "upgrade" && x.device_id === dev.cert.deviceId && x.status === "pending" && Date.parse(x.created_at) + 7 * DAY_MS > now());
+      if (open) return send(res, 200, { ok: true, join_request_id: open.id, status: open.status, created_at: open.created_at });
+      if ([...t.joinRequests.values()].filter((x) => x.status === "pending").length >= 100) throw new CpError(409, "too_many_pending", "等待批准的申请过多");
+      const jr: JoinRequestRecord = {
+        id: newRecordId("jr"),
+        kind: "upgrade",
+        aid: me.a.aid,
+        activation_id: "",
+        member_slug: me.a.member_slug,
+        // 新证书的角色：证书角色与账号当前角色取低（P0-2 同一口径；被降级的成员不会借此拿回原角色）
+        role: effectiveRoleOf(t, dev) as JoinRequestRecord["role"],
+        device_id: dev.cert.deviceId,
+        sign_pub: dev.cert.signPublicKeyPem,
+        enc_pub: dev.cert.encPublicKeyPem,
+        created_at: iso(),
+        status: "pending",
+        decided_at: null,
+        decided_by: null,
+        cert: null,
+        firm_bundle: null,
+        admin_mac: null,
+      };
+      t.joinRequests.set(jr.id, jr);
+      mark("device.upgrade_request", dev.cert.deviceId);
+      return send(res, 200, { ok: true, join_request_id: jr.id, status: jr.status, created_at: jr.created_at });
+    }
+    // 取回 / 撤回：只认发起申请的这台电脑的设备签名（不要会话：批准时这台电脑可能已退出登录，取回证书不扩大任何权限）
+    const ruf = /^\/v1\/join-requests\/([A-Za-z0-9_-]{1,64})\/(fetch|withdraw)$/.exec(p);
+    if (method === "POST" && ruf) {
+      const jr = t.joinRequests.get(ruf[1]!);
+      if (!jr || jr.kind !== "upgrade" || jr.device_id !== dev.cert.deviceId) throw new CpError(404, "join_unknown", "没有这个申请");
+      const expired = jr.status === "pending" && Date.parse(jr.created_at) + 7 * DAY_MS <= now();
+      if (ruf[2] === "withdraw") {
+        if (jr.status === "pending" && !expired) {
+          Object.assign(jr, { status: "withdrawn", decided_at: iso(), decided_by: "member" });
+          mark("device.upgrade_withdraw", dev.cert.deviceId);
+        }
+        return send(res, 200, { ok: true, status: expired ? "expired" : jr.status });
+      }
+      const status = expired ? "expired" : jr.status;
+      return sendRaw(res, 200, { ok: true, status, ...(status === "approved" ? { cert: jr.cert, root_public_key_pem: t.root_public_key_pem } : {}) });
+    }
     if (method === "GET" && p === "/v1/join-requests") {
       requireAdmin(t, dev);
       const list = [...t.joinRequests.values()]
         .filter((x) => x.status === "pending" && Date.parse(x.created_at) + 7 * DAY_MS > now())
+        .filter((x) => x.kind !== "upgrade" || upgradeLive(t, x))
         .map((x) => {
+          if (x.kind === "upgrade") {
+            const acc = accounts.get(x.aid ?? "");
+            const d = t.devices.get(x.device_id);
+            return { id: x.id, kind: "upgrade", activation_id: null, member_slug: x.member_slug, role: x.role, device_id: x.device_id, sign_pub: x.sign_pub, enc_pub: x.enc_pub, created_at: x.created_at, mac: null, via: "upgrade", account: acc ? { email: null, name: acc.name } : null, device_name: d?.name ?? null };
+          }
           const r = t.activations.get(x.activation_id);
           const acc = r?.via_account ? accounts.get(r.via_account) : undefined;
           return { id: x.id, activation_id: x.activation_id, member_slug: x.member_slug, role: x.role, device_id: x.device_id, sign_pub: x.sign_pub, enc_pub: x.enc_pub, created_at: x.created_at, mac: x.mac ?? null, via: r?.via_account ? "account" : "invitation", account: acc ? { email: emailOf(acc), name: acc.name } : null };
@@ -5638,6 +5736,36 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
       requireAdmin(t, dev);
       const jr = t.joinRequests.get(rja[1]!);
       if (!jr || jr.status !== "pending" || Date.parse(jr.created_at) + 7 * DAY_MS <= now()) throw new CpError(404, "join_unknown", "没有这个待批准的申请");
+      // 第 72 批（U-2，D-304）：成员电脑“接收团队共享事项”——只认本所律所根签的新证书（控制面自己签不出来），同编号、同两把公钥、同成员与角色；
+      // 批准即把设备记录的证书原位换成它（设备目录随之更新，管理员电脑同步后即可把团队共享事项的密钥包给这台电脑）
+      if (jr.kind === "upgrade") {
+        mark(approve ? "device.upgrade_approve" : "device.upgrade_reject", jr.device_id);
+        if (!approve) {
+          Object.assign(jr, { status: "rejected", decided_at: iso(), decided_by: dev.cert.deviceId });
+          return send(res, 200, { ok: true, status: jr.status });
+        }
+        if (!upgradeLive(t, jr)) throw new CpError(409, "upgrade_stale", "这台电脑或它所属的成员身份已变化（已移除、已停用、已移出团队、角色已调整或已确认过）：请刷新");
+        const b = parseJson(raw);
+        const cert = b.cert as DeviceCertificate | undefined;
+        if (!cert || typeof cert !== "object" || !t.root_public_key_pem) throw new CpError(400, "cert_missing", "缺少设备证书");
+        const cv = verifyDeviceCertificate(cert, t.root_public_key_pem, new Date(now()));
+        const d = t.devices.get(jr.device_id)!;
+        const same =
+          certIssuerOf(cert) === "firm_root" &&
+          cert.deviceId === jr.device_id &&
+          cert.signPublicKeyPem === jr.sign_pub &&
+          cert.encPublicKeyPem === jr.enc_pub &&
+          cert.signPublicKeyPem === d.cert.signPublicKeyPem &&
+          cert.encPublicKeyPem === d.cert.encPublicKeyPem &&
+          cert.memberId === d.cert.memberId &&
+          cert.role === jr.role;
+        if (!cv.ok || !same) throw new CpError(400, "cert_mismatch", "设备证书与申请不一致或不是本所律所根签发");
+        d.cert = cert;
+        Object.assign(jr, { status: "approved", decided_at: iso(), decided_by: dev.cert.deviceId, cert });
+        t.directoryVersion += 1;
+        feedVersion += 1;
+        return send(res, 200, { ok: true, status: jr.status, directory_version: t.directoryVersion });
+      }
       const rec = t.activations.get(jr.activation_id);
       if (!rec || rec.status !== "claimed") throw new CpError(409, "activation_not_claimed", "该邀请已作废或已使用");
       if (approve) {
@@ -6069,14 +6197,14 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         plan: { id: plan.id, label: plan.label, unit: plan.quota_unit, seat_quota: plan.seat_quota, period: plan.period, device_limit: plan.device_limit },
         seats: { total: t.seats, used: [...t.seatsByUser.values()].filter((x) => !x.revoked_at).length },
         quota: { unit: view.unit, period: view.period, ...view.firm, burst: view.burst, history: view.history, boosts: view.boosts ?? [] },
-        counts: { members: tAcc.filter((x) => x.status === "active").length, members_removed: tAcc.filter((x) => x.status === "disabled" && x.disabled_by === "team").length, active_7d: tAcc.filter((x) => x.last_login_at && x.last_login_at >= since7).length, devices: [...t.devices.values()].filter((d) => !d.revoked_at).length, pending_joins: [...t.joinRequests.values()].filter((j) => j.status === "pending").length },
+        counts: { members: tAcc.filter((x) => x.status === "active").length, members_removed: tAcc.filter((x) => x.status === "disabled" && x.disabled_by === "team").length, active_7d: tAcc.filter((x) => x.last_login_at && x.last_login_at >= since7).length, devices: [...t.devices.values()].filter((d) => !d.revoked_at).length, pending_joins: [...t.joinRequests.values()].filter((j) => j.status === "pending" && j.kind !== "upgrade").length },
         alerts: alerts.filter((x) => x.tid === t.tid && !x.acked_at).slice(0, 50).map((x) => ({ id: x.id, at: x.at, kind: x.kind, level: x.level, pct: x.pct, message: x.message })),
       });
     }
     if (method === "GET" && p === "/v1/firm/members") {
       // 核对码只在管理员电脑上显示（由两端本机秘密算出，云端不知道）：这里不给提示
       // 第 71 批（G2）：账号登录发起的入组没有成员邀请——姓名取账号上的，附 aid 便于界面把“待批准”挂到成员行
-      const pending = [...t.joinRequests.values()].filter((j) => j.status === "pending").map((j) => {
+      const pending = [...t.joinRequests.values()].filter((j) => j.status === "pending" && j.kind !== "upgrade").map((j) => {
         const acc = tAcc.find((y) => y.member_slug === j.member_slug);
         return { id: j.id, member_name: acc?.name ?? t.activations.get(j.activation_id)?.member.name ?? j.member_slug, aid: acc?.aid ?? null, device_id: j.device_id, created_at: j.created_at, check_code_hint: null };
       });
@@ -6216,7 +6344,7 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         const last = [...sessions.values()].filter((x) => x.device_id === d.cert.deviceId && !isStaffId(x.aid) && accounts.get(x.aid)?.tid === t.tid).sort((x, y) => y.last_seen_at.localeCompare(x.last_seen_at))[0];
         // 第 71 批（G2）：状态三态——有有效桌面登录 = 登录中；没有 = 已退出登录；吊销 = 已移除
         const signedIn = !d.revoked_at && [...sessions.values()].some((x) => x.device_id === d.cert.deviceId && x.kind === "desktop" && accounts.get(x.aid)?.tid === t.tid && sessionLive(x, now()));
-        return { device_id: d.cert.deviceId, issuer: certIssuerOf(d.cert), name: d.name ?? null, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, last_active_at: deviceLastActive(t.tid, d.cert.deviceId, null), registered_at: d.registered_at, revoked: !!d.revoked_at, state: d.revoked_at ? "revoked" : signedIn ? "signed_in" : "signed_out", flags };
+        return { device_id: d.cert.deviceId, issuer: certIssuerOf(d.cert), share_pending: sharePending(t, d.cert.deviceId), name: d.name ?? null, member: memberLabel(t, d.cert.memberId), aid: acc?.aid ?? null, role: d.cert.role, platform: last?.client.platform ?? null, version: d.client_version ?? null, last_seen_at: d.client_seen_on ?? null, last_active_at: deviceLastActive(t.tid, d.cert.deviceId, null), registered_at: d.registered_at, revoked: !!d.revoked_at, state: d.revoked_at ? "revoked" : signedIn ? "signed_in" : "signed_out", flags };
       });
       return send(res, 200, { devices: list.sort((x, y) => (y.last_seen_at ?? "").localeCompare(x.last_seen_at ?? "")) });
     }

@@ -138,3 +138,6 @@
 .mdl-foot { text-wrap: pretty; }
 /* 第 72 批第二轮（Q-8）：连不上云端的一行提示（输入框上方提示条同位，克制：灰字 + 琥珀小点） */
 .notice-offline .notice-dot { flex: none; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-warning-text); }
+/* 第三轮：必填标记与主按钮旁的原因（克制：说明字色、小一号） */
+.place-req { margin-left: 6px; font-size: var(--fs-xs); color: var(--text-secondary); }
+.place-need { font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; }

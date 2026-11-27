@@ -57,6 +57,10 @@ export const EVENTS = {
   // 第 72 批（A1 §2.4 T1）：待激活内核里登录、补取认领、自动登记（含云端签名与 enroll_in_progress 重试）、写暂存各用了多久
   KERNEL_ONB_STEP: { level: "info", fields: { step: ["login", "withclaim", "enroll", "stage_write"], ms: "ms", "ok?": "bool" } },
   KERNEL_JOIN_STAGED_REJECTED: { level: "warn", fields: {} },
+  // 第 72 批（U-2，D-304）：账号签发钥登记的团队成员电脑取回律所根签的新证书（换上 / 核对不通过的原因码 / 写入失败）
+  KERNEL_SHARE_CONFIRMED: { level: "info", fields: {} },
+  KERNEL_SHARE_CONFIRM_REJECTED: { level: "warn", fields: { reason: "ident" } },
+  KERNEL_SHARE_CONFIRM_APPLY_FAILED: { level: "warn", fields: { reason: ["own_row_mismatch", "db"] } },
   // 第 68 批（D-294）：同一台电脑上切换账号档案（只记去向种类与失败原因，不记账号与目录名）
   KERNEL_PROFILE_SWITCH: { level: "info", fields: { to: ["existing", "enroll"] } },
   KERNEL_PROFILE_WRITE_FAILED: { level: "warn", fields: ERR },

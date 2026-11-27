@@ -31,6 +31,7 @@
         "^\\/v1\\/invitations\\/act_[A-Za-z0-9_-]{16}\\/revoke$",
         "^\\/v1\\/join-requests$",
         "^\\/v1\\/join-requests\\/jr_[A-Za-z0-9_-]{16}\\/(?:fetch|approve|reject|withdraw)$",
+        "^\\/v1\\/join-requests\\/upgrade$",
         "^\\/v1\\/license$",
         "^\\/v1\\/meta$",
         "^\\/v1\\/models$",

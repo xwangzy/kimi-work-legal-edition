@@ -17,6 +17,7 @@ import { Composer, type ComposerValue } from "../components/Composer.tsx";
 import { defaultChoice } from "../components/ModeSelector.tsx";
 import { NewMatterDialog } from "../components/NewMatter.tsx";
 import { GuideChecklist } from "../components/GuideChecklist.tsx";
+import { CloudDownNotice, useCloudDown } from "../components/CloudNotice.tsx";
 import { prepareStart, RunSheet, type PendingStart } from "../components/RunSheet.tsx";
 import { ScenarioStart } from "../components/ScenarioStart.tsx";
 import { cardGets, cardGives, COMING_SOON, getsPlain, LINE_LABELS, SCENARIOS, suggestScenario, type BusinessLine, type ScenarioCard, startMatterFor } from "../lib/scenarios.ts";
@@ -178,35 +179,9 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
     if (consumeNewMatterRequest()) setNewMatter(true);
     return () => window.removeEventListener(NEW_MATTER, on);
   }, []);
-  // 第 72 批第二轮（端到端验收 Q-8）：连不上云端时首页先说一声——额度查询（quota.status）报 provider_unavailable 即判断为连不上；
-  // 窗口回到前台、系统报“已联网”时再查，连不上期间每 30 秒查一次，连上即收起。本机的事项、材料、上手清单与上次的模型照常显示。
-  const [cloudDown, setCloudDown] = useState(false);
-  const checkCloud = useCallback(() => {
-    void api
-      .quotaStatus()
-      .then((q) => {
-        setQuota(q);
-        setCloudDown(false);
-      })
-      .catch((e) => {
-        setQuota(null);
-        setCloudDown((e as { code?: string }).code === "provider_unavailable");
-      });
-  }, []);
-  useEffect(() => {
-    checkCloud();
-    window.addEventListener("focus", checkCloud);
-    window.addEventListener("online", checkCloud);
-    return () => {
-      window.removeEventListener("focus", checkCloud);
-      window.removeEventListener("online", checkCloud);
-    };
-  }, [checkCloud]);
-  useEffect(() => {
-    if (!cloudDown) return;
-    const t = setInterval(checkCloud, 30_000);
-    return () => clearInterval(t);
-  }, [cloudDown, checkCloud]);
+  // 第 72 批第二轮（端到端验收 Q-8）：连不上云端时输入框上沿一行提示（与问答页同口径，components/CloudNotice.tsx）；
+  // 本机的事项、材料、上手清单与上次的模型照常显示
+  const cloudDown = useCloudDown(setQuota);
   // 第 66 批（V40 P0-4）：任务模型来自云端模型目录（套餐与路由决定哪些可选）；选了记在本机，发起任务时带给内核
   const [taskModels, setTaskModels] = useModelCatalog("task");
   const [modelMsg, setModelMsg] = useState("");
@@ -341,21 +316,7 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
         )}
       </div>
     ) : null;
-  const offlineRow = cloudDown ? (
-    <div className="notice-row notice-offline" role="status">
-      <span className="notice-dot" aria-hidden="true" />
-      <span className="notice-text">连不上云端：AI 暂时不可用，本机的事项和材料照常可看</span>
-      <button
-        className="btn-link"
-        onClick={() => {
-          nav("/connections/backup");
-          setTimeout(() => document.getElementById("sec-conn")?.scrollIntoView({ block: "center" }), 300);
-        }}
-      >
-        检测连接
-      </button>
-    </div>
-  ) : null;
+  const offlineRow = cloudDown ? <CloudDownNotice /> : null;
   const notice =
     showQuota || waitingRow || offlineRow ? (
       <>

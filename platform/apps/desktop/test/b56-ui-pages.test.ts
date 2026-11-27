@@ -137,13 +137,15 @@ test("一句话记录：全部操作都有人话，界面文本不含任何内�
       assert.doesNotMatch(s.what, /\./, a);
     }
   }
-  assert.deepEqual(auditSentence(row("x.unknown")), { who: "王主任", what: "做了一项操作", important: true, known: false });
+  // 第 72 批评分 C10：不认识的动作写出原始事件名，不再笼统写“做了一项操作”
+  assert.deepEqual(auditSentence(row("x.unknown")), { who: "王主任", what: "执行了“x.unknown”", important: true, known: false });
 });
 
 test("“谁”：成员姓名 / 本所成员 / 本所（开通时）/ Kimi Work 运营人员（不显示工号）/ 系统", () => {
   assert.equal(auditWho({ actor: { kind: "device", id: "dev_x" }, actor_name: "王主任" }), "王主任");
-  assert.equal(auditWho({ actor: { kind: "device", id: "dev_x" }, actor_name: null }), "本所成员");
-  assert.equal(auditWho({ actor: { kind: "account", id: "acc_x" }, actor_name: null }), "本所成员");
+  // 第 72 批评分 C10：解析不到姓名时写编号后 4 位（同一个人的几条记录能对得上），不再笼统写“本所成员”
+  assert.equal(auditWho({ actor: { kind: "device", id: "dev_x1a2b" }, actor_name: null }), "成员（编号 1a2b）");
+  assert.equal(auditWho({ actor: { kind: "account", id: "acc_9z8y7x" }, actor_name: null }), "成员（编号 8y7x）");
   assert.equal(auditWho({ actor: { kind: "root", id: "ten_x" }, actor_name: null }), "本所（开通时）");
   assert.equal(auditWho({ actor: { kind: "ops", id: "stf_f8LE…T0spZB" }, actor_name: null }), "Kimi Work 运营人员");
   assert.equal(auditWho({ actor: { kind: "service", id: "x" }, actor_name: null }), "系统");
@@ -164,10 +166,13 @@ test("对象融进句子：××的电脑 / 第 2 台电脑 / ××的席位 / ×�
   assert.equal(auditSentence(row("device.revoke", { target: "dev_z" })).what, "停用了一台电脑");
   assert.equal(auditSentence(row("seat.assign", { target: "seat_1", target_name: "王主任" })).what, "领取了一个席位", "给自己分配");
   assert.equal(auditSentence(row("seat.assign", { target: "seat_1", target_name: "李律师" })).what, "给李律师分配了席位");
-  assert.equal(auditSentence(row("seat.revoke", { target: "seat_1" })).what, "收回了一个席位");
+  // 第 72 批：席位动作统一叫“释放”
+  assert.equal(auditSentence(row("seat.revoke", { target: "seat_1" })).what, "释放了一个席位");
   assert.equal(auditSentence(row("account.disable", { actor: { kind: "ops", id: "stf_1" }, actor_name: null, target: "acc_1", target_name: "李律师" })).what, "停用了李律师的账号");
-  assert.equal(auditSentence(row("account.disable", { target: "acc_1" })).what, "停用了一个成员账号");
-  assert.equal(auditSentence(row("account.limits", { target: "acc_1" })).what, "调整了一位成员的个人上限或电脑数");
+  // 第 72 批评分 C10：账号对象解析不到姓名时写编号后 4 位，不再笼统写“一个成员账号”；没有对象编号时仍是通用说法
+  assert.equal(auditSentence(row("account.disable", { target: "acc_1" })).what, "停用了成员（编号 acc1）的账号");
+  assert.equal(auditSentence(row("account.disable", { target: null })).what, "停用了一个成员账号");
+  assert.equal(auditSentence(row("account.limits", { target: "acc_1" })).what, "调整了成员（编号 acc1）的个人上限或电脑数");
 });
 
 test("筛选分档：重要改动（默认）不含日常凭据与摘要；运营人员的一切操作都算重要；失败的两档都列", () => {

@@ -137,8 +137,10 @@ export function MatterPlace({ matters, goal, onPlace, onMore, onCancel, anchor, 
                 <input className="input" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例如：股权转让协议审查（受让方）" maxLength={80} />
               </label>
               <div className="place-field">
-                <span className="place-k">我方立场</span>
-                <Select aria-label="我方立场" value={stance} placeholder="选择我方立场" onChange={setStance} options={STANCE_OPTIONS} />
+                <span className="place-k">
+                  我方立场<span className="place-req">必填</span>
+                </span>
+                <Select aria-label="我方立场（必填）" value={stance} placeholder="选择我方立场" onChange={setStance} options={STANCE_OPTIONS} />
               </div>
               <div className="place-field" role="group" aria-label="怎么处理">
                 <span className="place-k">怎么处理</span>
@@ -156,6 +158,8 @@ export function MatterPlace({ matters, goal, onPlace, onMore, onCancel, anchor, 
             <div className="place-actions">
               <button type="button" className="btn-link" onClick={() => onMore({ title, stance, confidentiality: level })}>更多设置</button>
               <span className="spacer" />
+              {/* 第三轮：主按钮为什么不能点，就在按钮旁说一句 */}
+              {!stance && !busy && <span className="place-need">选好我方立场后可发起</span>}
               <button type="button" className="btn-ghost btn-sm" onClick={() => (matters.length > 0 ? setCreating(false) : onCancel())}>{matters.length > 0 ? "返回" : "取消"}</button>
               <button type="submit" className="btn-primary btn-sm" disabled={busy || !title.trim() || !stance}>{busy ? "正在建…" : "建好并发起"}</button>
             </div>

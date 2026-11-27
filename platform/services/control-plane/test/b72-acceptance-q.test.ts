@@ -101,23 +101,22 @@ const minutesAgo = (v: string | null) => (v ? (Date.now() + skew - Date.parse(v)
 /** 客户端“默认预选登录中最久没用的一台”（apps/desktop/src/lib/account.ts defaultSignoutPick 的同一规则）。 */
 const preselect = (devs: any[], thisDevice: string | null = null) => [...devs.filter((d) => d.state === "signed_in" && d.device_id !== thisDevice)].sort((x, y) => (x.last_seen_at ?? x.last_seen_on ?? x.registered_at ?? "").localeCompare(y.last_seen_at ?? y.last_seen_on ?? y.registered_at ?? ""))[0]?.device_id ?? null;
 
-test("Q-1：一台电脑持续有请求（会话核对 / 设备签名请求 / 网关计量）——选择页上它是“刚刚用过”，不会被预选；没在用的那台才是", async () => {
+test("Q-1（F6 真实复测修正）：“最近使用”只算真实使用（AI 调用、登录）——后台会话核对与设备签名同步不算；预选的是最久没真实使用的那台", async () => {
   const F = await signup("q1-b72@example.cn", "钱律师", "钱律师工作室");
   cp.ops.account("q1-b72@example.cn")!.device_limit = 2;
   const li2 = await post("/v1/auth/login", { email: "q1-b72@example.cn", password: PW, client: W });
   const D2 = await enrollFrom(li2.json);
   skew = 50 * 60_000;
   try {
-    // 50 分钟后：创始电脑一直在用（内核每 2 分钟核对一次会话）；第二台没动
+    // 50 分钟后：两台都只有后台心跳（创始电脑核对会话、第二台发设备签名同步）——都不算“使用”，仍按登录时刻排
     assert.equal((await get("/v1/auth/me", F.session)).status, 200);
+    assert.equal((await D2.call("GET", "/v1/directory")).status, 200);
     const n3 = await post("/v1/auth/login", { email: "q1-b72@example.cn", password: PW, client: W });
     assert.equal(n3.json.onboarding.state, "device_limit", JSON.stringify(n3.json.onboarding));
-    const by = (id: string) => n3.json.onboarding.devices.find((d: any) => d.device_id === id);
-    assert.ok(minutesAgo(by(F.dev.cert.deviceId).last_seen_at) < 1, `会话核对：刚刚用过（${by(F.dev.cert.deviceId).last_seen_at}）`);
-    assert.ok(minutesAgo(by(D2.cert.deviceId).last_seen_at) > 45, "没在用的那台：约 50 分钟前");
-    assert.equal(preselect(n3.json.onboarding.devices), D2.cert.deviceId, "预选的是没在用的那台");
-    assert.equal(n3.json.onboarding.devices[0].device_id, F.dev.cert.deviceId, "登录中、最近用过的在前");
-    // 第二台经网关有一次 AI 调用（计量记录带这台电脑）：它也成了“刚刚用过”
+    const by = (r: any, id: string) => r.json.onboarding.devices.find((d: any) => d.device_id === id);
+    assert.ok(minutesAgo(by(n3, F.dev.cert.deviceId).last_seen_at) > 45, `会话核对不算使用（${by(n3, F.dev.cert.deviceId).last_seen_at}）`);
+    assert.ok(minutesAgo(by(n3, D2.cert.deviceId).last_seen_at) > 45, "设备签名同步不算使用");
+    // 第二台经网关有一次 AI 调用（计量记录带这台电脑）：它成了“刚刚用过”，预选的是创始电脑（只有心跳）
     const t = cp.ops.tenant(F.tid)!;
     const sid = t.seatsByUser.get(F.memberId)!.sid;
     const l = await service("/v1/quota/lease", { tid: F.tid, sid, holder: "gw-q1", need_estimate: { alias: "legal/k3", input: 100, output: 50 } });
@@ -126,18 +125,9 @@ test("Q-1：一台电脑持续有请求（会话核对 / 设备签名请求 / �
     const rec = { request_id: "kwlgw_q1_1", client_request_id: "c_q1", upstream_request_id: "u_q1", at, sid, uid: F.memberId, dev: D2.cert.deviceId, alias: "legal/k3", provider: "maas", upstream_model: "kimi-k3.1-pro", stream: true, status: 200, outcome: "ok", qa: false, usage: { input: 100, cached: 0, output: 50, reasoning: 0 }, usage_source: "upstream", latency_ms: 10, attempts: [{ provider: "maas", status: 200, error: null, ms: 10 }], lease_id: l.json.lease_id };
     assert.equal((await service("/v1/quota/settle", { tid: F.tid, lease_id: l.json.lease_id, holder: "gw-q1", records: [rec], final: true })).status, 200);
     const n4 = await post("/v1/auth/login", { email: "q1-b72@example.cn", password: PW, client: W });
-    assert.ok(minutesAgo(n4.json.onboarding.devices.find((d: any) => d.device_id === D2.cert.deviceId).last_seen_at) < 1, "网关计量：刚刚用过");
-    // 设备签名请求同样算：10 分钟后只有第二台发签名请求
-    skew = 60 * 60_000;
-    assert.equal((await D2.call("GET", "/v1/directory")).status, 200);
-    const n5 = await post("/v1/auth/login", { email: "q1-b72@example.cn", password: PW, client: W });
-    const d5 = n5.json.onboarding.devices;
-    assert.ok(minutesAgo(d5.find((d: any) => d.device_id === D2.cert.deviceId).last_seen_at) < 1, "设备签名请求：刚刚用过");
-    assert.equal(preselect(d5), F.dev.cert.deviceId, "这回没在用的是创始电脑（10 分钟前核对过）");
-    // 本人“登录过的电脑”与会话视图同一口径
-    const me = await get("/v1/auth/me", F.session);
-    assert.ok(minutesAgo(me.json.devices.find((d: any) => d.device_id === D2.cert.deviceId).last_seen_at) < 1);
-    assert.ok(me.json.sessions.every((x: any) => typeof x.last_seen_at === "string"));
+    assert.ok(minutesAgo(by(n4, D2.cert.deviceId).last_seen_at) < 1, "AI 调用：刚刚用过");
+    assert.equal(preselect(n4.json.onboarding.devices), F.dev.cert.deviceId, "预选的是最久没真实使用的那台（只有心跳的创始电脑）");
+    assert.notEqual(preselect(n4.json.onboarding.devices), D2.cert.deviceId, "正在用 AI 的那台不被预选");
   } finally {
     skew = 0;
   }
@@ -217,4 +207,12 @@ test("Q-5：被团队移出 / 退出团队的成员身份不计入客户行成�
   const pp = await ops("op_7401", "GET", "/v1/ops/people?q=q5b-b72");
   const p = pp.json.people.find((y: any) => y.aid === x1.account.aid);
   assert.deepEqual(p.workspaces.map((w: any) => [w.status, w.disabled_by]), [["disabled", "team"]]);
+});
+
+test("控制台评审：邮箱前缀像手机号 / 证件号（连续 7 位以上数字）时，律所与成员编号改用随机标识，不把号码写进编号", async () => {
+  const { slugBase } = await import("../src/accounts.ts");
+  assert.match(slugBase("13912345678@163.com"), /^u[0-9a-f]{6}$/);
+  assert.match(slugBase("r2-13900072701@kwl-local.example"), /^u[0-9a-f]{6}$/);
+  assert.equal(slugBase("zhangsan@example.cn"), "zhangsan");
+  assert.equal(slugBase("li2024@example.cn"), "li2024");
 });

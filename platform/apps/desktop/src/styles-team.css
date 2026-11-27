@@ -129,6 +129,11 @@
 
 /* 团队共享处的提示（这台电脑还不能接收团队共享事项）：非阻塞，淡橙底 */
 .share-note { margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--status-warning-bg-soft); color: var(--status-warning-text); font-size: var(--fs-caption); line-height: 1.6; }
+/* 第 72 批（U-2b）：团队共享处“申请接收团队共享事项”与电脑待确认里输入核对码 */
+.share-confirm { margin-top: var(--sp-2); color: var(--text-primary); }
+.share-confirm p { margin: 0 0 var(--sp-1); }
+.share-confirm .members-check { font-size: var(--fs-body); color: var(--text-primary); margin-right: var(--sp-2); }
+.members-code-input { width: 17ch; max-width: 100%; letter-spacing: 0.04em; }
 
 /* 个人空间：备份与安全页底的技术支持折叠 */
 .help-support { margin-top: var(--sp-4); font-size: var(--fs-caption); }
@@ -151,7 +156,7 @@
 .ws-menu-row.is-current { background: var(--bg-active); }
 .ws-menu-text { display: flex; flex-direction: column; justify-content: center; }
 .ws-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-body); }
-.ws-menu-text small { font-size: var(--fs-xs); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-menu-text small { font-size: var(--fs-xs); color: var(--text-secondary); white-space: normal; line-height: 1.5; } /* 第二轮：状态写全，不截断 */
 .ws-menu-check { flex: none; display: inline-flex; color: var(--text-primary); }
 
 /* 成员行尾“…”菜单（评分 C10 第 2 条）：挂在 body 上、按按钮定位；每项名称 + 一句后果，危险项置底标红 */
@@ -181,3 +186,17 @@
 .ft-empty-ico svg { width: 20px; height: 20px; }
 .ft-empty b { font-size: var(--fs-md); color: var(--text-primary); }
 .ft-empty p { margin: 0; max-width: 440px; font-size: var(--fs-caption); text-wrap: pretty; }
+
+/* 设置页签在窄窗口（≥ 960）下不折行：每个页签不换行、不收缩，放不下时整排横向滚动（评分第二轮 C10 第 1 条） */
+.set-page.set-page > .tabs-line { flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.set-page > .tabs-line::-webkit-scrollbar { display: none; }
+.set-page > .tabs-line > .tab.tab { flex: none; white-space: nowrap; } /* 加一级选择器：本文件可能先于 styles-settings.css 载入 */
+/* 生效策略：每条一行“规则名 · 取值”，取值整体不在词中折行（评分 C10 第 4、5 条） */
+.policy-rules { display: flex; flex-direction: column; gap: 4px; margin: var(--sp-2) 0 0; font-size: var(--fs-caption); }
+.policy-rules > div { display: flex; flex-wrap: wrap; gap: 0 var(--sp-2); }
+.policy-rules dt { color: var(--text-secondary); }
+.policy-rules dt::after { content: "："; }
+.policy-rules dd { margin: 0; color: var(--text-primary); white-space: nowrap; }
+.tm-menu-row small, .tm-menu-row b { word-break: keep-all; overflow-wrap: anywhere; }
+/* 窄窗口（≤ 1200）页签左右留白收一档，960 宽下九个页签一行放得下；仍放不下（更大字号）时横向滚动兜底 */
+@media (max-width: 1200px) { .set-page > .tabs-line > .tab.tab { padding-left: var(--sp-2); padding-right: var(--sp-2); } }
