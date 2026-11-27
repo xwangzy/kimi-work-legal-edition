@@ -10,7 +10,7 @@
 #   控制台、登录入口与平台运营接口对任意公网 IP 开放（D-218 取消运维网段）：--ops-cidr 已废弃，仍给出只提示“已忽略”
 # 做的事：建系统用户 kwl 与目录、核对 Node 版本、npm ci（只建工作区链接，运行时无第三方依赖）、
 #         打包控制台到 /var/www/kwl-console（保留已有 config.json）、装 systemd 单元与 nginx 配置。
-#         纯公网 IP 时另外：把地址填进 /etc/kwl/{control-plane,gateway,search}.json 与控制台 config.json、签证书、装续期定时器、打印钉住值。
+#         纯公网 IP 时另外：把地址填进 /etc/kwl/{control-plane,gateway,search,relay}.json 与控制台 config.json、签证书、装续期定时器、打印钉住值。
 #         不生成服务密钥（cloud-init-secrets）、不启动服务。
 set -euo pipefail
 APP=/opt/kwl/app
@@ -79,7 +79,7 @@ if [ -n "$PUBLIC_IP" ]; then
   args=(--app "$APP" --etc /etc/kwl --public-ip "$PUBLIC_IP")
   [ "$WITH_CONSOLE" = 1 ] && install -d -m 0755 /var/www/kwl-console && args+=(--console-dir /var/www/kwl-console)
   node "$APP/deploy/scripts/ip-config.mjs" "${args[@]}" ${IPCFG_ARGS[@]+"${IPCFG_ARGS[@]}"}
-  for r in control-plane gateway search; do chown root:kwl "/etc/kwl/$r.json"; chmod 0640 "/etc/kwl/$r.json"; done
+  for r in control-plane gateway search relay; do [ -f "/etc/kwl/$r.json" ] || continue; chown root:kwl "/etc/kwl/$r.json"; chmod 0640 "/etc/kwl/$r.json"; done
 fi
 
 # 5. 控制台
@@ -104,7 +104,7 @@ if [ "$WITH_CONSOLE" = 1 ]; then
   fi
 fi
 
-# 6. 纯公网 IP：证书（一把私钥、一张 IP 证书，四个端口共用）与续期定时器，再换成完整站点
+# 6. 纯公网 IP：证书（一把私钥、一张 IP 证书，五个端口共用：控制台 443、控制面 8443、网关 8444、检索 8445、中继 8446）与续期定时器，再换成完整站点
 if [ -n "$PUBLIC_IP" ] && [ "$TLS_MODE" != manual ]; then
   case "$TLS_MODE" in
     acme) bash "$APP/deploy/scripts/tls-ip.sh" acme --ip "$PUBLIC_IP" ${TLS_ARGS[@]+"${TLS_ARGS[@]}"} ;;
@@ -115,4 +115,4 @@ if [ -n "$PUBLIC_IP" ] && [ "$TLS_MODE" != manual ]; then
   fi
 fi
 echo "安装完成：代码 $APP（$(cd "$APP" && git describe --tags --always 2>/dev/null || echo 非 git)），配置放 /etc/kwl/<角色>.json，密钥放 /etc/kwl/secrets/，数据 /var/lib/kwl。"
-echo "下一步：按部署手册写配置与密钥，再 systemctl enable --now kwl@cp-signer kwl@control-plane kwl@gateway"
+echo "下一步：按部署手册写配置与密钥，再 systemctl enable --now kwl@cp-signer kwl@control-plane kwl@gateway kwl@search，最后 bash deploy/scripts/relay-setup.sh 开通共享中继（8446）"

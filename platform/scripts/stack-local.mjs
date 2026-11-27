@@ -7,7 +7,9 @@
  * - 控制台账号（第 46 批，契约 §2.4，与生产同一流程）：控制面配置 console.bootstrap_admin，首次启动把系统管理员的设置码写进
  *   <data_dir>/control-plane/bootstrap-admin.txt；本脚本读出设置码、经 POST /v1/auth/password-reset/confirm 设好密码，
  *   把登录信息写进 <目录>/console-login.txt（0600）。平台人员登录只要账号密码（D-218 取消两步验证），不再用 ops-cli 名册与密码；
- * - 服务：`cloud-serve.mjs --config`（cp-signer、control-plane、gateway；`insecure_loopback_for_test` 只许 127.0.0.1——这是与生产唯一的差别：没有 TLS）；
+ * - 服务：`cloud-serve.mjs --config`（cp-signer、control-plane、gateway、search、relay；`insecure_loopback_for_test` 只许 127.0.0.1——这是与生产唯一的差别：没有 TLS）；
+ * - 共享中继（第 73 批，v1.8.0 起标准服务；D-309）：端口 base+6，与生产同口径——与控制面同一张证书（--tls 时）、只信中继受众的席位公钥、
+ *   订阅控制面吊销集与律所策略；client.env 写 ZR_RELAY_BASE（回环开发形态不需要钉住；--tls 时 ZR_RELAY_PINS = 控制面的钉住值）；
  * - 上游密钥：只经文件描述符 3 交给网关进程（`upstream.api_key_file: /dev/fd/3`），不写盘、不进命令行与环境变量；
  *   来源依次为 `--key-file`、环境变量 KWL_MOONSHOT_API_KEY、macOS 钥匙串（KWL_EVAL_KEYCHAIN_ACCOUNT / _SERVICE，缺省 kwl-demo / kwl-demo-maas-key）；
  * - 控制台：同进程静态服务 <目录>/console-dist（`build-console.mjs --control-plane <本栈控制面>` 打包，页内 CSP 只许连本栈控制面），
@@ -40,7 +42,7 @@ if (!arg("dir")) {
   process.exit(2);
 }
 const basePort = Number(arg("base-port", "18400"));
-const P = { signer: basePort, cp: basePort + 1, gw: basePort + 2, console: basePort + 3, search: basePort + 4 };
+const P = { signer: basePort, cp: basePort + 1, gw: basePort + 2, console: basePort + 3, search: basePort + 4, relay: basePort + 6 };
 const upstream = arg("upstream", "https://maas.jointpilot.com/v1");
 const model = arg("model", "kimi-k3.1-pro");
 // 第 72 批（D-299）：K2.6 指真实的 kimi-k2.6（原先与 K3 同指 --model，问答里切 K2.6 实际仍是 K3.1 Pro）
@@ -71,6 +73,14 @@ const sec = (f) => join(init, "secrets", f);
   }
 }
 const pub = (f) => join(init, "public", f);
+// 第 73 批：共享中继只信中继受众的席位公钥表（cloud-init-secrets 早就生成；缺了按签名服务的 seat_audiences.relay 私钥导出一份，与 relay-config.mjs 同一做法）
+if (!existsSync(pub("seat-relay-public-keys.json"))) {
+  const { createPublicKey } = await import("node:crypto");
+  const rk = JSON.parse(readFileSync(pub("signer-keys.json"), "utf8")).seat_audiences?.relay;
+  if (!rk?.kid || !rk?.private_key_file) throw new Error("签名服务密钥里没有中继受众（seat_audiences.relay）：删掉 --dir 下的 init 重新生成");
+  const pem = createPublicKey(readFileSync(rk.private_key_file, "utf8")).export({ format: "pem", type: "spki" }).toString();
+  writeFileSync(pub("seat-relay-public-keys.json"), `${JSON.stringify({ [rk.kid]: pem }, null, 2)}\n`, { mode: 0o644, flag: "wx" });
+}
 
 // ─── 2. 控制台首个系统管理员（契约 §2.4）：控制面启动后经设置码设密码，见第 6 步 ───
 const ADMIN = { email: "admin@kwl-local.example", name: "系统管理员（本机栈）" };
@@ -155,6 +165,16 @@ const cfgs = {
     data_dir: join(dir, "data", "search"),
     upstream: { base_url: upstream, api_key_file: "/dev/fd/3" },
   },
+  // 共享中继（团队共享事项的密文同步；按订阅里的律所策略 share_relay 核对）：与生产同口径——用控制面那张证书、只信中继受众的席位公钥
+  relay: {
+    role: "relay",
+    listen: loop(P.relay),
+    ...tlsOf("cp"),
+    service_secret_file: sec("service-secret"),
+    control_plane: { url: `${scheme}://127.0.0.1:${P.cp}`, keys_file: pub("cp-public-keys.json") },
+    seat_keys_file: pub("seat-relay-public-keys.json"),
+    data_dir: join(dir, "data", "relay"),
+  },
 };
 for (const [k, c] of Object.entries(cfgs)) writeFileSync(join(dir, "cfg", `${k}.json`), JSON.stringify(c, null, 2), { mode: 0o600 });
 
@@ -205,6 +225,7 @@ await startRole("signer");
 await startRole("cp");
 await startRole("gw", true);
 await startRole("search", true);
+await startRole("relay");
 
 // ─── 6. 控制台（静态页 + 严格 CSP；页内 CSP 只许连本栈控制面） ───
 const cpOrigin = `${scheme}://127.0.0.1:${P.cp}`;
@@ -267,12 +288,15 @@ const envLines = [
   `ZR_SEAT_KEYS=${JSON.stringify(JSON.parse(seatKeys))}`,
   `ZR_GATEWAY_BASE=${scheme}://127.0.0.1:${P.gw}/v1`,
   `ZR_SEARCH_BASE=${scheme}://127.0.0.1:${P.search}/v1/search`,
+  // 第 73 批：共享中继（--tls 时钉住集与控制面相同：同一张证书）
+  `ZR_RELAY_BASE=${scheme}://127.0.0.1:${P.relay}`,
+  ...(useTls ? [`ZR_RELAY_PINS=${spki(join(tlsDir, "cp.crt"))}`] : []),
   "ZR_REQUIRE_CONTROL_PLANE=1",
   "ZR_ONBOARDING=1",
   "ZR_MODEL_PROVIDER=upstream",
 ];
 writeFileSync(join(dir, "client.env"), `${envLines.join("\n")}\n`, { mode: 0o600 });
-console.log(`[stack] 云端已就绪：签名服务 ${P.signer}、控制面 ${P.cp}、网关 ${P.gw}、检索 ${P.search}、控制台 http://127.0.0.1:${P.console}/`);
+console.log(`[stack] 云端已就绪：签名服务 ${P.signer}、控制面 ${P.cp}、网关 ${P.gw}、检索 ${P.search}、共享中继 ${P.relay}、控制台 http://127.0.0.1:${P.console}/`);
 console.log(`[stack] 控制台：系统管理员 ${ADMIN.email}（${adminNote}）`);
 console.log(`[stack] 控制台账号：${loginFile}`);
 console.log(`[stack] 桌面端环境变量：${join(dir, "client.env")}`);

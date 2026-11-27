@@ -8,8 +8,9 @@
  * 改的只有这些（其余项保留现值；文件不在时从 deploy/config/*.example.json 起）：
  * - control-plane.json：console.origins 换成 https://<IP>（去掉样例域名，保留别的来源）；console.bootstrap_admin（给了才改）；
  *   删掉已废弃的 ops.allow_cidrs（运维网段）与 console.staff_mfa（两步验证）——D-218 取消了这两项，老部署换 IP / 升级时顺手清掉
- * - gateway.json、search.json：control_plane.url = https://<IP>:<控制面端口>；control_plane.connect_address = "127.0.0.1"
- *   （单机时连回环、证书仍按公网 IP 核对，避开云主机连不回自己公网 IP 的问题；多机部署加 --no-connect-address）
+ * - gateway.json、search.json、relay.json（第 73 批 v1.8.0：共享中继是第五个标准服务）：control_plane.url = https://<IP>:<控制面端口>；
+ *   control_plane.connect_address = "127.0.0.1"（单机时连回环、证书仍按公网 IP 核对，避开云主机连不回自己公网 IP 的问题；多机部署加 --no-connect-address）。
+ *   relay.json 不在时从样例新建：与控制面同一张证书（/etc/kwl/tls/cp.crt）、端口 8446；中继受众席位公钥与启动见 relay-setup.sh
  * - 控制台 config.json：control_plane_base（文件不在时按样例新建）；已打包的 index.html 页内 CSP 的 connect-src 同步换成新控制面来源
  * 以后换成域名：把这几项改成域名地址、换证书即可，不用改代码（部署手册 4.6）。
  * 签名服务配置不涉及地址，按部署手册第 6 节另做。
@@ -82,8 +83,8 @@ save(cp.file, cp.cfg);
 console.log(`[ip-config] ${cp.file}：console.origins=${JSON.stringify(cp.cfg.console.origins)}${cp.fresh ? "（从样例新建：其余必改项见部署手册第 6 节）" : ""}`);
 if (dropped.length) console.log(`[ip-config] ${cp.file}：删掉已废弃的 ${dropped.join("、")}（D-218：控制台与平台运营不再按来源 IP 准入、平台人员不再有两步验证）`);
 
-// 网关、检索
-for (const role of ["gateway", "search"]) {
+// 网关、检索、共享中继
+for (const role of ["gateway", "search", "relay"]) {
   const r = load(role);
   r.cfg.control_plane ??= { keys_file: "/etc/kwl/public/cp-public-keys.json" };
   r.cfg.control_plane.url = cpUrl;

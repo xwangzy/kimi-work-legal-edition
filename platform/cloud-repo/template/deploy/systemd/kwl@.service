@@ -1,4 +1,5 @@
-# Kimi Work 法律版云端：一个角色一个实例（kwl@cp-signer、kwl@control-plane、kwl@gateway、kwl@search…）
+# Kimi Work 法律版云端：一个角色一个实例（kwl@cp-signer、kwl@control-plane、kwl@gateway、kwl@search、kwl@relay…）
+# v1.8.0 起共享中继 kwl@relay（:8446，与控制面同一张证书）是第五个标准服务；数据在 /var/lib/kwl/relay（下面 ReadWritePaths 已覆盖）
 # 安装：sudo install -m 0644 deploy/systemd/kwl@.service /etc/systemd/system/ && sudo systemctl daemon-reload
 # 配置：/etc/kwl/<角色>.json（样例见 deploy/config/）；代码：/opt/kwl/app（本仓库的发布标签）
 [Unit]

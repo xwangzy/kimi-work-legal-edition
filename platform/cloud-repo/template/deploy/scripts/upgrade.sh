@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 升级到某个发布标签：先备份 → 切代码 → npm ci → 换控制台 → 按顺序重启并逐个健康检查。任何一步失败即停，并打印回滚命令。
-#   sudo bash deploy/scripts/upgrade.sh <标签或提交> [--cp-origin https://cp.kwl.example.com:8443]
+#   sudo bash deploy/scripts/upgrade.sh <标签或提交> [--cp-origin https://cp.kwl.example.com:8443] [--no-relay]
+#   --no-relay：本部署有意不跑共享中继（第 73 批 v1.8.0 起为标准服务）时，末尾的能力核对不核中继
 set -euo pipefail
 # 脚本中途会 git checkout 换掉本文件，而 bash 是边读边执行的：先把自己拷到临时文件再从那里执行
 if [ -z "${KWL_SCRIPT_COPY:-}" ]; then
@@ -12,10 +13,17 @@ fi
 # 升级时故意留着——只回滚代码（rollback.sh 不带 --restore）回到第 52 批及以前时，旧版控制面没有 allow_cidrs 会拒绝启动。
 # 确认不再回滚后，跑一次 ip-config.mjs（部署手册 4.7 换地址同一命令；有域名的部署手工删）即删掉这两项，见运维手册 5.1。
 APP=/opt/kwl/app
-TARGET=${1:?用法：upgrade.sh <标签或提交> [--cp-origin <控制面来源>]}
+TARGET=${1:?用法：upgrade.sh <标签或提交> [--cp-origin <控制面来源>] [--no-relay]}
 shift
 CP_ORIGIN=""
-[ "${1:-}" = --cp-origin ] && CP_ORIGIN="$2"
+VERIFY_ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --cp-origin) CP_ORIGIN="$2"; shift 2 ;;
+    --no-relay) VERIFY_ARGS+=(--no-relay); shift ;;
+    *) echo "不认识的参数：$1" >&2; exit 2 ;;
+  esac
+done
 cd "$APP"
 PREV=$(git rev-parse HEAD)
 install -d -m 0700 /var/lib/kwl-upgrade
@@ -71,9 +79,14 @@ for role in cp-signer control-plane gateway search dist support notify relay; do
 done
 bash deploy/scripts/healthcheck.sh || { echo "健康检查没过。回滚：sudo bash $APP/deploy/scripts/rollback.sh"; exit 1; }
 echo "升级完成：$(git describe --tags --always)。上一版本 ${PREV:0:12} 记在 /var/lib/kwl-upgrade/previous"
-bash deploy/scripts/verify-capabilities.sh || {
-  echo "✖✖ 升级已完成、服务正常运行，但“个人账号新电脑直接登录”没有开通（/v1/meta 缺 device_auto_enroll）：个人账号换电脑会退化成等批准。"
-  echo "   处理：按运维手册“补账号设备签发钥”一节执行 node scripts/add-account-device-ca.mjs，再 sudo systemctl restart kwl@cp-signer kwl@control-plane，最后 sudo bash deploy/scripts/verify-capabilities.sh"
+# 第 73 批（v1.8.0）：共享中继是第五个标准服务——升级不替你开新端口、起新服务（要放行防火墙与安全组），只提示；末尾核对会把它列为缺项
+if [ ${#VERIFY_ARGS[@]} -eq 0 ] && ! systemctl is-enabled --quiet kwl@relay 2>/dev/null; then
+  echo "提示：共享中继 kwl@relay 还没有开通（同事之间同步要它）：sudo bash deploy/scripts/relay-setup.sh（运维手册 5.3；之后要发带中继地址的客户端）"
+fi
+bash deploy/scripts/verify-capabilities.sh ${VERIFY_ARGS[@]+"${VERIFY_ARGS[@]}"} || {
+  echo "✖✖ 升级已完成、服务正常运行，但能力核对有缺项（见上面的 ✖ 行），逐项处理后再跑 sudo bash deploy/scripts/verify-capabilities.sh："
+  echo "   缺 device_auto_enroll（个人账号换电脑会退化成等批准）：按运维手册 5.2 执行 node scripts/add-account-device-ca.mjs，再 sudo systemctl restart kwl@cp-signer kwl@control-plane"
   [ "$CA_FAILED" = 1 ] && echo "   （本次补钥步骤就已失败，原因见上文）"
+  echo "   共享中继没有配置 / 没有启用 / 没就绪：按运维手册 5.3 执行 sudo bash deploy/scripts/relay-setup.sh（有意不开同事之间同步时核对加 --no-relay）"
   exit 3
 }

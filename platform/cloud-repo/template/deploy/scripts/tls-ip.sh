@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 纯公网 IP 部署（没有域名、只有一个公网 IPv4）的对外服务证书。控制台 443、控制面 8443、网关 8444、检索 8445 共用
 # 一把 P-256 私钥和一张带 IP SAN 的证书；客户端钉住这把私钥的公钥（SPKI），外加一把离线备用密钥的公钥，共两把。
+# 第 73 批（v1.8.0）：共享中继 8446 直接用控制面那一份（/etc/kwl/relay.json 的 tls 指向 cp.crt / cp.key），钉住值相同；续期时一起热换。
 #
 #   sudo bash deploy/scripts/tls-ip.sh acme    --ip <IPv4> [--acme-server <ACME 目录地址>] [--acme-ca-file <PEM>] [--trust-ca-file <PEM>] [--email <邮箱>]
 #        公共 CA（缺省 Let's Encrypt 正式环境）签 6 天左右的短期 IP 证书（shortlived 配置，HTTP-01 验证走 80 端口）；装续期定时器。
@@ -115,9 +116,9 @@ install_cert() {
   say "证书已装到 $TLS/{cp,gw,search,console}.crt（到 $(openssl x509 -in "$chain" -noout -enddate | cut -d= -f2)）"
 }
 
-# 热换：控制面、网关、检索 reload（SIGHUP 重读证书，不断连接）；单元还没有 ExecReload 时退回重启。nginx 检查配置后 reload。
+# 热换：控制面、网关、检索、中继 reload（SIGHUP 重读证书，不断连接）；单元还没有 ExecReload 时退回重启。nginx 检查配置后 reload。
 reload_all() {
-  for r in control-plane gateway search; do
+  for r in control-plane gateway search relay; do
     systemctl is-active --quiet "kwl@$r" || continue
     systemctl reload "kwl@$r" 2>/dev/null || systemctl try-restart "kwl@$r"
     say "kwl@$r 已换用新证书"
@@ -234,7 +235,7 @@ cmd_demo_ca() {
   save_env KWL_TLS_MODE=demo-ca KWL_PUBLIC_IP="$IP"
   write_extra_trust "$DEMO_CA/demo-ca.crt"
   # 换了信任文件要重启才生效（NODE_EXTRA_CA_CERTS 只在进程启动时读）
-  for r in control-plane gateway search; do systemctl try-restart "kwl@$r" 2>/dev/null || true; done
+  for r in control-plane gateway search relay; do systemctl try-restart "kwl@$r" 2>/dev/null || true; done
   if systemctl is-active --quiet nginx; then nginx -t -q && systemctl reload nginx; fi
   install_timer
   cmd_pins
@@ -274,17 +275,24 @@ cmd_pins() {
   install -d -m 0755 "$out"
   install -m 0644 "$BACKUP_PUB" "$out/tls-backup.pub.pem"
   for f in cp-public-keys.json seat-public-keys.json; do [ -f "$ETC/public/$f" ] && install -m 0644 "$ETC/public/$f" "$out/$f"; done
-  local ca_line="" test_build=false
+  local ca_line="" test_build=false relay_line="" relay_pin="" rport=""
   if [ "$mode" = demo-ca ]; then install -m 0644 "$ETC/public/demo-ca.crt" "$out/demo-ca.crt"; ca_line='  "cloud_ca_file": "demo-ca.crt",'; test_build=true; fi
+  # 共享中继（v1.8.0）：配了 relay.json 才写进说明文件；与控制面同一张证书，钉住值相同
+  if [ -f "$ETC/relay.json" ]; then
+    rport=$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).listen?.port??8446))' "$ETC/relay.json" 2>/dev/null || echo 8446)
+    relay_line="  \"relay_base\": \"https://$ip:$rport\","
+    relay_pin=", \"relay\": [\"sha256/$cur\"]"
+  fi
   cat > "$out/client-release-spec.json" <<SPEC
 {
-  "\$comment": "纯公网 IP 部署（$mode）交给客户端团队的说明文件：在本目录执行 make-release-config --spec client-release-spec.json（相对路径按当前目录）。三个服务共用一张证书，钉住值相同。$([ "$mode" = demo-ca ] && echo "演示 CA 只许内部测试包（D-212）。")",
+  "\$comment": "纯公网 IP 部署（$mode）交给客户端团队的说明文件：在本目录执行 make-release-config --spec client-release-spec.json（相对路径按当前目录）。各服务（含共享中继）共用一张证书，钉住值相同。$([ "$mode" = demo-ca ] && echo "演示 CA 只许内部测试包（D-212）。")",
   "control_plane_base": "https://$ip:8443",
   "gateway_base": "https://$ip:8444/v1",
   "search_base": "https://$ip:8445/v1/search",
+$relay_line
 $ca_line
   "backup_pins": ["tls-backup.pub.pem"],
-  "pins": { "control_plane": ["sha256/$cur"], "gateway": ["sha256/$cur"], "search": ["sha256/$cur"] },
+  "pins": { "control_plane": ["sha256/$cur"], "gateway": ["sha256/$cur"], "search": ["sha256/$cur"]$relay_pin },
   "cp_public_keys_file": "cp-public-keys.json",
   "seat_public_keys_file": "seat-public-keys.json",
   "test_build": $test_build
@@ -293,8 +301,9 @@ SPEC
   sed -i '/^$/d' "$out/client-release-spec.json"
   printf 'control_plane https://%s:8443  sha256/%s  sha256/%s\ngateway       https://%s:8444  sha256/%s  sha256/%s\nsearch        https://%s:8445  sha256/%s  sha256/%s\n' \
     "$ip" "$cur" "$bak" "$ip" "$cur" "$bak" "$ip" "$cur" "$bak" > "$out/pins.txt"
+  [ -z "$rport" ] || printf 'relay         https://%s:%s  sha256/%s  sha256/%s\n' "$ip" "$rport" "$cur" "$bak" >> "$out/pins.txt"
   chmod 0644 "$out/client-release-spec.json" "$out/pins.txt"
-  say "模式 $mode，地址 $ip。钉住值（三个服务相同）："
+  say "模式 $mode，地址 $ip。钉住值（控制面、网关、检索$([ -n "$rport" ] && echo "、中继")相同）："
   say "  当前  sha256/$cur"
   say "  备份  sha256/$bak"
   say "交给客户端团队的材料：$out/（说明文件、公钥表、备用公钥$([ "$mode" = demo-ca ] && echo "、演示 CA 证书")；不含私钥）"

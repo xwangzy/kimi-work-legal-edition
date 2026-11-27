@@ -4,6 +4,8 @@
 # --restore 恢复的是“状态”（律所、账号、设备、套餐、路由、额度）；只增不改的账与日志——用量账本、审计链、网关计量发件箱、签名流水、
 # 运营访问记录、运行日志——保留恢复前的那一份（第 56 批，云端审计 8-A：原先整个目录换回备份，备份之后的计费行随回滚消失，
 # 网关也不会重放；律所电脑上已取回的审计记录还会与云端对不上、报“云端改写了历史”）。确实要连这些一起换回备份时加 --restore-all。
+# 第 73 批（v1.8.0）：共享中继的数据（<data_dir>/relay：团队事项的同步段与密文块）同样保留恢复前的那一份——换回备份会让律师电脑已同步到的
+# 段号“倒退”，也会让备份之后按租户删除的数据重新出现。回滚代码本身不碰中继：1.7.x 的代码里就有中继角色，kwl@relay 照常重启。
 set -euo pipefail
 # 脚本中途会 git checkout 换掉本文件，而 bash 是边读边执行的：先把自己拷到临时文件再从那里执行
 if [ -z "${KWL_SCRIPT_COPY:-}" ]; then
@@ -33,7 +35,7 @@ if [ -n "$RESTORE" ]; then
   mv /var/lib/kwl "$OLD"
   tar -xzf "$RESTORE" -C / var/lib/kwl
   if [ "$RESTORE_ALL" = 0 ]; then
-    for rel in control-plane/usage control-plane/audit.jsonl control-plane/ops gateway/meter.jsonl gateway/meter.ack cp-signer/ledger.jsonl obs; do
+    for rel in control-plane/usage control-plane/audit.jsonl control-plane/ops gateway/meter.jsonl gateway/meter.ack cp-signer/ledger.jsonl relay obs; do
       [ -e "$OLD/$rel" ] || continue
       rm -rf "/var/lib/kwl/$rel"
       mkdir -p "$(dirname "/var/lib/kwl/$rel")"

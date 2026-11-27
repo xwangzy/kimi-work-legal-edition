@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # 逐个检查本机已启用的 kwl@ 服务：systemd 状态 + /healthz（+ /readyz）。全部正常退出 0。
+# 按已装载的 kwl@ 单元逐个查（含 v1.8.0 起的共享中继 kwl@relay :8446，端口取 /etc/kwl/<角色>.json 的 listen.port）；中继还没开通时不在列表里，
+# 由 verify-capabilities.sh 报缺项
 #   sudo bash deploy/scripts/healthcheck.sh
 set -uo pipefail
 # 本机回环探测：只看进程是否在应答（证书由客户端钉住、对外校验在部署手册的“对外验证”一步做），所以这里用 -k

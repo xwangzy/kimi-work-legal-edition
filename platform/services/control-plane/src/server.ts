@@ -497,6 +497,8 @@ export const RELAY_TOKEN_TTL_SECONDS = 6 * 3600;
 export const SEAT_TTL_DEFAULT_SECONDS = 96 * 3600;
 
 const DAY_MS = 24 * 3600 * 1000;
+/** 第 73 批：团队名单按姓名排序（中文按拼音；同名再按成员标识，顺序确定）。 */
+const ROSTER_COLLATOR = new Intl.Collator("zh-Hans-CN");
 
 export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   const now = o.now ?? Date.now;
@@ -1537,6 +1539,16 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
   };
   /** 这个成员身份此刻可用：本身有效，且这个人没有被平台停用。 */
   const memberActive = (a: AccountRecord): boolean => a.status === "active" && !personBlocked(a);
+  /**
+   * 第 73 批（契约 1.1）：团队名单里的状态——active 在用；removed 被团队移出；left 本人退出团队；disabled 其余停用
+   * （团队停用、平台停用这个身份或这个人）。平台停用优先于移出 / 退出的记法沿用 removeMember（disabled_by = platform 时不改 disabled_kind）。
+   */
+  const rosterStatusOf = (a: AccountRecord): "active" | "disabled" | "removed" | "left" => {
+    if (memberActive(a)) return "active";
+    if (a.status === "disabled" && a.disabled_by === "team" && a.disabled_kind === "removed") return "removed";
+    if (a.status === "disabled" && a.disabled_by === "team" && a.disabled_kind === "left") return "left";
+    return "disabled";
+  };
   /**
    * 第 72 批（安全审查 P0-2）：设备签名请求的有效角色——账号存在时取证书角色与账号当前角色中较低者（被降级的管理员，其电脑即刻失去管理权限）；
    * 账号已停用 / 已移出团队（或这个人被平台停用）一律 403；没有账号的历史成员照旧看证书。设备记录不吊销（契约原样），只是不再有管理权限。
@@ -4996,9 +5008,10 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     if (p.startsWith("/v1/auth/")) return authRoute(req, res, method, path, p, raw);
     // 第 46 批：版本与策略（无鉴权）；成员网页接口
     // 第 62 批：registration_policy / sms_available / features 是能力字段——客户端按它们做特性检测（旧云端没有，客户端照旧流程注册）
+    // 第 73 批（v1.8.0）：features 追加 team_roster（GET /v1/team/roster：团队成员可读的同事名单）
     if (method === "GET" && p === "/v1/meta") {
       const pol = registrationPolicy();
-      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites", "phone_login", "phone_bind", "account_switch", "device_limit_unbind", "device_name", "usage_request_ids", "device_signout", ...(accountCa() ? ["device_auto_enroll"] : []), "workspaces", "team_invites", ...(accountCa() ? ["team_member_auto_enroll", "device_share_confirm"] : []), "onboarding_state", "catalog_epoch"], account_switch: true, ...(accountCa() ? { account_device_ca: { kid: accountCa()!.kid } } : {}) });
+      return sendRaw(res, 200, { api: "kwl-cp/2", min_client_version: clients.min_version, registration: catalog.settings.registration, registration_policy: pol, sms_available: pol.sms_available, features: ["sms_send", "phone_register", "phone_reset", "registration_invites", "phone_login", "phone_bind", "account_switch", "device_limit_unbind", "device_name", "usage_request_ids", "device_signout", ...(accountCa() ? ["device_auto_enroll"] : []), "workspaces", "team_invites", ...(accountCa() ? ["team_member_auto_enroll", "device_share_confirm"] : []), "onboarding_state", "catalog_epoch", "team_roster"], account_switch: true, ...(accountCa() ? { account_device_ca: { kid: accountCa()!.kid } } : {}) });
     }
     if (p.startsWith("/v1/me/") || p.startsWith("/v1/firm/") || p === "/v1/workspace/upgrade" || p.startsWith("/v1/team/") || p.startsWith("/v1/teams/")) return memberRoute(req, res, method, path, p, url, raw);
 
@@ -6104,6 +6117,21 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
         return send(res, 200, { ok: true, invite: teamInviteView(r) });
       }
       throw new CpError(404, "not_found", "没有这条路由");
+    }
+    // ─── 第 73 批（契约 1.1，D-308）：团队名单（团队里每位成员都可读）——本人会话 + 这台电脑的设备签名（与 /v1/quota 同一口径，由内核经出站闸门调用）。
+    // 只给成员标识、姓名、角色与状态：不含邮箱、手机号、账号编号（aid）与设备；含已移出 / 已退出 / 已停用的人（status 标明），
+    // 律师电脑据此把事项成员标“已离开团队”。被移出 / 停用的人会话已撤，上面 sessionOf 即 401（同现有口径）
+    if (method === "GET" && p === "/v1/team/roster") {
+      if (kindOf(t) !== "team") throw new CpError(403, "team_only", "个人工作空间没有团队名单");
+      const { t: dt, dev } = await authDevice(req, _path, raw);
+      if (dt.tid !== t.tid || uidOfAccount(a) !== dev.cert.memberId) throw new CpError(403, "session_member_mismatch", "登录的账号不是这台电脑上的成员：请用本机成员的账号重新登录");
+      // 会话须是客户端会话，且已绑的是这台电脑（还没绑设备的客户端会话照样可读：只读、不在这里绑）
+      if (me.s.kind !== "desktop" || (me.s.device_id !== null && me.s.device_id !== dev.cert.deviceId)) throw new CpError(401, "session_invalid", "登录已失效，请重新登录");
+      const members = [...accounts.values()]
+        .filter((x) => x.tid === t.tid)
+        .map((x) => ({ member_slug: x.member_slug, name: x.name, role: x.role, status: rosterStatusOf(x) }))
+        .sort((x, y) => ROSTER_COLLATOR.compare(x.name, y.name) || (x.member_slug < y.member_slug ? -1 : x.member_slug > y.member_slug ? 1 : 0));
+      return send(res, 200, { ok: true, tid: t.tid, members });
     }
     // ─── 第 72 批（契约 §3.3）：已注册的人接受团队邀请——为同一个人建关联账号（团队成员身份），应答 = 切换应答 ───
     if (method === "POST" && p === "/v1/teams/join") {

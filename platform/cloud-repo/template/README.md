@@ -13,7 +13,8 @@
 | `services/cp-signer` | 签名服务：持有文档与席位令牌签名私钥，只接受控制面的 mTLS 调用 | 一个 systemd 服务，只在内网 |
 | `services/legal-gateway` | 法律模型网关：验席位令牌、按路由调上游模型、逐请求计量 | 一个 systemd 服务 |
 | `services/search-service` | 法律检索代理 | 可选 |
-| `services/{dist-api,support-api,notify-api,relay-api}` | 内容分发、技术支持、期限通知、团队共享中继 | 可选 |
+| `services/relay-api` | 共享中继：团队共享事项在同事电脑之间的密文同步（中继只存密文、解不开）；v1.8.0 起为标准服务，端口 8446、与控制面同一张证书 | 一个 systemd 服务（`deploy/scripts/relay-setup.sh` 开通） |
+| `services/{dist-api,support-api,notify-api}` | 内容分发、技术支持、期限通知 | 可选 |
 | `packages/*` | 共用库；`firm-trust`、`seat-token`、`keys`、`design-tokens` 与桌面客户端共用 | — |
 | `scripts/cloud-serve.mjs` | 生产入口：一个进程一个角色，`--config /etc/kwl/<角色>.json` | systemd 的 ExecStart |
 | `scripts/cloud-init-secrets.mjs` | 一次生成全部密钥文件 | 首次部署 |
