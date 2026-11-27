@@ -121,7 +121,8 @@ test("待激活：验证码登录策略；没注册的号说清原因；手机�
   const bd = (await a.invoke("account.bind_phone", { phone: "13900139632", sms_code: bs.debug_code, password: PW })) as any;
   assert.deepEqual(bd, { ok: true, phone: "139****9632" });
   await assert.rejects(a.invoke("account.sms_send", { phone: "13900139631", purpose: "login" }), (e: any) => e.detail?.reason === "phone_not_registered", "旧号已解除");
-  // 第二台电脑用验证码登录：试用 1 台设备上限 → 与密码登录同样写明原因
+  // 第二台电脑用验证码登录：设备上限 1 台 → 与密码登录同样写明原因（第 72 批试用缺省改为 2 台，这里显式设 1 台）
+  cloud!.cp.ops.account("sms-a@example.cn")!.device_limit = 1;
   const b = await boot(mkdtempSync(join(tmpdir(), "kwl-b63-b-")));
   await pause(61_000);
   const s2 = (await b.invoke("account.sms_send", { phone: "13900139632", purpose: "login" })) as any;

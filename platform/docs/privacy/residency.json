@@ -1262,6 +1262,16 @@
         29
       ],
       "reason": "第 72 批（D-305 / D-302）：每个账号档案的工作区里写一份 account-meta.json（0600，原子写）：当前工作空间是个人还是团队、账号级上手状态的两个时间戳（完成 / 收起）；取自登录与 me 应答，不含秘密与案件信息"
+    },
+    "packages/kernel/src/services/device-share.ts": {
+      "apis": [
+        "renameSync",
+        "writeFileSync"
+      ],
+      "rows": [
+        19
+      ],
+      "reason": "第 72 批（U-2）：团队共享事后确认的本机状态 share-confirm.json（0600，原子写）：申请编号、状态、入组核对码、时刻；不含私钥与案件信息。换证时旧证书按 rekeyed 留档（沿用 archiveDeviceCert）"
     }
   },
   "renderer_storage": {
@@ -1284,7 +1294,8 @@
       "kwl.home.lastMatter": "首页上次用过的事项编号（只存编号，不含事项名称与内容；第 66 批：首页缺省停在它，减少文件放错事项；第 68 批起按账号档案分键 kwl.home.lastMatter@<档案摘要>，换账号不带上一个账号的编号）",
       "kwl.chat.model": "问答上次选的模型别名（legal/k3 或 legal/k2.6；第 47 批）",
       "kwl.chat.deep": "问答“深度思考”开关上次的选择（1 / 0；第 48 批；不含问答内容）",
-      "kwl.login.method": "登录页上次用的登录方式（phone = 验证码登录 / password = 密码登录；第 63 批；只记方式，不含手机号、邮箱或验证码）"
+      "kwl.login.method": "登录页上次用的登录方式（phone = 验证码登录 / password = 密码登录；第 63 批；只记方式，不含手机号、邮箱或验证码）",
+      "kwl.ws.left-notice": "第 72 批（设计评分 C16）：被移出或退出团队后，在落到的另一个工作空间里提示一次“你已不在「X」”——只存团队名称、方式（removed / left）与时刻，显示后即删除；不含身份证件、手机号、邮箱或任何案件信息"
     },
     "files": [
       "apps/desktop/src/App.tsx",
@@ -1294,7 +1305,9 @@
       "apps/desktop/src/pages/RunView.tsx",
       "apps/desktop/src/pages/Activate.tsx",
       "apps/desktop/src/pages/Chat.tsx",
-      "apps/desktop/src/lib/account.ts"
+      "apps/desktop/src/lib/account.ts",
+      "apps/desktop/src/components/TeamSpace.tsx",
+      "apps/desktop/src/pages/Relogin.tsx"
     ]
   },
   "out_of_scope": {

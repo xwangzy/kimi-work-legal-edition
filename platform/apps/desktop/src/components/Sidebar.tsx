@@ -18,12 +18,14 @@ import { BrandLockup, KimiMark } from "./Brand.tsx";
 import { notifyAccountChanged } from "./AccountPanel.tsx";
 import { onDataChanged } from "../lib/events.ts";
 import { sidebarFoot, userCardText } from "../lib/user-card.ts";
-import { KIND_LABEL, LEFT_NOTICE_KEY, leftNoticeText, parseLeftNotice, workspaceLabel, workspaceMenuMeta, workspaceRoleTag } from "../lib/workspace.ts";
+import { KIND_LABEL, leftNoticeText, parseLeftNotice, workspaceLabel, workspaceMenuMeta, workspaceRoleTag } from "../lib/workspace.ts";
 import { useSwitchFlow, useWorkspace, type WorkspaceState } from "./WorkspaceSwitch.tsx";
 import { openJoinTeam } from "./TeamSpace.tsx";
 import { planBadge, quotaMenuLine } from "../lib/quota-notice.ts";
 import { runName } from "../lib/labels.ts";
 import { NARROW_QUERY, sidebarState } from "../lib/sidebar-state.ts";
+/** 第 72 批（C16）：被移出 / 退出团队后在另一个工作空间提示一次（登记在 docs/privacy/residency.json；键须是本文件里的字面量）。 */
+const LEFT_NOTICE_KEY = "kwl.ws.left-notice";
 
 interface Item {
   key: Route["page"];

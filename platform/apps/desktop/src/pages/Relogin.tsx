@@ -15,7 +15,8 @@ import { account } from "../api.ts";
 import { AuthCard, AuthPage, AuthPrivacy } from "../components/AuthShell.tsx";
 import { LoginBox } from "../components/AccountPanel.tsx";
 import { maskPhoneTight, reloginView } from "../lib/account.ts";
-import { LEFT_NOTICE_KEY } from "../lib/workspace.ts";
+/** 第 72 批（C16）：被移出 / 退出团队后在另一个工作空间提示一次（登记在 docs/privacy/residency.json；键须是本文件里的字面量）。 */
+const LEFT_NOTICE_KEY = "kwl.ws.left-notice";
 
 export function ReloginPage(p: { reason: string | null; email: string; firm?: string | null; member?: string | null; notice?: string; onDone: () => void }) {
   // 第 72 批（评分 C16）：被移出 / 自己退出团队——标题写团队名；账号卡不再把刚离开的团队当身份；只填验证码（云端按这台电脑找到这个人的手机号）
