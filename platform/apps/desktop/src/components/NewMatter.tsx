@@ -18,7 +18,7 @@ import { notifyDataChanged } from "../lib/events.ts";
 import { Select } from "./Select.tsx";
 import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.ts";
 import { createErrorText, pickableColleagues, scopeAvailability, scopeToSubmit, type CollabScope } from "../lib/team-matters.ts";
-import { ScopeField, useRelayState, useRoster, useTeamKind } from "./TeamMatter.tsx";
+import { ScopeField, useDeviceShareApplied, useRelayState, useRoster, useTeamKind } from "./TeamMatter.tsx";
 
 // 我方立场（v9.4：补上劳动争议、借贷担保、委托服务、建设工程与二审的立场——S1 评审 §2.4；按业务类型分组提示）
 export const STANCE_GROUPS: [string, string[]][] = [
@@ -67,7 +67,8 @@ export function useMatterScope(level: string, initial?: { scope?: CollabScope; m
   // 团队空间里先取同事名单（60 秒内共用一份）：点“和同事一起办”时列表已就绪，服务不支持也能立刻置灰
   const roster = useRoster(team && ws.issuer !== "account_ca");
   const relay = useRelayState(team);
-  const avail = scopeAvailability({ kind, issuer: ws.issuer, level, roster });
+  const applied = useDeviceShareApplied(team && ws.issuer === "account_ca");
+  const avail = scopeAvailability({ kind, issuer: ws.issuer, level, roster, applied });
   // 只提交名单里还能加的人（“更多设置”带过来的选择可能已过时）；名单还没取到时原样交给内核核验
   const ok = roster && roster.members.length > 0 ? new Set(pickableColleagues(roster).map((m) => m.user_id)) : null;
   const nameOf = (id: string) => roster?.members.find((m) => m.user_id === id)?.name ?? null;

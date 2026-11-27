@@ -9,7 +9,7 @@
  * 安全约束不变：成员变更只能由负责人的电脑做（内核核验），管理员不代加。
  */
 import { useEffect, useId, useRef, useState } from "react";
-import { api, matterMembers, teamMatters, type Matter, type MatterMembersView, type MatterSync, type TeamRoster } from "../api.ts";
+import { api, matterMembers, team, teamMatters, type Matter, type MatterMembersView, type MatterSync, type TeamRoster } from "../api.ts";
 import { nav } from "../App.tsx";
 import {
   addResultText,
@@ -25,6 +25,7 @@ import {
   matterRoleLabel,
   memberErrorText,
   memberName,
+  memberCounts,
   memberRowNote,
   needsShareRefresh,
   ownerHint,
@@ -51,7 +52,7 @@ import { ListSkeleton, LoadError } from "./Loading.tsx";
 import { Modal } from "./Modal.tsx";
 import { Select } from "./Select.tsx";
 import { useWorkspace, type WorkspaceState } from "./WorkspaceSwitch.tsx";
-import type { WorkspaceKind } from "../lib/workspace.ts";
+import { shareReadyText, type WorkspaceKind } from "../lib/workspace.ts";
 import "../styles-team.css";
 import "../styles-team-matters.css";
 
@@ -125,12 +126,26 @@ export function useRelayState(enabled: boolean): { ready: boolean | null; config
   return { ready: st.ready, configured: st.configured, sync: st.sync, refresh };
 }
 
+/** 这台电脑是否已申请接收、等管理员确认（只在直接登录的电脑上问；旧内核没有时按没申请）。 */
+export function useDeviceShareApplied(enabled: boolean): boolean {
+  const [applied, setApplied] = useState(false);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    void team.deviceShare.status().then((s) => live && setApplied(s.supported === true && s.state === "pending"));
+    return () => {
+      live = false;
+    };
+  }, [enabled]);
+  return applied;
+}
+
 /* ── 记号 ── */
 
 /** 灰色两人记号 + 读屏文字“团队共享”（D-310：不分组、不靠悬停 title）。 */
 export function TeamMark({ className = "" }: { className?: string }) {
   return (
-    <span className={`team-mark ${className}`.trim()}>
+    <span className={`team-mark ${className}`.trim()} title="团队共享">
       <Icon.users />
       <span className="sr-only">团队共享</span>
     </span>
@@ -206,58 +221,84 @@ export function ScopeField({ variant, scope, onScope, picked, onPicked, avail, r
           )}
         </p>
       ) : (
-        <p className={note}>{scopeHint(effective, relay.ready, relay.configured)}</p>
+        <p className={note}>{scopeHint(effective, relay.ready, relay.configured, relay.sync ?? null)}</p>
       )}
-      {effective === "team" && <ColleaguePicker roster={roster} picked={picked} onPicked={onPicked} />}
+      {effective === "team" && <ColleaguePicker variant="inline" roster={roster} picked={picked} onPicked={onPicked} />}
     </div>
   );
 }
 
-/** 建事项时选同事：已选的成 chip（带 ×），“选同事”展开同一块里的列表（不另开弹窗）；可留空，建好再加。 */
-function ColleaguePicker({ roster, picked, onPicked }: { roster: TeamRoster | null; picked: string[]; onPicked: (ids: string[]) => void }) {
+/**
+ * 选同事（设计评分第一轮 T2 / 跨页 4：三个入口同一个组件）。
+ * - inline（两处新建表单）：收起时一排已选胶囊 +“选同事 / 再选同事”文字链；展开时只显示名单，顶上一行“已选 n 人 · 收起”（不再胶囊与勾选行同时出现）；
+ * - dialog（加同事、和同事一起办）：名单常显，顶上一行“已选 n 人”。
+ * 名单 6 人及以上出搜索框，最多 6 行高内滚；复选框用产品样式。加进来的人一律“一起办”，要只给看到事项成员里改（三个入口同一说法）。
+ */
+export function ColleaguePicker({ roster, picked, onPicked, variant, exclude = [], emptyText = "团队里还没有其他同事。" }: {
+  roster: TeamRoster | null;
+  picked: string[];
+  onPicked: (ids: string[]) => void;
+  variant: "inline" | "dialog";
+  exclude?: string[];
+  emptyText?: string;
+}) {
   const [open, setOpen] = useState(false);
-  const all = pickableColleagues(roster);
+  const all = pickableColleagues(roster, exclude);
   const byId = new Map(all.map((m) => [m.user_id, m]));
   const chosen = picked.map((id) => byId.get(id)).filter((m): m is NonNullable<typeof m> => !!m);
   const note = rosterNote(roster);
+  const listShown = variant === "dialog" || open;
   return (
-    <div className="cp">
-      <div className="cp-chips">
-        {chosen.map((m) => (
-          <span key={m.user_id} className="chip cp-chip">
-            <span className="cp-chip-name">{m.name}</span>
-            <button type="button" className="chip-x" aria-label={`不加${m.name}`} onClick={() => onPicked(picked.filter((x) => x !== m.user_id))}>
-              <Icon.x />
+    <div className={`cp cp-${variant}`}>
+      {variant === "inline" && !open && (
+        <div className="cp-chips">
+          {chosen.map((m) => (
+            <span key={m.user_id} className="chip cp-chip">
+              <span className="cp-chip-name">{m.name}</span>
+              <button type="button" className="chip-x" aria-label={`不加${m.name}`} onClick={() => onPicked(picked.filter((x) => x !== m.user_id))}>
+                <Icon.x />
+              </button>
+            </span>
+          ))}
+          {(all.length > 0 || !note) && (
+            <button type="button" className="btn-link cp-toggle" aria-expanded={false} onClick={() => setOpen(true)}>
+              {chosen.length > 0 ? "再选同事" : "选同事"}
             </button>
-          </span>
-        ))}
-        {(all.length > 0 || !note) && (
-          <button type="button" className="btn-ghost btn-sm cp-add" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-            {open ? "收起" : <><Icon.plus /> {chosen.length > 0 ? "再选同事" : "选同事"}</>}
-          </button>
-        )}
-        {chosen.length === 0 && !open && all.length > 0 && <span className="cp-empty">可以先不选，建好后在事项里再加</span>}
-      </div>
+          )}
+          {chosen.length === 0 && all.length > 0 && <span className="cp-empty">可以先不选，建好后在事项里再加</span>}
+        </div>
+      )}
+      {listShown && all.length > 0 && (
+        <div className="cp-head">
+          <span className="cp-count">已选 {chosen.length} 人</span>
+          {variant === "inline" && (
+            <button type="button" className="btn-link cp-toggle" aria-expanded onClick={() => setOpen(false)}>
+              收起
+            </button>
+          )}
+        </div>
+      )}
       {note && <p className="cp-note">{note}</p>}
-      {open && <ColleagueList list={all} picked={picked} onPicked={onPicked} />}
+      {listShown && <ColleagueList list={all} picked={picked} onPicked={onPicked} emptyText={emptyText} />}
+      {listShown && all.length > 0 && <p className="cp-foot">加进来的同事都可以一起办；要只给看，加进来后在事项成员里改。</p>}
     </div>
   );
 }
 
-/** 同事列表（选同事、加同事共用）：首字头像 + 姓名 + 灰色“角色 · 电脑还不能接收”；超过 8 人出搜索框；最多 6 行高、内滚。 */
-function ColleagueList({ list, picked, onPicked, emptyText = "团队里还没有其他同事。" }: { list: ReturnType<typeof pickableColleagues>; picked: string[]; onPicked: (ids: string[]) => void; emptyText?: string }) {
+/** 同事名单：首字头像 + 姓名 + 灰色“角色 · 电脑还不能接收 · 确认后自动收到”；6 人及以上出搜索框；最多 6 行高、内滚。 */
+function ColleagueList({ list, picked, onPicked, emptyText }: { list: ReturnType<typeof pickableColleagues>; picked: string[]; onPicked: (ids: string[]) => void; emptyText: string }) {
   const [q, setQ] = useState("");
   const shown = filterColleagues(list, q);
   const toggle = (id: string) => onPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
+  if (list.length === 0) return <p className="cp-note cp-none">{emptyText}</p>;
   return (
     <div className="cp-list" role="group" aria-label="选同事">
-      {list.length > PICKER_SEARCH_FROM && <input type="search" className="cp-search" placeholder="搜索同事" aria-label="搜索同事" value={q} onChange={(e) => setQ(e.target.value)} />}
-      {list.length === 0 && <p className="cp-note">{emptyText}</p>}
-      {list.length > 0 && shown.length === 0 && <p className="cp-note">没有找到“{q}”。</p>}
+      {list.length >= PICKER_SEARCH_FROM && <input type="search" className="cp-search" placeholder="搜索同事" aria-label="搜索同事" value={q} onChange={(e) => setQ(e.target.value)} />}
+      {shown.length === 0 && <p className="cp-note">没有找到“{q}”。</p>}
       <div className="cp-rows">
         {shown.map((m) => (
           <label key={m.user_id} className={`cp-row${picked.includes(m.user_id) ? " is-on" : ""}`}>
-            <input type="checkbox" checked={picked.includes(m.user_id)} onChange={() => toggle(m.user_id)} />
+            <input type="checkbox" className="kw-check" checked={picked.includes(m.user_id)} onChange={() => toggle(m.user_id)} />
             <span className="tm-avatar tm-avatar-sm" aria-hidden="true">
               {avatarOf(m.name)}
             </span>
@@ -278,7 +319,9 @@ function ColleagueList({ list, picked, onPicked, emptyText = "团队里还没有
 export function TeamPill({ view, failed = false, onMembers }: { view: MatterMembersView | null; failed?: boolean; onMembers: () => void }) {
   const ref = useRef<HTMLDetailsElement>(null);
   const rows = view ? sortMembers(view.members) : [];
-  const t = teamPillText(view ? view.members.length : null);
+  // 设计评分第一轮 T10：人数只数还在团队里的人，已离开的另计
+  const counts = memberCounts(rows);
+  const t = teamPillText(view ? counts.active : null);
   // 点外面收起（与“⋯”菜单同样的规矩）
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -295,7 +338,7 @@ export function TeamPill({ view, failed = false, onMembers }: { view: MatterMemb
       <div className="protect-pop team-pop" role="group" aria-label="事项成员">
         {!view && <p className="team-pop-empty">{failed ? "暂时读不到事项成员，稍后再看" : "正在读取事项成员…"}</p>}
         {rows.slice(0, 6).map((m) => {
-          const quiet = !m.is_me && !m.departed && !m.can_receive;
+          const quiet = !m.is_me && !m.departed && (!m.can_receive || m.seat === false);
           return (
             <div key={m.user_id} className={`team-pop-row${m.departed ? " is-off" : ""}`}>
               <span className="tm-avatar tm-avatar-sm" aria-hidden="true">
@@ -306,13 +349,15 @@ export function TeamPill({ view, failed = false, onMembers }: { view: MatterMemb
                   {memberName(m)}
                   {m.is_me && <span className="tag tag-this">我</span>}
                 </span>
-                {(quiet || m.departed) && <small>{m.departed ? "已离开团队" : "电脑还不能接收"}</small>}
+                {quiet && <small>{m.seat === false ? "还没有 AI 使用名额" : shareReadyText({ kind: "peer", confirmed: false, relay: null })}</small>}
               </span>
-              <span className="team-pop-role">{matterRoleLabel(m.matter_role)}</span>
+              {/* 已离开的人右侧只写“已离开”，不同时写角色 */}
+              <span className="team-pop-role">{m.departed ? "已离开" : matterRoleLabel(m.matter_role)}</span>
             </div>
           );
         })}
         {rows.length > 6 && <p className="team-pop-more">还有 {rows.length - 6} 人</p>}
+        {counts.departed > 0 && <p className="team-pop-more">另有 {counts.departed} 人已离开团队</p>}
         <div className="team-pop-foot">
           <button
             type="button"
@@ -348,6 +393,11 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
 }) {
   const [adding, setAdding] = useState(false);
   const [msg, setMsg] = useState<{ text: string; tone: "ok" | "warn" } | null>(initialMsg);
+  useEffect(() => {
+    if (msg?.tone !== "ok") return;
+    const t = setTimeout(() => setMsg(null), 6000);
+    return () => clearTimeout(t);
+  }, [msg]);
   const [asking, setAsking] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [rowErr, setRowErr] = useState<{ id: string; text: string } | null>(null);
@@ -358,6 +408,7 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
   const manage = canManageMembers(view, closed);
   const blockedNote = manageBlockedText(view, closed);
   const rows = sortMembers(view.members);
+  const counts = memberCounts(rows);
   const notice = syncNotice(view.sync);
   const act = async (id: string, fn: () => Promise<unknown>, done: string) => {
     setBusy(id);
@@ -379,7 +430,7 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
     <section className="mm" aria-labelledby="mm-title">
       <div className="mm-head">
         <h2 id="mm-title" className="h-section mm-title">
-          事项成员 <span className="team-count">{rows.length}</span>
+          事项成员 <span className="team-count">{counts.active}</span>
         </h2>
         {manage && (
           <button type="button" className="btn-ghost btn-sm mm-add" onClick={() => setAdding(true)}>
@@ -389,7 +440,7 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
       </div>
       <p className="mm-lead">
         <Icon.lock />
-        <span>加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果；内容加密后在你们的电脑之间同步，中软打不开。</span>
+        <span>加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果，内容在你们的电脑之间加密同步。</span>
       </p>
       {notice && (
         <div className="mm-notice" role="note">
@@ -401,8 +452,9 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
           )}
         </div>
       )}
+      {/* 设计评分第一轮（跨页 6）：成功是中性的轻提示（只对勾着色、几秒后消失）；没加上的人用提醒色、留着 */}
       {msg && (
-        <p className={`mm-msg${msg.tone === "warn" ? " is-warn" : ""}`} role="status">
+        <p className={msg.tone === "warn" ? "mm-msg is-warn" : "lite-toast mm-toast"} role="status">
           {msg.tone === "ok" && <Icon.check />}
           <span>{msg.text}</span>
         </p>
@@ -424,7 +476,6 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
                   <span className="tm-who-text">
                     <span className="mm-name">{name}</span>
                     {m.is_me && <span className="tag tag-this">我</span>}
-                    {m.departed && <span className="tag tag-gray">已离开团队</span>}
                   </span>
                 </span>
                 <span className="mm-role">
@@ -438,19 +489,21 @@ export function MatterMembersPanel({ matter, view, error, onReload, canEnable, i
                       options={MATTER_ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label, hint: o.hint }))}
                     />
                   ) : (
-                    <span className="mm-role-text">{matterRoleLabel(m.matter_role)}</span>
+                    // 已离开的人：角色列只写“已离开团队”（设计评分第一轮 T10）
+                    <span className={`mm-role-text${m.departed ? " is-off" : ""}`}>{m.departed ? "已离开团队" : matterRoleLabel(m.matter_role)}</span>
                   )}
                 </span>
                 <span className="mm-acts">
+                  {/* 行尾灰色文字按钮（悬停变红），红底只留给确认条；已离开的人写明“从事项移出” */}
                   {removable && asking !== m.user_id && (
-                    <button type="button" className="btn-ghost btn-danger btn-sm" disabled={busy !== null} onClick={() => setAsking(m.user_id)}>
-                      移出
+                    <button type="button" className="mm-remove" disabled={busy !== null} onClick={() => setAsking(m.user_id)}>
+                      {m.departed ? "从事项移出" : "移出"}
                     </button>
                   )}
                 </span>
               </div>
               {/* 实拍：长句放在名字下面整行（原来挤在人名那一栏里折成三行） */}
-              {note && !m.departed && <p className="mm-sub">{note.text}</p>}
+              {note && <p className="mm-sub">{note.text}</p>}
               {asking === m.user_id && (
                 // 原位两步（D-308）：后果写清，确认按钮红色实心，默认焦点在“取消”
                 <div className="mm-confirm" role="alertdialog" aria-label={`移出${name}`}>
@@ -513,13 +566,15 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
   const roster = useRoster(true);
   const relay = useRelayState(mode === "share");
   const [picked, setPicked] = useState<string[]>([]);
-  const [role, setRole] = useState<"editor" | "viewer">("editor");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const all = pickableColleagues(roster, existing);
   const note = rosterNote(roster);
-  const avail = mode === "share" ? scopeAvailability({ kind, issuer: ws.issuer, level: levelOfMatter(matter), roster }) : { show: true, team: true, reason: null, apply: false };
+  const applied = useDeviceShareApplied(mode === "share" && ws.issuer === "account_ca");
+  const avail = mode === "share" ? scopeAvailability({ kind, issuer: ws.issuer, level: levelOfMatter(matter), roster, applied }) : { show: true, team: true, reason: null, apply: false };
   const blocked = mode === "share" && ws.ready && !avail.team;
+  // 设计评分第一轮 T2：加同事时没有可加的人（名单已取到、同事都在事项里或团队里没别人）——整块换成一句话 +“知道了”
+  const nobody = mode === "add" && !!roster && rosterNote(roster) === null && all.length === 0;
   const effSync: MatterSync | null = mode === "share" ? relay.sync : sync;
   // “和同事一起办…”弹窗里显示“所内还没开通…”时问一次内核（同 ScopeField）
   useEffect(() => {
@@ -543,7 +598,8 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
       const m = all.find((x) => x.user_id === id);
       const name = m?.name ?? "一位同事";
       try {
-        const r = await matterMembers.add(matter.matter_id, id, role);
+        // 三个入口同一规则：加进来一律“一起办”，要只给看到事项成员里改
+        const r = await matterMembers.add(matter.matter_id, id, "editor");
         added.push({ name: r.name ?? name, can_receive: r.can_receive ?? !!m?.can_receive });
       } catch (e) {
         failed.push({ name, why: memberErrorText(e) });
@@ -551,7 +607,7 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
     }
     setBusy(false);
     const text = addResultText(added, failed, effSync);
-    onDone(mode === "share" ? `已改为和同事一起办。${text}` : text, failed.length > 0 ? "warn" : "ok");
+    onDone(mode === "share" ? `已改为和同事一起办${text ? `，${text}` : "。"}` : text, failed.length > 0 ? "warn" : "ok");
   };
   const n = picked.length;
   return (
@@ -566,7 +622,9 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
             ))}
           </ul>
         )}
-        {blocked ? (
+        {nobody ? (
+          <p className="acd-empty">{existing.length > 1 ? "团队里的同事都已在这个事项里。" : "团队里还没有其他同事。"}</p>
+        ) : blocked ? (
           <p className="acd-blocked" role="note">
             {avail.reason}
             {avail.apply && (
@@ -582,12 +640,7 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
           <>
             {mode === "share" && relay.ready === false && <p className="acd-relay">{scopeHint("team", false, relay.configured)}</p>}
             <div className="acd-k">{mode === "share" ? "同时加哪些同事（可以先不选）" : "选同事"}</div>
-            {note && <p className="cp-note">{note}</p>}
-            <ColleagueList list={all} picked={picked} onPicked={setPicked} emptyText={existing.length > 1 ? "团队里的同事都已在这个事项里。" : "团队里还没有其他同事。"} />
-            <div className="acd-role">
-              <span className="acd-k">加入后是</span>
-              <Select aria-label="加入后的角色" value={role} onChange={(v) => setRole(v as "editor" | "viewer")} options={MATTER_ROLE_OPTIONS.map((o) => ({ value: o.value, label: o.label, hint: o.hint }))} />
-            </div>
+            <ColleaguePicker variant="dialog" roster={roster} picked={picked} onPicked={setPicked} exclude={existing} emptyText={existing.length > 1 ? "团队里的同事都已在这个事项里。" : "团队里还没有其他同事。"} />
           </>
         )}
       </div>
@@ -597,10 +650,16 @@ export function AddColleaguesDialog({ mode, matter, existing = [], sync = null, 
             {err}
           </div>
         )}
-        <button type="button" className="btn-ghost" disabled={busy} onClick={onClose}>
-          {blocked ? "关闭" : "取消"}
-        </button>
-        {!blocked && (
+        {nobody ? (
+          <button type="button" className="btn-primary" onClick={onClose}>
+            知道了
+          </button>
+        ) : (
+          <button type="button" className="btn-ghost" disabled={busy} onClick={onClose}>
+            {blocked ? "关闭" : "取消"}
+          </button>
+        )}
+        {!blocked && !nobody && (
           <button type="button" className="btn-primary" aria-busy={busy || undefined} disabled={busy || (mode === "add" && n === 0) || (mode === "share" && !ws.ready)} onClick={() => void submit()}>
             {busy ? "正在处理…" : mode === "share" ? (n > 0 ? `开始一起办（${n}）` : "开始一起办") : `加入（${n}）`}
           </button>

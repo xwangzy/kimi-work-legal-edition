@@ -20,8 +20,10 @@
 .ctx-matter .team-mark { margin-left: -2px; }
 
 /* 开始前确认：团队共享事项的“记为客户要求不上云”置灰，原因另起一行 */
-.authz-exits .authz-exit-why { flex-basis: 100%; color: var(--text-secondary); line-height: 1.6; }
-.authz-exits .btn-link:disabled { color: var(--text-secondary); opacity: 0.6; cursor: not-allowed; }
+/* 设计评分第一轮 T3：置灰的文字链与“谁能看到”置灰的分段同一规则（次色、半透明、禁用光标、去下划线），原因一句跟在同一行 */
+.authz-exits .authz-exit-local { display: inline-flex; align-items: baseline; flex-wrap: nowrap; white-space: nowrap; }
+.authz-exits .authz-exit-why { color: var(--text-secondary); cursor: help; }
+.authz-exits .btn-link:disabled { color: var(--text-secondary); opacity: 0.55; cursor: not-allowed; text-decoration: none; }
 
 /* 新建事项弹窗（实拍）：内容区滚动时标题栏也留在顶上（底部按钮已吊底） */
 .modal:has(.nm-actions) > .modal-head { position: sticky; top: 0; z-index: 2; background: var(--bg-elevated); }
@@ -39,9 +41,12 @@
 .cp-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .cp-chip { max-width: 180px; padding-right: 6px; }
 .cp-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.cp-add { display: inline-flex; align-items: center; gap: 4px; }
-.cp-add svg { width: 14px; height: 14px; }
+.cp-toggle { padding: 0; font-size: var(--fs-caption); }
 .cp-empty { font-size: var(--fs-xs); color: var(--text-secondary); }
+.cp-head { display: flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-caption); color: var(--text-label); }
+.cp-count { font-variant-numeric: tabular-nums; }
+.cp-foot { margin: 0; font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.6; }
+.cp-none { padding: 2px 0; }
 .cp-note { margin: 0; font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.6; }
 .cp-list { display: flex; flex-direction: column; gap: 4px; padding: 4px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); }
 .cp-list .cp-note { padding: 6px 8px; }
@@ -52,6 +57,12 @@
 .cp-row:hover { background: var(--bg-hover); }
 .cp-row.is-on { background: var(--bg-subtle); }
 .cp-row input { flex: none; margin: 0; }
+/* 复选框用产品样式（设计评分第一轮跨页 5）：16px 圆角方框，选中为正文色实底 + 反色对勾；深浅两色随令牌 */
+.kw-check { appearance: none; -webkit-appearance: none; width: 16px; height: 16px; border: 1px solid var(--border-strong); border-radius: var(--r-xs); background: var(--bg-surface); display: inline-grid; place-items: center; cursor: pointer; transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease; }
+.kw-check:hover { border-color: var(--text-secondary); }
+.kw-check:checked { background: var(--text-primary); border-color: var(--text-primary); }
+.kw-check:checked::after { content: ""; width: 4px; height: 8px; margin-top: -2px; border: solid var(--bg-surface); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.kw-check:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .cp-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .cp-name { font-size: var(--fs-body); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cp-text small { font-size: var(--fs-xs); color: var(--text-secondary); }
@@ -81,12 +92,16 @@
 .mm-lead svg { flex: none; width: 14px; height: 14px; margin-top: 3px; }
 .mm-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--sp-2); margin: 0 0 var(--sp-3); padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-caption); color: var(--text-primary); line-height: 1.6; }
 .mm-notice .btn-link { padding: 0; font-size: inherit; white-space: nowrap; }
-.mm-msg { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 var(--sp-3); font-size: var(--fs-body); color: var(--status-success-text); line-height: 1.6; }
-.mm-msg svg { flex: none; width: 16px; height: 16px; margin-top: 3px; }
+.mm-msg { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 var(--sp-3); font-size: var(--fs-body); line-height: 1.6; }
 .mm-msg.is-warn { color: var(--status-warning-text); }
+/* 一次性轻提示（设计评分第一轮跨页 6）：中性底、正文色，只有对勾着色；几秒后消失 */
+.lite-toast { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-full); background: var(--bg-subtle); font-size: var(--fs-caption); color: var(--text-primary); line-height: 1.6; animation: lite-toast-in var(--motion-fast) ease; }
+.lite-toast svg { flex: none; width: 14px; height: 14px; color: var(--status-success-text); }
+.mm-toast { margin: 0 0 var(--sp-3); }
+@keyframes lite-toast-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
 .mm-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border-subtle); }
 .mm-row { padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
-.mm-main { display: grid; grid-template-columns: minmax(0, 1fr) 132px 64px; align-items: center; gap: var(--sp-3); }
+.mm-main { display: grid; grid-template-columns: minmax(0, 1fr) 132px minmax(72px, auto); align-items: center; gap: var(--sp-3); }
 .mm-who .tm-who-text { row-gap: 2px; }
 .mm-name { font-size: var(--fs-body); color: var(--text-primary); font-weight: var(--fw-medium); }
 .mm-row.is-off .mm-name { color: var(--text-secondary); font-weight: var(--fw-regular); }
@@ -95,6 +110,11 @@
 .mm-role { min-width: 0; }
 .mm-role-select { width: 100%; }
 .mm-role-text { font-size: var(--fs-body); color: var(--text-label); white-space: nowrap; }
+.mm-role-text.is-off { color: var(--text-secondary); }
+/* 行尾“移出”：灰色文字按钮，悬停变红（红底只留给确认条，设计评分第一轮 T5） */
+.mm-remove { border: 0; background: transparent; padding: 4px 8px; border-radius: var(--r-sm); font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; cursor: pointer; }
+.mm-remove:hover:not(:disabled) { color: var(--status-danger-text); background: var(--status-danger-bg); }
+.mm-remove:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .mm-acts { text-align: right; white-space: nowrap; }
 .mm-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin: 10px 0 2px 36px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-subtle); }
 .mm-confirm p { flex: 1 1 320px; margin: 0; font-size: var(--fs-body); color: var(--text-primary); line-height: 1.6; }
@@ -107,6 +127,8 @@
 .acd-lines { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-body); line-height: 1.7; color: var(--text-primary); }
 .acd-lines .is-key { font-weight: var(--fw-medium); }
 .acd-k { font-size: var(--fs-caption); color: var(--text-label); }
+.acd-empty { margin: 0; padding: var(--sp-2) 0; font-size: var(--fs-body); color: var(--text-primary); line-height: 1.7; }
+.acd-lines li, .relay-lines li { text-wrap: pretty; }
 .acd-role { display: flex; align-items: center; gap: var(--sp-3); }
 .acd-role .select-trigger { min-width: 160px; }
 .acd-blocked { margin: 0; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-body); line-height: 1.6; }
@@ -115,11 +137,15 @@
 
 /* 设置 → 团队 → 团队策略首行“同事之间同步”（合伙人在旧内核上两行都没有时，不留空框） */
 .team-policy-sec > .panel:empty { display: none; }
+/* 设计评分第一轮 T8：卡片上下内边距与行间距对齐（首行不再叠一层行内上边距，末行不留下边距与分隔线） */
+.team-policy-sec > .panel > .setting-row:first-child { padding-top: 0; }
+.team-policy-sec > .panel > .setting-row:last-child { padding-bottom: 0; border-bottom: 0; }
 .relay-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }
 .relay-state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-body); color: var(--text-primary); }
 .relay-state.is-warn { color: var(--status-warning-text); }
-.relay-msg { margin: var(--sp-2) 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
-.relay-msg.is-ok { color: var(--status-success-text); }
+.relay-acts { display: inline-flex; gap: var(--sp-2); }
+.relay-err { flex-basis: 100%; margin: 0; }
+.panel.pd-preset { border-color: var(--border-hover); }
 .relay-lines { margin: 0 0 var(--sp-2); padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-body); line-height: 1.7; }
 .relay-carried { margin: 0 0 var(--sp-2); padding: 8px 12px; border-radius: var(--r-sm); background: var(--bg-subtle); font-size: var(--fs-caption); color: var(--text-label); line-height: 1.6; }
 .team-expiring { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); }

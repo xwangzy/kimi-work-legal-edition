@@ -29,7 +29,7 @@ import { PersonalUsage } from "./PersonalUsage.tsx";
 import { AccountSection } from "../components/AccountPanel.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
-import { SHARE_RELAY_CHANGED, ShareRelayExpiring, ShareRelayRow } from "../components/ShareRelayRow.tsx";
+import { POLICY_DRAFT_PRESET, SHARE_RELAY_CHANGED, ShareRelayExpiring, ShareRelayRow } from "../components/ShareRelayRow.tsx";
 import { relaxationText as relaxationLabel } from "../lib/team-matters.ts";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
 import { MemberDevicePolicy, TeamAdmin } from "../components/TeamAdmin.tsx";
@@ -812,7 +812,7 @@ function TeamTab({ ws, mySafety }: { ws: WorkspaceState; mySafety: string | null
               </SettingRow>
             )}
           </div>
-          <PolicyTab key={policyKey} />
+          <PolicyTab key={policyKey} relayRowAbove />
         </section>
       )}
       <section className="panel device-section" aria-labelledby="sec-share">
@@ -1442,7 +1442,7 @@ function relaxationText(r: string): string {
   return relaxationLabel(r);
 }
 
-function policyLine(st: ControlPlaneStatus): string {
+function policyLine(st: ControlPlaneStatus, omitExpiry = false): string {
   const p = st.policy;
   if (!p) return "未知";
   if (p.source === "local_dev") return import.meta.env.DEV ? "开发形态：律所规则取本机配置项（未接入中软）" : "当前律所规则：中软默认（最严）";
@@ -1456,10 +1456,12 @@ function policyLine(st: ControlPlaneStatus): string {
   const who = p.signers.length > 0 ? `已由 ${p.signers.length} 名管理员确认` : "最严设置，Kimi Work 服务签发";
   // 第 72 批评分 C10 第 3 条：日期统一“12 月 27 日 12:00”（跨年写年份），与操作记录同一写法
   // 设计评分第三轮 C10：日期与时刻不断在两行（不换行空格）
+  // 第 73 批（设计评分第一轮 T8）：团队页上方“同事之间同步”一行已写同一个到期日时，这里只写版本，不重复
+  if (omitExpiry) return `本所规则第 ${p.version} 版（${who}）`;
   return `本所规则第 ${p.version} 版（${who}）· ${dueLabel(p.expires_at).replace(/ /g, "\u00a0")}\u00a0前有效`;
 }
 
-function PolicyTab() {
+function PolicyTab({ relayRowAbove = false }: { relayRowAbove?: boolean }) {
   const [st, setSt] = useState<ControlPlaneStatus | null>(null);
   const [drafts, setDrafts] = useState<PolicyDraft[] | null>(null);
   const [codes, setCodes] = useState<Record<string, string>>({});
@@ -1494,7 +1496,7 @@ function PolicyTab() {
         <div className="device-row">
           <div className="device-k">生效策略</div>
           <div>
-            <b>{policyLine(st)}</b>
+            <b>{policyLine(st, relayRowAbove && st.policy?.source === "control_plane" && st.policy.body.share_relay === "allow")}</b>
             {/* 第 72 批评分 C10 第 4 条：逐条分行（规则名：取值），取值不在词中折行 */}
             {pol && (
               <dl className="policy-rules">
@@ -1692,16 +1694,31 @@ function PolicyDraftForm({ busy, base = null, onSubmit }: { busy: boolean; base?
   const [support, setSupport] = useState(base?.support_upload === "allow");
   const [relay, setRelay] = useState(base?.share_relay === "allow");
   const [ttl, setTtl] = useState(30);
+  // 第 73 批（设计评分第一轮 T8）：团队策略首行“关闭…”——预置“不允许同事之间同步”、滚到这里并提示核对（其余各项保持现在生效的样子）
+  const formRef = useRef<HTMLDivElement>(null);
+  const [preset, setPreset] = useState(false);
+  useEffect(() => {
+    const on = (e: Event) => {
+      if ((e as CustomEvent<{ share_relay?: boolean }>).detail?.share_relay === false) {
+        setRelay(false);
+        setPreset(true);
+        formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    };
+    window.addEventListener(POLICY_DRAFT_PRESET, on);
+    return () => window.removeEventListener(POLICY_DRAFT_PRESET, on);
+  }, []);
   const domains = extra
     .split(/[\s,，、]+/)
     .map((x) => x.trim().toLowerCase())
     .filter((x) => x.length > 0);
   return (
-    <div className="panel">
+    <div className={`panel${preset ? " pd-preset" : ""}`} ref={formRef} id="policy-draft-form">
       <div className="device-row">
         <div className="device-k">起草律所策略</div>
         {/* 第 55 批：一行一项（左标签、右控件）。原来标签、下拉、勾选、输入框挤在一段文字流里，互相错位；文字与逻辑没有改 */}
         <div className="pd-form">
+          {preset && <div className="banner banner-gray">已按现在生效的规则预置，并取消了“同事之间可以经中软同步团队事项”：核对后点“生成草稿”，再确认并发布。</div>}
           <div className="settings-grid pd-grid">
             <span className="sg-k">最高档位</span>
             <span className="sg-v sg-select">

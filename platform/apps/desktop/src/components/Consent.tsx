@@ -10,7 +10,8 @@
  *    律师设了常用条款时预选并预填（一键确认）；次处理者清单变了再请律师确认一次；敏感事项另勾敏感个人信息的单独同意。
  * 内核仍分别记录四项依据（第 02 篇 §8.1，闸门、宿主、网关口径不变）。
  */
-import type { AiSubprocessors, MatterBasis } from "../api.ts";
+import type { AiSubprocessors, DataFlowEntry, MatterBasis } from "../api.ts";
+import { authzFlowRows } from "../lib/team-matters.ts";
 import { BasisEditor } from "./MatterHeader.tsx";
 import "../styles-authz.css";
 import "../styles-motion.css";
@@ -38,7 +39,13 @@ export function AuthorizationRecord({
   endpoint,
   basis,
   needsRef = false,
+  dataFlows = null,
+  reconfirmWhy = "list",
 }: {
+  /** 第 73 批（验收 P2-3）：按事项范围的数据去向（只有我 = 案卷只存这台电脑；和同事一起办 = 同事电脑、中软加密副本）。 */
+  dataFlows?: readonly DataFlowEntry[] | null;
+  /** 要重新确认的原因：次处理者清单更新 / 事项改为和同事一起办（原授权没覆盖同事之间同步）。 */
+  reconfirmWhy?: "scope" | "list";
   /** 早期记录缺少出处（D-225）：重新确认卡说明“请补记一次”。 */
   needsRef?: boolean;
   matterTitle: string;
@@ -57,16 +64,21 @@ export function AuthorizationRecord({
   basis: MatterBasis | undefined;
 }) {
   const list = (processors ?? FALLBACK_PROCESSORS).items;
+  const flows = authzFlowRows(dataFlows);
+  // 中软那条去向若已写在次处理者的说明里（和同事一起办的清单写了“保存加密副本…”），不再单列一行（实拍：同一句说两遍）
+  const flowRows = flows.rows.filter((f) => !(f.key === "zr_relay" && list.some((p) => /加密副本/.test(p.role))));
   const pick = (k: BasisKind) => onChange({ ...value, kind: k, ref: value.kind === k ? value.ref : k === "engagement_terms" && value.kind === null ? value.ref : "" });
   return (
     <section className="authz-record" aria-labelledby="authz-record-h">
       <div className="authz-record-head">
-        <h3 id="authz-record-h">{needsRef ? "请补记本案授权的出处" : reconfirm ? "AI 次处理者有变化，请重新确认本案授权" : "记录本案的客户授权"}</h3>
+        <h3 id="authz-record-h">{needsRef ? "请补记本案授权的出处" : reconfirm ? (reconfirmWhy === "scope" ? "这个事项改为和同事一起办了，请重新确认本案授权" : "AI 次处理者有变化，请重新确认本案授权") : "记录本案的客户授权"}</h3>
         <p>
           {needsRef
             ? "这是早期记录，缺少出处，请补记一次。"
             : reconfirm
-              ? "原来记录的授权依据告知的是旧的次处理者清单。核实客户的授权覆盖下面的新清单后，重新确认一次。"
+              ? reconfirmWhy === "scope"
+                ? "原来记录的授权只覆盖你这台电脑，没有覆盖同事之间同步（同事电脑、中软的加密副本）。核实客户的授权覆盖下面的范围后，重新记录一次；记录之前不会发给 AI。"
+                : "原来记录的授权依据告知的是旧的次处理者清单。核实客户的授权覆盖下面的新清单后，重新确认一次。"
               : "这是本事项第一次用 AI。"}
           请记下客户授权的依据——它是你核实过的事实记录，不代替客户本人的授权；记录随事项保存、写进事项日志。
         </p>
@@ -126,8 +138,15 @@ export function AuthorizationRecord({
             </div>
             <div>
               <dt>系统另外做到</dt>
-              <dd>发出前把姓名、证件号、电话等换成代号；案卷只存这台电脑</dd>
+              <dd>发出前把姓名、证件号、电话等换成代号{flows.local ? `；${flows.local}` : ""}</dd>
             </div>
+            {/* 第 73 批（验收 P2-3）：和同事一起办的事项如实列出数据去向（同事电脑、中软加密副本），不再写死“案卷只存这台电脑” */}
+            {flowRows.map((f) => (
+              <div key={f.key}>
+                <dt>{f.label}</dt>
+                <dd>{f.text}</dd>
+              </div>
+            ))}
           </dl>
           {sensitive && (
             <label className="authz-sensitive">

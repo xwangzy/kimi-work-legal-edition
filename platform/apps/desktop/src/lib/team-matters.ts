@@ -7,20 +7,25 @@
  * - 律师层不讲中继、证书、密钥、纪元、包裹（用例 b73-team-matters-ui 把这几个词作为本批文案的门禁）。
  */
 import type { MatterMemberRow, MatterRole, MatterSync, RelayStatus, ShareRelayStatus, TeamRoster, TeamRosterMember } from "../api.ts";
-import { dueLabel, shareReadyText, WS_ROLE_LABEL, type WorkspaceKind, type WorkspaceRole } from "./workspace.ts";
+import { shareReadyText, WS_ROLE_LABEL, type WorkspaceKind, type WorkspaceRole } from "./workspace.ts";
 
 export type CollabScope = "personal" | "team";
 
 /** 新建事项“谁能看到”的两段（A5 §6.3 定稿）。 */
 export const SCOPE_OPTIONS: readonly { v: CollabScope; label: string; hint: string }[] = [
   { v: "personal", label: "只有我", hint: "只在你的电脑上；以后可以在事项里加同事。" },
-  { v: "team", label: "和同事一起办", hint: "加进来的同事在自己的电脑上也能看到、一起办；内容加密后在你们的电脑之间同步，中软打不开。" },
+  // 设计评分第一轮（跨页 2）：律师层不讲服务方与加密原理的细节，只说“加密同步”
+  { v: "team", label: "和同事一起办", hint: "加进来的同事在自己的电脑上也能看到、一起办；内容在你们的电脑之间加密同步。" },
 ];
 
 /** 所内还没开通同事之间同步（规则没允许）。 */
 export const RELAY_NOT_ALLOWED_TEXT = "所内还没开通同事之间同步：加进来的同事要等管理员开通后才收得到。";
 /** 中软还没为本所开通（服务没部署）。 */
 export const RELAY_NOT_CONFIGURED_TEXT = "中软还没为本所开通同事之间同步：加进来的同事要等开通后才收得到。";
+/** 第 73 批（验收 P2-1）：我没有 AI 使用名额，同事之间同步用不了（律师层说“AI 使用名额”，不说席位）。 */
+export const NO_SEAT_TEXT = "你还没有分配到 AI 使用名额，同事之间同步用不了：请找管理员在“设置 → 团队”里分配。";
+/** 第 73 批（验收 P2-2）：负责人已把我移出这个事项（本机如实得知）。 */
+export const REMOVED_ME_TEXT = "负责人已把你移出这个事项：之后的改动不会再同步给同事；已有内容留在你的电脑上，只能查看。";
 
 /**
  * 同事之间同步能不能用（true 已开通 / false 没开通 / null 不知道），给 shareReadyText 与“谁能看到”的说明用。纯函数。
@@ -35,12 +40,15 @@ export function relayReady(st: Pick<RelayStatus, "blocked" | "policy_fallback"> 
 
 /** 什么时候值得让内核看一眼所内规则是不是刚放开（team.refresh_share_state）：只在“没开通 / 不知道”时；已开通、没部署都不用。纯函数。 */
 export function needsShareRefresh(sync: MatterSync | null | undefined): boolean {
-  return sync === "not_allowed" || sync === "unknown";
+  // 内核在“没有名额”时同样按节流同步一次（管理员刚分配了名额就能马上用上）
+  return sync === "not_allowed" || sync === "unknown" || sync === "no_seat";
 }
 
 /** relay.status → 事项成员页同一套状态（与内核 matters.members.list 的 sync 同口径）。纯函数。 */
-export function relaySyncOf(st: Pick<RelayStatus, "blocked" | "policy_fallback"> | null | undefined): MatterSync {
+export function relaySyncOf(st: Pick<RelayStatus, "blocked" | "policy_fallback" | "credential_error"> | null | undefined): MatterSync {
   if (!st) return "unknown";
+  // 没分配过名额（no_seat）与被收回（seat_revoked，实拍：管理员释放名额后凭据报这个）都是“没有名额”
+  if (st.credential_error === "credential_no_seat" || st.credential_error === "credential_seat_revoked") return "no_seat";
   if (st.blocked === "not_configured") return "not_configured";
   if (st.blocked === "not_allowed" && !st.policy_fallback) return "not_allowed";
   return st.blocked === null ? "ok" : "unknown";
@@ -61,17 +69,22 @@ export interface ScopeAvailability {
  * “谁能看到”的可用性（D-307）。kind 传 effectiveKind 的结果（不知道时按名单推断）。纯函数。
  * 顺序：客户要求不上云（与这件事项的选择相关，就近说）→ 这台电脑还没经团队确认 → 同事名单服务不支持。
  */
-export function scopeAvailability(o: { kind: WorkspaceKind | null; issuer: "firm_root" | "account_ca" | null; level: string; roster?: Pick<TeamRoster, "reason"> | null }): ScopeAvailability {
+export function scopeAvailability(o: { kind: WorkspaceKind | null; issuer: "firm_root" | "account_ca" | null; level: string; roster?: Pick<TeamRoster, "reason"> | null; /** 这台电脑已申请接收、等管理员确认（team.deviceShare.status = pending）。 */ applied?: boolean }): ScopeAvailability {
   if (o.kind !== "team") return { show: false, team: false, reason: null, apply: false };
   if (o.level === "strict") return { show: true, team: false, reason: "客户要求不上云的事项只在这台电脑上，不能和同事一起办。", apply: false };
   // 只在确知这台电脑是直接登录、还没经团队确认时置灰；不知道（null）时交给内核判断（device_not_confirmed 如实显示）
-  if (o.issuer === "account_ca") return { show: true, team: false, reason: "这台电脑还不能接收团队共享事项：申请并经管理员确认后，才能和同事一起办。", apply: true };
+  // 端到端验收 P3-2：已申请、等确认时不再给“去申请 →”，如实说在等谁
+  if (o.issuer === "account_ca")
+    return o.applied
+      ? { show: true, team: false, reason: "这台电脑已申请，等管理员确认后就能和同事一起办。", apply: false }
+      : { show: true, team: false, reason: "这台电脑还没经管理员确认，不能和同事一起办：申请并确认后就可以。", apply: true };
   if (o.roster?.reason === "not_supported") return { show: true, team: false, reason: "暂时不能和同事一起办：Kimi Work 服务还不支持同事名单，请联系 Kimi Work 客服。", apply: false };
   return { show: true, team: true, reason: null, apply: false };
 }
 
 /** 选中“谁能看到”某一项时下面那一行说明；团队共享且所内没开通同步时换成如实的一句。纯函数。 */
-export function scopeHint(scope: CollabScope, relay: boolean | null, configured: boolean | null = null): string {
+export function scopeHint(scope: CollabScope, relay: boolean | null, configured: boolean | null = null, sync: MatterSync | null = null): string {
+  if (scope === "team" && sync === "no_seat") return NO_SEAT_TEXT;
   if (scope === "team" && relay === false) return configured === false ? RELAY_NOT_CONFIGURED_TEXT : RELAY_NOT_ALLOWED_TEXT;
   return SCOPE_OPTIONS.find((s) => s.v === scope)!.hint;
 }
@@ -88,17 +101,19 @@ export function pickableColleagues(roster: Pick<TeamRoster, "members"> | null | 
   return (roster?.members ?? []).filter((m) => m.status === "active" && !m.is_me && !ex.has(m.user_id)).sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"));
 }
 
-/** 选同事列表超过 8 人时出搜索框；按姓名包含匹配。纯函数。 */
-export const PICKER_SEARCH_FROM = 8;
+/** 选同事列表 6 人及以上时出搜索框（设计评分第一轮跨页 4）；按姓名包含匹配。纯函数。 */
+export const PICKER_SEARCH_FROM = 6;
 export function filterColleagues(list: readonly TeamRosterMember[], q: string): TeamRosterMember[] {
   const k = q.replace(/\s+/g, "");
   return k ? list.filter((m) => m.name.replace(/\s+/g, "").includes(k)) : [...list];
 }
 
 /** 选同事每一行的小字：角色 · 电脑还不能接收。纯函数。 */
-export function colleagueMeta(m: Pick<TeamRosterMember, "role" | "can_receive">): string {
+export function colleagueMeta(m: Pick<TeamRosterMember, "role" | "can_receive" | "seat">): string {
   const role = m.role in WS_ROLE_LABEL ? WS_ROLE_LABEL[m.role as WorkspaceRole] : "";
-  return [role, shareReadyText({ kind: "peer", confirmed: m.can_receive, relay: null })].filter(Boolean).join(" · ");
+  // 没有 AI 使用名额比“电脑还不能接收”更先挡住他（验收 P2-1）
+  const why = m.seat === false ? "还没有 AI 使用名额" : shareReadyText({ kind: "peer", confirmed: m.can_receive, relay: null });
+  return [role, why].filter(Boolean).join(" · ");
 }
 
 /** 名单取不到时选同事处的一句（不是错误：可以先建好，联网后在事项里加）。纯函数。 */
@@ -142,9 +157,12 @@ export function memberName(m: Pick<MatterMemberRow, "name" | "user_id">): string
  * 成员行的小字（D-308）：已离开团队 / 电脑还不能接收（长句）；自己、能接收的不写。纯函数。
  * 所内没开通同步时那一句在列表上方说（syncNotice），这里不重复。
  */
-export function memberRowNote(m: Pick<MatterMemberRow, "departed" | "can_receive" | "is_me">): { text: string; tone: "off" | "quiet" } | null {
-  if (m.departed) return { text: "已离开团队", tone: "off" };
-  if (m.is_me || m.can_receive) return null;
+export function memberRowNote(m: Pick<MatterMemberRow, "departed" | "can_receive" | "is_me" | "seat">): { text: string; tone: "off" | "quiet" } | null {
+  // 设计评分第一轮 T10：已离开的行补一句后果（他现在收不到新内容的前提是移出；已有的不收回）
+  if (m.departed) return { text: "他已离开团队：建议从事项移出，此后的新内容就不会再给他；他电脑上已有的内容不会被收回。", tone: "off" };
+  if (m.is_me) return null;
+  if (m.seat === false) return { text: "他还没有分配到 AI 使用名额，收不到这个事项：请管理员在“设置 → 团队”里分配。", tone: "quiet" };
+  if (m.can_receive) return null;
   return { text: shareReadyText({ kind: "peer", confirmed: false, relay: null, long: true }), tone: "quiet" };
 }
 
@@ -160,6 +178,10 @@ export function syncNotice(sync: MatterSync | null | undefined): { text: string;
     case "pending":
       // 内核：刚建、刚改为一起办，或有改动还没发出（会自动重试）
       return { text: "这个事项还在等第一次同步：联网时会自动同步给同事。", enable: false };
+    case "no_seat":
+      return { text: NO_SEAT_TEXT, enable: false };
+    case "removed":
+      return { text: REMOVED_ME_TEXT, enable: false };
     default:
       return null;
   }
@@ -167,7 +189,13 @@ export function syncNotice(sync: MatterSync | null | undefined): { text: string;
 
 /** 事项头胶囊（D-310）：“团队共享 · 3 人”；还没取到人数时只写“团队共享”。读屏另有一句。纯函数。 */
 export function teamPillText(n: number | null | undefined): { label: string; aria: string } {
-  return typeof n === "number" && n > 0 ? { label: `团队共享 · ${n} 人`, aria: `团队共享事项，${n} 位事项成员，展开查看` } : { label: "团队共享", aria: "团队共享事项，展开查看事项成员" };
+  return typeof n === "number" && n > 0 ? { label: `团队共享 · ${n} 人`, aria: `团队共享，${n} 位事项成员，展开查看` } : { label: "团队共享", aria: "团队共享，展开查看事项成员" };
+}
+
+/** 人数口径（设计评分第一轮 T10）：胶囊与“事项成员 n”只数还在团队里的人，已离开的另计。纯函数。 */
+export function memberCounts(rows: readonly Pick<MatterMemberRow, "departed">[]): { active: number; departed: number } {
+  const departed = rows.filter((r) => r.departed).length;
+  return { active: rows.length - departed, departed };
 }
 
 /** 侧栏、列表、搜索的团队共享记号：只在不是个人空间时出现（个人空间不可能有团队共享事项，D-310）。纯函数。 */
@@ -221,7 +249,7 @@ export function addResultText(added: readonly { name: string; can_receive: boole
     const now = added.filter((a) => a.can_receive).map((a) => a.name);
     let tail: string;
     // 所内没开通同步：列表上方那句已经说了“要等开通后才收得到”（实拍：同一页说两遍），这里只说各人电脑的情况
-    if (sync === "not_allowed" || sync === "not_configured") tail = later.length > 0 ? `${later.join("、")}的电脑还要先申请并经管理员确认。` : "";
+    if (sync === "not_allowed" || sync === "not_configured") tail = later.length > 0 ? `${later.join("、")}的电脑经管理员确认后才收得到。` : "";
     else
       tail = [now.length > 0 ? `${now.join("、")}的电脑下次同步时收到` : "", later.length > 0 ? `${later.join("、")}的电脑还不能接收，申请并经管理员确认后自动收到` : ""].filter(Boolean).join("；") + "。";
     parts.push(`已加入${names}。${tail}`);
@@ -233,7 +261,7 @@ export function addResultText(added: readonly { name: string; can_receive: boole
 /** 个人事项改为和同事一起办（D-307）：二次确认要写清的三件事（不可改回在最后）。纯函数。 */
 export function shareMatterLines(): string[] {
   return [
-    "加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果；内容加密后在你们的电脑之间同步，中软打不开。",
+    "加进来的同事在自己的电脑上也能看到这个事项的材料、任务和成果，内容在你们的电脑之间加密同步。",
     "改为和同事一起办后，正在等你确认的任务需要重新确认一次。",
     "之后不能改回“只有我”：要结束共享，把同事逐个移出，或结案。",
   ];
@@ -280,18 +308,18 @@ export function teamFaultOf(e: unknown): { code: string | null; reason: string |
  * 同事名单由别人管理 / 规则要更新 / 正在确认由谁管理 / 状态异常 / 管理人已不是负责人 / 管理人电脑都已停用 / 不能给管理人降角色 /
  * 负责人暂时确认不了 / 成员事件不成立 / 这台电脑还没拿到最新内容。
  */
-const KERNEL_LAWYER_REASONS = new Set(["relay_policy_stale", "relay_controller_pending", "relay_state_broken", "relay_controller_not_owner", "relay_controller_departed", "relay_controller_role_change", "owner_unverifiable", "member_event_invalid", "own_wrap_missing", "consent_refused", "strict"]);
+const KERNEL_LAWYER_REASONS = new Set(["viewer_read_only", "removed_from_matter", "relay_policy_stale", "relay_controller_pending", "relay_state_broken", "relay_controller_not_owner", "relay_controller_departed", "relay_controller_role_change", "owner_unverifiable", "member_event_invalid", "own_wrap_missing", "consent_refused", "strict"]);
 
 const SCOPE_UNAVAILABLE_TEXT: Readonly<Record<string, string>> = {
   personal_workspace: "个人空间里的事项只在你自己的电脑上：要和同事一起办，请先切换到团队空间。",
   workspace_unknown: "还没确认当前是团队空间（刚加入团队时要等一会儿）：请联网后稍等再试。",
-  device_not_confirmed: "这台电脑还不能接收团队共享事项：请在“设置 → 团队”里申请，管理员确认后就能和同事一起办。",
-  client_no_cloud: "客户要求不上云的事项不能和同事一起办：同事之间同步要经中软转送加密内容，与客户的要求不符。",
+  device_not_confirmed: "这台电脑还没经管理员确认，不能和同事一起办：请在“设置 → 团队”里申请，确认后就可以。",
+  client_no_cloud: "客户要求不上云的事项不能和同事一起办：和同事一起办要在同事电脑之间加密同步，与客户的要求不符。",
 };
 /** 某位同事加不进来的原因（短语，放在“没有加上：某某（原因）”里）。 */
 const MEMBER_REASON_TEXT: Readonly<Record<string, string>> = { not_in_roster: "不在团队同事名单里", disabled: "已停用", removed: "已被移出团队", left: "已离开团队" };
 const ROSTER_REASON_TEXT: Readonly<Record<string, string>> = { offline: "联不上 Kimi Work 服务，也没有上次的同事名单", not_supported: "Kimi Work 服务还不支持同事名单" };
-export const TEAM_SCOPE_CONFLICT_TEXT = "团队共享事项不能记为客户要求不上云：同事之间同步要经中软转送加密内容，与客户的要求不符。";
+export const TEAM_SCOPE_CONFLICT_TEXT = "这个事项和同事一起办，要在同事电脑之间加密同步，不能记为客户要求不上云；客户确实不同意上云的，请另建一个“只有我”的事项。";
 
 /** 内核原句兜底：换掉研发用语；内部错误、讲加密细节的原句不搬给律师。纯函数。 */
 function lawyerize(code: string | null, m: string): string {
@@ -307,7 +335,7 @@ function lawyerize(code: string | null, m: string): string {
 export function teamFaultText(e: unknown): string {
   const f = teamFaultOf(e);
   if (f.code === "team_scope_unavailable" && f.reason && SCOPE_UNAVAILABLE_TEXT[f.reason]) return SCOPE_UNAVAILABLE_TEXT[f.reason]!;
-  if (f.code === "scope_irreversible") return "团队共享事项不能改回只有我：要结束共享请移出同事或结案。";
+  if (f.code === "scope_irreversible") return "这个事项已和同事一起办，不能改回“只有我”：要结束共享，请移出同事或结案。";
   if (f.code === "team_scope_conflict") return TEAM_SCOPE_CONFLICT_TEXT;
   if (f.code === "member_not_in_team") return `这位同事${MEMBER_REASON_TEXT[f.reason ?? ""] ?? "不在团队名单里（可能已离开团队）"}：不能加进事项。`;
   if (f.code === "roster_unavailable") return `${ROSTER_REASON_TEXT[f.reason ?? ""] ?? "暂时取不到同事名单"}：${f.reason === "not_supported" ? "请联系 Kimi Work 客服。" : "联网后再试。"}`;
@@ -350,48 +378,102 @@ export function effectiveKind(kind: WorkspaceKind | null, roster: Pick<TeamRoste
   return roster.reason === "personal_workspace" ? "personal" : null;
 }
 
-/** “记为客户要求不上云”（开始前确认里的出口）在团队共享事项上置灰的原因（内核 team_scope_conflict 同一说法）；不是团队共享事项为 null。纯函数。 */
-export function localOnlyBlocked(m: { collab_scope?: string | null }): string | null {
-  return m.collab_scope === "team" ? "团队共享事项不能记为客户要求不上云（同事之间同步要经中软转送加密内容）：可以先只用本机功能；客户确实不同意上云的，请另建一个“只有我”的事项。" : null;
+/**
+ * “记为客户要求不上云”（开始前确认里的出口）在团队共享事项上置灰（内核 team_scope_conflict 同一口径）；不是团队共享事项为 null。纯函数。
+ * 设计评分第一轮 T3：原因短到与置灰项同一行（short），完整说法放悬停（long）；不再重复左侧已有的“先只用本机功能”。
+ */
+export function localOnlyBlocked(m: { collab_scope?: string | null }): { short: string; long: string } | null {
+  return m.collab_scope === "team" ? { short: "和同事一起办的事项不能选", long: TEAM_SCOPE_CONFLICT_TEXT } : null;
 }
 
 /**
- * 设置 → 团队 → 团队策略首行“同事之间同步”（D-309）：三态（需中软开通 / 未开通 / 已开通至某日）+ 待第二位管理员确认、已过期。纯函数。
- * action：这台电脑能做的一步（开通 / 发起开通 / 续期 / 去确认）；can_manage 为 false（合伙人等）时只读。
+ * 客户授权卡里“数据去向”怎么写（验收 P2-3）：按事项范围的 data_flows——只有我的那一条（案卷只存这台电脑）接在“系统另外做到”后面；
+ * 和同事一起办的（同事电脑、中软加密副本）各占一行。旧内核没有 data_flows 时照旧写“案卷只存这台电脑”。纯函数。
  */
-export function shareRelayRow(s: ShareRelayStatus | null, now = Date.now()): { state: "configure" | "off" | "on" | "expiring" | "pending" | "expired" | "unknown"; text: string; action: { kind: "enable" | "renew" | "review"; label: string } | null; warn: boolean } {
-  if (!s) return { state: "unknown", text: "暂时读不到同事之间同步的状态", action: null, warn: false };
-  if (!s.relay_configured) return { state: "configure", text: "未开通 · 需要中软为本所开通同事之间同步的服务，请联系 Kimi Work 客服", action: null, warn: false };
+export function authzFlowRows(flows: readonly { key: string; label: string; text: string }[] | null | undefined): { local: string | null; rows: { key: string; label: string; text: string }[] } {
+  if (!flows || flows.length === 0) return { local: "案卷只存这台电脑", rows: [] };
+  const local = flows.find((f) => f.key === "local")?.text ?? null;
+  return { local, rows: flows.filter((f) => f.key !== "local") };
+}
+
+/**
+ * 授权要重新确认的原因（验收 P2-3）：只有我的事项记过授权后改为和同事一起办——原授权没覆盖同事之间同步，要按新的范围重新记录；
+ * 其余是次处理者清单更新。纯函数。
+ */
+export function reconfirmReason(m: { collab_scope?: string | null; basis_notice_version?: string | null; authorization_history?: readonly { scope?: string }[] | null }, currentVersion?: string | null): "scope" | "list" {
+  if (m.collab_scope !== "team") return "list";
+  const last = m.authorization_history?.[0];
+  if (last?.scope) return last.scope === "personal" ? "scope" : "list";
+  // 没有带范围的历史（事项列表里取的事项）：按清单版本判断——现在是团队共享的清单、原来记的不是
+  const team = (v: string | null | undefined) => !!v && /-team$/.test(v);
+  return team(currentVersion) && !!m.basis_notice_version && !team(m.basis_notice_version) ? "scope" : "list";
+}
+
+/** 团队共享事项的材料区说明（设计评分第一轮跨页：收到 / 放进材料的地方写明也会同步给加进来的同事）。纯函数。 */
+export function sharedMaterialNote(shared: boolean): string | null {
+  return shared ? "也会加密同步到加进来的同事电脑上" : null;
+}
+
+/** 日期（不带时刻）：“12 月 27 日”，跨年写年份（北京时间）。纯函数。 */
+export function dayOnly(iso: string | null | undefined, now = Date.now()): string {
+  const t = iso ? Date.parse(iso) : NaN;
+  if (!Number.isFinite(t)) return "—";
+  const d = new Date(t + 8 * 3600_000);
+  const y = new Date(now + 8 * 3600_000).getUTCFullYear();
+  return `${d.getUTCFullYear() !== y ? `${d.getUTCFullYear()} 年 ` : ""}${d.getUTCMonth() + 1} 月 ${d.getUTCDate()} 日`;
+}
+
+export type ShareRelayAction = { kind: "enable" | "renew" | "review" | "close"; label: string; primary: boolean };
+/**
+ * 设置 → 团队 → 团队策略首行“同事之间同步”（D-309）。纯函数。
+ * 设计评分第一轮 T8：状态行只说一次——“● 未开通 [开通…]”/“● 已开通 · 12 月 27 日前有效 [续期…] [关闭…]”（到期前 7 天“续期…”提为主按钮）；
+ * 不复述上方说明；结果另用一次性轻提示。can_manage 为 false（合伙人等）时只读。
+ */
+export function shareRelayRow(s: ShareRelayStatus | null, now = Date.now()): { state: "configure" | "off" | "on" | "expiring" | "pending" | "expired" | "unknown"; text: string; actions: ShareRelayAction[]; warn: boolean } {
+  if (!s) return { state: "unknown", text: "暂时读不到状态", actions: [], warn: false };
+  if (!s.relay_configured) return { state: "configure", text: "未开通 · 需要中软为本所开通服务，请联系 Kimi Work 客服", actions: [], warn: false };
   const manage = s.can_manage;
   const more = Math.max(0, (s.threshold || 1) - (s.signatures || 0));
   if (s.state === "pending_second_signature") {
     const what = s.pending?.kind === "renew" ? "续期" : "开通";
-    const text = `已发起${what} · 还需 ${more || 1} 位管理员在自己的电脑上确认`;
     // 发起的是别人、我还没确认：在这台电脑上点一下即确认同一份（内核找一致的待签草稿）；是我发起的：只等
-    if (manage && s.pending && !s.pending.signed_by_me) return { state: "pending", text: `另一位管理员已发起${what} · 还需你确认`, action: { kind: s.pending.kind, label: `确认${what}…` }, warn: false };
+    if (manage && s.pending && !s.pending.signed_by_me) return { state: "pending", text: `另一位管理员已发起${what} · 还需你确认`, actions: [{ kind: s.pending.kind, label: `确认${what}…`, primary: true }], warn: false };
     // 旧内核不给 pending：退回到下面“待确认的规则草稿”里确认
-    return { state: "pending", text, action: manage && !s.pending ? { kind: "review", label: "去确认 ↓" } : null, warn: false };
+    return { state: "pending", text: `已发起${what} · 还需 ${more || 1} 位管理员在自己的电脑上确认`, actions: manage && !s.pending ? [{ kind: "review", label: "去确认 ↓", primary: false }] : [], warn: false };
   }
-  if (s.state === "expired") return { state: "expired", text: "已过期 · 同事之间同步已暂停，事项内容不受影响", action: manage ? { kind: "renew", label: "续期…" } : null, warn: true };
+  if (s.state === "expired") return { state: "expired", text: "已过期 · 同事之间同步已暂停", actions: manage ? [{ kind: "renew", label: "续期…", primary: true }] : [], warn: true };
   if (s.state === "allowed") {
     const left = s.days_left;
-    const until = s.expires_at ? `${dueLabel(s.expires_at, now)} 前有效` : "已开通";
+    const until = s.expires_at ? `${dayOnly(s.expires_at, now)}前有效` : "";
+    const close: ShareRelayAction = { kind: "close", label: "关闭…", primary: false };
     if (typeof left === "number" && left <= 7)
-      return { state: "expiring", text: `已开通 · ${until}（还有 ${Math.max(0, left)} 天）`, action: manage ? { kind: "renew", label: "续期…" } : null, warn: true };
-    // 离到期还早：只说状态，不给按钮（到期前 7 天才提醒续期）
-    return { state: "on", text: `已开通 · ${until}`, action: null, warn: false };
+      return { state: "expiring", text: `已开通 · ${until}${until ? " · " : ""}还有 ${Math.max(0, left)} 天`, actions: manage ? [{ kind: "renew", label: "续期…", primary: true }, close] : [], warn: true };
+    return { state: "on", text: `已开通${until ? ` · ${until}` : ""}`, actions: manage ? [{ kind: "renew", label: "续期…", primary: false }, close] : [], warn: false };
   }
-  return { state: "off", text: "未开通 · 团队共享事项暂时不会在同事电脑之间同步", action: manage ? { kind: "enable", label: (s.threshold || 1) > 1 ? "发起开通…" : "开通…" } : null, warn: false };
+  return { state: "off", text: "未开通", actions: manage ? [{ kind: "enable", label: (s.threshold || 1) > 1 ? "发起开通…" : "开通…", primary: false }] : [], warn: false };
 }
 
-/** 开通弹窗的后果（A5 §5.2；沿用起草表单原句）。threshold > 1 时补一句还需另一位管理员；signsPending = 我是第二位、确认后即生效。纯函数。 */
+/**
+ * 开通弹窗的后果（A5 §5.2）。threshold > 1 时补一句还需另一位管理员；signsPending = 我是第二位、确认后即生效。纯函数。
+ * 设计评分第一轮 T8：服务方名字只在第一条出现一次，后面说“服务方”。
+ */
 export function shareRelayEnableLines(threshold: number, signsPending = false): string[] {
   return [
-    "团队共享事项的内容加密后经中软在同事电脑之间转送，中软打不开。",
-    "本机删除事项不会删除中软上的加密副本；关闭后已存的副本保留到律所停止使用。",
+    "和同事一起办的事项，内容加密后经服务方中软在同事电脑之间转送，服务方打不开。",
+    "本机删除事项不会删除服务方那里的加密副本；关闭后，已存的副本保留到律所停止使用。",
     "没更新软件的电脑会暂时按最严规则运行，直到更新。",
     ...(threshold > 1 && !signsPending ? [`本所规则要 ${threshold} 位管理员分别确认：你确认后，还需另一位管理员在自己的电脑上确认才生效。`] : []),
-    "只改这一项：本所规则的其他各项保持现在生效的样子；有效期 30 天，到期前 7 天会提醒续期。",
+    "只改这一项，本所规则的其他各项不变；有效期 30 天，到期前 7 天提醒续期。",
+  ];
+}
+
+/** 关闭同事之间同步的确认框（内核没有单独的关闭方法：走起草本所规则，预置“不允许同事之间同步”）。纯函数。 */
+export function shareRelayCloseLines(): string[] {
+  return [
+    "关闭后，和同事一起办的事项暂停在同事电脑之间同步，各人电脑上的内容不受影响。",
+    "服务方那里已存的加密副本保留到律所停止使用。",
+    "关闭后要再开通，需要联系中软。",
+    "关闭要改本所规则：下一步在下面“起草律所策略”里已预置“不允许同事之间同步”，核对后生成草稿、确认并发布。",
   ];
 }
 
@@ -399,7 +481,7 @@ export function shareRelayEnableLines(threshold: number, signsPending = false): 
 export function shareRelayRenewLines(threshold: number, signsPending = false, expired = false): string[] {
   return [
     expired ? "按过期前最后一份本所规则原样恢复，有效期从今天起算 30 天；规则内容与过期前一样。" : "按现在的本所规则原样再确认一次，有效期从今天起算 30 天；规则内容不变。",
-    expired ? "续期之前，团队共享事项暂停在同事电脑之间同步，事项内容不受影响。" : "到期不续，团队共享事项会暂停在同事电脑之间同步，事项内容不受影响。",
+    expired ? "续期之前，和同事一起办的事项暂停同步，各人电脑上的内容不受影响。" : "到期不续，和同事一起办的事项会暂停同步，各人电脑上的内容不受影响。",
     ...(threshold > 1 && !signsPending ? [`本所规则要 ${threshold} 位管理员分别确认：你确认后，还需另一位管理员在自己的电脑上确认才生效。`] : []),
   ];
 }

@@ -10,7 +10,7 @@ import { ConfirmButton } from "./ConfirmButton.tsx";
 import { Icon } from "./Icons.tsx";
 import { BusyLabel, WaitBlock } from "./Loading.tsx";
 
-export function MaterialFolderBar(p: { matterId: string; folder: MatterFolder | null; readOnly: boolean; disabled?: boolean; onChanged: () => void }) {
+export function MaterialFolderBar(p: { matterId: string; folder: MatterFolder | null; readOnly: boolean; disabled?: boolean; onChanged: () => void; /** 第 73 批：团队共享事项补半句“也会加密同步到加进来的同事电脑上”。 */ sharedNote?: string | null }) {
   const [busy, setBusy] = useState<"link" | "sync" | "unlink" | null>(null);
   // 同步开始的时刻（第 51 批）：整卷复制、加密、抽字可能要几分钟，内核不报逐份进度，所以给真实的已用时间，不画假进度
   const [since, setSince] = useState<number | null>(null);
@@ -96,7 +96,9 @@ export function MaterialFolderBar(p: { matterId: string; folder: MatterFolder | 
           longHint="文件多或有扫描件时会久一些；同步完会在这里列出结果。"
         />
       )}
-      <p className="mf-note">文件夹里的文件会复制并加密保存在这台电脑上；只有任务用到的内容才会替换代号后发给 AI。</p>
+      <p className="mf-note">
+        文件夹里的文件会复制并加密保存在这台电脑上；只有任务用到的内容才会替换代号后发给 AI。{p.sharedNote ? `这个事项的材料${p.sharedNote}。` : ""}
+      </p>
       {err && (
         <p className="mf-error" role="alert">
           {err}

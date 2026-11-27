@@ -210,7 +210,7 @@ test("接线：设置按工作空间显示（不再有 inFirm / ADMIN_ROLES 推�
   const team = c.slice(c.indexOf("function TeamTab("), c.indexOf("function BackupTab("));
   assert.match(team, /<MemberDevicePolicy \/>/);
   // 第 73 批：开通 / 续期同事之间同步后重读（key 变化即重挂）；团队策略首行是“同事之间同步”
-  assert.match(team, /<PolicyTab key=\{policyKey\} \/>/);
+  assert.match(team, /<PolicyTab key=\{policyKey\} relayRowAbove \/>/);
   assert.match(team, /<ShareRelayRow \/>\s*\{f\.teamAdmin && \(\s*<SettingRow label="成员新电脑">/);
   assert.match(c, /support=\{f\.supportInBackup \? <DiagnosticsTab /);
   assert.match(c, /<WorkspaceSection ws=\{ws\} \/>/);

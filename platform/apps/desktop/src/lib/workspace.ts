@@ -188,7 +188,8 @@ export function shareReadyText(
 ): string {
   // 第 73 批（D-308，A5 §7.3）：同事的电脑（事项成员、选同事）——同一个口径，不另起句库；已可接收时不说（没有要他做的事）。
   // 所内没开通同步时所有人都收不到，那一句只在列表上方说一次（lib/team-matters.ts syncNotice），这里不带。
-  if (o.kind === "peer") return o.confirmed ? "" : o.long ? "他的电脑还不能接收团队共享事项：请他在“设置 → 团队”里申请，管理员确认后自动收到。" : "电脑还不能接收";
+  // 设计评分第一轮（V47 跨页 9）：短句补半句去向；长句说“这个事项”，不说“团队共享事项”
+  if (o.kind === "peer") return o.confirmed ? "" : o.long ? "他的电脑还不能接收这个事项：请他在“设置 → 团队”里申请，管理员确认后自动收到。" : "电脑还不能接收 · 确认后自动收到";
   if (o.kind === "result") {
     const hm = dayTime(o.at ?? new Date(now).toISOString(), now).slice(-5);
     const tail = o.relay === true ? "，它现在可接收团队共享事项" : o.relay === false ? "；所内开通同事之间同步后，它即可收到团队共享事项" : "";

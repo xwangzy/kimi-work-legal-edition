@@ -24,7 +24,7 @@ import { SendPoints } from "./SendPoints.tsx";
 import { notifyDataChanged } from "../lib/events.ts";
 import { afterConsentNotice, busyRunOfError, startHintOf, type StartHint } from "../lib/start-block.ts";
 import { StartHintBanner } from "./StartHint.tsx";
-import { localOnlyBlocked, teamFaultText } from "../lib/team-matters.ts";
+import { localOnlyBlocked, reconfirmReason, teamFaultText } from "../lib/team-matters.ts";
 
 export interface PendingStart {
   matter: Matter;
@@ -134,8 +134,9 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   const [touched, setTouched] = useState(false);
   useEffect(() => {
     if (!consentBlocked) return;
+    // 第 73 批（验收 P2-3）：按事项范围取次处理者清单与数据去向（和同事一起办的事项另有一份）
     api
-      .aiAuthorization()
+      .aiAuthorization(matter.matter_id)
       .then((a) => {
         setDefaults(a);
         // 律师还没动过表单时按常用条款预填（读取有先后，不覆盖律师已经填的）
@@ -146,7 +147,10 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
   }, [consentBlocked]);
   // D-225：早期记录缺少出处（内核 needs_ref / basis_state）同样走重新确认卡，文案说明“请补记一次”
   const needsRef = !!estimate.data_where?.needs_ref || matter.basis_state === "needs_ref";
-  const reconfirm = needsRef || !!estimate.data_where?.reconfirm || needsReconfirm(matter, defaults?.subprocessors?.version);
+  // 按事项范围的清单版本判断（团队共享事项拿全局清单比会被误判要重新确认）
+  const scopeVersion = matter.subprocessors?.version ?? defaults?.subprocessors?.version;
+  const reconfirm = needsRef || !!estimate.data_where?.reconfirm || needsReconfirm(matter, scopeVersion);
+  const reconfirmWhy = reconfirmReason(matter, scopeVersion);
   const [detail, setDetail] = useState<MatterBasis | null>(null);
   // 逐项记录同样须写出处（D-225）
   const canRecord = detail ? detailReady(record.ref) : recordReady(record, need.sensitive);
@@ -301,8 +305,10 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
             }}
             sensitive={need.sensitive}
             reconfirm={reconfirm}
+            reconfirmWhy={reconfirmWhy}
             needsRef={needsRef}
-            processors={defaults?.subprocessors ?? null}
+            processors={matter.subprocessors ?? defaults?.subprocessors ?? null}
+            dataFlows={matter.data_flows ?? defaults?.data_flows ?? null}
             detail={detail}
             onDetail={setDetail}
             endpoint={matter.model_endpoint}
@@ -314,16 +320,20 @@ export function RunSheet({ pending, onClose }: { pending: PendingStart; onClose:
               先只用本机功能
             </button>
             <span aria-hidden="true">·</span>
-            <button type="button" className="btn-link" disabled={localOnlyBusy || !!localOnlyWhy} aria-busy={localOnlyBusy} aria-describedby={localOnlyWhy ? "local-only-why" : undefined} onClick={() => void markLocalOnly()}>
-              <BusyLabel busy={localOnlyBusy} busyText="正在记录…">
-                记为客户要求不上云
-              </BusyLabel>
-            </button>
-            {localOnlyWhy && (
-              <span className="authz-exit-why" id="local-only-why">
-                {localOnlyWhy}
-              </span>
-            )}
+            {/* 设计评分第一轮 T3：团队共享事项上置灰（与“谁能看到”同一种禁用样式），原因一句写在同一行，完整说法放悬停 */}
+            {/* 置灰项与原因是一组：窄窗口换行时一起换，不把“（…）”孤零零留在下一行开头 */}
+            <span className="authz-exit-local">
+              <button type="button" className="btn-link" disabled={localOnlyBusy || !!localOnlyWhy} aria-busy={localOnlyBusy} aria-describedby={localOnlyWhy ? "local-only-why" : undefined} title={localOnlyWhy?.long} onClick={() => void markLocalOnly()}>
+                <BusyLabel busy={localOnlyBusy} busyText="正在记录…">
+                  记为客户要求不上云
+                </BusyLabel>
+              </button>
+              {localOnlyWhy && (
+                <span className="authz-exit-why" id="local-only-why" title={localOnlyWhy.long}>
+                  （{localOnlyWhy.short}）
+                </span>
+              )}
+            </span>
           </div>
         </>
       ) : (

@@ -39,13 +39,13 @@ import { MaterialPicker } from "../components/MaterialPicker.tsx";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { SafePreview } from "../components/SafePreview.tsx";
 import { AddColleaguesDialog, MatterMembersPanel, useTeamKind } from "../components/TeamMatter.tsx";
-import { canOfferShare, isTeamShared, needsShareRefresh } from "../lib/team-matters.ts";
+import { canOfferShare, isTeamShared, needsShareRefresh, REMOVED_ME_TEXT, sharedMaterialNote } from "../lib/team-matters.ts";
 import "../styles-materials.css";
 import "../styles-matter.css";
 
 type Tab = "materials" | "facts" | "runs" | "board" | "deliverables" | "parties" | "egress" | "lifecycle" | "members";
 /** “⋯”里的几页（第 73 批：团队共享事项多“事项成员”）。 */
-const MORE_TAB_LABEL: Partial<Record<Tab, string>> = { members: "事项成员", parties: "当事人名单", egress: "数据去向记录", lifecycle: "结案与删除" };
+const MORE_TAB_LABEL: Partial<Record<Tab, string>> = { parties: "当事人名单", egress: "数据去向记录", lifecycle: "结案与删除" };
 
 export function MatterPage({ matterId }: { matterId: string }) {
   const [matter, setMatter] = useState<Matter | null>(null);
@@ -345,6 +345,11 @@ export function MatterPage({ matterId }: { matterId: string }) {
     );
   }
   const closed = matter.lifecycle === "closed";
+  // 第 73 批（端到端验收 P3-3）：“只看”的事项成员——加材料、发起任务、关联案卷文件夹、改材料用途与授权一律收起，并说明一句（内核 matters.get.can_write；旧内核按 my_role）
+  // 第 73 批（验收 P2-2）：负责人已把我移出这个事项（内核 removed_me / 成员视图 sync = removed）——一条说明、不再写“团队共享 · n 人”、写入口收起
+  const removedMe = !!matter.removed_me || members?.removed_me === true || members?.sync === "removed";
+  const viewOnly = !removedMe && (matter.can_write === false || (matter.can_write === undefined && matter.my_role === "viewer"));
+  const locked = closed || viewOnly || removedMe;
   const basis: MatterBasis = matter.basis ?? {
     engagement: matter.consent_status === "agreed" || matter.consent_status === "not_required" ? "confirmed" : "pending",
     personal_info: matter.consent_status === "agreed" || matter.consent_status === "not_required" ? "confirmed" : "pending",
@@ -358,7 +363,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
         <div className="page-head">
           <h1 className="page-title">{matter.title}</h1>
           <div className="page-head-actions">
-            {!closed && (
+            {!locked && (
               <button className="btn-ghost" aria-expanded={composerOpen || !!value.goal.trim()} onClick={() => setComposerOpen((v) => !v || !!value.goal.trim())}>
                 发起任务
               </button>
@@ -400,9 +405,9 @@ export function MatterPage({ matterId }: { matterId: string }) {
           matter={matter}
           policy={policy}
           onParties={() => setTab("parties")}
-          team={teamShared ? { view: members, error: membersErr } : null}
+          team={teamShared && !removedMe ? { view: members, error: membersErr } : null}
           onMembers={() => setTab("members")}
-          {...(closed
+          {...(locked
             ? {}
             : {
                 onEditBasis: () => setBasisOpen(true),
@@ -424,7 +429,17 @@ export function MatterPage({ matterId }: { matterId: string }) {
             <button className="btn-link" onClick={() => setTab("lifecycle")}>结案与删除</button>
           </div>
         )}
-        {!closed && (composerOpen || !!value.goal.trim()) && <div className="matter-composer has-text">
+        {removedMe && (
+          <div className="banner banner-gray banner-inline removed-me-note" role="note">
+            {REMOVED_ME_TEXT}
+          </div>
+        )}
+        {viewOnly && !closed && (
+          <div className="banner banner-gray banner-inline view-only-note" role="note">
+            你在这个事项里是“只看”：可以看材料、AI 记录和成果，不能加材料、发起任务或改动。要一起办，请找负责人。
+          </div>
+        )}
+        {!locked && (composerOpen || !!value.goal.trim()) && <div className="matter-composer has-text">
           <Composer
             autoFocus
             matterId={matterId}
@@ -460,6 +475,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
               // “任务”改名“AI 记录”（C1 §3.2）：它是 AI 运行流水，待办在概览里
               ["runs", `AI 记录（${runs.length}）`],
               ["deliverables", "成果"],
+              // 第 73 批（设计评分第一轮 T5 / 跨页 10）：团队共享事项“事项成员”常驻为一个标签（不再进去后才出现、也不在“⋯”里重复）
+              ...(teamShared && !removedMe ? ([["members", "事项成员"]] as [Tab, string][]) : []),
             ] as [Tab, string][]
           ).map(([k, l]) => (
             <button key={k} role="tab" aria-selected={tab === k} className={`tab${tab === k ? " active" : ""}`} onClick={() => setTab(k)}>{l}</button>
@@ -469,17 +486,12 @@ export function MatterPage({ matterId }: { matterId: string }) {
           )}
           <span className="spacer" />
           <span className="tab-more-wrap" ref={moreRef}>
-            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label={`更多：${[teamShared ? "事项成员" : canOfferShare(teamKind, matter) ? "和同事一起办" : "", "当事人名单", "数据去向记录", "结案与删除"].filter(Boolean).join("、")}`} onClick={() => setMoreOpen((v) => !v)}>
+            <button className="tab tab-more" aria-haspopup="menu" aria-expanded={moreOpen} aria-label={`更多：${[!teamShared && canOfferShare(teamKind, matter) ? "和同事一起办" : "", "当事人名单", "数据去向记录", "结案与删除"].filter(Boolean).join("、")}`} onClick={() => setMoreOpen((v) => !v)}>
               ⋯
             </button>
             {moreOpen && (
               <div className="popover tab-more-menu" role="menu">
-                {/* 第 73 批：团队共享事项排第一项“事项成员”；个人事项的负责人（团队空间、进行中）有“和同事一起办…” */}
-                {teamShared && (
-                  <button role="menuitem" className="menu-item" onClick={() => { setTab("members"); setMoreOpen(false); }}>
-                    <span className="menu-label">事项成员</span>
-                  </button>
-                )}
+                {/* 第 73 批：个人事项的负责人（团队空间、进行中）有“和同事一起办…”；团队共享事项的“事项成员”是常驻标签 */}
                 {!teamShared && canOfferShare(teamKind, matter) && (
                   <button role="menuitem" className="menu-item" onClick={() => { setSharing(true); setMoreOpen(false); }}>
                     <span className="menu-label">和同事一起办…</span>
@@ -511,13 +523,14 @@ export function MatterPage({ matterId }: { matterId: string }) {
                 </div>
               )}
               {/* 案卷文件夹（第 48 批）：关联本机的一个文件夹，手动同步新增、改过的文件；位置只在这台电脑上 */}
-              {matView === "list" && <MaterialFolderBar matterId={matter.matter_id} folder={matter.folder ?? null} readOnly={closed} disabled={busy} onChanged={reload} />}
+              {matView === "list" && <MaterialFolderBar matterId={matter.matter_id} folder={matter.folder ?? null} readOnly={locked} disabled={busy} onChanged={reload} sharedNote={sharedMaterialNote(teamShared)} />}
             </div>
-            {matView === "table" && docs.length > 0 && <TableReview matterId={matter.matter_id} docs={docs} readOnly={closed} initialTable={tableFocus} onFill={(t) => void fillTable(t)} onAsk={(t, q) => void askTable(t, q)} onExported={() => void reload()} />}
+            {matView === "table" && docs.length > 0 && <TableReview matterId={matter.matter_id} docs={docs} readOnly={locked} initialTable={tableFocus} onFill={(t) => void fillTable(t)} onAsk={(t, q) => void askTable(t, q)} onExported={() => void reload()} />}
             {/* 第 66 批 D1：添加材料与首页、开始面板、追问同一个组件（拖放、选择文件、逐份结果；同内容已在本事项的不重复保存） */}
-            {matView === "list" && !closed && (
+            {matView === "list" && !locked && (
               <MaterialPicker
                 matterTitle={matter.title}
+                sharedNote={sharedMaterialNote(teamShared)}
                 documents={docs}
                 showList={false}
                 disabled={busy}
@@ -568,7 +581,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                             ) : (
                               <span className="mat-unused">{(usage.get(d.document_version_id)?.readable_by_unrestricted ?? 0) > 0 ? `${usage.get(d.document_version_id)!.readable_by_unrestricted} 次任务可读全部材料（含它）` : "还没有任务用过"}</span>
                             )}
-                            {!closed && !matter.is_sample && (
+                            {!locked && !matter.is_sample && (
                               <ConfirmButton
                                 label="移除"
                                 className="btn-link mat-remove"
@@ -589,7 +602,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                         <RolePills
                           name={d.filename}
                           value={d.role}
-                          disabled={closed}
+                          disabled={locked}
                           onChange={(v) => {
                             void api
                               .setMaterialRole(d.document_version_id, v)
@@ -602,7 +615,7 @@ export function MatterPage({ matterId }: { matterId: string }) {
                         {triage.get(d.document_version_id) ? (
                           <>
                             {triageText(triage.get(d.document_version_id)!)}
-                            {!closed && !matter.is_sample && triageSuggestion(triage.get(d.document_version_id)!, matter) && (
+                            {!locked && !matter.is_sample && triageSuggestion(triage.get(d.document_version_id)!, matter) && (
                               <button className="btn-link mat-suggest" onClick={() => nav(`/start/${triageSuggestion(triage.get(d.document_version_id)!, matter)!.id}/${matterId}`)}>
                                 {triageSuggestion(triage.get(d.document_version_id)!, matter)!.title}
                               </button>
@@ -715,8 +728,8 @@ export function MatterPage({ matterId }: { matterId: string }) {
           />
         )}
         {tab === "deliverables" && <MatterDeliverables matterId={matterId} />}
-        {tab === "facts" && <FactsPanel matterId={matterId} docs={docs} readOnly={closed} />}
-        {tab === "parties" && <PartiesPanel matterId={matterId} onChanged={reload} readOnly={closed} />}
+        {tab === "facts" && <FactsPanel matterId={matterId} docs={docs} readOnly={locked} />}
+        {tab === "parties" && <PartiesPanel matterId={matterId} onChanged={reload} readOnly={locked} />}
         {tab === "egress" && <MatterEgress matterId={matterId} />}
         {tab === "lifecycle" && <MatterLifecyclePanel matter={matter} onChanged={reload} />}
         {tab === "members" && (teamShared ? (
@@ -787,7 +800,7 @@ function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Mat
   const [adjustRef, setAdjustRef] = useState(matter.basis_ref ?? "");
   useEffect(() => {
     api
-      .aiAuthorization()
+      .aiAuthorization(matter.matter_id)
       .then((a) => {
         setDefaults(a);
         if (!touched) setRecord(initialRecord(a, matter));
@@ -825,7 +838,8 @@ function BasisDialog({ matter, basis, endpoint, onClose, onSave }: { matter: Mat
           }}
           sensitive={need.sensitive}
           reconfirm={false}
-          processors={defaults?.subprocessors ?? null}
+          processors={matter.subprocessors ?? defaults?.subprocessors ?? null}
+          dataFlows={matter.data_flows ?? defaults?.data_flows ?? null}
           detail={detail}
           onDetail={setDetail}
           endpoint={endpoint}

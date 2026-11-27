@@ -1,22 +1,25 @@
 /**
  * 第 73 批（V47，D-309，契约 02 §2.6）：设置 → 团队 → 团队策略首行“同事之间同步”。
- * - 三态：需中软开通（服务没部署：如实说，不给按钮）/ 未开通（“开通…”）/ 已开通至某日；另有待第二位管理员确认、已过期。
+ * - 状态行只说一次（设计评分第一轮 T8）：“● 未开通 [开通…]”/“● 已开通 · 12 月 27 日前有效 [续期…] [关闭…]”；到期前 7 天“续期…”提为主按钮；
+ *   需中软开通（服务没部署）如实说、不给按钮；另有待第二位管理员确认、已过期。结果用一次性轻提示（几秒后消失），不再常驻一句绿色正文。
  * - 开通：以当前生效的本所规则为底稿只改这一项（内核 firm_policy.share_relay_enable 一次完成起草、本机确认、达到人数即发布）；
  *   律所版要 2 位管理员时写明还需另一位确认；第二位管理员在自己电脑上这一行点“确认开通…”即确认同一份（内核找一致的待签草稿）。
- * - 到期前 7 天：这一行变色并给“续期…”（按当前生效规则原样重签）；团队页顶部另有一行提醒（ShareRelayExpiring）。
- * - 开通、续期都是管理员签名：确认框写明后果，并逐条列出这次一并确认的其它放宽项（所见即所签）。
+ * - 续期：按当前生效规则原样重签；已过期时恢复那一份，确认框逐条列出一并恢复的放宽项（所见即所签）。
+ * - 关闭：内核没有单独的方法——确认框写清后果（关闭后要再开通需联系中软），再打开下面的“起草律所策略”并预置“不允许同事之间同步”，走原有的确认与发布。
  * 合伙人等不能管理的角色只读（can_manage 由内核按这台电脑判定）。旧内核没有这个方法时整行不出现。
  */
 import { useEffect, useState } from "react";
 import { teamMatters, type ShareRelayStatus } from "../api.ts";
-import { dueLabel } from "../lib/workspace.ts";
-import { carriedLine, relayExpiringText, shareRelayEnableLines, shareRelayRenewLines, shareRelayRow, teamFaultText } from "../lib/team-matters.ts";
+import { carriedLine, dayOnly, relayExpiringText, shareRelayCloseLines, shareRelayEnableLines, shareRelayRenewLines, shareRelayRow, teamFaultText } from "../lib/team-matters.ts";
+import { Icon } from "./Icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { SettingRow } from "./SettingRow.tsx";
 import "../styles-team-matters.css";
 
 /** 状态变了（开通、续期）：团队页顶部提醒、下面的规则与草稿据此重读。 */
 export const SHARE_RELAY_CHANGED = "kwl:share-relay-changed";
+/** 关闭同事之间同步：让“起草律所策略”预置“不允许同事之间同步”并滚到那里（Connections.tsx PolicyDraftForm 监听）。 */
+export const POLICY_DRAFT_PRESET = "kwl:policy-draft-preset";
 
 function useShareRelay(): [ShareRelayStatus | null | undefined, (s: ShareRelayStatus) => void] {
   const [s, setS] = useState<ShareRelayStatus | null | undefined>(undefined);
@@ -29,18 +32,24 @@ function useShareRelay(): [ShareRelayStatus | null | undefined, (s: ShareRelaySt
   return [s, setS];
 }
 
+/** 一次性结果（有效期就在状态行里，这里不再写）。 */
 function doneText(s: ShareRelayStatus, renew: boolean): string {
-  if (s.state === "pending_second_signature") return `已确认：还需另一位管理员在自己的电脑上确认后${renew ? "续期" : "开通"}。`;
-  // 有效期就在上面那一行（实拍：同一个日期说了两遍）
-  if (s.state === "allowed") return `${renew ? "已续期" : "已开通"}：团队共享事项会在同事电脑之间同步。`;
-  return "已提交，稍后生效。";
+  if (s.state === "pending_second_signature") return `已确认，还需另一位管理员确认后${renew ? "续期" : "开通"}`;
+  if (s.state === "allowed") return renew ? "已续期" : "已开通";
+  return "已提交，稍后生效";
 }
 
 export function ShareRelayRow() {
   const [s, setS] = useShareRelay();
-  const [asking, setAsking] = useState<"enable" | "renew" | null>(null);
+  const [asking, setAsking] = useState<"enable" | "renew" | "close" | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  // 成功的轻提示几秒后消失；失败的留着（要让管理员看见原因）
+  useEffect(() => {
+    if (!msg?.ok) return;
+    const t = setTimeout(() => setMsg(null), 4000);
+    return () => clearTimeout(t);
+  }, [msg]);
   if (s === null) return null;
   const row = shareRelayRow(s ?? null);
   const run = async (kind: "enable" | "renew") => {
@@ -58,58 +67,78 @@ export function ShareRelayRow() {
       setBusy(false);
     }
   };
-  const act = row.action;
   // 我是第二位管理员：确认的是别人发起的那一份，确认后即生效
   const second = !!s?.pending && !s.pending.signed_by_me;
   const expired = s?.state === "expired";
-  const lines = asking === "renew" ? shareRelayRenewLines(s?.threshold ?? 1, second, expired) : shareRelayEnableLines(s?.threshold ?? 1, second);
+  const lines =
+    asking === "close" ? shareRelayCloseLines() : asking === "renew" ? shareRelayRenewLines(s?.threshold ?? 1, second, expired) : shareRelayEnableLines(s?.threshold ?? 1, second);
   // 过期续期写明一并恢复的放宽项（内核 carry_relaxations.renew）；开通写明同时仍允许的（carry_relaxations.enable）
-  const carried = asking === "renew" ? carriedLine(s?.carry_relaxations?.renew, expired ? "restore" : "renew") : asking ? carriedLine(s?.carry_relaxations?.enable) : null;
+  const carried = asking === "renew" ? carriedLine(s?.carry_relaxations?.renew, expired ? "restore" : "renew") : asking === "enable" ? carriedLine(s?.carry_relaxations?.enable) : null;
+  const title = asking === "close" ? "关闭同事之间同步" : asking === "renew" ? "续期同事之间同步" : "开通同事之间同步";
   return (
-    <SettingRow label="同事之间同步" id="row-share-relay" hint="团队共享事项加密后在同事电脑之间同步，中软打不开。">
+    <SettingRow label="同事之间同步" id="row-share-relay" hint="和同事一起办的事项在同事电脑之间加密同步。">
       {s === undefined ? (
         <p className="muted team-empty">正在读取…</p>
       ) : (
         <div className="relay-row">
           <span className={`relay-state${row.warn ? " is-warn" : ""}`} role="status">
-            <span className={`sdot ${row.state === "on" ? "sdot-ok" : row.warn ? "sdot-warn" : "sdot-idle"}`} aria-hidden="true" />
+            <span className={`sdot ${row.warn ? "sdot-warn" : row.state === "on" ? "sdot-ok" : "sdot-idle"}`} aria-hidden="true" />
             {row.text}
           </span>
-          {act && (
-            <button
-              type="button"
-              className={act.kind === "renew" && row.warn ? "btn-primary btn-sm" : "btn-ghost btn-sm"}
-              disabled={busy}
-              onClick={() => {
-                if (act.kind === "review") document.getElementById("sec-policy-drafts")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                else setAsking(act.kind);
-              }}
-            >
-              {act.label}
-            </button>
+          {row.actions.length > 0 && (
+            <span className="relay-acts">
+              {row.actions.map((a) => (
+                <button
+                  key={a.kind}
+                  type="button"
+                  className={a.primary ? "btn-primary btn-sm" : "btn-ghost btn-sm"}
+                  disabled={busy}
+                  onClick={() => {
+                    if (a.kind === "review") document.getElementById("sec-policy-drafts")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    else setAsking(a.kind);
+                  }}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </span>
+          )}
+          {msg && (
+            <span className={msg.ok ? "lite-toast" : "activate-error relay-err"} role={msg.ok ? "status" : "alert"}>
+              {msg.ok && <Icon.check />}
+              {msg.text}
+            </span>
           )}
         </div>
       )}
-      {msg && (
-        <p className={`relay-msg${msg.ok ? " is-ok" : " activate-error"}`} role={msg.ok ? "status" : "alert"}>
-          {msg.text}
-        </p>
-      )}
       {asking && s && (
-        <Modal title={asking === "renew" ? "续期同事之间同步" : "开通同事之间同步"} onClose={() => !busy && setAsking(null)}>
+        <Modal title={title} onClose={() => !busy && setAsking(null)}>
           <ul className="relay-lines">
             {lines.map((l) => (
               <li key={l}>{l}</li>
             ))}
           </ul>
           {carried && <p className="relay-carried">{carried}</p>}
-          <div className="modal-actions">
+          <div className="modal-actions modal-actions-sticky">
             <button type="button" className="btn-ghost" disabled={busy} onClick={() => setAsking(null)}>
               取消
             </button>
-            <button type="button" className="btn-primary" disabled={busy} aria-busy={busy || undefined} onClick={() => void run(asking)}>
-              {busy ? "正在确认…" : asking === "renew" ? "确认续期" : second ? "确认开通" : s.threshold > 1 ? "确认并发起" : "开通"}
-            </button>
+            {asking === "close" ? (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  setAsking(null);
+                  window.dispatchEvent(new CustomEvent(POLICY_DRAFT_PRESET, { detail: { share_relay: false } }));
+                }}
+              >
+                去起草规则
+              </button>
+            ) : (
+              <button type="button" className="btn-primary" disabled={busy} aria-busy={busy || undefined} onClick={() => void run(asking)}>
+                {busy ? "正在确认…" : asking === "renew" ? "确认续期" : second ? "确认开通" : s.threshold > 1 ? "确认并发起" : "开通"}
+              </button>
+            )}
           </div>
         </Modal>
       )}
@@ -126,7 +155,7 @@ export function ShareRelayExpiring() {
     <div className="banner banner-orange team-expiring" role="status">
       <span>
         {text}
-        {s?.expires_at && s.state !== "expired" ? `（${dueLabel(s.expires_at)} 前有效）` : ""}：{s?.state === "expired" ? "续期后恢复" : "到期后团队共享事项暂停在同事电脑之间同步"}，事项内容不受影响。
+        {s?.expires_at && s.state !== "expired" ? `（${dayOnly(s.expires_at)}前有效）` : ""}：{s?.state === "expired" ? "续期后恢复" : "到期后，和同事一起办的事项暂停同步"}，各人电脑上的内容不受影响。
       </span>
       <button type="button" className="btn-ghost btn-sm" onClick={() => document.getElementById("row-share-relay")?.scrollIntoView({ behavior: "smooth", block: "center" })}>
         去续期 →

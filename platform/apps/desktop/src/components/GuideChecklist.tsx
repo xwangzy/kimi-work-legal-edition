@@ -127,7 +127,7 @@ export function GuideChecklist({ onNewMatter, expanded: expandedProp = true, onE
   }, [expandedProp, p]);
   if (vis !== "show" || !p || !key || expandedProp === null) return null;
   const variant = checklistVariant(acct, p);
-  const items: ChecklistItem[] = variant === "new_device" ? newDeviceItems(flags.deviceAcked, backup) : checklistItems(p, backup);
+  const items: ChecklistItem[] = variant === "new_device" ? newDeviceItems(flags.deviceAcked, backup) : checklistItems(p, backup, { team: role !== "personal" });
   const allDone = items.every((i) => i.done);
   const next = items.find((i) => !i.done && !i.locked) ?? null;
   const doneCount = items.filter((i) => i.done).length;

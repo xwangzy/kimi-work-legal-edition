@@ -58,11 +58,13 @@ export function canResyncMembers(admin: boolean, isMatterOwner: boolean | undefi
 }
 
 /** 律师层一行状态（Z3 评审 5.5）：正常 / 有 n 个事项暂停同步 / 暂停原因一句话。纯函数。 */
-export function teamShareLine(st: { blocked: string | null; alerts?: unknown[] | null; stuck?: number | null; stuck_matters?: number | null; policy_fallback?: boolean | null }): string {
+export function teamShareLine(st: { blocked: string | null; alerts?: unknown[] | null; stuck?: number | null; stuck_matters?: number | null; policy_fallback?: boolean | null; credential_error?: string | null }): string {
   const n = st.alerts?.length ?? 0;
   if (st.blocked === "exit_mode") return "同事之间同步已暂停：这台电脑的许可失效或已被停用";
+  // 第 73 批（验收 P2-1）：没有名额时如实说（原来落到“连不上”）
+  if (st.credential_error === "credential_no_seat" || st.credential_error === "credential_seat_revoked") return "同事之间同步用不了：你还没有分配到 AI 使用名额，请找管理员在“设置 → 团队”里分配";
   // 第 73 批（D-309）：规则没允许如实说“所内还没开通”（与事项成员页、选同事处同一说法）
-  if (st.blocked === "not_allowed") return st.policy_fallback ? "同事之间同步已暂停：这台电脑还没收到最新的律所规则，联网后自动恢复" : "所内还没开通同事之间同步：开通后团队共享事项才会在同事电脑之间同步";
+  if (st.blocked === "not_allowed") return st.policy_fallback ? "同事之间同步已暂停：这台电脑还没收到最新的律所规则，联网后自动恢复" : "所内还没开通同事之间同步：开通后，和同事一起办的事项才会在同事电脑之间同步";
   if (n > 0) return `有 ${n} 个事项暂停同步，负责人处理后自动恢复`;
   if (st.stuck) return `有 ${st.stuck_matters ?? 1} 个事项的改动暂时发不出去，会自动重试`;
   return "同事之间同步：正常";

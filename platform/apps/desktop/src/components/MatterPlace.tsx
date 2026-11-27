@@ -26,9 +26,12 @@ const RECENT_LIMIT = 6;
  * 上下都放不下（如 1440×900 且上手清单展开、页面已滚动）改为窗口居中；表单区限高内滚，底部“取消 / 建好并发起”吸底常驻；
  * 背后一层淡遮罩（点遮罩 = 取消），不露半截字。
  */
-function usePlacement(anchor: HTMLElement | null | undefined, deps: unknown[]): [RefObject<HTMLDivElement | null>, CSSProperties] {
+function usePlacement(anchor: HTMLElement | null | undefined, deps: unknown[], lockKey: unknown): [RefObject<HTMLDivElement | null>, CSSProperties] {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<CSSProperties>({ visibility: "hidden" });
+  // 第 73 批（设计评分第一轮 T2）：同一个表单里内容变高（切“谁能看到”、展开选同事）时上沿与左缘不动、只向下长，放不下就限高内滚；
+  // 换了内容（列表 ↔ 新建表单，lockKey 变）或窗口尺寸变了才重新放
+  const locked = useRef<{ key: unknown; top: number; left: number } | null>(null);
   useLayoutEffect(() => {
     const place = () => {
       const el = ref.current;
@@ -47,15 +50,24 @@ function usePlacement(anchor: HTMLElement | null | undefined, deps: unknown[]): 
         top = Math.max(m, (vh - h) / 2);
         left = (vw - w) / 2;
       }
-      setPos({ top: Math.round(top), left: Math.round(left), width: w, maxHeight: vh - 2 * m });
+      const lk = locked.current;
+      if (lk && lk.key === lockKey) {
+        top = lk.top;
+        left = lk.left;
+      } else locked.current = { key: lockKey, top, left };
+      setPos({ top: Math.round(top), left: Math.round(left), width: w, maxHeight: Math.max(240, vh - top - m) });
+    };
+    const onResize = () => {
+      locked.current = null;
+      place();
     };
     place();
-    window.addEventListener("resize", place);
+    window.addEventListener("resize", onResize);
     // 第 73 批：浮层里展开“选同事”等内容变高时重新放（仍完整显示在视口内）
     const ro = typeof ResizeObserver === "function" && ref.current ? new ResizeObserver(() => place()) : null;
     if (ro && ref.current) ro.observe(ref.current);
     return () => {
-      window.removeEventListener("resize", place);
+      window.removeEventListener("resize", onResize);
       ro?.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -102,7 +114,7 @@ export function MatterPlace({ matters, goal, onPlace, onMore, onCancel, anchor, 
     }
   };
   const levelHint = LEVELS.find((l) => l.v === level)?.hint;
-  const [ref, pos] = usePlacement(anchor, [creating, !!err, sc.scope, sc.picked.length, sc.avail.show]);
+  const [ref, pos] = usePlacement(anchor, [creating, !!err, sc.scope, sc.picked.length, sc.avail.show], creating);
   return (
     <>
       <div className="place-mask" aria-hidden="true" onMouseDown={() => !busy && onCancel()} />

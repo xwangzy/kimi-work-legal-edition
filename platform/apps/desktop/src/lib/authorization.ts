@@ -1,6 +1,7 @@
 /**
  * 客户授权的纯函数（第 48 批，D-202；界面见 components/Consent.tsx）。可单测。
  */
+import { reconfirmReason } from "./team-matters.ts";
 import type { MatterBasis } from "../api.ts";
 
 /** 新建事项时这一案的授权情况。 */
@@ -117,10 +118,20 @@ export function authorizationRecordLine(m: { consent_status?: string; basis_comp
 }
 
 /** 授权状态（总览表与一行只读共用）：有效 / 待补记 / 次处理者清单已更新待重新确认 / 尚未记录 / 客户要求不上云。纯函数。 */
-export function authorizationStatus(m: { consent_status?: string; basis_complete?: boolean; basis_state?: string; data_level?: string }): { key: "valid" | "needs_ref" | "reconfirm" | "pending" | "local_only"; label: string } {
+export function authorizationStatus(m: {
+  consent_status?: string;
+  basis_complete?: boolean;
+  basis_state?: string;
+  data_level?: string;
+  collab_scope?: string | null;
+  basis_notice_version?: string | null;
+  authorization_history?: readonly { scope?: string }[] | null;
+  subprocessors?: { version?: string } | null;
+}): { key: "valid" | "needs_ref" | "reconfirm" | "pending" | "local_only"; label: string } {
   if (m.consent_status === "refused" || m.data_level === "L3b") return { key: "local_only", label: "客户要求不上云" };
   if (m.basis_state === "needs_ref") return { key: "needs_ref", label: "待补记" };
-  if (m.basis_state === "reconfirm") return { key: "reconfirm", label: "次处理者清单已更新，待重新确认" };
+  // 第 73 批（验收 P2-3）：只有我的事项改为和同事一起办后，原授权没覆盖同事之间同步——如实说原因，不说“清单已更新”
+  if (m.basis_state === "reconfirm") return { key: "reconfirm", label: reconfirmReason(m, m.subprocessors?.version) === "scope" ? "改为和同事一起办，待重新确认" : "次处理者清单已更新，待重新确认" };
   if (m.basis_state === "valid" || (m.basis_state === undefined && m.basis_complete)) return { key: "valid", label: "有效" };
   return { key: "pending", label: "尚未记录" };
 }

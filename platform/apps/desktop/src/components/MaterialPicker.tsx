@@ -41,6 +41,8 @@ export interface ImportOutcome {
 export interface MaterialPickerProps {
   /** 目标事项名：写在添加区与空态里，律师知道文件进哪个事项。 */
   matterTitle: string;
+  /** 第 73 批：团队共享事项的存入说明补半句“也会加密同步到加进来的同事电脑上”。 */
+  sharedNote?: string | null;
   documents: PickerDoc[];
   selected?: string[];
   onToggle?: (documentVersionId: string, on: boolean) => void;
@@ -200,7 +202,7 @@ export function MaterialPicker(p: MaterialPickerProps) {
                   <button type="button" className="btn-link mp-add" disabled={disabled} onClick={() => void pickMaterials(mountRef.current, (f) => run(f, "mount"))}>只引用、不复制</button>
                 </>
               )}
-              {!p.compact && <span className="mp-drop-note">存入「{p.matterTitle}」，加密保存一份副本，原文件不改动</span>}
+              {!p.compact && <span className="mp-drop-note">存入「{p.matterTitle}」，加密保存一份副本{p.sharedNote ? `，${p.sharedNote}` : ""}，原文件不改动</span>}
             </span>
           )}
           <input ref={fileRef} type="file" multiple hidden accept={MATERIAL_ACCEPT} onChange={(e) => void run(e.target.files, "import")} />

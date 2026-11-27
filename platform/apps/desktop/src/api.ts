@@ -251,6 +251,15 @@ export interface AiAuthorization {
   default_ref?: string | null;
   updated_at: string | null;
   subprocessors?: AiSubprocessors;
+  /** 第 73 批：给了 matter_id 时按事项范围（只有我 / 和同事一起办）回次处理者清单与数据去向。 */
+  scope?: "personal" | "team";
+  data_flows?: DataFlowEntry[];
+}
+/** 数据去向的一条（第 73 批，内核 dataFlowsFor）：只有我 = 案卷只存这台电脑；和同事一起办 = 同事电脑、中软加密副本。 */
+export interface DataFlowEntry {
+  key: string;
+  label: string;
+  text: string;
 }
 
 export interface MatterBasis {
@@ -318,6 +327,13 @@ export interface Matter {
   purge_eligible?: boolean;
   /** 本人在事项中的角色（matters.get）。 */
   my_role?: "owner" | "editor" | "viewer";
+  /** 第 73 批：本人能否改这个事项（matters.get；“只看”成员为 false；旧内核没有时按 my_role）。 */
+  can_write?: boolean;
+  /** 第 73 批：负责人已把我移出这个事项（本机如实得知；已有内容只能查看）。 */
+  removed_me?: boolean;
+  /** 第 73 批：按事项范围的次处理者清单与数据去向（matters.get）。 */
+  subprocessors?: AiSubprocessors;
+  data_flows?: DataFlowEntry[];
   /** 这台电脑上关联的案卷文件夹（第 48 批，matters.get）；没关联为 null。 */
   folder?: MatterFolder | null;
   created_at: string;
@@ -330,6 +346,9 @@ export interface AuthorizationHistoryEntry {
   basis_notice_version: string;
   /** 记录时的次处理者清单是否为当前版本。 */
   current_version: boolean;
+  /** 记录时事项的范围（第 73 批）。 */
+  scope?: "personal" | "team";
+  data_flows?: DataFlowEntry[];
   recorded_by: string | null;
   recorded_at: string;
 }
@@ -1227,7 +1246,8 @@ export const api = {
   setDocStyle: (body: Partial<Pick<DocStyleView, "letterhead" | "letterhead_name" | "letterhead_lines" | "body" | "page_numbers" | "redline_author">>) => invoke<DocStyleView>("doc_style.set", body),
   writingPrefs: () => invoke<WritingPrefs>("writing_prefs.get"),
   /** 客户授权的默认设置（第 48 批）：委托合同是否含使用 AI 辅助的条款；开了以后新建事项默认按此记录。 */
-  aiAuthorization: () => invoke<AiAuthorization>("ai_authorization.get"),
+  /** 给 matterId 时按事项范围回次处理者清单与数据去向（第 73 批）。 */
+  aiAuthorization: (matterId?: string) => invoke<AiAuthorization>("ai_authorization.get", matterId ? { matter_id: matterId } : {}),
   /** 律师本人的授权设置（第 51 批）：engagement_terms = 用常用条款出处预填；default_ref = 常用的委托合同 AI 条款出处。 */
   setAiAuthorization: (p: { engagement_terms?: boolean; default_ref?: string | null }) => invoke<AiAuthorization>("ai_authorization.set", p),
   /** 首次使用 AI 的数据去向告知（第 51 批）：律师本人看过的版本。 */
@@ -1650,6 +1670,10 @@ export interface RelayStatus {
   matters?: number;
   /** 策略回退（过期、认不出、没收到），不是律所关闭。 */
   policy_fallback?: boolean;
+  /** 申领同事之间同步凭据最近一次失败的原因（第 73 批，如 credential_no_seat）。 */
+  credential_error?: string | null;
+  /** 这台电脑被负责人移出的事项数（第 73 批）。 */
+  removed_matters?: number;
   /** 团队同步的持久告警（两种介质）：纪元冲突、负责人无法确认。 */
   alerts?: { matter_id: string; title: string | null; kind: string; epoch: number; first_at: string; hits: number; peer_member: string | null; peer_name?: string | null }[];
 }
@@ -1962,6 +1986,8 @@ export interface TeamRosterMember {
   /** 这位同事至少有一台经团队确认、在用的电脑（自己：这台电脑是否经团队确认）。 */
   can_receive: boolean;
   is_me: boolean;
+  /** 是否占有 AI 使用名额（第 73 批；旧云端 null）。 */
+  seat?: boolean | null;
 }
 export interface TeamRoster {
   available: boolean;
@@ -1973,7 +1999,7 @@ export interface TeamRoster {
 /** 事项角色（内核五种；律师端只露负责人 / 一起办 / 只看，D-308）。 */
 export type MatterRole = "owner" | "editor" | "reviewer" | "issuer" | "viewer";
 /** 事项的同事之间同步状态（契约 02 §2.3；not_allowed 不再映射成 unknown）。 */
-export type MatterSync = "ok" | "not_configured" | "not_allowed" | "unreachable" | "pending" | "unknown";
+export type MatterSync = "ok" | "not_configured" | "not_allowed" | "unreachable" | "pending" | "unknown" | "no_seat" | "removed";
 export interface MatterMemberRow {
   user_id: string;
   name: string | null;
@@ -1983,6 +2009,8 @@ export interface MatterMemberRow {
   departed: boolean;
   is_me: boolean;
   added_at?: string;
+  /** 是否占有 AI 使用名额（第 73 批；旧云端 null）。 */
+  seat?: boolean | null;
 }
 export interface MatterMembersView {
   matter_id: string;
@@ -1993,6 +2021,8 @@ export interface MatterMembersView {
   can_manage?: boolean;
   /** 最先在同步服务上登记这个事项的负责人（只有他能调整成员）。 */
   relay_controller?: string | null;
+  /** 负责人已把我移出这个事项（本机如实得知；sync 为 removed）。 */
+  removed_me?: boolean;
   members: MatterMemberRow[];
   sync: MatterSync;
 }
