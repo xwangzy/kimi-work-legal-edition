@@ -400,12 +400,15 @@ test("开通同事之间同步（D-309）：三态 + 待确认 + 过期；到期
   assert.match(shareRelayEnableLines(2).join(""), /还需另一位管理员在自己的电脑上确认才生效/);
   assert.match(shareRelayEnableLines(1).join(""), /只改这一项，本所规则的其他各项不变/, "以当前生效规则为底稿");
   assert.match(css0(), /\.acd-lines li, \.relay-lines li \{ text-wrap: pretty; \}/);
-  // 关闭：内核没有单独方法——确认框写清后果（再开通要联系中软），再打开起草表单并预置“不允许同事之间同步”
+  // 关闭：内核没有单独方法——确认框写清后果（D-311：需要时管理员可以重新开通，不要求联系中软），再打开起草表单并预置“不允许同事之间同步”
   // 第 73 批收尾：关闭确认框不与自助开通冲突；关闭过的状态行
-  assert.equal(shareRelayCloseLines()[0], "关闭后，同事之间的同步立即停止：团队共享事项不再在同事电脑之间同步，各人电脑上的内容不受影响。");
-  assert.equal(shareRelayCloseLines()[2], "之后要再开通，需要联系中软重新开通（这是为了防止规则被反复切换）。");
+  assert.equal(shareRelayCloseLines()[0], "关闭后，同事之间的同步立即停止；中软上已保存的加密副本不会因此删除；需要时管理员可以重新开通。");
+  assert.doesNotMatch(shareRelayCloseLines().join(""), /联系中软|反复切换/, "D-311：关闭后可自助重新开通");
   const closed = shareRelayRow({ relay_configured: true, state: "not_allowed", can_manage: true, threshold: 1, signatures: 0, expires_at: null, days_left: null, closed: true } as ShareRelayStatus);
-  assert.deepEqual([closed.state, closed.text, closed.actions], ["closed", "已关闭 · 再开通需联系中软", []], "关闭过的不给自助开通");
+  assert.deepEqual([closed.state, closed.text, closed.actions], ["closed", "已关闭", [{ kind: "enable", label: "重新开通…", primary: false }]], "D-311：关闭过的照常可以重新开通");
+  const closedAt = shareRelayRow({ relay_configured: true, state: "not_allowed", can_manage: true, threshold: 2, signatures: 0, expires_at: null, days_left: null, closed: true, closed_at: "2026-11-28T02:00:00Z" } as ShareRelayStatus, Date.parse("2026-11-28T09:00:00Z"));
+  assert.deepEqual([closedAt.text, closedAt.actions[0]!.label], ["已关闭 · 11 月 28 日关闭", "发起重新开通…"]);
+  assert.deepEqual(shareRelayRow({ relay_configured: true, state: "not_allowed", can_manage: false, threshold: 1, signatures: 0, expires_at: null, days_left: null, closed: true } as ShareRelayStatus).actions, [], "合伙人只读");
   assert.equal(shareRelayRow({ relay_configured: true, state: "not_allowed", can_manage: true, threshold: 1, signatures: 0, expires_at: null, days_left: null } as ShareRelayStatus).text, "未开通", "没有 closed 字段（旧内核 / 从没开通过）照旧");
   const rr0 = code("components/ShareRelayRow.tsx");
   assert.match(rr0, /<div className="modal-actions modal-actions-sticky">/);
@@ -653,11 +656,11 @@ test("端到端验收 P3-2～P3-4：已申请等确认不再给“去申请 →�
 
 test("验收修四项（内核 919fcafa）：授权卡按事项范围的数据去向与清单版本；被移出如实、收起写入口；没有名额如实；只看的原句", () => {
   // ① 数据去向：只有我接在“系统另外做到”后面；一起办的同事电脑、中软加密副本各一行；旧内核照旧
-  assert.deepEqual(authzFlowRows([{ key: "local", label: "案卷", text: "案卷只存这台电脑" }]), { local: "案卷只存这台电脑", rows: [] });
+  assert.deepEqual(authzFlowRows([{ key: "local", label: "案卷", text: "案卷只存这台电脑" }]), { local: "案卷只存这台电脑", rows: [], always: [] });
   const team = authzFlowRows([{ key: "colleagues", label: "同事电脑", text: "经加密同步到事项成员的电脑（本所同事 2 人）；他们电脑上也有材料与成果" }, { key: "zr_relay", label: "中软", text: "保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本" }]);
   assert.equal(team.local, null);
   assert.deepEqual(team.rows.map((r) => r.label), ["同事电脑", "中软"]);
-  assert.deepEqual(authzFlowRows(null), { local: "案卷只存这台电脑", rows: [] });
+  assert.deepEqual(authzFlowRows(null), { local: "案卷只存这台电脑", rows: [], always: [] });
   const consent = code("components/Consent.tsx");
   assert.match(consent, /发出前把姓名、证件号、电话等换成代号\{flows\.local \? `；\$\{flows\.local\}` : ""\}/);
   assert.match(consent, /\{flowRows\.map\(\(f\) => \(/);
@@ -787,7 +790,7 @@ test("第二轮复评 T12：团队共享事项的授权卡固定列出“同事�
   const old = authzFlowRows(null, { team: true, relay: null });
   assert.equal(old.local, null);
   assert.deepEqual(old.rows.map((r) => r.label), ["同事电脑", "中软"]);
-  assert.deepEqual(authzFlowRows(null, { team: false }), { local: "案卷只存这台电脑", rows: [] }, "只有我的事项不变");
+  assert.deepEqual(authzFlowRows(null, { team: false }), { local: "案卷只存这台电脑", rows: [], always: [] }, "只有我的事项不变");
   // 开始前确认与事项页“记录授权”同一来源、同一判断
   const consent = code("components/Consent.tsx");
   assert.match(consent, /const relay = useRelayState\(team\);\s*const flows = authzFlowRows\(dataFlows, \{ team, relay: team \? relay\.ready : null \}\);/);
@@ -899,7 +902,7 @@ test("产品评分 G5-1 / G5-3 / G5-4 / G3 / G4：失败即收紧、授权卡分
   assert.equal(aiRoleOf("云端转发 AI 请求，不保存内容；同事之间同步时保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本", true), "云端转发 AI 请求，不保存内容", "AI 次处理者那段不写同步");
   assert.equal(aiRoleOf("云端转发 AI 请求，不保存内容", false), "云端转发 AI 请求，不保存内容");
   const consent = code("components/Consent.tsx");
-  assert.match(consent, /\{split && <small className="authz-dt-when">（AI 使用时）<\/small>\}/);
+  assert.match(consent, /\{\(split \|\| aiForward\) && <small className="authz-dt-when">（AI 使用时）<\/small>\}/);
   assert.match(consent, /"选团队共享时已发生（律所已开通同事之间同步）"/);
   assert.match(consent, /<div className="authz-scope authz-scope-team" role="group" aria-label=\{teamHead\}>/);
   // G5-4：授权记录写范围
@@ -910,4 +913,40 @@ test("产品评分 G5-1 / G5-3 / G5-4 / G3 / G4：失败即收紧、授权卡分
   // G4：开通后的轻提示
   assert.match(code("components/ShareRelayRow.tsx"), /return renew \? "已续期" : `已开通：\$\{RELAY_ENABLED_ETA_TEXT\}`;/);
   assert.match(RELAY_ENABLED_ETA_TEXT, /最长约 10 分钟/);
+});
+
+test("D-312（内核 c2b1521f）：数据去向按 when 分三处——AI 使用时、选团队共享时已发生、底部一行；有 AI 转发一条时次处理者只列名字、不再写“系统另外做到”", () => {
+  const team = [
+    { key: "colleagues", label: "同事电脑", text: "经加密同步到事项成员的电脑（本所同事 2 人）；他们电脑上也有材料与成果", count: 2, when: "on_team_share" },
+    { key: "zr_relay", label: "中软", text: "保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本", when: "on_team_share" },
+    { key: "ai_forward", label: "AI", text: "用 AI 时：任务用到的内容先把姓名、证件号、电话等换成代号，经中软转发给 Kimi 模型（月之暗面）；中软不保存内容", when: "on_ai_use" },
+  ];
+  const t = authzFlowRows(team, { team: true, relay: true });
+  assert.deepEqual(t.rows.map((r) => [r.key, r.when]), [["colleagues", "on_team_share"], ["zr_relay", "on_team_share"], ["ai_forward", "on_ai_use"]]);
+  assert.equal(t.local, null);
+  assert.deepEqual(t.always, []);
+  const personal = [
+    { key: "local", label: "案卷", text: "案卷只存这台电脑", when: "always" },
+    { key: "ai_forward", label: "AI", text: "用 AI 时：…经中软转发给 Kimi 模型（月之暗面）；中软不保存内容", when: "on_ai_use" },
+  ];
+  const p = authzFlowRows(personal, { team: false });
+  assert.deepEqual(p.always, ["案卷只存这台电脑"], "always 放底部一行");
+  assert.equal(p.local, null, "带 when 时不再接在“系统另外做到”后面");
+  assert.deepEqual(p.rows.map((r) => r.key), ["ai_forward"]);
+  assert.equal(flowWhen({ key: "local" }), "always", "旧内核的 local 按 always 兜底");
+  assert.equal(flowWhen({ key: "x", when: "always" }), "always");
+  const consent = code("components/Consent.tsx");
+  assert.match(consent, /const aiForward = aiRows\.some\(\(f\) => f\.key === "ai_forward"\);/);
+  assert.match(consent, /次处理者：\{list\.map\(\(p\) => \(aiForward \? p\.name : `\$\{p\.name\}（\$\{aiRoleOf\(p\.role, split\)\}）`\)\)\.join\("、"\)\}/, "去掉与 AI 转发重复的角色说法");
+  assert.match(consent, /\{!aiForward && \(\s*<div>\s*<dt>系统另外做到<\/dt>/);
+  assert.match(consent, /\{flows\.always\.length > 0 && <p className="authz-always">\{flows\.always\.join\("；"\)\}。<\/p>\}/);
+  // D-311：全库不再有“再开通需联系中软”类说法
+  for (const f of ["lib/team-matters.ts", "components/ShareRelayRow.tsx", "api.ts"]) assert.doesNotMatch(code(f), /再开通(需|要)联系中软|需要联系中软重新开通|反复切换/, f);
+});
+
+test("D-311 实拍：在规则区确认 / 发布（如“关闭…”预置的那份）后，“同事之间同步”一行跟着重读", () => {
+  const c = code("pages/Connections.tsx");
+  assert.match(c, /setMsg\(done\);\s*load\(\);\s*window\.dispatchEvent\(new Event\(SHARE_RELAY_RELOAD\)\);/);
+  const rr = code("components/ShareRelayRow.tsx");
+  assert.match(rr, /window\.addEventListener\(SHARE_RELAY_RELOAD, load\);/);
 });

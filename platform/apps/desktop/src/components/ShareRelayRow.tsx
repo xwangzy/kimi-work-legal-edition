@@ -5,8 +5,8 @@
  * - 开通：以当前生效的本所规则为底稿只改这一项（内核 firm_policy.share_relay_enable 一次完成起草、本机确认、达到人数即发布）；
  *   律所版要 2 位管理员时写明还需另一位确认；第二位管理员在自己电脑上这一行点“确认开通…”即确认同一份（内核找一致的待签草稿）。
  * - 续期：按当前生效规则原样重签；已过期时恢复那一份，确认框逐条列出一并恢复的放宽项（所见即所签）。
- * - 关闭：内核没有单独的方法——确认框写清后果（同步立即停止；再开通要联系中软，防止规则被反复切换），再打开下面的“起草律所策略”并预置“不允许同事之间同步”，走原有的确认与发布。
- *   关闭过的（内核 closed）状态行写“已关闭 · 再开通需联系中软”，不给自助“开通…”。
+ * - 关闭：内核没有单独的方法——确认框写清后果（同步立即停止；中软上已保存的加密副本不会因此删除；需要时管理员可以重新开通），再打开下面的“起草律所策略”并预置“不允许同事之间同步”，走原有的确认与发布。
+ *   关闭过的（内核 closed / closed_at）状态行写“已关闭 · 某月某日关闭 [重新开通…]”，重新开通与首次开通同一流程（D-311）。
  * 合伙人等不能管理的角色只读（can_manage 由内核按这台电脑判定）。旧内核没有这个方法时整行不出现。
  */
 import { useEffect, useState } from "react";
@@ -20,6 +20,8 @@ import "../styles-team-matters.css";
 
 /** 状态变了（开通、续期）：团队页顶部提醒、下面的规则与草稿据此重读。 */
 export const SHARE_RELAY_CHANGED = "kwl:share-relay-changed";
+/** 下面“生效策略 / 待确认的规则草稿”里确认或发布了规则：只让这一行（与页顶到期提醒）重读，不重挂规则区（保留那边的结果句）。 */
+export const SHARE_RELAY_RELOAD = "kwl:share-relay-reload";
 /** 关闭同事之间同步：让“起草律所策略”预置“不允许同事之间同步”并滚到那里（Connections.tsx PolicyDraftForm 监听）。 */
 export const POLICY_DRAFT_PRESET = "kwl:policy-draft-preset";
 
@@ -29,7 +31,11 @@ function useShareRelay(): [ShareRelayStatus | null | undefined, (s: ShareRelaySt
     const load = () => void teamMatters.shareRelayStatus().then(setS);
     load();
     window.addEventListener(SHARE_RELAY_CHANGED, load);
-    return () => window.removeEventListener(SHARE_RELAY_CHANGED, load);
+    window.addEventListener(SHARE_RELAY_RELOAD, load);
+    return () => {
+      window.removeEventListener(SHARE_RELAY_CHANGED, load);
+      window.removeEventListener(SHARE_RELAY_RELOAD, load);
+    };
   }, []);
   return [s, setS];
 }

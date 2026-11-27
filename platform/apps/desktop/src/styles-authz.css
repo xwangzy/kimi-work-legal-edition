@@ -64,3 +64,4 @@ button.authz-trail-line:hover { color: var(--text-primary); }
 .authz-scope-list { margin: 0; display: flex; flex-direction: column; gap: 4px; }
 .authz-scope-list > div { display: grid; grid-template-columns: 6.5em minmax(0, 1fr); gap: var(--sp-2); font-size: var(--fs-caption); line-height: 1.6; }
 .authz-dt-when { display: block; font-size: var(--fs-xs); color: var(--text-label); }
+.authz-always { margin: var(--sp-2) 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }

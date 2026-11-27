@@ -29,7 +29,7 @@ import { PersonalUsage } from "./PersonalUsage.tsx";
 import { AccountSection } from "../components/AccountPanel.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
-import { POLICY_DRAFT_PRESET, SHARE_RELAY_CHANGED, ShareRelayExpiring, ShareRelayRow } from "../components/ShareRelayRow.tsx";
+import { POLICY_DRAFT_PRESET, SHARE_RELAY_CHANGED, SHARE_RELAY_RELOAD, ShareRelayExpiring, ShareRelayRow } from "../components/ShareRelayRow.tsx";
 import { relaxationText as relaxationLabel } from "../lib/team-matters.ts";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
 import { MemberDevicePolicy, TeamAdmin } from "../components/TeamAdmin.tsx";
@@ -1480,6 +1480,8 @@ function PolicyTab({ relayRowAbove = false }: { relayRowAbove?: boolean }) {
       await fn();
       setMsg(done);
       load();
+      // 第 73 批（D-311 实拍）：在这里确认 / 发布规则（如“关闭…”预置的那份）后，上面“同事之间同步”一行跟着重读（原来停在“已开通”）
+      window.dispatchEvent(new Event(SHARE_RELAY_RELOAD));
     } catch (e) {
       setMsg((e as Error).message);
     } finally {

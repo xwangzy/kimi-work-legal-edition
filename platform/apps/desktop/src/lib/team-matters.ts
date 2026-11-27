@@ -438,7 +438,7 @@ export function localOnlyBlocked(m: { collab_scope?: string | null }): { short: 
 }
 
 /** 旧内核没有 data_flows 时团队共享事项的兜底（与内核 dataFlowsFor 同一说法）：固定列出同事电脑与中软加密副本。 */
-const TEAM_FLOWS_FALLBACK: readonly { key: string; label: string; text: string }[] = [
+const TEAM_FLOWS_FALLBACK: readonly { key: string; label: string; text: string; when?: string }[] = [
   { key: "colleagues", label: "同事电脑", text: "经加密同步到事项成员的电脑；他们电脑上也有材料与成果" },
   { key: "zr_relay", label: "中软", text: "保存加密副本，打不开内容；本机删除事项不会删除中软上的加密副本" },
 ];
@@ -466,27 +466,31 @@ export function colleaguesPendingText(n: number | null): string {
 export function authzFlowRows(
   flows: readonly { key: string; label: string; text: string; count?: number | null; when?: string }[] | null | undefined,
   o: { team?: boolean; relay?: boolean | null } = {},
-): { local: string | null; rows: { key: string; label: string; text: string; when: "on_ai_use" | "on_team_share" }[] } {
+): { local: string | null; rows: { key: string; label: string; text: string; when: "on_ai_use" | "on_team_share" }[]; always: string[] } {
   const list = flows && flows.length > 0 ? flows : o.team ? TEAM_FLOWS_FALLBACK : null;
-  if (!list) return { local: "案卷只存这台电脑", rows: [] };
-  const local = list.find((f) => f.key === "local")?.text ?? null;
+  if (!list) return { local: "案卷只存这台电脑", rows: [], always: [] };
+  // 内核 c2b1521f 起每条带 when（D-312）：always 的（只有我的“案卷只存这台电脑”）放卡片底部一行；旧内核没有 when 时照旧接在“系统另外做到”后面
+  const tagged = list.some((f) => typeof f.when === "string" && f.when.length > 0);
+  const local = tagged ? null : (list.find((f) => f.key === "local")?.text ?? null);
+  const always = tagged ? list.filter((f) => flowWhen(f) === "always").map((f) => f.text) : [];
   const rows = list
-    .filter((f) => f.key !== "local")
+    .filter((f) => flowWhen(f) !== "always")
     .map((f) => ({
       key: f.key,
       label: f.label,
       text: f.key === "colleagues" && o.relay === false ? colleaguesPendingText(colleaguesCount(f)) : f.text,
-      when: flowWhen(f),
+      when: flowWhen(f) as "on_ai_use" | "on_team_share",
     }));
-  return { local, rows };
+  return { local, rows, always };
 }
 
 /**
  * 产品评分 G5-3：数据去向这一条什么时候发生。内核给 when 用 when；旧内核按条目类型兜底——
  * 同事电脑、中软加密副本是选团队共享时（律所已开通同事之间同步）就发生的，不是“使用 AI 时”的次处理者。纯函数。
  */
-export function flowWhen(f: { key: string; when?: string }): "on_ai_use" | "on_team_share" {
-  if (f.when === "on_ai_use" || f.when === "on_team_share") return f.when;
+export function flowWhen(f: { key: string; when?: string }): "on_ai_use" | "on_team_share" | "always" {
+  if (f.when === "on_ai_use" || f.when === "on_team_share" || f.when === "always") return f.when;
+  if (f.key === "local") return "always";
   return f.key === "colleagues" || f.key === "zr_relay" ? "on_team_share" : "on_ai_use";
 }
 
@@ -571,8 +575,14 @@ export function shareRelayRow(
       return { state: "expiring", text: `已开通 · ${until}${until ? " · " : ""}还有 ${Math.max(0, left)} 天`, actions: manage ? [{ kind: "renew", label: "续期…", primary: true }, close] : [], warn: true };
     return { state: "on", text: `已开通${until ? ` · ${until}` : ""}`, actions: manage ? [{ kind: "renew", label: "续期…", primary: false }, close] : [], warn: false };
   }
-  // 第 73 批收尾：开通过又关闭了（内核 closed）——再开通要找中软，不给自助“开通…”
-  if (s.closed) return { state: "closed", text: "已关闭 · 再开通需联系中软", actions: [], warn: false };
+  // D-311：开通过又关闭了（内核 closed / closed_at 只用于显示）——“已关闭 · 某月某日关闭 [重新开通…]”，与首次开通同一流程
+  if (s.closed)
+    return {
+      state: "closed",
+      text: `已关闭${s.closed_at ? ` · ${dayOnly(s.closed_at, now)}关闭` : ""}`,
+      actions: manage ? [{ kind: "enable", label: (s.threshold || 1) > 1 ? "发起重新开通…" : "重新开通…", primary: false }] : [],
+      warn: false,
+    };
   // 第二轮复评 T8：这台电脑在按最严规则运行（没收到 / 确认人数不够 / 软件太旧）时，状态行写明原因与去向，不给“开通…”（开了也要先解决这件事）
   const why = s.fallback_reason ? FALLBACK_REASON_TEXT[s.fallback_reason] ?? "这台电脑暂按最严规则运行，联网后自动更新" : null;
   if (why) return { state: "off", text: `未开通 · ${why}`, actions: [], warn: false };
@@ -608,11 +618,10 @@ export const RELAY_ENABLED_ETA_TEXT = "同事的电脑一般几分钟内开始�
 
 /** 关闭同事之间同步的确认框（内核没有单独的关闭方法：走起草本所规则，预置“不允许同事之间同步”）。纯函数。 */
 export function shareRelayCloseLines(): string[] {
-  // 第 73 批收尾：不与自助“开通…”冲突——写明关闭后再开通为什么要找中软
+  // D-311：关闭后再开通与首次开通同一流程（管理员签名门限），服务端不拦、也不需要中软清理——不再要求联系中软
   return [
-    "关闭后，同事之间的同步立即停止：团队共享事项不再在同事电脑之间同步，各人电脑上的内容不受影响。",
-    "服务方那里已存的加密副本保留到律所停止使用。",
-    "之后要再开通，需要联系中软重新开通（这是为了防止规则被反复切换）。",
+    "关闭后，同事之间的同步立即停止；中软上已保存的加密副本不会因此删除；需要时管理员可以重新开通。",
+    "团队共享事项在各人电脑上的内容不受影响。",
     "关闭要改本所规则：下一步在下面“起草律所策略”里已预置“不允许同事之间同步”，核对后生成草稿、确认并发布。",
   ];
 }

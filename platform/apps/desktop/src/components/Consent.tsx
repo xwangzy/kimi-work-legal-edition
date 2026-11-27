@@ -74,6 +74,8 @@ export function AuthorizationRecord({
   const teamRows = flows.rows.filter((f) => f.when === "on_team_share");
   const aiRows = flows.rows.filter((f) => f.when !== "on_team_share");
   const split = teamRows.length > 0;
+  // 内核 D-312 新增 AI 转发一条（按端点写经谁到哪里、换成代号）：有它时次处理者只列名字、不再写“系统另外做到”，免得同一件事说两遍
+  const aiForward = aiRows.some((f) => f.key === "ai_forward");
   // 中软那条去向若已写在次处理者的说明里、又没有单独一段时，不再单列一行（实拍：同一句说两遍）
   const flowRows = split ? aiRows : flows.rows.filter((f) => !(f.key === "zr_relay" && list.some((p) => /加密副本/.test(p.role))));
   // 第二段的标题：所内已开通同步时是“已发生”，没开通时如实说“开通后发生”
@@ -146,14 +148,16 @@ export function AuthorizationRecord({
             <div>
               <dt>
                 授权要覆盖
-                {split && <small className="authz-dt-when">（AI 使用时）</small>}
+                {(split || aiForward) && <small className="authz-dt-when">（AI 使用时）</small>}
               </dt>
-              <dd>使用 AI 辅助处理本案材料；次处理者：{list.map((p) => `${p.name}（${aiRoleOf(p.role, split)}）`).join("、")}</dd>
+              <dd>使用 AI 辅助处理本案材料；次处理者：{list.map((p) => (aiForward ? p.name : `${p.name}（${aiRoleOf(p.role, split)}）`)).join("、")}</dd>
             </div>
-            <div>
-              <dt>系统另外做到</dt>
-              <dd>发出前把姓名、证件号、电话等换成代号{flows.local ? `；${flows.local}` : ""}</dd>
-            </div>
+            {!aiForward && (
+              <div>
+                <dt>系统另外做到</dt>
+                <dd>发出前把姓名、证件号、电话等换成代号{flows.local ? `；${flows.local}` : ""}</dd>
+              </div>
+            )}
             {/* 第 73 批（验收 P2-3）：和同事一起办的事项如实列出数据去向（同事电脑、中软加密副本），不再写死“案卷只存这台电脑” */}
             {flowRows.map((f) => (
               <div key={f.key}>
@@ -175,6 +179,8 @@ export function AuthorizationRecord({
               </dl>
             </div>
           )}
+          {/* D-312：总是如此的（只有我的事项：案卷只存这台电脑）放卡片底部一行 */}
+          {flows.always.length > 0 && <p className="authz-always">{flows.always.join("；")}。</p>}
           {sensitive && (
             <label className="authz-sensitive">
               <input type="checkbox" checked={value.sensitive} onChange={(e) => onChange({ ...value, sensitive: e.target.checked })} />
