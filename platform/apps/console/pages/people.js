@@ -400,7 +400,11 @@ function diagnosis({ p, a, ws, locked, enable, reload }) {
   const order = ["bad", "warn", "info", "ok"];
   const list = h("ul", { class: "diag" }, rows.sort((x, y) => order.indexOf(x.tone) - order.indexOf(y.tone)).map((r) => h("li", { class: `diag-row tone-${ICON[r.tone][1]}` }, h("span", { class: "diag-icon", "aria-hidden": "true" }, ICON[r.tone][0]), h("span", { class: "diag-text" }, r.text), r.acts.length ? h("span", { class: "btn-row" }, r.acts) : null)));
   const problems = rows.filter((r) => r.tone === "bad" || r.tone === "warn").length;
-  return problems ? panel("登录诊断", list, { tone: "warn", sub: `发现 ${problems} 个可能阻止登录或使用 AI 的原因` }) : h("div", { class: "panel flush diag-fold" }, fold("登录诊断", "没有发现阻止登录或使用 AI 的原因", list));
+  // 有问题 → 琥珀色面板；只有提示（如已达同时登录上限，验收 Q-6）→ 普通面板展开，不标色；都正常 → 收成一行
+  const tips = rows.filter((r) => r.tone === "info").length;
+  if (problems) return panel("登录诊断", list, { tone: "warn", sub: `发现 ${problems} 个可能阻止登录或使用 AI 的原因` });
+  if (tips) return panel("登录诊断", list, { sub: `没有阻止登录的原因；${tips} 条提示` });
+  return h("div", { class: "panel flush diag-fold" }, fold("登录诊断", "没有发现阻止登录或使用 AI 的原因", list));
 }
 /** 在几台电脑里点选一台（按名字认，编号放后面） */
 async function pickOne(list, title, lead) {
