@@ -4,7 +4,7 @@
 .mf { margin: 0 0 var(--sp-3); }
 .mf-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); min-height: 30px; }
 .mf-bar .btn-ghost svg { vertical-align: -3px; margin-right: var(--sp-1); }
-.mf-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 360px; color: var(--text-primary); font-weight: 600; }
+.mf-name { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 360px; color: var(--text-primary); font-weight: var(--fw-strong); }
 .mf-name svg { flex: none; color: var(--text-secondary); }
 .mf-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mf-when { color: var(--text-secondary); font-size: var(--fs-caption); }
@@ -34,7 +34,7 @@
 .ms-list li { padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--border-subtle); }
 .ms-list li:first-child { border-top: 0; }
 .ms-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px var(--sp-2); }
-.ms-file { color: var(--text-primary); font-weight: 600; overflow-wrap: anywhere; }
+.ms-file { color: var(--text-primary); font-weight: var(--fw-strong); overflow-wrap: anywhere; }
 .ms-dir, .ms-count { color: var(--text-secondary); font-size: var(--fs-caption); }
 .ms-snippet { margin: 2px 0 0; color: var(--text-secondary); font-size: var(--fs-caption); overflow-wrap: anywhere; }
 .ms-snippet mark { background: var(--status-warning-bg-soft); color: var(--text-primary); border-radius: var(--r-xs); padding: 0 1px; }
@@ -49,7 +49,7 @@
 .facts-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-md); background: var(--bg-muted); }
 .facts-tab { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-secondary); font-size: var(--fs-caption); }
 .facts-tab:hover { color: var(--text-primary); }
-.facts-tab.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
+.facts-tab.on { background: var(--bg-surface); color: var(--text-primary); font-weight: var(--fw-medium); box-shadow: var(--shadow-xs); }
 .facts-tab:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .facts-tab-n { min-width: 18px; padding: 0 5px; border-radius: var(--r-full); background: var(--bg-surface); color: var(--text-label); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; line-height: 18px; text-align: center; }
 .facts-tab.on .facts-tab-n { background: var(--bg-muted); }
@@ -62,7 +62,7 @@
 .fact-date { padding-left: var(--sp-2); font-size: var(--fs-caption); line-height: 22px; color: var(--text-label); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* 时间轴：圆点居中在 14px 列里，竖线从上一行连到下一行 */
 .fact-dot { position: relative; z-index: 1; justify-self: center; width: 9px; height: 9px; margin-top: 7px; border-radius: 50%; border: 2px solid var(--border-hover); background: var(--bg-surface); }
-.fact-row::before { content: ""; position: absolute; left: 110.5px; top: 0; bottom: 0; width: 1px; background: var(--border-subtle); }
+.fact-row::before { content: ""; position: absolute; left: 110px; top: 0; bottom: 0; width: 1px; background: var(--border-subtle); }
 .fact-row:first-child::before { top: 14px; }
 .fact-row:last-child::before { bottom: auto; height: 14px; }
 .fact-row:only-child::before { display: none; }
@@ -85,5 +85,5 @@
   .fact-dot { grid-column: 1; grid-row: 1; }
   .fact-body { grid-column: 2; }
   .fact-actions { grid-column: 2; }
-  .fact-row::before { left: 14.5px; }
+  .fact-row::before { left: 14px; }
 }

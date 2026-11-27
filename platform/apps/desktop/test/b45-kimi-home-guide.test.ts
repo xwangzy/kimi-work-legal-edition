@@ -131,7 +131,8 @@ test("正式产品不放演示数据：首页只在内核演示开关打开时�
   assert.doesNotMatch(home, /\.then\(\(\) => api\.installSample\(\)\)/);
   assert.match(src("pages/Connections.tsx"), /st\.available !== false && !st\.litigation_offered/);
   assert.doesNotMatch(src("pages/Welcome.tsx"), /首页会放一件虚构的示例事项/);
-  assert.match(src("pages/Welcome.tsx"), /会用一分钟带你认识/);
+  // 第 72 批（D-302 第 4 条）：讲解早已不自动弹出，“进入首页后会用一分钟带你认识…”的承诺删掉
+  assert.doesNotMatch(src("pages/Welcome.tsx"), /会用一分钟带你认识/);
   assert.match(src("pages/Connections.tsx"), /new Event\(OPEN_GUIDE\)/, "设置 · 通用里可以再看一遍指南");
 });
 

@@ -548,7 +548,7 @@ function UnbindDialog({ title, personal, onClose, onDone }: { title: string; per
       <p className="confirm-dialog-q">
         {personal
           ? "移除后，那台电脑上的登录立即失效，不能再用你的账号使用 AI；它上面已有的资料不会被删除。以后要再用那台电脑，重新登录即可。"
-          : "移除后，那台电脑上的登录立即失效，不能再用你的账号使用 AI，也收不到本所的共享；它上面已有的资料不会被删除。要再用，需重新登录并由管理员批准。"}
+          : "移除后，那台电脑上的登录立即失效，不能再用你的账号使用 AI，也收不到团队共享的事项；它上面已有的资料不会被删除。要再用，在那台电脑上重新登录即可。"}
       </p>
       <PasswordField label="请输入你的密码确认" value={pw} onChange={setPw} autoFocus />
       {err && (
@@ -796,7 +796,8 @@ export function AccountSection({ firm }: { firm: string | null }) {
           <div className="account-card-main">
             <div>
               <b>{a?.name ?? st.account?.name}</b>
-              <span className="pill pill-gray">{roleLabel(a?.role ?? st.account?.role)}</span>
+              {/* 第 72 批：个人工作室里你就是唯一的成员，不写“管理员” */}
+              {!me?.personal && <span className="pill pill-gray">{roleLabel(a?.role ?? st.account?.role)}</span>}
               <span className="pill pill-green">登录中</span>
             </div>
             <div className="muted">{a?.email ?? st.account?.email}</div>
@@ -824,7 +825,7 @@ export function AccountSection({ firm }: { firm: string | null }) {
           hint={
             me.personal
               ? `同时登录 ${canSignout ? signedIn : activeDevices.length}${deviceLimit ? ` / ${deviceLimit}` : ""} 台（上限由云端设定）。新电脑直接登录即可；满额时在登录页选一台让它退出。各台电脑上的事项与文件各自独立。`
-              : `同时登录 ${canSignout ? signedIn : activeDevices.length}${deviceLimit ? ` / ${deviceLimit}` : ""} 台。新电脑登录需律所管理员批准；不再用的电脑请移除。`
+              : `同时登录 ${canSignout ? signedIn : activeDevices.length}${deviceLimit ? ` / ${deviceLimit}` : ""} 台（上限由团队与云端设定）。新电脑直接登录即可（团队设了“须管理员确认”时要等管理员确认）；不再用的电脑请移除。`
           }
         >
           <ul className="account-list account-devices">

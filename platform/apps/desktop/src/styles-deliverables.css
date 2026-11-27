@@ -10,7 +10,7 @@
 .dl-page .dl-head .page-title { margin: 0; }
 .dl-head-text { min-width: 0; }
 .dl-page .dl-sub { margin: var(--sp-1) 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
-.dl-sub-lead { font-weight: 400; color: var(--text-secondary); }
+.dl-sub-lead { font-weight: var(--fw-regular); color: var(--text-secondary); }
 .dl-page .dl-search { flex: 0 1 260px; height: 36px; border-color: var(--border-subtle); background: var(--bg-surface); transition: border-color var(--motion-fast) ease; }
 .dl-page .dl-search:hover { border-color: var(--border-default); }
 .dl-page .dl-search:focus-within { border-color: var(--focus-ring); }
@@ -37,14 +37,14 @@
 .dl-page .dl-flow-step:hover { background: transparent; color: var(--text-primary); }
 .dl-page .dl-flow-step.on, .dl-page .dl-flow-step.on:hover { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-xs); }
 .dl-page .dl-flow-step:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
-.dl-page .dl-flow-label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); font-weight: 400; color: inherit; white-space: nowrap; }
-.dl-page .dl-flow-step.on .dl-flow-label { font-weight: 500; }
+.dl-page .dl-flow-label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-caption); font-weight: var(--fw-regular); color: inherit; white-space: nowrap; }
+.dl-page .dl-flow-step.on .dl-flow-label { font-weight: var(--fw-medium); }
 .dl-page .dl-flow-label::before { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-neutral-solid); }
 .dl-page .dl-flow-all .dl-flow-label::before { content: none; }
 .dl-page .dl-flow-pending_review .dl-flow-label::before { background: var(--status-warning-solid); }
 .dl-page .dl-flow-approved .dl-flow-label::before { background: var(--status-success-solid); }
 .dl-page .dl-flow-rejected .dl-flow-label::before { background: var(--status-danger-solid); }
-.dl-page .dl-flow-n { min-width: 0; font-size: var(--fs-xs); font-weight: 400; line-height: 1; letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.dl-page .dl-flow-n { min-width: 0; font-size: var(--fs-xs); font-weight: var(--fw-regular); line-height: 1; letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .dl-page .dl-flow-step.on .dl-flow-n { color: var(--text-label); }
 .dl-page .dl-flow-step.zero:not(.on) { color: var(--text-secondary); }
 /* 第三轮（独立评审 #1）：只当筛选标签用，段与段之间不再画流程箭头 */
@@ -54,7 +54,7 @@
 /* ── 事项：一行安静的分组标题（在列表里吸顶），不是卡片 ── */
 .dl-page .dl-matter { margin: 0 0 var(--sp-5); }
 .dl-page .dl-matter-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--sp-2); height: 32px; margin: 0; padding: 0 var(--sp-2); background: var(--bg-main); }
-.dl-page .dl-matter-title { display: inline-flex; align-items: center; gap: 2px; min-width: 0; border: 0; padding: 0; background: transparent; font-size: var(--fs-caption); font-weight: 600; color: var(--text-label); text-align: left; }
+.dl-page .dl-matter-title { display: inline-flex; align-items: center; gap: 2px; min-width: 0; border: 0; padding: 0; background: transparent; font-size: var(--fs-caption); font-weight: var(--fw-strong); color: var(--text-label); text-align: left; }
 .dl-matter-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl-page .dl-matter-title:hover { color: var(--text-primary); }
 .dl-page .dl-matter-go { flex: none; display: inline-flex; color: transparent; transform: translateX(-2px); transition: transform var(--motion-fast) ease, color var(--motion-fast) ease; }
@@ -66,7 +66,7 @@
 .dl-page .dl-task { border: 0; border-radius: 0; margin: 0; background: transparent; overflow: visible; padding: 0; }
 .dl-page .dl-task + .dl-task { margin-top: var(--sp-3); }
 .dl-page .dl-task-head { display: flex; align-items: center; gap: 0; min-height: 24px; padding: 0 var(--sp-2) var(--sp-1); border: 0; background: transparent; font-size: var(--fs-xs); color: var(--text-secondary); }
-.dl-page .dl-task-name { flex: none; font-size: var(--fs-xs); font-weight: 500; color: var(--text-label); }
+.dl-page .dl-task-name { flex: none; font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--text-label); }
 .dl-task-subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl-page .dl-task-meta { flex: none; font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; }
 .dl-page .dl-task-subject::before, .dl-page .dl-task-meta:not(:empty)::before { content: "·"; margin: 0 6px; }
@@ -82,9 +82,9 @@
 .dl-page .dl-row.is-selected, .dl-page .dl-rows > .dl-row.is-selected { margin: 0; padding: 7px var(--sp-2); background: var(--bg-hover); border-radius: var(--r-sm); }
 .dl-page .dl-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .dl-page .dl-row-main { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
-.dl-page .dl-row-title { display: block; min-width: 0; font-size: var(--fs-body); font-weight: 400; line-height: 20px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dl-page .dl-row.is-primary .dl-row-title, .dl-page .dl-row.is-selected .dl-row-title { font-weight: 500; }
-.dl-page .dl-name-head { font-weight: 400; color: var(--text-secondary); }
+.dl-page .dl-row-title { display: block; min-width: 0; font-size: var(--fs-body); font-weight: var(--fw-regular); line-height: 20px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-page .dl-row.is-primary .dl-row-title, .dl-page .dl-row.is-selected .dl-row-title { font-weight: var(--fw-medium); }
+.dl-page .dl-name-head { font-weight: var(--fw-regular); color: var(--text-secondary); }
 /* 第二行是一行文字，放不下时末尾省略（第三轮：悬停露出操作时也是省略号，不是被盖住半个字） */
 .dl-page .dl-row-meta { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); line-height: 18px; color: var(--text-secondary); white-space: nowrap; }
 .dl-meta-part { display: inline; }
@@ -119,7 +119,7 @@
 .icon-btn.dl-dl .kwl-spin { width: 14px; height: 14px; }
 
 /* 文件图形：折角的小纸片（W 蓝、X 绿、PDF 红、文 灰） */
-.dl-glyph { flex: none; display: grid; place-items: center; width: 26px; height: 32px; border-radius: var(--r-xs); clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%); background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-xs); font-weight: 600; letter-spacing: -0.02em; line-height: 1; padding-top: 3px; user-select: none; }
+.dl-glyph { flex: none; display: grid; place-items: center; width: 26px; height: 32px; border-radius: var(--r-xs); clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%); background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-xs); font-weight: var(--fw-strong); letter-spacing: -0.02em; line-height: 1; padding-top: 3px; user-select: none; }
 .dl-glyph-word { background: var(--status-info-bg); color: var(--status-info-text); }
 .dl-glyph-excel { background: var(--status-success-bg); color: var(--status-success-text); }
 .dl-glyph-pdf { background: var(--status-danger-bg); color: var(--status-danger-text); letter-spacing: -0.06em; }
@@ -178,7 +178,7 @@
 .dlp { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); overflow: hidden; animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
 .dlp-head { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 14px var(--sp-3) 12px var(--sp-4); border-bottom: 1px solid var(--border-subtle); }
 .dlp-title-row { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
-.dlp-title { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-md); font-weight: 600; line-height: 22px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlp-title { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-md); font-weight: var(--fw-strong); line-height: 22px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dlp-actions { flex: none; display: flex; align-items: center; gap: var(--sp-1); }
 .dlp-actions .btn-primary, .dlp-actions .btn-ghost { height: 32px; padding: 0 14px; margin-right: var(--sp-1); font-size: var(--fs-caption); white-space: nowrap; }
 .dlp-actions .icon-btn { width: 32px; height: 32px; padding: 0; display: inline-grid; place-items: center; color: var(--text-label); }

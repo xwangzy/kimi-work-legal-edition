@@ -16,6 +16,8 @@ import { api } from "../api.ts";
 import { cardGets, cardGives, COMING_SOON, SCENARIOS } from "../lib/scenarios.ts";
 import { buildCatalog, catalogCounts, CATALOG_LINE_LABELS, CATALOG_LINES, type CatalogLine } from "../lib/method-catalog.ts";
 import { FirmTemplates } from "../components/FirmTemplates.tsx";
+import { useWorkspace } from "../components/WorkspaceSwitch.tsx";
+import { templatesLabel } from "../lib/workspace.ts";
 import { Icon } from "../components/Icons.tsx";
 import { scenarioIcon } from "./Home.tsx";
 import "../styles-methods.css";
@@ -31,6 +33,8 @@ function lineIcon(l: CatalogLine | "all") {
 }
 
 export function MethodsPage() {
+  const ws = useWorkspace();
+  const tplLabel = templatesLabel(ws.kind);
   const [tab, setTab] = useState<Tab>("all");
   const [query, setQuery] = useState("");
   const [skillsNote, setSkillsNote] = useState("");
@@ -76,7 +80,8 @@ export function MethodsPage() {
           </div>
           <button role="tab" aria-selected={showTemplates} className={`scene-chip mc-chip-templates${showTemplates ? " active" : ""}`} onClick={() => { setTab("templates"); setQuery(""); }}>
             <span className="scene-chip-icon" aria-hidden="true"><Icon.book /></span>
-            本所范本
+            {/* 第 72 批（A3 D4）：个人空间叫“我的范本” */}
+            {tplLabel.short}
           </button>
         </div>
 
@@ -87,7 +92,7 @@ export function MethodsPage() {
             <FirmTemplates />
             <div className="section-title h-sub">即将推出</div>
             <ul className="plain-list muted">
-              <li>本所规则与范本统一下发：由律所管理员审核发布后，所有律师的电脑都能用（现在的本所范本每台电脑各自放入）。</li>
+              {ws.kind !== "personal" && <li>本所规则与范本统一下发：由律所管理员审核发布后，所有律师的电脑都能用（现在的本所范本每台电脑各自放入）。</li>}
               <li>个人模板：把常用做法保存为自己的模板。</li>
             </ul>
           </div>

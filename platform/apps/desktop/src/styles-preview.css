@@ -2,7 +2,7 @@
 .sp-sheets { display: flex; align-items: center; gap: 2px; padding: 4px var(--sp-2); overflow-x: auto; border-bottom: 1px solid var(--border-subtle); background: var(--bg-subtle); scrollbar-width: thin; }
 .sp-sheet { flex: none; max-width: 200px; height: 26px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text-secondary); font-size: var(--fs-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease; }
 .sp-sheet:hover:not(.on) { background: var(--bg-hover); color: var(--text-primary); }
-.sp-sheet.on { background: var(--bg-surface); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-xs); }
+.sp-sheet.on { background: var(--bg-surface); color: var(--text-primary); font-weight: var(--fw-medium); box-shadow: var(--shadow-xs); }
 .sp-note .sp-reload:hover { color: var(--text-primary); }
 /* 预览区纵向排：说明条、表签、框架；框架在有余高时撑满（成果页右栏不再在框架下留一截空白） */
 .safe-preview { display: flex; flex-direction: column; }

@@ -2,18 +2,18 @@
    取向：一张安静的表单卡（不是警示橙框）——标题一句话说明这是什么记录，依据类型是两张可选卡片，出处是必填的一行，
    “授权要覆盖什么”是只读的三行，敏感事项的单独同意单列。 */
 .authz-record { margin: var(--sp-3) 0 0; padding: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--r-lg); background: var(--bg-surface); display: flex; flex-direction: column; gap: var(--sp-3); animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }
-.authz-record-head h3 { margin: 0 0 4px; font-size: var(--fs-md); font-weight: 600; }
+.authz-record-head h3 { margin: 0 0 4px; font-size: var(--fs-md); font-weight: var(--fw-strong); }
 .authz-record-head p { margin: 0; font-size: var(--fs-caption); line-height: 1.65; color: var(--text-label); }
 .authz-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
 .authz-kind { display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-surface); text-align: left; transition: border-color var(--motion-fast) ease, background-color var(--motion-fast) ease; }
 .authz-kind:hover { border-color: var(--border-hover); }
 .authz-kind:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .authz-kind.on { border-color: var(--accent-border); background: var(--accent-bg); }
-.authz-kind-radio { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: var(--r-full); border: 1.5px solid var(--border-strong); background: var(--bg-surface); display: grid; place-items: center; }
+.authz-kind-radio { flex: none; width: 16px; height: 16px; margin-top: 2px; border-radius: var(--r-full); border: 2px solid var(--border-strong); background: var(--bg-surface); display: grid; place-items: center; }
 .authz-kind.on .authz-kind-radio { border-color: var(--accent); }
 .authz-kind.on .authz-kind-radio::after { content: ""; width: 8px; height: 8px; border-radius: var(--r-full); background: var(--accent); }
 .authz-kind-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.authz-kind-text b { font-size: var(--fs-body); font-weight: 500; }
+.authz-kind-text b { font-size: var(--fs-body); font-weight: var(--fw-medium); }
 .authz-kind-text small { font-size: var(--fs-xs); color: var(--text-secondary); }
 .authz-ref { display: flex; align-items: center; gap: var(--sp-3); }
 .authz-ref > span { flex: none; width: 3em; font-size: var(--fs-caption); color: var(--text-label); }
@@ -36,7 +36,7 @@
 .ai-notice-lead { margin: 0; color: var(--text-label); }
 .ai-notice-points { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
 .ai-notice-points li { display: flex; gap: var(--sp-3); align-items: flex-start; font-size: var(--fs-body); line-height: 1.65; color: var(--text-label); }
-.ai-notice-points b { display: block; color: var(--text-primary); font-weight: 600; }
+.ai-notice-points b { display: block; color: var(--text-primary); font-weight: var(--fw-strong); }
 .ai-notice-ico { flex: none; width: 32px; height: 32px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--bg-muted); color: var(--text-label); }
 .ai-notice-ico svg { width: 17px; height: 17px; }
 .ai-notice-ico.keep { background: var(--status-success-bg); color: var(--status-success-text); }
@@ -53,8 +53,8 @@ button.authz-trail-line:hover { color: var(--text-primary); }
 /* 设置 → 数据去向：各事项授权记录（只读总览） */
 .authz-overview { margin-top: var(--sp-4); }
 .authz-overview-head { display: flex; align-items: baseline; gap: var(--sp-3); }
-.authz-overview-head h3 { margin: 0; font-size: var(--fs-body); font-weight: 600; }
+.authz-overview-head h3 { margin: 0; font-size: var(--fs-body); font-weight: var(--fw-strong); }
 .authz-overview-head .btn-link { margin-left: auto; }
 .authz-overview table { width: 100%; border-collapse: collapse; margin-top: var(--sp-2); font-size: var(--fs-caption); }
-.authz-overview th { text-align: left; font-weight: 500; color: var(--text-secondary); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border-subtle); }
+.authz-overview th { text-align: left; font-weight: var(--fw-medium); color: var(--text-secondary); padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border-subtle); }
 .authz-overview td { padding: 6px 8px 6px 0; border-bottom: 1px solid var(--border-subtle); vertical-align: top; overflow-wrap: anywhere; }

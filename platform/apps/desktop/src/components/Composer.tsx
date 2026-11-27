@@ -15,8 +15,8 @@ import { clipTitle, SCENARIO_LABELS, stanceLabel } from "../lib/labels.ts";
 import { getsPlain, LINE_LABELS, SCENARIOS, type BusinessLine, type ScenarioCard } from "../lib/scenarios.ts";
 import "../styles-composer.css";
 
-/** 发送快捷键的写法：macOS 写 ⌘ + Enter，其余写 Ctrl + Enter。 */
-const SEND_KEY = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform) ? "⌘ + Enter" : "Ctrl + Enter";
+import { ComposerFrame, SendButton, sendOnEnter } from "./ComposerFrame.tsx";
+import { MatterPlace } from "./MatterPlace.tsx";
 
 export interface ComposerValue {
   goal: string;
@@ -33,7 +33,13 @@ export function Composer(props: {
   onMatterChange?: (id: string | null) => void;
   /** 事项页内的输入框（没有 matters）：顶部行显示“本事项”与我方立场。 */
   stance?: string | null;
-  onNewMatter?: () => void;
+  /** 新建事项（完整弹窗）。第 72 批：从“放进哪个事项”的“更多设置”进来时带 thenSubmit 与已填的三项，建好后接着发起。 */
+  onNewMatter?: (opts?: { thenSubmit?: boolean; initial?: { title: string; stance: string; confidentiality: string } }) => void;
+  /**
+   * 第 72 批（D-301）：没选事项也能按发送——在事项芯片处问“放进哪个事项？”，选了已有事项或建好新事项即调用它（归属并接着发起）。
+   * 不传时（事项页）沿用原来的“必须已有事项”。
+   */
+  onPlace?: (m: Matter, created: boolean) => void;
   documents: { document_version_id: string; filename: string }[];
   policy: RunPolicyView | null | undefined;
   value: ComposerValue;
@@ -67,7 +73,7 @@ export function Composer(props: {
   notice?: ReactNode;
 }) {
   const { value, onChange } = props;
-  const [menu, setMenu] = useState<"method" | "material" | "matter" | "add" | null>(null);
+  const [menu, setMenu] = useState<"method" | "material" | "matter" | "add" | "place" | null>(null);
   /** 材料弹层标题栏的“上传文件”：打开弹层里 MaterialPicker 的选择文件（进度与结果在弹层里显示）。 */
   const pickInPop = useRef<(() => void) | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -109,8 +115,15 @@ export function Composer(props: {
       setMenu("material");
     }
   };
-  const canSend = !props.busy && !!props.matterId && (value.goal.trim().length > 0 || value.scenario !== "a1.agent_task");
-  const blockedReason = props.busy ? (props.busyText ?? "正在发起…") : !props.matterId ? "先选事项" : "先写任务目标";
+  // 第 72 批（D-301）：不再因为没选事项而禁用发送、也不在发送键旁写“先选事项”——首页按发送时在事项芯片处问一次归属
+  const canPlace = !!props.onPlace && !!props.matters;
+  const canSend = !props.busy && (!!props.matterId || canPlace) && (value.goal.trim().length > 0 || value.scenario !== "a1.agent_task");
+  const blockedReason = props.busy ? (props.busyText ?? "正在发起…") : !props.matterId && !canPlace ? "先选事项" : "先写任务目标";
+  const send = () => {
+    if (!canSend) return;
+    if (!props.matterId && canPlace) return setMenu("place");
+    props.onSubmit();
+  };
   return (
     <div
       className={`composer-shell${dragOver ? " drag-over" : ""}`}
@@ -138,7 +151,56 @@ export function Composer(props: {
         </div>
       )}
       {props.notice && <div className="composer-notice">{props.notice}</div>}
-      <div className="composer">
+      <ComposerFrame
+        left={
+          <>
+            {/* Kimi 同款左下“+”：导入材料（Word、PDF、图片……）；方法与事项材料在下方托盘 */}
+            {/* 第 67 批第四轮（独立评审 R3：“+ › 选用已有材料”与“@ 材料”是同一功能的两个入口）：一个材料面板、两种进入方式——
+                “+”= 往本事项加文件：打开材料面板并直接弹出选择文件，进度与逐份结果就在面板里（看得到存进了哪个事项）；
+                “@ 材料”= 选这次读哪些。没选事项时“+”先让律师选放进哪个事项 */}
+            <button
+              className={`tool tool-plus${menu === "material" ? " open" : ""}`}
+              title={props.matterId ? `添加材料到「${matter?.title ?? "本事项"}」` : "添加材料（先选放进哪个事项）"}
+              aria-label="添加材料"
+              aria-haspopup="dialog"
+              aria-expanded={menu === "material"}
+              onClick={() => {
+                setMenu("material");
+                // 面板挂上、材料组件登记好打开方法之后再弹选择文件（仍在这次点击的用户激活时限内）
+                if (props.matterId && props.importOne) setTimeout(() => pickInPop.current?.(), 60);
+                else if (props.matterId) pickFiles();
+              }}
+            >
+              <Icon.plus />
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              hidden
+              accept={MATERIAL_ACCEPT}
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) props.onImport(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            {/* 运行模式放在“+”右边（第 47 批，Kimi Work 输入框左下“默认”权限档位同位）；固定步骤的流程不适用运行模式（复核 S5-A07） */}
+            {value.scenario === "a1.agent_task" && <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />}
+          </>
+        }
+        right={
+          <>
+            {/* 模型（Kimi 输入框右下同位）：任务固定用 K3（子步骤用 K2.6），具体型号由律所的云端路由决定——只显示、不做假的下拉 */}
+            {props.models && props.models.length > 0 && props.onModelChange ? (
+              <ModelPicker title="任务模型" choices={props.models} value={props.model ?? null} onChange={props.onModelChange} foot="任务的主要步骤用所选模型，辅助步骤用 K2.6；按实际用量计入你的额度。" />
+            ) : (
+              <span className="model-label" title="任务由 Kimi K3 处理（辅助步骤用 K2.6）">K3</span>
+            )}
+          </>
+        }
+        // 发送键旁不再写字（第 72 批）：快捷键在悬停提示里；不能发送的原因写在读屏标签与悬停提示里
+        send={<SendButton disabled={!canSend} onSend={send} blockedReason={blockedReason} />}
+      >
       <textarea
         ref={textRef}
         autoFocus={props.autoFocus}
@@ -150,9 +212,8 @@ export function Composer(props: {
           if (goal.endsWith("/")) setMenu("method");
           else if (goal.endsWith("@")) setMenu("material");
         }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && canSend) props.onSubmit();
-        }}
+        // 回车发送、Shift + 回车换行（拍板第 23 项，与 Chat 统一）；中文输入法组字时回车不发送
+        onKeyDown={sendOnEnter(send)}
       />
       {props.suggestion && (
         <div className="suggest-bar" role="status">
@@ -160,7 +221,7 @@ export function Composer(props: {
             这看起来是<b>「{props.suggestion.title}」</b>：会得到{props.suggestion.gets}。
           </span>
           <button className="btn-primary btn-sm" onClick={props.suggestion.onUse}>使用{props.suggestion.title}</button>
-          {/* 第 27 批走查：点完焦点回到输入框，⌘ / Ctrl + Enter 照常能发起（原来焦点停在这个按钮上，快捷键失效） */}
+          {/* 第 27 批走查：点完焦点回到输入框，回车照常能发起（原来焦点停在这个按钮上，快捷键失效） */}
           <button
             className="btn-link"
             onClick={() => {
@@ -188,58 +249,11 @@ export function Composer(props: {
           )}
         </div>
       )}
-      <div className="composer-bar">
-        {/* Kimi 同款左下“+”：导入材料（Word、PDF、图片……）；方法与事项材料在下方托盘 */}
-        {/* 第 67 批第四轮（独立评审 R3：“+ › 选用已有材料”与“@ 材料”是同一功能的两个入口）：一个材料面板、两种进入方式——
-            “+”= 往本事项加文件：打开材料面板并直接弹出选择文件，进度与逐份结果就在面板里（看得到存进了哪个事项）；
-            “@ 材料”= 选这次读哪些。没选事项时“+”先让律师选放进哪个事项 */}
-        <button
-          className={`tool tool-plus${menu === "material" ? " open" : ""}`}
-          title={props.matterId ? `添加材料到「${matter?.title ?? "本事项"}」` : "添加材料（先选放进哪个事项）"}
-          aria-label="添加材料"
-          aria-haspopup="dialog"
-          aria-expanded={menu === "material"}
-          onClick={() => {
-            setMenu("material");
-            // 面板挂上、材料组件登记好打开方法之后再弹选择文件（仍在这次点击的用户激活时限内）
-            if (props.matterId && props.importOne) setTimeout(() => pickInPop.current?.(), 60);
-            else if (props.matterId) pickFiles();
-          }}
-        >
-          <Icon.plus />
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          multiple
-          hidden
-          accept={MATERIAL_ACCEPT}
-          onChange={(e) => {
-            if (e.target.files && e.target.files.length > 0) props.onImport(e.target.files);
-            e.target.value = "";
-          }}
-        />
-        {/* 运行模式放在“+”右边（第 47 批，Kimi Work 输入框左下“默认”权限档位同位）；固定步骤的流程不适用运行模式（复核 S5-A07） */}
-        {value.scenario === "a1.agent_task" && <ModeSelector policy={props.policy} value={value.choice} onChange={(choice) => onChange({ ...value, choice })} />}
-        <span className="spacer" />
-        {/* 模型（Kimi 输入框右下同位）：任务固定用 K3（子步骤用 K2.6），具体型号由律所的云端路由决定——只显示、不做假的下拉 */}
-        {props.models && props.models.length > 0 && props.onModelChange ? (
-          <ModelPicker title="任务模型" choices={props.models} value={props.model ?? null} onChange={props.onModelChange} foot="任务的主要步骤用所选模型，辅助步骤用 K2.6；按实际用量计入你的额度。" />
-        ) : (
-          <span className="model-label" title="任务由 Kimi K3 处理（辅助步骤用 K2.6）">K3</span>
-        )}
-        {/* 可以发送时提示快捷键（Z3 §8.2 #32）；不能发送时写原因（余项续复核 RC-B-15） */}
-        {/* 只缺任务目标时不再写“先写任务目标”（占位符已经说了，U1 §1.2）；读屏标签与悬停仍说明原因 */}
-        <span className="send-hint muted" aria-live="polite">{canSend ? `${SEND_KEY} 发送` : blockedReason === "先写任务目标" ? "" : blockedReason}</span>
-        <button className="send" disabled={!canSend} onClick={props.onSubmit} aria-label={canSend ? "发送" : `发送（${blockedReason}）`} title={canSend ? `发送（${SEND_KEY}）` : blockedReason}>
-          <Icon.send />
-        </button>
-      </div>
-      </div>
+      </ComposerFrame>
       {/* 事项上下文（Z3 #12、M-4：发起前一眼看到在哪个事项下工作）放在输入框下方托盘（Kimi“选择项目”同位）；底栏不放事项胶囊 */}
       <div className="composer-context">
         {props.matters ? (
-          <button className="ctx-matter" onClick={() => setMenu(menu === "matter" ? null : "matter")} title={matter ? matter.title : "选择事项"} aria-haspopup="listbox" aria-expanded={menu === "matter"}>
+          <button className={`ctx-matter${matter ? "" : " ctx-empty"}`} onClick={() => setMenu(menu === "matter" || menu === "place" ? null : "matter")} title={matter ? matter.title : "选择事项"} aria-haspopup="listbox" aria-expanded={menu === "matter"}>
             {/* Kimi“选择项目”同位：没选时就写“选择事项”，选了写事项名 */}
             <Icon.folder /> {matter ? <span className="ctx-title">{clipTitle(matter.title)}</span> : "选择事项"} <Icon.down />
           </button>
@@ -376,6 +390,24 @@ export function Composer(props: {
             </>
           )}
         </div>
+      )}
+      {menu === "place" && props.matters && props.onPlace && (
+        <MatterPlace
+          matters={props.matters}
+          goal={value.goal}
+          onPlace={(m, created) => {
+            setMenu(null);
+            props.onPlace?.(m, created);
+          }}
+          onMore={(initial) => {
+            setMenu(null);
+            props.onNewMatter?.({ thenSubmit: true, initial });
+          }}
+          onCancel={() => {
+            setMenu(null);
+            textRef.current?.focus();
+          }}
+        />
       )}
       {menu === "matter" && props.matters && (
         <div className="popover composer-menu">

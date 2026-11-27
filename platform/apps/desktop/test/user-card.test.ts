@@ -39,8 +39,9 @@ test("用户卡底部一行（v9.3 B-3 余项）：有入组申请等批准时�
   assert.deepEqual(sidebarFoot(ok), { title: "本机运行 · 防护正常", note: "", tone: "dot-ok", href: "/connections" });
   const joins = sidebarFoot({ ...ok, pendingJoins: 2 });
   assert.equal(joins.tone, "dot-warn");
-  assert.equal(joins.title, "有 2 个入组申请等你批准");
-  assert.equal(joins.href, "/connections/admin");
+  // 第 72 批（D-304）：入组申请 = 团队里待确认的电脑，去“设置 · 团队 · 电脑待确认”
+  assert.equal(joins.title, "有 2 台电脑等你确认");
+  assert.equal(joins.href, "/connections/team");
   const both = sidebarFoot({ ...ok, pendingJoins: 2, unresolved: 1 });
   assert.equal(both.title, "有联网记录需要核对");
   assert.equal(both.href, "/connections/backup");

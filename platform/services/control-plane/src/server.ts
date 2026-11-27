@@ -2009,6 +2009,9 @@ export function createControlPlane(o: ControlPlaneOptions): ControlPlane {
     // 安全审查 S-06：律所管理员、客服替本人让出的，说清是谁（不说成“在另一台电脑上登录”）
     if (x.revoked_at && x.revoked_reason === "signed_out_admin") throw new AuthError(401, "session_signed_out_admin", "律所管理员让这台电脑退出了登录；资料都还在，重新登录即可继续");
     if (x.revoked_at && x.revoked_reason === "signed_out_support") throw new AuthError(401, "session_signed_out_support", "客服协助让这台电脑退出了登录；资料都还在，重新登录即可继续");
+    // 第 72 批（U-1）：被团队管理员移出 / 本人退出团队——如实说原因，不说成“登录已过期”；本人的其他工作空间不受影响
+    if (x.revoked_at && x.revoked_reason === "team_removed") throw new AuthError(401, "session_team_removed", "你已被移出这个团队：团队空间不能再用了，你的其他工作空间不受影响");
+    if (x.revoked_at && x.revoked_reason === "team_left") throw new AuthError(401, "session_team_left", "你已退出这个团队：团队空间不能再用了，你的其他工作空间不受影响");
     if (!sessionLive(x, now())) throw new AuthError(401, "session_expired", "登录已过期，请重新登录");
     if (isStaffId(x.aid)) throw new AuthError(403, "member_only", "平台人员账号不能使用律师端功能");
     const a = accounts.get(x.aid);

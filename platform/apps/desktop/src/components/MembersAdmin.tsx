@@ -78,53 +78,10 @@ export function MembersAdmin() {
     <div className="device">
       {/* 第 56 批：没有申请时不占一张空卡；有申请时排在最前（管理员来这页最急的事） */}
       {requests.length > 0 && (
-      <div className="panel">
-        <div className="section-title">等你批准（{requests.length}）</div>
-        {(
-          <table className="members-table">
-            <thead>
-              <tr>
-                <th>姓名</th>
-                <th>角色</th>
-                <th>申请时间</th>
-                <th>入组核对码（请对方念出，一致再批准）</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    {r.name ?? (r.via === "account" ? (r.account_email ?? "本所成员") : "（不是在这台电脑上邀请的）")}
-                    {/* 第 44 批（D-186）：同一账号的新电脑——没有邀请可对，只能人工核对核对码 */}
-                    {r.via === "account" && <div className="muted">同一账号的新电脑{r.account_email && r.name ? ` · ${r.account_email}` : ""}</div>}
-                  </td>
-                  <td>{ROLE_LABEL[r.role] ?? r.role}</td>
-                  <td>{fmtTime(r.requested_at)}</td>
-                  <td className="members-check">{r.check_code}</td>
-                  <td>
-                    {r.local_invite && r.verified === false ? (
-                      <span className="settings-choice">
-                        <span className="activate-error">这份申请在传送中被改动过，不要批准；请拒绝并重新发邀请，同时告知 Kimi Work 客服</span>
-                        {/* 第 54 批真实联调：原来只有这句提示、没有“拒绝”按钮，管理员照提示做不了 */}
-                        <ConfirmButton label="拒绝" question={`拒绝${r.name ? ` ${r.name} ` : ""}的这份申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
-                      </span>
-                    ) : r.local_invite ? (
-                      <span className="settings-choice">
-                        <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question={r.via === "account" ? `这是${r.name ?? r.account_email ?? "本所成员"}的账号在一台新电脑上申请加入。请先电话或当面联系本人，请他读出新电脑屏幕上的 12 位入组核对码，与这里逐位对照。号码一致吗？` : `请先电话或当面联系${r.name ?? "对方"}，请他读出屏幕上的入组核对码，与这里逐位对照。号码一致吗？`} confirmLabel="已核对一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ? ` ${r.name}` : ""}`)} />
-                        <ConfirmButton label="拒绝" question={r.via === "account" ? "拒绝这台新电脑的申请？对方可以重新登录后再申请。" : `拒绝${r.name ? ` ${r.name} ` : ""}的申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
-                      </span>
-                    ) : (
-                      <span className="muted">请在发出邀请的电脑上处理</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {requests.length > 0 && <p className="muted">批准前，请先电话或当面联系对方，请他读出自己屏幕上的入组核对码，与这里逐位对照。号码对不上？不要批准，点“拒绝”，并联系 Kimi Work 客服。</p>}
-      </div>
+        <div className="panel">
+          <div className="section-title">等你批准（{requests.length}）</div>
+          <JoinRequestTable requests={requests} act={act} />
+        </div>
       )}
 
       <div className="panel">
@@ -196,8 +153,110 @@ export function MembersAdmin() {
             </tbody>
           </table>
         )}
-        {data?.firm_check_code && <p className="muted">本所识别码：{data.firm_check_code}（同事加入后，他的“设置 · 账号与团队”里应显示同一串数字）</p>}
+        {data?.firm_check_code && <p className="muted">本所识别码：{data.firm_check_code}（同事加入后，他的“设置 · 团队”里应显示同一串数字）</p>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 入组申请表（第 13 批起）：请对方念出他屏幕上的 12 位入组核对码，与这里一致再批准。
+ * 第 72 批（D-304）：团队设置“电脑待确认”与旧云端的完整成员页共用——登录不再等批准，这一步只为让那台电脑能接收团队共享事项。
+ */
+export function JoinRequestTable({ requests, act }: { requests: any[]; act: (fn: () => Promise<unknown>, ok: string) => Promise<void> }) {
+  return (
+    <>
+      <table className="members-table">
+        <thead>
+          <tr>
+            <th>姓名</th>
+            <th>角色</th>
+            <th>申请时间</th>
+            <th>入组核对码（请对方念出，一致再批准）</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {requests.map((r) => (
+            <tr key={r.id}>
+              <td>
+                {r.name ?? (r.via === "account" ? (r.account_email ?? "本所成员") : "（不是在这台电脑上邀请的）")}
+                {/* 第 44 批（D-186）：同一账号的新电脑——没有邀请可对，只能人工核对核对码 */}
+                {r.via === "account" && <div className="muted">同一账号的新电脑{r.account_email && r.name ? ` · ${r.account_email}` : ""}</div>}
+              </td>
+              <td>{ROLE_LABEL[r.role] ?? r.role}</td>
+              <td>{fmtTime(r.requested_at)}</td>
+              <td className="members-check">{r.check_code}</td>
+              <td>
+                {r.local_invite && r.verified === false ? (
+                  <span className="settings-choice">
+                    <span className="activate-error">这份申请在传送中被改动过，不要批准；请拒绝并重新发邀请，同时告知 Kimi Work 客服</span>
+                    {/* 第 54 批真实联调：原来只有这句提示、没有“拒绝”按钮，管理员照提示做不了 */}
+                    <ConfirmButton label="拒绝" question={`拒绝${r.name ? ` ${r.name} ` : ""}的这份申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
+                  </span>
+                ) : r.local_invite ? (
+                  <span className="settings-choice">
+                    <ConfirmButton label="批准" danger={false} className="btn-primary btn-sm" question={r.via === "account" ? `这是${r.name ?? r.account_email ?? "本所成员"}的账号在一台新电脑上申请加入。请先电话或当面联系本人，请他读出新电脑屏幕上的 12 位入组核对码，与这里逐位对照。号码一致吗？` : `请先电话或当面联系${r.name ?? "对方"}，请他读出屏幕上的入组核对码，与这里逐位对照。号码一致吗？`} confirmLabel="已核对一致，批准" onConfirm={() => act(() => members.approve(r.id), `已批准${r.name ? ` ${r.name}` : ""}`)} />
+                    <ConfirmButton label="拒绝" question={r.via === "account" ? "拒绝这台新电脑的申请？对方可以重新登录后再申请。" : `拒绝${r.name ? ` ${r.name} ` : ""}的申请？他需要新的邀请码才能再次申请。`} confirmLabel="拒绝" onConfirm={() => act(() => members.reject(r.id), "已拒绝")} />
+                  </span>
+                ) : (
+                  <span className="muted">请在发出邀请的电脑上处理</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="muted">批准前，请先电话或当面联系对方，请他读出自己屏幕上的入组核对码，与这里逐位对照。号码对不上？不要批准，点“拒绝”，并联系 Kimi Work 客服。</p>
+    </>
+  );
+}
+
+/**
+ * 第 72 批（D-304）：设置 · 团队 · 电脑待确认（管理员）。成员的新电脑登录后就能正常工作（用 AI、办自己的事项）；
+ * 要接收团队共享事项，才需要管理员在这里确认一次（确认动作沿用入组批准：核对对方屏幕上的入组核对码）。没有待确认的电脑时一行说明。
+ */
+export function PendingDevices() {
+  const [data, setData] = useState<any | null>(null);
+  const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const load = () =>
+    members
+      .list()
+      .then((d) => {
+        setData(d);
+        setErr("");
+      })
+      .catch((e: Error) => setErr(e.message));
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => void load(), 15_000);
+    return () => clearInterval(t);
+  }, []);
+  const act = async (fn: () => Promise<unknown>, ok: string) => {
+    setMsg("");
+    try {
+      await fn();
+      setMsg(ok);
+      void load();
+    } catch (e) {
+      setMsg((e as Error).message);
+    }
+  };
+  const requests: any[] = data?.join_requests ?? [];
+  return (
+    <div className="team-pending">
+      <p className="team-pending-lead">这台电脑登录后可正常工作；要接收团队共享事项，需要你在这里确认一次。</p>
+      {requests.length > 0 ? (
+        <JoinRequestTable requests={requests} act={act} />
+      ) : (
+        <p className="muted team-empty">{err ? "要在团队开通时用的那台电脑上确认；这台电脑上看不到待确认的电脑。" : data ? "没有待确认的电脑。" : "正在读取…"}</p>
+      )}
+      {msg && (
+        <p className="muted" role="status">
+          {msg}
+        </p>
+      )}
     </div>
   );
 }

@@ -4,16 +4,23 @@
  * （对应 Kimi 的“项目”“任务”）；Chat：新建问答与问答记录（问答页不再自带左侧列表）→ 底部用户卡（头像、姓名、套餐标识），点开是用户菜单
  * （额度一行、套餐与用量、设置、上手指南、退出登录），与 Kimi 头像菜单同位。
  * 未开放的入口不占一级导航（远程控制、应用等不做）；状态用律师语言，只在异常时变色（UIUX P0-6）。
+ * 第 72 批（V46，D-305 第 4 条）：用户卡姓名下一行是当前工作空间（“王律师的工作室 · 个人”“某某律师事务所 · 团队”）；
+ * 菜单里列出这个人的全部工作空间（团队带角色）+“加入团队…”，点选即切换（useSwitchFlow：同档案直接进 / 新档案开通 / 满额选择卡）。
+ * 云端不支持（旧云端）时卡片与菜单只有原有内容。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { modKeyLabel } from "../lib/platform.ts";
 import { newTaskHref } from "../lib/nav-target.ts";
-import { account, api, members, onKernelEvent, type Matter, type QuotaStatus } from "../api.ts";
+import { account, api, members, onKernelEvent, workspaces, type Matter, type QuotaStatus } from "../api.ts";
 import { nav, OPEN_GUIDE, requestNewMatter, type Route } from "../App.tsx";
 import { Icon } from "./Icons.tsx";
 import { BrandLockup, KimiMark } from "./Brand.tsx";
 import { notifyAccountChanged } from "./AccountPanel.tsx";
 import { onDataChanged } from "../lib/events.ts";
 import { sidebarFoot, userCardText } from "../lib/user-card.ts";
+import { KIND_LABEL, workspaceLabel, workspaceMenuMeta, workspaceRoleTag } from "../lib/workspace.ts";
+import { useSwitchFlow, useWorkspace, type WorkspaceState } from "./WorkspaceSwitch.tsx";
+import { openJoinTeam } from "./TeamSpace.tsx";
 import { planBadge, quotaMenuLine } from "../lib/quota-notice.ts";
 import { runName } from "../lib/labels.ts";
 import { NARROW_QUERY, sidebarState } from "../lib/sidebar-state.ts";
@@ -72,11 +79,12 @@ function useNarrow(): boolean {
   }, []);
   return narrow;
 }
-const MOD = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform) ? "⌘" : "Ctrl";
 
 type RecentRun = { run_id: string; matter_id: string; matter_title: string; scenario: string; status: string; updated_at: string; goal: string; title?: string | null };
 
 export function Sidebar({ route }: { route: Route }) {
+  // 第 72 批：⌘ / Ctrl 写法读 preload 的平台（lib/platform.ts），渲染时取（不在模块加载时定死）
+  const MOD = modKeyLabel();
   const [collapsed, setCollapsed] = useState(savedCollapsed);
   const toggleCollapsed = () =>
     setCollapsed((c) => {
@@ -167,8 +175,9 @@ export function Sidebar({ route }: { route: Route }) {
           email: (s as { account?: { email?: string } }).account?.email ?? null,
           edition: (s as { edition?: "trial" | "release" | "dev" }).edition ?? null,
         });
-        // 只有管理员能批准入组（控制面只认管理员证书；复核 RB16B-18：合伙人不问）；没有控制面或本机没有有效邀请时内核直接报 0，不联网
-        if (s.member_role === "firm_admin")
+        // 只有管理员能批准入组（控制面只认管理员证书；复核 RB16B-18：合伙人不问）；没有控制面或本机没有有效邀请时内核直接报 0，不联网。
+        // 第 72 批：个人空间没有入组（个人账号的证书角色也是管理员）
+        if (s.member_role === "firm_admin" && s.workspace_kind !== "personal")
           members
             .attention()
             .then((a) => setJoins(a.pending_joins))
@@ -202,6 +211,7 @@ export function Sidebar({ route }: { route: Route }) {
   const { compact, auto } = sidebarState({ collapsedPref: collapsed, forced, narrow, peek });
   const toggle = () => (auto ? setPeek((p) => !p) : toggleCollapsed());
   const badge = planBadge(quota);
+  const ws = useWorkspace();
   return (
     <aside className={`sidebar${compact ? " compact" : ""}`} data-tour="sidebar">
       <div className="brand">
@@ -381,8 +391,12 @@ export function Sidebar({ route }: { route: Route }) {
         me={me}
         quota={quota}
         foot={foot}
+        ws={ws}
         settingsActive={route.page === "connections"}
-        onOpen={loadQuota}
+        onOpen={() => {
+          loadQuota();
+          ws.reload();
+        }}
       />
     </aside>
   );
@@ -417,10 +431,16 @@ function UserCard(props: {
   me: { name: string | null; firm: string | null; email: string | null } | null;
   quota: QuotaStatus | null;
   foot: ReturnType<typeof sidebarFoot>;
+  ws: WorkspaceState;
   settingsActive: boolean;
   onOpen: () => void;
 }) {
   const { card, badge, foot } = props;
+  // 第 72 批：工作空间（云端支持时）
+  const wsList = props.ws.list?.supported ? props.ws.list : null;
+  const wsCur = wsList?.current ?? null;
+  const flow = useSwitchFlow();
+  const [switchingTo, setSwitchingTo] = useState<string | null>(null);
   const footTone = foot.tone;
   const [open, setOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
@@ -443,6 +463,7 @@ function UserCard(props: {
     if (!open) {
       setConfirmLogout(false);
       setLogoutMsg("");
+      flow.clearError();
     }
   }, [open]);
   // 换页（含快捷键、浏览器前进后退）时收起菜单
@@ -469,7 +490,8 @@ function UserCard(props: {
                 {badge && <span className="plan-badge">{badge}</span>}
               </span>
               {props.me?.email && <small>{props.me.email}</small>}
-              {card.firm && <small>{card.firm}</small>}
+              {/* 第 72 批：有工作空间列表时，所属由下面的“工作空间”一组说清 */}
+              {card.firm && !wsCur && <small>{card.firm}</small>}
             </span>
           </div>
           {/* 本机状态（第 66 批）：正常时不显示（个人产品不需要“防护正常”这类研发状态）；有问题时一行变色说明、点开去处理 */}
@@ -481,6 +503,63 @@ function UserCard(props: {
                 {foot.note ? `：${foot.note}` : ""}
               </span>
             </button>
+          )}
+          {wsList && wsCur && (
+            <>
+              <div className="menu-sep" role="separator" />
+              <div className="menu-group-label" id="ws-menu-label">
+                工作空间
+              </div>
+              <div role="group" aria-labelledby="ws-menu-label" className="ws-menu">
+                {wsList.workspaces.map((w) => {
+                  const meta = workspaceMenuMeta(w);
+                  const roleTag = workspaceRoleTag(w);
+                  return (
+                    <button
+                      key={w.aid}
+                      className={`menu-row ws-menu-row${w.current ? " is-current" : ""}`}
+                      role="menuitemradio"
+                      aria-checked={w.current}
+                      disabled={w.status === "disabled" || switchingTo !== null}
+                      onClick={() => {
+                        if (w.current) return setOpen(false);
+                        setSwitchingTo(w.aid);
+                        void flow.run(() => workspaces.switch(w.aid), w.name).then((o) => {
+                          setSwitchingTo(null);
+                          if (o === "same" || o === "limit") setOpen(false);
+                        });
+                      }}
+                    >
+                      <span className={`ws-mark ws-mark-sm ws-mark-${w.kind}`} aria-hidden="true">
+                        {w.kind === "team" ? Icon.users() : (w.name.trim() || "我").slice(0, 1)}
+                      </span>
+                      <span className="menu-row-text ws-menu-text">
+                        {/* 菜单与侧栏同宽：名称一行、“个人 / 团队 · 角色”一行，免得名称被截断 */}
+                        <span className="ws-menu-name">{w.name}</span>
+                        <small>{[KIND_LABEL[w.kind], roleTag, switchingTo === w.aid ? "正在切换…" : meta].filter(Boolean).join(" · ")}</small>
+                      </span>
+                      {w.current && <span className="ws-menu-check">{Icon.check()}</span>}
+                    </button>
+                  );
+                })}
+                <button
+                  className="menu-row"
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    openJoinTeam();
+                  }}
+                >
+                  <span className="nav-icon">{Icon.plus()}</span>
+                  <span className="menu-row-text">加入团队…</span>
+                </button>
+              </div>
+              {flow.error && (
+                <p className="user-menu-err" role="alert">
+                  {flow.error}
+                </p>
+              )}
+            </>
           )}
           <div className="menu-sep" role="separator" />
           <button className="menu-row" role="menuitem" onClick={() => go("/connections/usage")}>
@@ -557,15 +636,23 @@ function UserCard(props: {
             <b>{card.name}</b>
             {badge && <span className="plan-badge">{badge}</span>}
           </span>
-          {/* 正常时不占位；有问题时一行说明 */}
-          {warn && (
+          {/* 正常时不占位；有问题时一行说明（第 72 批：正常时这一行是当前工作空间） */}
+          {warn ? (
             <small>
               <span className={`dot ${footTone}`} /> {foot.title}
             </small>
-          )}
+          ) : wsCur ? (
+            <small className="user-ws">{workspaceLabel(wsCur)}</small>
+          ) : null}
         </span>
         <span className="sr-only">账号与设置</span>
+        {wsList && wsList.workspaces.length > 1 && (
+          <span className="user-switch-ico" aria-hidden="true">
+            {Icon.updown()}
+          </span>
+        )}
       </button>
+      {flow.view}
     </div>
   );
 }

@@ -28,7 +28,8 @@ export function sidebarFoot(s: { gate: boolean | null; unresolved: number; execO
 } {
   if (s.gate === null) return { title: "正在启动…", note: "", tone: "dot-off", href: "/connections/backup" };
   if (s.unresolved > 0) return { title: "有联网记录需要核对", note: `${s.unresolved} 条因中断无法确认是否发出`, tone: "dot-warn", href: "/connections/backup" };
-  if (s.pendingJoins > 0) return { title: `有 ${s.pendingJoins} 个入组申请等你批准`, note: "", tone: "dot-warn", href: "/connections/admin" };
+  // 第 72 批（D-304）：入组申请 = 团队里待确认的电脑，在“设置 · 团队 · 电脑待确认”处理
+  if (s.pendingJoins > 0) return { title: `有 ${s.pendingJoins} 台电脑等你确认`, note: "", tone: "dot-warn", href: "/connections/team" };
   if (s.execOk === false) return { title: "本机运行 · 代码分析暂不可用", note: "其余功能正常", tone: "dot-warn", href: "/connections/backup" };
   return { title: "本机运行 · 防护正常", note: "", tone: "dot-ok", href: "/connections" };
 }

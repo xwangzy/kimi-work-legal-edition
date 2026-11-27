@@ -45,7 +45,7 @@ export function WelcomePage() {
           以后再说
         </button>
       )}
-      <span className="muted">进入首页后，会用一分钟带你认识事项、发起任务、复核成果和期限提醒。</span>
+      {/* 第 72 批（D-302 第 4 条）：讲解早已不自动弹出，删掉“进入首页后会带你认识…”的承诺 */}
     </div>
   );
   return (

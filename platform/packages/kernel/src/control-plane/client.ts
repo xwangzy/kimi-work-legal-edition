@@ -188,7 +188,7 @@ export const ACCOUNT_PATH = /^\/v1\/auth\/[A-Za-z0-9/_-]{2,120}$/;
  * /v1/workspace/upgrade、/v1/teams/{join,leave}、/v1/team/invites…、/v1/firm/…（团队成员管理）、/v1/me/onboarding。
  */
 export const TEAM_PATH = /^\/v1\/(?:workspace|teams|team|firm|me)\/[A-Za-z0-9/_-]{2,120}$/;
-const SESSION_PROBLEMS: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch", "session_signed_out", "session_signed_out_admin", "session_signed_out_support", "session_device_limit"]);
+const SESSION_PROBLEMS: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch", "session_signed_out", "session_signed_out_admin", "session_signed_out_support", "session_device_limit", "session_team_removed", "session_team_left"]);
 
 export class ControlPlaneClient {
   private readonly d: ControlPlaneClientDeps;

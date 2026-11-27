@@ -1,9 +1,9 @@
 /**
- * 设置 → 账号与团队 → 离所交接（v9.3 第 14 批续 B-10）：要离开本所的人，在自己电脑上把负责的事项交接好，再请管理员移出。
+ * 设置 → 团队 → 离所交接（v9.3 第 14 批续 B-10；第 72 批移到“团队”页签、只在团队空间显示）：要离开团队的人，在自己电脑上把负责的事项交接好，再退出团队或请管理员移出。
  * 只在这台电脑上的事项：导出归档交给律所。同事一起办的事项：交给一位同事做负责人（同事之间同步的管理权一并交出）。
  * 每台电脑只知道自己参与的事项，所以这一步只能本人做；平时收起，点开才查。
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, members, type OffboardingItem } from "../api.ts";
 import { memberLabel, offboardArchiveName, offboardingRow, offboardingSummary } from "../lib/offboarding.ts";
 import { fmtTime } from "../lib/labels.ts";
@@ -53,12 +53,23 @@ export function Offboarding() {
       setBusy(null);
     }
   };
+  // 第 72 批：“退出团队”的确认框里点“去离所交接”——展开这里并滚到眼前（事件名与 TeamSpace.tsx 的 OPEN_OFFBOARDING 相同；用字面量免得循环引用）
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const on = () => {
+      if (ref.current) ref.current.open = true;
+      void load();
+      setTimeout(() => ref.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+    };
+    window.addEventListener("kwl:open-offboarding", on);
+    return () => window.removeEventListener("kwl:open-offboarding", on);
+  }, []);
   return (
-    <div className="device-row">
+    <div className="device-row" id="offboarding">
       <div className="device-k">离所交接</div>
       <div>
-        <details onToggle={(e) => (e.target as HTMLDetailsElement).open && !data && void load()}>
-          <summary className="muted">要离开本所？离开前在这里把你负责的事项交接好（点开查看）</summary>
+        <details ref={ref} onToggle={(e) => (e.target as HTMLDetailsElement).open && !data && void load()}>
+          <summary className="muted">要离开团队？离开前在这里把你负责的事项交接好（点开查看）</summary>
           {err && <p className="activate-error">{err}</p>}
           {data && <p>{offboardingSummary(data)}</p>}
           {data && data.matters.length > 0 && (

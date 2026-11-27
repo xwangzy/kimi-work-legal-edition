@@ -28,6 +28,8 @@ declare global {
       updateStatus?: () => Promise<UpdateStatus | null>;
       installUpdate?: () => Promise<{ ok: boolean; reason?: string }>;
       platform?: string;
+      /** 第 72 批（A1 H5/H6）：在应用内重拉内核（两次之间至少隔 15 秒）；旧主进程没有。 */
+      restartKernel?: () => Promise<{ ok: boolean; result?: string; reason?: string; retry_after_ms?: number }>;
       /** 第 64 批：无边框窗口（界面顶部自绘拖动条）。 */
       frameless?: boolean;
       /** 界面明暗变了：Windows 窗口控件浮层跟着换色。 */
@@ -40,6 +42,12 @@ declare global {
 export function windowBridge(): { zrKernel?: { frameless?: boolean; platform?: string; setWindowTheme?: (t: "light" | "dark") => void } } {
   const k = window.zrKernel;
   return k ? { zrKernel: { ...(k.frameless !== undefined ? { frameless: k.frameless } : {}), ...(k.platform !== undefined ? { platform: k.platform } : {}), ...(k.setWindowTheme ? { setWindowTheme: k.setWindowTheme } : {}) } } : {};
+}
+
+/** 第 72 批（A1 H6）：重拉内核（主进程 kwl:restart-kernel）；网页开发形态与旧主进程没有时为 null。 */
+export function kernelRestarter(): (() => Promise<{ ok: boolean; result?: string; reason?: string; retry_after_ms?: number }>) | null {
+  const k = typeof window === "undefined" ? undefined : window.zrKernel;
+  return k?.restartKernel ? () => k.restartKernel!() : null;
 }
 
 /** 主进程对话框选中的文件（渲染进程拿不到路径）。 */
@@ -1696,6 +1704,12 @@ export const account = {
   // 第 63 批：绑定手机号（账号还没有手机号）；更换手机号另要当前密码。结果里的手机号已打码
   bindPhone: (o: { phone: string; sms_code: string; password?: string }) => invoke<{ ok: true; phone: string | null }>("account.bind_phone", o),
   status: () => invoke<AccountStatus>("account.status"),
+  /**
+   * 第 72 批（D-302，契约 02 §7）：账号级上手状态（只有两个时间戳，不含任何案卷信息）。
+   * 内核或云端还不支持时返回 supported:false（旧内核没有这个方法会抛错——这里接住，按不支持处理，界面只用本机状态）。
+   */
+  onboarding: () => invoke<{ supported: boolean; completed_at?: string | null; dismissed_at?: string | null }>("account.onboarding").catch(() => ({ supported: false as const })),
+  onboardingMark: (o: { completed?: true; dismissed?: true }) => invoke<{ ok: boolean }>("account.onboardingMark", o).catch(() => ({ ok: false })),
   logout: () => invoke<{ ok: true }>("account.logout"),
   me: () => invoke<AccountMe>("account.me"),
   changePassword: (current: string, next: string) => invoke<{ ok: true; other_sessions_revoked: number }>("account.change_password", { current, next }),
@@ -1879,3 +1893,47 @@ export interface MaterialRemoveResult {
   affected_artifacts: number;
   note?: string;
 }
+
+/**
+ * 第 72 批（V46，D-304、D-305，契约 02 §7）：工作空间与团队。内核对云端新接口做代理；云端（或本机出站闸门）还不支持时返回 supported:false，
+ * 界面据此隐藏入口、不报错。workspaces.switch / teams.join / teams.leave 的结果与“换账号登录”同形，界面走 lib/account-switch.ts 的同一条流程。
+ */
+export interface WorkspaceItem {
+  aid: string;
+  tid: string;
+  kind: "personal" | "team";
+  name: string;
+  role: "admin" | "partner" | "lawyer" | "assistant" | null;
+  status: "active" | "disabled";
+  current: boolean;
+  /** 这台电脑上已有这个工作空间的账号档案（切过去不用再登记这台电脑）。 */
+  local_profile: boolean;
+}
+export interface WorkspaceList {
+  supported: boolean;
+  reason?: string;
+  person?: { aid: string; name: string; phone_masked: string | null };
+  current?: WorkspaceItem;
+  workspaces: WorkspaceItem[];
+}
+export const workspaces = {
+  /** 旧内核没有这个方法、没登录或取不到时按不支持处理（界面只显示现有内容）。 */
+  list: () => invoke<WorkspaceList>("workspaces.list").catch(() => ({ supported: false, workspaces: [] }) as WorkspaceList),
+  switch: (aid: string) => invoke<any>("workspaces.switch", { aid }),
+  upgrade: (name: string) => invoke<{ ok?: boolean; supported?: boolean; workspace?: { aid?: string; kind?: string; name?: string; role?: string } }>("workspace.upgrade", { name }),
+  join: (code: string) => invoke<any>("teams.join", { code }),
+  leave: () => invoke<any>("teams.leave"),
+};
+export const team = {
+  invites: () => invoke<{ supported: boolean; invites?: import("./lib/team-admin.ts").TeamInviteRow[] }>("team.invites.list"),
+  invite: (name: string, role: string) => invoke<{ supported: boolean; ok?: boolean; code?: string; invite?: import("./lib/team-admin.ts").TeamInviteRow }>("team.invites.create", { name, role }),
+  revokeInvite: (id: string) => invoke<{ supported: boolean; ok?: boolean }>("team.invites.revoke", { id }),
+  members: () =>
+    invoke<{ supported: boolean; members?: import("./lib/team-admin.ts").TeamMemberRow[]; seats?: { total: number; used: number }; pending_joins?: { id: string; member_name: string | null; aid: string | null; device_id: string; created_at: string }[] }>("team.members.list"),
+  remove: (aid: string) => invoke<{ supported: boolean; ok?: boolean; seat_released?: number }>("team.members.remove", { aid }),
+  disable: (aid: string) => invoke<{ supported: boolean; ok?: boolean }>("team.members.disable", { aid }),
+  enable: (aid: string) => invoke<{ supported: boolean; ok?: boolean; seat_reassigned?: boolean }>("team.members.enable", { aid }),
+  role: (aid: string, role: string) => invoke<{ supported: boolean; ok?: boolean }>("team.members.role", { aid, role }),
+  seat: (aid: string, assign: boolean) => invoke<{ supported: boolean; ok?: boolean }>("team.members.seat", { aid, assign }),
+  memberDevicePolicy: (policy: "auto" | "approve") => invoke<{ supported: boolean; ok?: boolean; policy?: "auto" | "approve" }>("team.policy.memberDevice", { policy }),
+};

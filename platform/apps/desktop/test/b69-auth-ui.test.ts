@@ -53,11 +53,12 @@ test("选一台移除：整卡（一个标题）、单选、默认预选、主�
   // 第 71 批（V45，D-298 与独立评分区域 9）：可选的多于一台才用单选；只有一台时整行就是目标、按钮写出它的名字；旧云端（不能让出）按移除口径写
   assert.match(s, /role=\{actionable && !single \? "radiogroup" : "list"\}/);
   assert.match(s, /defaultRemovalPick\(removable\)/);
-  assert.match(s, /移除并继续/);
-  assert.match(s, /移除「\$\{targetName\}」并继续/);
-  assert.match(s, /让「\$\{targetName\}」退出登录，在这台继续/);
-  assert.match(s, /最多同时在 \{n\} 台电脑上登录/);
-  assert.match(s, /最多可用 \{n\} 台电脑/);
+  // 第 72 批（D-303）：主按钮固定短文案、不拼电脑名（不折行）；标题一句结论“已在 N 台电脑登录”
+  assert.match(s, /"退出所选电脑并继续" : "移除所选电脑并继续"/);
+  assert.doesNotMatch(s, /targetName/);
+  assert.match(s, /`已在 \$\{n\} 台电脑登录`/);
+  assert.match(s, /退出其中一台，就能在这台电脑继续。/);
+  assert.match(s, /那台电脑上的事项和成果都还在，重新登录即可。/);
   // 上限只来自云端（limit = 云端 device_limit；没给时按列表台数说），界面没有写死的台数
   assert.doesNotMatch(s.replace(/\/\*[\s\S]*?\*\//g, ""), /\b(?:20|9)\s*台/);
   // 重新登录页里换成选电脑时外层标题让位

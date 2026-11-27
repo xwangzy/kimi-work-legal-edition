@@ -1,0 +1,152 @@
+/* 第 72 批（V46，impl-U2）：个人 / 团队工作空间——侧栏工作空间菜单、设置 · 账号 · 工作空间、设置 · 团队。
+   只用语义令牌（字号 --fs-*、字重 --fw-*、圆角 --r-* / --radius-*、间距 --sp-*、颜色语义令牌）；与设置页同一套行、分段控件、状态点。 */
+
+/* ── 工作空间名牌（设置与菜单共用）：方形标识 + 名称 + 类型 + 角色 ── */
+.ws-plate { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.ws-mark { flex: none; display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-md); font-weight: var(--fw-strong); font-size: var(--fs-md); }
+.ws-mark svg { width: 18px; height: 18px; }
+.ws-mark-personal { background: var(--accent-bg); color: var(--accent-text); }
+.ws-mark-team { background: var(--bg-muted); color: var(--text-primary); border: 1px solid var(--border-subtle); }
+.ws-mark-sm { width: 22px; height: 22px; border-radius: var(--r-sm); font-size: var(--fs-xs); }
+.ws-mark-sm svg { width: 13px; height: 13px; }
+.ws-plate-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ws-plate-name { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.ws-plate-name b { font-size: var(--fs-md); color: var(--text-primary); overflow-wrap: anywhere; }
+.ws-plate-text small { font-size: var(--fs-caption); color: var(--text-secondary); line-height: 1.6; }
+.ws-kind { display: inline-flex; align-items: center; height: 20px; padding: 0 var(--sp-2); border-radius: var(--r-xs); font-size: var(--fs-xs); font-weight: var(--fw-medium); background: var(--bg-muted); color: var(--text-label); }
+.ws-kind-team { background: var(--text-primary); color: var(--bg-surface); }
+.ws-role { display: inline-flex; align-items: center; height: 20px; padding: 0 var(--sp-2); border-radius: var(--r-xs); font-size: var(--fs-xs); border: 1px solid var(--border-default); color: var(--text-label); }
+
+/* ── 设置 · 账号 · 工作空间 ── */
+.ws-done { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: var(--status-success-bg); color: var(--status-success-text); font-size: var(--fs-body); }
+.ws-done svg { flex: none; }
+.ws-done .btn-link { margin-left: auto; color: var(--status-success-strong); font-size: var(--fs-caption); }
+.ws-join { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ws-join-row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+.ws-join-input { width: 236px; height: 32px; padding: 0 var(--sp-3); border: 1px solid var(--border-default); border-radius: var(--radius-input); background: var(--bg-surface); color: var(--text-primary); font-size: var(--fs-body); letter-spacing: 0.06em; }
+.ws-join-input:focus { outline: none; border-color: var(--border-hover); box-shadow: var(--focus-glow); }
+.ws-join-input::placeholder { color: var(--text-secondary); letter-spacing: 0.06em; }
+.ws-upgrade { display: flex; flex-direction: column; gap: var(--sp-3); }
+.ws-upgrade .field { margin: 0; }
+
+/* 后果清单（升级、退出团队、移出成员、邀请码说明共用）：短行、每条一个圆点；is-check 用勾，is-warn 是不可撤回那一条 */
+.team-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.team-lines li { position: relative; padding-left: 18px; font-size: var(--fs-body); line-height: 1.65; color: var(--text-label); }
+.team-lines li::before { content: ""; position: absolute; left: 4px; top: 0.72em; width: 5px; height: 5px; border-radius: var(--r-full); background: var(--border-strong); }
+.team-lines.is-check li::before { content: "✓"; left: 0; top: 0; width: auto; height: auto; background: none; color: var(--status-success-text); font-weight: var(--fw-strong); font-size: var(--fs-caption); }
+.team-lines.is-check li.is-warn { color: var(--status-warning-text); }
+.team-lines.is-check li.is-warn::before { content: "!"; color: var(--status-warning-text); }
+.team-ack { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); font-size: var(--fs-body); color: var(--text-primary); }
+
+/* ── 设置 · 团队 ── */
+.set-page.set-team { max-width: 980px; }
+.team-page { display: flex; flex-direction: column; gap: var(--sp-5); }
+.team-head { display: flex; flex-direction: column; gap: var(--sp-4); }
+.team-head .ws-mark { width: 44px; height: 44px; border-radius: var(--r-lg); }
+.team-head .ws-mark svg { width: 22px; height: 22px; }
+.team-head .ws-plate-name b { font-size: var(--fs-xl); }
+.team-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-3); margin: 0; }
+.team-stats > div { padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); background: var(--bg-main); border: 1px solid var(--border-subtle); }
+.team-stats dt { font-size: var(--fs-caption); color: var(--text-secondary); }
+.team-stats dd { margin: 2px 0 0; font-size: var(--fs-lg); font-weight: var(--fw-strong); color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.team-privacy { display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); background: var(--status-info-bg); color: var(--status-info-text); font-size: var(--fs-body); line-height: 1.6; }
+.team-privacy svg { flex: none; margin-top: 3px; }
+.team-check { margin: 0; font-size: var(--fs-caption); }
+
+.team-sec-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); margin-bottom: var(--sp-3); }
+.team-sec-head .section-h { display: flex; align-items: center; gap: var(--sp-2); margin: 0; }
+.team-sec-head .btn-primary { flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.team-count { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; padding: 0 6px; border-radius: var(--r-full); background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-xs); font-weight: var(--fw-medium); font-variant-numeric: tabular-nums; }
+.team-sub { margin-top: 4px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.team-admin .team-privacy { margin-bottom: var(--sp-4); }
+.team-ok { margin: 0 0 var(--sp-3); font-size: var(--fs-body); color: var(--status-success-text); }
+.team-empty { margin: 0; font-size: var(--fs-body); }
+.team-sub-sec { margin-top: var(--sp-5); padding-top: var(--sp-4); border-top: 1px solid var(--border-subtle); }
+.team-h3 { margin: 0 0 var(--sp-3); font-size: var(--fs-subtitle); font-weight: var(--fw-strong); color: var(--text-primary); }
+
+/* 成员表：成员（头像 + 姓名 + 打码手机号）| 角色（行内下拉）| 席位 | 电脑 | 状态 | 操作 */
+.tm-table-wrap { overflow-x: auto; }
+.tm-table { font-size: var(--fs-body); }
+.tm-table th { font-size: var(--fs-caption); }
+.tm-table td { padding: 10px 8px; }
+.tm-table tr.is-off td { color: var(--text-secondary); }
+.tm-who { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.tm-avatar { flex: none; width: 28px; height: 28px; border-radius: var(--r-full); display: inline-grid; place-items: center; background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-caption); font-weight: var(--fw-strong); }
+.tm-who-text { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; }
+.tm-who-text small { flex-basis: 100%; font-size: var(--fs-xs); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.tm-who-text .tag-this { margin-left: 0; background: var(--text-primary); color: var(--bg-surface); }
+.tm-seat { display: inline-block; min-width: 20px; color: var(--text-secondary); }
+.tm-seat.on { color: var(--status-success-text); font-weight: var(--fw-medium); }
+.btn-link.tm-inline { font-size: var(--fs-caption); color: var(--text-label); }
+.tm-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tm-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.tm-status-ok .sdot { background: var(--status-success-solid); }
+.tm-status-off .sdot { background: var(--border-strong); }
+.tm-status-bad .sdot { background: var(--status-danger-solid); }
+.tm-acts { text-align: right; white-space: nowrap; }
+.tm-acts > * + * { margin-left: var(--sp-2); }
+.tm-off { margin-top: var(--sp-3); font-size: var(--fs-caption); }
+.tm-off .tm-table { margin-top: var(--sp-2); }
+
+/* 邀请列表 */
+.tm-invites { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.tm-invites li { display: flex; align-items: center; gap: var(--sp-3); min-height: 44px; padding: 6px 0; border-bottom: 1px solid var(--border-subtle); font-size: var(--fs-body); }
+.tm-invites li:last-child { border-bottom: 0; }
+.tm-invites .muted { margin-left: auto; font-size: var(--fs-caption); }
+.tm-inv-main { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.tm-invites.is-done li { min-height: 36px; color: var(--text-secondary); }
+
+/* 电脑待确认、成员新电脑 */
+.team-pending-lead { margin: 0 0 var(--sp-3); font-size: var(--fs-body); color: var(--text-label); }
+.team-policy { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
+.team-policy .setting-hint { margin: 0; max-width: 640px; color: var(--text-secondary); font-size: var(--fs-caption); line-height: 1.6; }
+
+/* 邀请弹窗：角色两列卡片；邀请码大字等宽 */
+.invite-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+.invite-form .field { margin: 0; }
+.role-pick { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+.role-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border-default); border-radius: var(--r-md); background: var(--bg-surface); text-align: left; color: var(--text-primary); }
+.role-opt b { font-size: var(--fs-body); }
+.role-opt small { font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.5; }
+.role-opt:hover { border-color: var(--border-hover); }
+.role-opt.on { border-color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--text-primary); }
+.invite-issued { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); }
+.invite-code { align-self: stretch; padding: var(--sp-4); border-radius: var(--r-md); background: var(--bg-main); border: 1px dashed var(--border-dashed); text-align: center; font-family: var(--font-mono); font-size: var(--fs-xl); font-weight: var(--fw-strong); letter-spacing: 0.12em; color: var(--text-primary); user-select: all; }
+.invite-issued .btn-ghost { display: inline-flex; align-items: center; gap: 6px; }
+.invite-issued .modal-actions { align-self: stretch; }
+
+/* 退出团队：一行说明 + 按钮；确认框两步 */
+.leave-row .btn-danger { margin-top: var(--sp-2); }
+.leave-step { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--sp-3); padding: var(--sp-3) 0; }
+.leave-step + .leave-step { border-top: 1px solid var(--border-subtle); }
+.leave-step b { font-size: var(--fs-body); color: var(--text-primary); }
+.leave-step p { margin: 4px 0; font-size: var(--fs-body); }
+.leave-step .team-lines { margin-top: var(--sp-2); }
+.leave-no { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-full); background: var(--bg-muted); color: var(--text-label); font-size: var(--fs-xs); font-weight: var(--fw-strong); }
+
+/* 团队共享处的提示（这台电脑还不能接收团队共享事项）：非阻塞，淡橙底 */
+.share-note { margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--status-warning-bg-soft); color: var(--status-warning-text); font-size: var(--fs-caption); line-height: 1.6; }
+
+/* 个人空间：备份与安全页底的技术支持折叠 */
+.help-support { margin-top: var(--sp-4); font-size: var(--fs-caption); }
+.help-support > summary { color: var(--text-secondary); }
+.help-support[open] > summary { margin-bottom: var(--sp-3); }
+
+/* ── 切换过渡层（正在打开…）：盖住整窗，内核换档案后整页重载 ── */
+.ws-switching { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; background: var(--bg-overlay); }
+.ws-switching-card { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); width: min(380px, 90vw); padding: var(--sp-6) var(--sp-5); border-radius: var(--r-lg); background: var(--bg-elevated); box-shadow: var(--shadow-lg); text-align: center; }
+.ws-switching-title { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-strong); color: var(--text-primary); }
+.ws-switching-note { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+
+/* ── 侧栏：用户卡第二行是当前工作空间；菜单里的工作空间一组 ── */
+.sidebar-foot small.user-ws { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-switch-ico { flex: none; display: inline-flex; color: var(--text-secondary); }
+.menu-group-label { padding: 6px var(--sp-2) 2px; font-size: var(--fs-xs); color: var(--text-secondary); }
+.ws-menu { display: flex; flex-direction: column; }
+.ws-menu-row { min-height: 40px; }
+.ws-menu-row:disabled { cursor: default; }
+.ws-menu-row.is-current { background: var(--bg-active); }
+.ws-menu-text { display: flex; flex-direction: column; justify-content: center; }
+.ws-menu-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-body); }
+.ws-menu-text small { font-size: var(--fs-xs); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-menu-check { flex: none; display: inline-flex; color: var(--text-primary); }

@@ -6,7 +6,7 @@
 /* ── 三句要点 ── */
 .dfm-points { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); }
 .dfm-points li { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto; column-gap: var(--sp-3); row-gap: 2px; align-items: center; }
-.dfm-points b { font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); }
+.dfm-points b { font-size: var(--fs-md); font-weight: var(--fw-strong); color: var(--text-primary); }
 .dfm-points li > span:last-child { grid-column: 2; font-size: var(--fs-caption); line-height: 1.6; color: var(--text-label); }
 .dfm-point-ico { grid-row: 1 / span 2; align-self: start; width: 36px; height: 36px; border-radius: var(--r-md); display: grid; place-items: center; background: var(--bg-muted); color: var(--text-label); }
 .dfm-point-ico svg { width: 18px; height: 18px; }
@@ -15,7 +15,7 @@
 /* ── 去向图 ── */
 .dfm { display: flex; flex-direction: column; gap: var(--sp-3); }
 .dfm-zones { display: grid; grid-template-columns: minmax(0, 1fr) 104px minmax(0, 1fr) 104px minmax(0, 1fr); }
-.dfm-zone { font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.04em; color: var(--text-secondary); padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
+.dfm-zone { font-size: var(--fs-xs); font-weight: var(--fw-medium); letter-spacing: 0.04em; color: var(--text-secondary); padding-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
 .dfm-zone-in { color: var(--status-success-text); border-bottom: 2px solid var(--status-success-border); }
 .dfm-zone-out { grid-column: 3 / 6; border-bottom-style: dashed; border-bottom-color: var(--border-default); }
 .dfm-map { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr) 104px minmax(0, 1fr) 104px minmax(0, 1fr); align-items: stretch; }
@@ -26,11 +26,11 @@
 .dfm-station-ico svg { width: 18px; height: 18px; }
 .dfm-local .dfm-station-ico { background: var(--status-success-bg); color: var(--status-success-text); }
 .dfm-model .dfm-station-ico { background: var(--accent-bg); color: var(--accent-text); }
-.dfm-station-title { display: block; font-size: var(--fs-md); font-weight: 600; line-height: 1.3; }
+.dfm-station-title { display: block; font-size: var(--fs-md); font-weight: var(--fw-strong); line-height: 1.3; }
 .dfm-station-sub { display: block; font-size: var(--fs-xs); color: var(--text-secondary); }
 .dfm-group { display: flex; flex-direction: column; gap: 6px; }
 .dfm-group + .dfm-group { padding-top: var(--sp-3); border-top: 1px solid var(--border-subtle); }
-.dfm-group-label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.02em; color: var(--text-label); }
+.dfm-group-label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: var(--fw-strong); letter-spacing: 0.02em; color: var(--text-label); }
 .dfm-group-label::before { content: ""; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--border-strong); }
 .dfm-tone-keep .dfm-group-label { color: var(--status-success-text); }
 .dfm-tone-keep .dfm-group-label::before { background: var(--status-success-solid); }
@@ -45,12 +45,12 @@
 /* 站间连线：一句“经过的是什么” + 带箭头的细线 */
 .dfm-link { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 0 var(--sp-1); }
 .dfm-link-label { font-size: var(--fs-xs); line-height: 1.35; color: var(--text-label); text-align: center; white-space: nowrap; }
-.dfm-link-line { position: relative; width: 100%; height: 0; border-top: 1.5px dashed var(--border-hover); }
+.dfm-link-line { position: relative; width: 100%; height: 0; border-top: 1px dashed var(--border-hover); }
 .dfm-link-line::after { content: ""; position: absolute; right: -1px; top: -5px; border: 4px solid transparent; border-left: 6px solid var(--border-hover); border-right: 0; }
 /* 示例请求 */
 .dfm-sample { padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-card); background: var(--bg-subtle); }
-.dfm-sample-cap { margin-bottom: 6px; font-size: var(--fs-caption); font-weight: 500; color: var(--text-label); }
-.dfm-sample-cap span { font-weight: 400; color: var(--text-secondary); }
+.dfm-sample-cap { margin-bottom: 6px; font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--text-label); }
+.dfm-sample-cap span { font-weight: var(--fw-regular); color: var(--text-secondary); }
 
 /* ── 可展开的说明行：先一句摘要，点开看细节 ── */
 .dfx-folds { border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); }
@@ -61,7 +61,7 @@
 .dfx-fold[open] > summary::before { transform: rotate(90deg); }
 .dfx-fold > summary:hover { background: var(--bg-hover-soft); }
 .dfx-fold > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
-.dfx-fold-title { flex: none; font-weight: 500; }
+.dfx-fold-title { flex: none; font-weight: var(--fw-medium); }
 .dfx-fold-sum { min-width: 0; font-size: var(--fs-caption); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dfx-fold[open] .dfx-fold-sum { visibility: hidden; }
 .dfx-fold-body { margin: 0; padding: 0 var(--sp-4) var(--sp-4) calc(var(--sp-4) + 22px); }
@@ -76,7 +76,7 @@
 .dfm-authz-card { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--bg-surface); }
 .dfm-authz-row { display: flex; align-items: flex-start; gap: var(--sp-4); }
 .dfm-authz-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.dfm-authz-main b { font-weight: 500; }
+.dfm-authz-main b { font-weight: var(--fw-medium); }
 .dfm-authz-main span { font-size: var(--fs-caption); line-height: 1.6; color: var(--text-secondary); }
 .dfm-authz-row .switch { margin-top: 2px; }
 .dfm-authz-ref { display: flex; align-items: center; gap: var(--sp-2); }
@@ -89,7 +89,7 @@
   .dfm-zones { display: none; }
   .dfm-map { grid-template-columns: 1fr; }
   .dfm-link { flex-direction: row; padding: var(--sp-2) 0; }
-  .dfm-link-line { width: 0; height: 24px; border-top: 0; border-left: 1.5px dashed var(--border-hover); order: -1; }
+  .dfm-link-line { width: 0; height: 24px; border-top: 0; border-left: 1px dashed var(--border-hover); order: -1; }
   .dfm-link-line::after { right: auto; left: -5px; top: auto; bottom: -1px; border: 4px solid transparent; border-top: 6px solid var(--border-hover); border-bottom: 0; }
   .dfx-fold .dfx-list li { grid-template-columns: 1fr; gap: 2px; }
   .dfx-fold-sum { display: none; }

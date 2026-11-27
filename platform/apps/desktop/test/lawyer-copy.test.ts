@@ -16,7 +16,9 @@ const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 /** 管理员层与技术支持（允许出现管理员说法与原始技术名）。 */
 // Boards.tsx 不排除：事项页“概览”（MatterBoard）就在这个文件里，律师看得到（复核 Q1-25）
 // 第 44 批：用量面板律师在“账号与团队”也看得到——FirmUsage.tsx 改为只放过 CpAuditPanel（操作记录，管理员层）之后的部分
-const ADMIN_FILES = new Set(["pages/RecallEval.tsx", "components/MembersAdmin.tsx", "lib/firm-usage.ts"]);
+// 第 72 批（impl-U2）：设置 · 团队里的管理员部分（成员、席位、邀请、新电脑策略）与它的文案库是管理员层，“席位”是管理员看的说法；
+// 律师层（团队页首、升级 / 加入 / 退出团队）在 components/TeamSpace.tsx、lib/workspace.ts，照常受这条门禁约束（说“AI 使用名额”）
+const ADMIN_FILES = new Set(["pages/RecallEval.tsx", "components/MembersAdmin.tsx", "lib/firm-usage.ts", "components/TeamAdmin.tsx", "lib/team-admin.ts"]);
 /** 同一文件里管理员层从哪里开始（之后的内容不查）。 */
 const ADMIN_FROM: Record<string, string> = { "pages/Connections.tsx": "function AdminTab(", "pages/FirmUsage.tsx": "export function CpAuditPanel(" };
 /** 同一文件里律师层从哪里开始（之前的内容是管理员详情）。 */

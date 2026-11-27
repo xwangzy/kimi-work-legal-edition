@@ -225,7 +225,8 @@ test("区域 2：删除收进“…”菜单并二次确认；回答下方常驻
   assert.match(chat, /重新回答/);
   assert.doesNotMatch(chat, /className="chat-notice"/, "顶部提示条去掉，只留输入框下面一条");
   assert.doesNotMatch(chat, /一般法律问题直接问/, "顶部那句重复提示去掉了");
-  assert.match(chat, /<div className="chat-scope-note">\s*\{CHAT_SCOPE_NOTE\}/);
+  // 第 72 批（D-303）：适用范围说明移到输入框外、框下一行（ChatScopeNote），“了解更多”改浮层
+  assert.match(chat, /<p className="composer-foot chat-scope-note" ref=\{ref\}>\s*<span>\{CHAT_SCOPE_NOTE\}<\/span>/);
   assert.match(src("styles.css"), /\.msg\.msg-assistant \{ max-width: 100%; width: 100%; \}/);
 });
 
@@ -284,8 +285,10 @@ test("第二轮 区域 8：运行中不能提交复核；摘要第一行给含�
 test("第三轮 区域 2：生成中发送键换成“停止”（同一位置）、Esc 也能停；停止后气泡下标“已停止”、可重新回答；光标跟在字后；新问答生成中就进入自己的会话", () => {
   const chat = src("pages/Chat.tsx");
   // 按钮切换：busy 时是停止，否则是发送
-  assert.match(chat, /\{busy \? \(\s*<button className="send-stop" onClick=\{stop\} aria-label="停止生成" title="停止生成（Esc）">/);
-  assert.match(chat, /\) : \(\s*<button className="send" disabled=\{!text\.trim\(\)\} onClick=\{\(\) => void send\(\)\} aria-label="发送"/);
+  // 第 72 批（D-303）：发送 / 停止改由共用 SendButton 画——同一个 36px 圆键，生成中换方块图标，悬停“停止（Esc）”
+  assert.match(chat, /send=\{<SendButton busy=\{busy\} onStop=\{stop\} disabled=\{!text\.trim\(\)\} onSend=\{\(\) => void send\(\)\} \/>\}/);
+  const frame = src("components/ComposerFrame.tsx");
+  assert.match(frame, /if \(busy && onStop\)\s*return \(\s*<button type="button" className="send send-stop" onClick=\{onStop\} aria-label="停止生成" title="停止（Esc）">/);
   assert.match(chat, /if \(id\) void api\.chatStop\(id\)/);
   // Esc：只在生成中挂监听
   assert.match(chat, /if \(!busy\) return;\s*const onKey = \(e: KeyboardEvent\) => \{\s*if \(e\.key === "Escape" && !e\.isComposing\) stop\(\);/);

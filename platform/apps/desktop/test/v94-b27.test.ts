@@ -166,7 +166,8 @@ test("视觉统一：一级框内边距一档、框内子块一档；样式表�
   }
   for (const sel of [".ss-sec", ".send-summary"]) assert.equal(new RegExp(`^\\${sel} \\{[^}]*padding: ([^;]+);`, "m").exec(css)?.[1], "var(--sp-3)", sel);
   assert.ok(!/font-weight:\s*(700|bold)/.test(css));
-  assert.match(css, /^b, strong \{ font-weight: 600; \}/m);
+  // 第 72 批：字重改令牌（D-300 第 3 条），--fw-strong 即 600
+  assert.match(css, /^b, strong \{ font-weight: var\(--fw-strong\); \}/m);
 });
 
 test("首页近期期限也列 cancel_pending 的有效提醒（复核 Q8-04，原先滤掉）", async () => {

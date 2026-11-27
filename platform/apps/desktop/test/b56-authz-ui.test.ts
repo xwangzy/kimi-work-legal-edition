@@ -53,7 +53,7 @@ test("界面接线：逐项编辑器下要求出处；开始前确认两条路�
   assert.match(conn, /<AuthorizationOverview \/>/);
   assert.match(conn, /用常用条款预填/);
   assert.match(conn, /每个事项仍需你确认一次/);
-  assert.match(src("pages/Chat.tsx"), /这里用于一般法律问题；涉及具体案件的材料与当事人，请在事项里发起。/);
+  assert.match(src("pages/Chat.tsx"), /一般法律问题在这里问；涉及具体案件的材料与当事人，请在事项里发起/ /* 第 72 批（D-303）：移到框外一行、压成一句 */);
   // 样式：不超过 600 字重、字号只用令牌
   const css = src("styles-authz.css");
   assert.ok(!/font-weight:\s*(700|800|900|bold)/.test(css));

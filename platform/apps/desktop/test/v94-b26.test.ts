@@ -132,9 +132,13 @@ test("核对码三义归一（U2-06/07）：本所识别码 / 本机核对码（
 
 test("单机使用（U2-08）：没加入律所时不显示离所交接、本机核对码；环境自检不自动展开、可复制给 IT（U2-11）", () => {
   const c = read("../src/pages/Connections.tsx");
-  assert.match(c, /const inFirm = !!firm\?\.firm\?\.name \|\| cp\?\.mode === "control_plane";/);
-  assert.match(c, /\{inFirm \? \(\s*<>\s*<TeamShare admin=\{admin\} \/>\s*<DepartedMembers \/>/);
-  assert.match(c, /未加入律所。要和同事共享事项，请向律所管理员要邀请码。/);
+  // 第 72 批（A3 D1）：不再按“有没有律所名 / 是否连着云端”推断（个人工作室也有名称、也连着云端）——团队共享、离所交接、本机核对码
+  // 只在团队空间的“团队”页签里（workspaceFeatures(kind).teamTab）；个人空间、开发形态整页不出现
+  assert.doesNotMatch(c, /const inFirm =/);
+  assert.match(c, /\{tab === "team" &&\s*\(!ws\.ready \? null : f\.teamTab \? \(\s*<TeamTab ws=\{ws\} mySafety=\{mySafety\} \/>/);
+  const team = c.slice(c.indexOf("function TeamTab("), c.indexOf("function BackupTab("));
+  assert.match(team, /<TeamShare admin=\{f\.teamRead\} note=\{note\} \/>\s*<DepartedMembers \/>\s*<Offboarding \/>/);
+  assert.match(team, /<SafetyCode code=\{mySafety\} \/>/);
   assert.doesNotMatch(c, /open=\{envWarn > 0\}/);
   assert.match(c, /复制给 IT 的说明/);
 });
@@ -155,7 +159,7 @@ test("文书版式（U2-01/02/03）：标签 | 控件网格、一种分段控件
   const wp = read("../src/components/WritingPrefs.tsx");
   assert.match(wp, /className="settings-grid"/, "写作偏好同一张网格");
   assert.match(wp, /disabled=\{busy \|\| !dirty\}/, "没改动时保存不可点");
-  assert.match(css, /\.device-k \{ color: var\(--text-primary\); font-weight: 500; \}/);
+  assert.match(css, /\.device-k \{ color: var\(--text-primary\); font-weight: var\(--fw-medium\); \}/); // 第 72 批：字重改令牌（D-300 第 3 条）
 });
 
 test("两步确认（U2-21）：放弃按钮缺省“取消”；说明超过 20 字改成对话框；危险操作的确认按钮红色实心", async () => {
@@ -175,7 +179,7 @@ test("开始前确认回显（U2-23）：任务说明原文两行以内；材料
   assert.equal(materialsLine(2), "2 份", "老调用点没给文件名时只写份数");
   const rs = read("../src/components/RunSheet.tsx");
   assert.match(rs, /<div className="sheet-goal" title=\{value\.goal\.trim\(\)\}>/);
-  assert.match(read("../src/pages/Home.tsx"), /prepareStart\(matter, v, \{ docNames: docs\.filter/);
+  assert.match(read("../src/pages/Home.tsx"), /prepareStart\(matter, v, \{ docNames: list\.filter/ /* 第 72 批：就地归属的事项材料现取（list） */);
 });
 
 test("律所策略与资料来源（U2-17/39）：合伙人看得懂的说法；联网检索首层一句、完整规则放“了解更多”", () => {

@@ -100,7 +100,7 @@ export function dropLoginRequired(keysDir: string): void {
 
 /** 控制面答复里表示“要重新登录”的错误代码。 */
 // 第 71 批（V45，D-298）：session_signed_out = 本人在别的电脑上选了让这台退出登录；session_device_limit = 会话第一次绑这台电脑时同时登录已满
-export const SESSION_PROBLEM_CODES: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch", "session_signed_out", "session_signed_out_admin", "session_signed_out_support", "session_device_limit"]);
+export const SESSION_PROBLEM_CODES: ReadonlySet<string> = new Set(["session_required", "session_invalid", "session_expired", "account_disabled", "session_member_mismatch", "session_signed_out", "session_signed_out_admin", "session_signed_out_support", "session_device_limit", "session_team_removed", "session_team_left"]);
 
 /**
  * 模型调用被法律模型网关**确定地**按身份拒绝 → 本机“要重新登录”的原因代码（第 47 批，第 46 批遗留 11）。
@@ -256,6 +256,11 @@ export function accountErrorText(code: string, fallback?: string): string {
       return "客服协助让这台电脑退出了登录。资料都还在这台电脑上，重新登录即可继续";
     case "session_device_limit":
       return "这个账号同时登录的电脑已达上限：请重新登录，并选一台电脑退出登录";
+    // 第 72 批（U-1）：被移出 / 退出团队——团队空间不能再用，其他工作空间不受影响
+    case "session_team_removed":
+      return "你已被移出这个团队：团队空间不能再用了，你的其他工作空间不受影响";
+    case "session_team_left":
+      return "你已退出这个团队：团队空间不能再用了，你的其他工作空间不受影响";
     case "signout_not_allowed":
       return "这次登录不能让别的电脑退出：请重新登录后再试";
     case "signout_self":

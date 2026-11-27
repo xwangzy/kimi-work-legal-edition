@@ -31,7 +31,7 @@
 /* 卡头 */
 .oc-head { padding: var(--sp-4) var(--sp-5) var(--sp-3); }
 .oc-title-row { display: flex; align-items: center; gap: var(--sp-2); }
-.oc-title { margin: 0; flex: 1; min-width: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text-strong); }
+.oc-title { margin: 0; flex: 1; min-width: 0; font-size: var(--fs-md); font-weight: var(--fw-strong); color: var(--text-strong); }
 .oc-head-tools { flex: none; display: flex; align-items: center; gap: 2px; margin-right: -8px; }
 .card-confirm.oc .oc-why { margin: var(--sp-1) 0 0; font-size: var(--fs-caption); line-height: 1.6; color: var(--text-secondary); }
 .oc-overview { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); margin-top: var(--sp-3); }
@@ -48,7 +48,7 @@ button.oc-ov:hover { text-decoration: underline; text-underline-offset: 3px; tex
 .oc-legend { list-style: none; margin: var(--sp-3) 0 0; padding: var(--sp-3) 0 0; border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); }
 .oc-legend li { display: flex; align-items: baseline; gap: 6px; }
 .oc-legend .oc-dot { transform: translateY(-2px); }
-.oc-legend b { flex: none; font-weight: 500; color: var(--text-primary); min-width: 6em; }
+.oc-legend b { flex: none; font-weight: var(--fw-medium); color: var(--text-primary); min-width: 6em; }
 
 /* 论点列表 */
 /* styles.css 的旧 .outline-list 是 flex + 12px 间距：这里改回普通块，行距只由行内边距决定 */
@@ -61,8 +61,8 @@ button.oc-ov:hover { text-decoration: underline; text-underline-offset: 3px; tex
 .oc-arg-head { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; column-gap: var(--sp-3); align-items: start; }
 .oc-n { width: 22px; height: 22px; margin-top: 1px; border-radius: var(--r-full); display: grid; place-items: center; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-secondary); background: var(--bg-muted); }
 .oc-claim { min-width: 0; }
-.oc-claim-text { margin: 0; font-size: var(--fs-body); line-height: 1.65; font-weight: 500; color: var(--text-strong); }
-.oc-edited { display: inline-block; margin-left: var(--sp-2); padding: 0 6px; border-radius: var(--r-xs); font-size: var(--fs-xs); line-height: 18px; font-weight: 400; color: var(--text-secondary); background: var(--bg-muted); vertical-align: 1px; cursor: help; }
+.oc-claim-text { margin: 0; font-size: var(--fs-body); line-height: 1.65; font-weight: var(--fw-medium); color: var(--text-strong); }
+.oc-edited { display: inline-block; margin-left: var(--sp-2); padding: 0 6px; border-radius: var(--r-xs); font-size: var(--fs-xs); line-height: 18px; font-weight: var(--fw-regular); color: var(--text-secondary); background: var(--bg-muted); vertical-align: 1px; cursor: help; }
 .oc-edit textarea { width: 100%; font-size: var(--fs-body); line-height: 1.6; resize: vertical; }
 .oc-edit-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-top: 2px; font-size: var(--fs-xs); color: var(--text-label); }
 .oc-edit-foot .oc-tool { height: 24px; }
@@ -76,7 +76,7 @@ button.oc-ov:hover { text-decoration: underline; text-underline-offset: 3px; tex
 .oc-verdict-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .oc-verdict-issue { flex: 1; min-width: 0; color: var(--text-primary); }
 .oc-verdict.tone-ok .oc-verdict-issue { color: var(--status-success-text); }
-.oc-verdict.tone-risk .oc-verdict-issue { color: var(--status-danger-text); font-weight: 500; }
+.oc-verdict.tone-risk .oc-verdict-issue { color: var(--status-danger-text); font-weight: var(--fw-medium); }
 .oc-verdict-more { color: var(--text-secondary); }
 .oc-verdict-risk { flex: none; margin-left: var(--sp-2); font-size: var(--fs-xs); color: var(--text-secondary); white-space: nowrap; }
 .oc-verdict-risk.is-none { color: var(--text-label); }
@@ -93,21 +93,21 @@ button.oc-ov:hover { text-decoration: underline; text-underline-offset: 3px; tex
 .oc-seg-btn { height: 26px; padding: 0 10px; border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; font-size: var(--fs-caption); color: var(--text-secondary); white-space: nowrap; cursor: pointer; transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard); }
 .oc-seg-btn:hover:not([aria-checked="true"]):not(:disabled) { color: var(--text-primary); }
 /* 第二轮评审：选中态要一眼可见，但不和黑色主按钮抢——白底 + 深灰描边 + 加粗 */
-.oc-seg-btn[aria-checked="true"] { background: var(--bg-surface); border-color: var(--border-strong); color: var(--text-primary); font-weight: 600; }
+.oc-seg-btn[aria-checked="true"] { background: var(--bg-surface); border-color: var(--border-strong); color: var(--text-primary); font-weight: var(--fw-strong); }
 .oc-seg-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-glow); }
 .oc-seg-btn:disabled { cursor: default; opacity: 0.6; }
 .oc-arg.open .oc-seg { background: var(--bg-hover); }
 
 /* “不用”整行降到最浅一级文字色并划掉（门禁 S8B-06：opacity < 1 只给禁用态，这里用颜色） */
-.oc-dropped .oc-claim-text { color: var(--text-label); text-decoration: line-through; text-decoration-color: var(--text-label); font-weight: 400; }
+.oc-dropped .oc-claim-text { color: var(--text-label); text-decoration: line-through; text-decoration-color: var(--text-label); font-weight: var(--fw-regular); }
 .oc-dropped .oc-n { color: var(--text-label); background: transparent; box-shadow: inset 0 0 0 1px var(--border-subtle); }
 
 /* 展开的细节：法律依据 → 事实依据 → 风险提示 */
 .oc-detail { margin: var(--sp-3) 0 var(--sp-1) 34px; display: flex; flex-direction: column; gap: var(--sp-4); }
 .oc-sec { min-width: 0; }
 .oc-sec + .oc-sec { padding-top: var(--sp-4); border-top: 1px solid var(--border-subtle); }
-.oc-sec-h { display: flex; align-items: baseline; gap: var(--sp-2); margin: 0 0 var(--sp-2); font-size: var(--fs-xs); font-weight: 500; color: var(--text-secondary); letter-spacing: 0.02em; }
-.oc-sec-n { font-weight: 400; color: var(--text-label); font-variant-numeric: tabular-nums; }
+.oc-sec-h { display: flex; align-items: baseline; gap: var(--sp-2); margin: 0 0 var(--sp-2); font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--text-secondary); letter-spacing: 0.02em; }
+.oc-sec-n { font-weight: var(--fw-regular); color: var(--text-label); font-variant-numeric: tabular-nums; }
 .oc-k { flex: none; margin-right: var(--sp-2); font-size: var(--fs-xs); color: var(--text-label); }
 
 .oc-laws.outline-basis { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -115,8 +115,8 @@ button.oc-ov:hover { text-decoration: underline; text-underline-offset: 3px; tex
 .oc-law-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3); min-height: 28px; }
 .oc-check { display: inline-flex; align-items: flex-start; gap: var(--sp-2); cursor: pointer; }
 .oc-check input { flex: none; margin: 3px 0 0; }
-.oc-law { font-size: var(--fs-body); font-weight: 500; color: var(--text-strong); }
-.oc-law-item.outline-dropped .oc-law { color: var(--text-label); text-decoration: line-through; font-weight: 400; }
+.oc-law { font-size: var(--fs-body); font-weight: var(--fw-medium); color: var(--text-strong); }
+.oc-law-item.outline-dropped .oc-law { color: var(--text-label); text-decoration: line-through; font-weight: var(--fw-regular); }
 .oc-state { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); color: var(--text-secondary); cursor: help; }
 .oc-state.tone-ok { color: var(--status-success-text); }
 .oc-state.tone-warn { color: var(--status-warning-text); }

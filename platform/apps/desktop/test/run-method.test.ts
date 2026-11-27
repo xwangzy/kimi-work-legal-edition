@@ -16,11 +16,14 @@ test("方法与版本：方法模板任务写名称与版本；快照是字符�
   assert.equal(methodLine(null, {}, {}), null);
 });
 
-test("输入框：可发送时提示快捷键；不能发送时按钮变灰并写原因；问答页写明回车发送（余项续复核 RC-B-15）", () => {
+test("输入框：两页都是回车发送、Shift + 回车换行，快捷键写在发送键悬停提示里、不常驻成灰字；不能发送时按钮变灰、原因在读屏标签（第 72 批改）", () => {
+  // 第 72 批（拍板第 23 项）：Work 与 Chat 同一手势，常驻的“⌘ + Enter 发送 / 回车发送 · Shift + 回车换行”删掉
   const src = readFileSync(fileURLToPath(new URL("../src/components/Composer.tsx", import.meta.url)), "utf8");
-  assert.match(src, /canSend \? `\$\{SEND_KEY\} 发送` : blockedReason/);
-  assert.match(src, /"先选事项" : "先写任务目标"/);
-  assert.match(readFileSync(fileURLToPath(new URL("../src/pages/Chat.tsx", import.meta.url)), "utf8"), /回车发送 · Shift \+ 回车换行/);
+  assert.match(src, /send=\{<SendButton disabled=\{!canSend\} onSend=\{send\} blockedReason=\{blockedReason\} \/>\}/);
+  assert.doesNotMatch(src, /SEND_KEY|send-hint/);
+  const frame = readFileSync(fileURLToPath(new URL("../src/components/ComposerFrame.tsx", import.meta.url)), "utf8");
+  assert.match(frame, /export const SEND_TITLE = "发送（回车；Shift \+ 回车换行）";/);
+  assert.doesNotMatch(readFileSync(fileURLToPath(new URL("../src/pages/Chat.tsx", import.meta.url)), "utf8"), /回车发送 · Shift \+ 回车换行/);
   const css = readFileSync(fileURLToPath(new URL("../src/styles.css", import.meta.url)), "utf8");
   assert.match(css, /\.send:disabled \{/);
 });

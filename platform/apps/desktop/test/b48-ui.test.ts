@@ -63,7 +63,8 @@ test("品牌：侧栏与登录页用官方 Logomark（路径不带颜色，颜�
   assert.match(css, /\.logo-mark-dot \{ fill: var\(--brand-mark-dot\); \}/);
   // 第 55 批：版本名是黑底小标（与首页中央字标的小标同一图形），不再是灰色小字
   assert.match(css, /\.brand-tag-bg \{ fill: var\(--btn-primary\); \}/);
-  assert.match(css, /\.brand-tag-text \{ fill: var\(--btn-primary-text\); \}/);
+  // 第 72 批：小标字重走令牌（D-300 第 3 条，样式门禁禁字面字重）
+  assert.match(css, /\.brand-tag-text \{ fill: var\(--btn-primary-text\); font-weight: var\(--fw-strong\); \}/);
   const tokens = readFileSync(new URL("../../../packages/design-tokens/src/tokens.css", import.meta.url), "utf8");
   assert.match(tokens, /--p-kimi-blue: #1783ff;/);
 });

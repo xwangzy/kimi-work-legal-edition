@@ -44,7 +44,9 @@ test("Ctrl / ⌘ + F 打开搜索、Ctrl / ⌘ + K 新建任务（第 47 批对�
   assert.match(app, /if \(!mod \|\| e\.shiftKey \|\| e\.altKey \|\| onboardingRef\.current\) return;/);
   assert.match(app, /if \(key === "k"\) \{[\s\S]{0,260}nav\(newTaskHref\("\/", r\)\)/);
   assert.match(app, /\} else if \(key === "f"\) \{\s*e\.preventDefault\(\);\s*setSearching\(true\);/);
-  assert.match(app, /\/Mac\/i\.test\(navigator\.platform\) \? e\.metaKey && !e\.ctrlKey/);
+  // 第 72 批（D-300 第 4 条）：平台改读 preload（lib/platform.ts），不再用已弃用的 navigator.platform
+  assert.match(app, /const mod = isModKey\(e\);/);
+  assert.match(readFileSync(fileURLToPath(new URL("../src/lib/platform.ts", import.meta.url)), "utf8"), /return p === "darwin" \? e\.metaKey && !e\.ctrlKey : e\.ctrlKey && !e\.metaKey;/);
   assert.match(app, /<SearchPalette/);
   assert.match(readFileSync(fileURLToPath(new URL("../src/components/Sidebar.tsx", import.meta.url)), "utf8"), /kwl:search/);
   const pal = readFileSync(fileURLToPath(new URL("../src/components/SearchPalette.tsx", import.meta.url)), "utf8");

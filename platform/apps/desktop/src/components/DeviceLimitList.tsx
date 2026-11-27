@@ -8,9 +8,13 @@
  * - 都用刚完成的这次登录（10 分钟内、一次性票据），不必再输一次密码或再收一次验证码；不自动替换（D-297/D-298 的理由见研究目录 04）。
  * 云端不支持让出（旧云端）时退回只能移除；连移除也不支持（网页会话等）时只列出，说明去哪里处理。
  * 开通页（新电脑）、重新登录页（这台已登记的电脑、换账号）共用。
+ *
+ * 第 72 批（D-303）重做信息架构：页头一句结论“已在 N 台电脑登录”+ 一句怎么办；账号身份（姓名 · 打码手机号）缩成页头下一行小字；
+ * 设备卡：名称一行 + 状态，元信息一行“8 分钟前用过 · 0.10.0”（不截断、不堆登记时间）；整卡可点，选中用描边 + 勾；
+ * 主按钮短而确定“退出所选电脑并继续”（电脑名只在列表里出现一次）；按钮上方一行后果；“改为移除”是唯一的次要链接。
  */
 import { useMemo, useState } from "react";
-import { defaultRemovalPick, defaultSignoutPick, deviceChoiceLine, deviceState, type AccountDevice } from "../lib/account.ts";
+import { defaultRemovalPick, defaultSignoutPick, deviceChoiceLine, deviceMetaShort, deviceState, type AccountDevice } from "../lib/account.ts";
 import { Icon } from "./Icons.tsx";
 
 type Mode = "signout" | "remove";
@@ -68,38 +72,24 @@ export function DeviceLimitList(p: {
   // 只有一台可选时不要单选：整行作为“将要退出登录 / 移除的那台”展示，按钮写出它的名字
   const choices = actionable ? p.devices.filter((d) => deviceState(d) !== "revoked" && selectable(d)) : [];
   const single = choices.length === 1 ? choices[0]! : null;
-  const singleName = single ? deviceChoiceLine(single, now).title : "";
   const chosen = single ?? p.devices.find((d) => d.device_id === pick) ?? null;
-  const title = registeredCap ? "登记的电脑已达上限" : mode === "signout" ? "同时登录的电脑已达上限" : removeOnly ? "电脑数已达上限" : "移除一台电脑";
-  const whoPart = who ? (
-    <>
-      <b>{who}</b>
-    </>
-  ) : (
-    "这个账号"
-  );
-  const lead = registeredCap ? (
-    <>{whoPart}登记过的电脑已经很多了。移除一台不再使用的，就能在这台电脑上继续。</>
-  ) : mode === "signout" ? (
-    <>
-      {whoPart}最多同时在 {n} 台电脑上登录。{single ? "让下面这台退出登录" : "选一台让它退出登录（已预选最久没用的一台）"}，就能在这台电脑上继续。
-    </>
-  ) : removeOnly ? (
-    <>
-      {whoPart}最多可用 {n} 台电脑。{single ? "移除下面这台" : "选一台不再使用的移除"}，就能在这台电脑上继续。
-    </>
-  ) : (
-    <>电脑丢了、转手或不再使用时才需要移除。{single ? "" : "选一台移除，就能在这台电脑上继续。"}</>
-  );
+  // 第 72 批（D-303）：标题是一句结论，说明只说怎么办；账号身份不再加粗插进正文，缩成标题下一行小字
+  const title = registeredCap ? "登记的电脑已达上限" : mode === "signout" ? `已在 ${n} 台电脑登录` : removeOnly ? `已有 ${n} 台电脑` : "移除一台电脑";
+  const lead = registeredCap
+    ? "移除一台不再使用的电脑，就能在这台电脑继续。"
+    : mode === "signout"
+      ? "退出其中一台，就能在这台电脑继续。"
+      : removeOnly
+        ? "移除一台不再使用的电脑，就能在这台电脑继续。"
+        : "电脑丢了、转手或不再使用时才需要移除。";
   const consequence =
     mode === "signout"
-      ? `${chosen ? `「${deviceChoiceLine(chosen, now).title}」` : "那台电脑"}会立即退出登录、停止使用 AI；上面的事项和成果都还在，之后在那台电脑上重新登录即可。`
+      ? "那台电脑上的事项和成果都还在，重新登录即可。"
       : chosen?.session === "active" || (chosen && deviceState(chosen) === "signed_in")
         ? "那台电脑正在使用：移除后，那台电脑上的这个账号立即停用，不能撤销；资料仍加密留在那台电脑上。"
         : "移除后，那台电脑上的这个账号随即停用，不能撤销；资料仍加密留在那台电脑上。";
-  // 第三轮（独立评分区域 9）：多台时按钮也写出选中那台的名字（随选中项变）
-  const targetName = chosen ? deviceChoiceLine(chosen, now).title : singleName;
-  const submitText = busy ? (mode === "signout" ? "正在让它退出…" : "正在移除…") : mode === "signout" ? (targetName ? `让「${targetName}」退出登录，在这台继续` : "让它退出登录，在这台继续") : targetName ? `移除「${targetName}」并继续` : "移除并继续";
+  // 主按钮固定短文案（D-303）：不拼电脑名，长度不随名字变、不折行；选中的那台就在列表里
+  const submitText = busy ? (mode === "signout" ? "正在退出那台电脑…" : "正在移除…") : mode === "signout" ? "退出所选电脑并继续" : "移除所选电脑并继续";
   // 这台电脑排在最前（标明“你在这里”），其余按云端给的顺序
   const rows = p.devices.filter((d) => deviceState(d) !== "revoked").sort((x, y) => Number(y.device_id === thisDevice) - Number(x.device_id === thisDevice));
   return (
@@ -110,6 +100,7 @@ export function DeviceLimitList(p: {
           返回
         </button>
       </div>
+      {who && <p className="auth-who">{who}</p>}
       <p className="auth-lead">{lead}</p>
       <div className="auth-devices" role={actionable && !single ? "radiogroup" : "list"} aria-label="这个账号的电脑">
         {rows.map((d) => {
@@ -118,7 +109,8 @@ export function DeviceLimitList(p: {
           const isThis = d.device_id === thisDevice;
           const can = actionable && selectable(d);
           const on = pick === d.device_id;
-          const badge = isThis ? <span className="auth-device-tag is-this">这台电脑</span> : st === "signed_in" ? <span className="auth-device-live">登录中</span> : <span className="auth-device-tag">已退出登录</span>;
+          // 第 72 批：列出的大都是登录中的电脑，不再每行挂“登录中”；只标例外（这台电脑、已退出登录），登录中用一个小绿点
+          const badge = isThis ? <span className="auth-device-tag is-this">这台电脑</span> : st === "signed_in" ? <span className="auth-device-dot" title="登录中" aria-label="登录中" /> : <span className="auth-device-tag">已退出登录</span>;
           const body = (
             <>
               <span className="auth-device-icon" aria-hidden="true">
@@ -129,18 +121,23 @@ export function DeviceLimitList(p: {
                   {l.title}
                   {badge}
                 </b>
-                <span>{isThis ? "你正在这台电脑上登录" : l.meta}</span>
+                <span>{isThis ? "你正在这台电脑上登录" : deviceMetaShort(d, now)}</span>
               </span>
-              {actionable && !single && <span className="auth-device-radio" aria-hidden="true" />}
+              {actionable && can && (
+                <span className={`auth-device-check${on || (single && single.device_id === d.device_id) ? " on" : ""}`} aria-hidden="true">
+                  <Icon.check />
+                </span>
+              )}
             </>
           );
           const cls = `auth-device-row${isThis ? " is-this" : ""}${single && single.device_id === d.device_id ? ` is-target${mode === "remove" ? " is-danger" : ""}` : ""}${!single && on ? " on" : ""}${can ? "" : " off"}`;
-          return actionable && !single ? (
+          // 这台电脑：不可选，也不画成禁用的按钮（禁用按钮整体变淡，像“坏了”）——虚线框的普通行，写“你正在这台电脑上登录”
+          return actionable && !single && !isThis ? (
             <button key={d.device_id} type="button" role="radio" aria-checked={on} aria-disabled={!can} className={cls} onClick={() => can && setPick(d.device_id)} disabled={busy || !can}>
               {body}
             </button>
           ) : (
-            <div key={d.device_id} role="listitem" className={cls}>
+            <div key={d.device_id} role={actionable && !single ? "presentation" : "listitem"} className={cls}>
               {body}
             </div>
           );
@@ -155,7 +152,7 @@ export function DeviceLimitList(p: {
         <>
           {/* 后果放在按钮上方，做决定前读到（第 69 批第二轮独立评审）；移除不可逆，用琥珀色风险提示（第 71 批，独立评分区域 9-2） */}
           {mode === "signout" ? (
-            <p className="auth-fine">{consequence}</p>
+            <p className="auth-fine auth-consequence">{consequence}</p>
           ) : (
             <p className="auth-warn" role="note">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -170,7 +167,7 @@ export function DeviceLimitList(p: {
           </button>
           {mode === "signout" && p.canUnbind && removable.length > 0 && (
             <button type="button" className="btn-link auth-alt-link" onClick={() => switchMode("remove")} disabled={busy}>
-              电脑丢了或不再使用？改为移除
+              电脑丢了或不用了？改为移除
             </button>
           )}
         </>
@@ -180,3 +177,4 @@ export function DeviceLimitList(p: {
     </div>
   );
 }
+

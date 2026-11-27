@@ -19,8 +19,8 @@ export function offboardingRow(it: OffboardingItem): { state: string; action: "a
 /** 清单顶上的一句话。 */
 export function offboardingSummary(r: { matters: OffboardingItem[]; pending: number } | null): string {
   if (!r) return "";
-  if (r.matters.length === 0) return "你没有负责的事项，不用交接。请告诉管理员，在“设置 · 管理 · 成员”里把你移出。";
-  if (r.pending === 0) return "都交接好了。请把导出的归档交给律所，再告诉管理员在“设置 · 管理 · 成员”里把你移出。";
+  if (r.matters.length === 0) return "你没有负责的事项，不用交接。可以直接退出团队，或请管理员在“设置 · 团队”里把你移出。";
+  if (r.pending === 0) return "都交接好了。请把导出的归档交给律所，再退出团队，或请管理员在“设置 · 团队”里把你移出。";
   return `你负责的 ${r.matters.length} 个事项里，还有 ${r.pending} 个没有交接好。`;
 }
 
@@ -29,7 +29,7 @@ export function removalLines(p: { name: string | null; active_devices: number; m
   const who = p.name ?? "这位同事";
   const lines = [
     `移出后，${who} 的${p.active_devices > 1 ? ` ${p.active_devices} 台` : ""}电脑不能再同步、不能用 AI、不能导出，并空出 1 个账号名额。他电脑上已有的事项仍在那台电脑上，无法远程删除——请按律所制度收回电脑；已经复制或导出的文件也收不回来。`,
-    `请先确认 ${who} 已在自己电脑的“设置 · 账号与团队 · 离所交接”里交接完：只在他电脑上的事项要导出归档交给律所；这台电脑看不到他自己的事项。`,
+    `请先确认 ${who} 已在自己电脑的“设置 · 团队 · 离所交接”里交接完：只在他电脑上的事项要导出归档交给律所；这台电脑看不到他自己的事项。`,
   ];
   if (p.matters.length > 0) {
     lines.push(

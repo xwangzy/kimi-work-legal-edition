@@ -19,7 +19,7 @@
 @keyframes kwl-halo { 0% { transform: scale(1); opacity: 0.45; } 70%, 100% { transform: scale(2.6); opacity: 0; } }
 
 /* ── 按钮内的小圆环：短等待（保存、下载、签发、开始） ── */
-.kwl-spin { display: inline-block; flex: none; width: 12px; height: 12px; border-radius: var(--r-full); border: 1.5px solid currentColor; border-right-color: transparent; vertical-align: -1px; animation: kwl-rotate 0.7s linear infinite; }
+.kwl-spin { display: inline-block; flex: none; width: 12px; height: 12px; border-radius: var(--r-full); border: 2px solid currentColor; border-right-color: transparent; vertical-align: -1px; animation: kwl-rotate 0.7s linear infinite; }
 @keyframes kwl-rotate { to { transform: rotate(360deg); } }
 .btn-busy { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 
@@ -38,7 +38,7 @@
 .kwl-wait { display: flex; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); background: var(--bg-subtle); color: var(--text-secondary); font-size: var(--fs-body); }
 .kwl-wait .kwl-pulse { margin-top: 7px; }
 .kwl-wait-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.kwl-wait-title { color: var(--text-primary); font-weight: 500; }
+.kwl-wait-title { color: var(--text-primary); font-weight: var(--fw-medium); }
 .kwl-wait-hint { font-size: var(--fs-caption); line-height: 1.55; }
 .kwl-wait-time { flex: none; font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: var(--text-secondary); padding-top: 2px; }
 .kwl-wait.inline { padding: 0; background: transparent; }
@@ -49,7 +49,7 @@
 .kwl-mark-loader { position: relative; display: inline-block; width: 44px; height: 44px; }
 .kwl-mark-loader .logo-mark { width: 44px; height: 44px; }
 .kwl-mark-loader .logo-mark-dot { transform-box: fill-box; transform-origin: 40% 60%; animation: kwl-breathe 1.8s ease-in-out infinite; }
-.kwl-mark-halo { position: absolute; left: 31px; top: 8.5px; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--brand-mark-dot); animation: kwl-halo 1.8s var(--ease-out-soft) infinite; }
+.kwl-mark-halo { position: absolute; left: 31px; top: 8px; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--brand-mark-dot); animation: kwl-halo 1.8s var(--ease-out-soft) infinite; }
 
 /* ── 进入动画：新出现的步骤、卡片轻轻浮起（不改布局，只动位移与透明度） ── */
 .kwl-enter { animation: kwl-rise var(--motion-slow) var(--ease-out-soft) both; }

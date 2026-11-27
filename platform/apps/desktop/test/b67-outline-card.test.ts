@@ -186,7 +186,7 @@ test("第二轮：各行写明与其他论点共用几条，卡顶 = 底部 = �
   assert.match(card, /className="oc-el-fact" title=\{backing\}/, "要件下面就地写事实原文，悬停看全文");
   assert.match(card, /助手没有列出但书或对方可能的反驳——请自行判断。/, "没有风险提示也要写明");
   const css = src("styles-outline.css");
-  assert.match(css, /\.oc-seg-btn\[aria-checked="true"\] \{[^}]*border-color: var\(--border-strong\);[^}]*font-weight: 600;/);
+  assert.match(css, /\.oc-seg-btn\[aria-checked="true"\] \{[^}]*border-color: var\(--border-strong\);[^}]*font-weight: var\(--fw-strong\);/); // 第 72 批：字重改令牌（D-300 第 3 条，样式门禁禁字面字重）
   assert.match(css, /\.oc-dropped \.oc-claim-text \{ color: var\(--text-label\); text-decoration: line-through;/, "“不用”整行变浅并划掉（不用 opacity：门禁只给禁用态）");
   assert.match(css, /\.card-question\.has-outline-lock \.q-option\.on[^{]*\{ border: 1px solid var\(--text-primary\);/);
   assert.match(css, /\.card-question\.has-outline-lock \.cc-actions \{ flex-direction: row-reverse;/);

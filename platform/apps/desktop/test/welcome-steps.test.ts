@@ -32,10 +32,12 @@ test("复核 R15B-25：顶上一句话按缺的那一步说；重新生成恢复
   assert.equal(welcomeSteps({ packages_created: 1, packages_verified: 1, ...ok })[1]!.done, true, "旧内核没有这一项：按试过任意一份");
 });
 
-test("激活与入组批准后落到向导；从备份恢复后直接进首页；缺恢复包的提醒“去完成”回到向导", () => {
+test("激活与入组批准后落到 Work 首页（第 72 批 D-302）；从备份恢复后直接进首页；缺恢复包的提醒“去完成”回到备份页", () => {
   const src = readFileSync(fileURLToPath(new URL("../src/pages/Activate.tsx", import.meta.url)), "utf8");
-  // 第 44 批：登录或注册后的创始开通、直接输入开通码、邀请入组批准、账号新电脑核对本所识别码后打开——四处都落到向导
-  assert.equal((src.match(/"#\/welcome"\);/g) ?? []).length, 4, "开通（登录注册 / 开通码）与入组批准（邀请 / 账号新电脑）四处");
+  // 第 72 批（D-302 第 1 条）：登录注册开通、网页交接、开通码、邀请入组批准、账号新电脑核对后打开——五处都落到首页，不再落到备份页
+  assert.match(src, /export const LANDING = "#\/";/);
+  assert.equal((src.match(/waitForActivated\((stuck|opened), LANDING\);|window\.location\.hash = LANDING;/g) ?? []).length, 5, "五处落点");
+  assert.doesNotMatch(src, /"#\/welcome"/);
   assert.match(src, /void waitForActivated\(onStuck\);/, "从备份恢复不进向导");
   assert.equal(recoveryReminder({ packages_created: 0 })!.kind, "package");
   assert.equal(recoveryReminder({ packages_created: 1, configured: false })!.kind, "folder");

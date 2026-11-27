@@ -32,8 +32,8 @@
 
 /* 分组标题：小号次要字 + 数量 */
 .rm-bucket { margin-bottom: var(--sp-6); }
-.rm-bucket-h { display: flex; align-items: baseline; gap: 6px; margin: 0 0 var(--sp-1); font-size: var(--fs-caption); font-weight: 500; color: var(--text-secondary); }
-.rm-bucket-n { font-weight: 400; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.rm-bucket-h { display: flex; align-items: baseline; gap: 6px; margin: 0 0 var(--sp-1); font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--text-secondary); }
+.rm-bucket-n { font-weight: var(--fw-regular); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .rm-bucket-past .rm-bucket-h { color: var(--status-danger-text); }
 
 /* 日程行：日历叶 | 标题 + 胶囊 / 事项 · 提醒安排 | 悬停出现的操作。行间一条细线，不套盒子 */
@@ -45,12 +45,12 @@
 /* 日历叶：固定宽度、三行、永不折行 */
 .rm-leaf { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 64px; padding: 5px 0 6px; border-radius: var(--r-sm); background: var(--bg-muted); line-height: 1.15; white-space: nowrap; }
 .rm-leaf-m { font-size: var(--fs-meta); color: var(--text-secondary); font-variant-numeric: tabular-nums; }
-.rm-leaf-d { margin: 1px 0; font-size: var(--fs-xl); font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.rm-leaf-d { margin: 1px 0; font-size: var(--fs-xl); font-weight: var(--fw-strong); color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .rm-leaf-w { font-size: var(--fs-meta); color: var(--text-secondary); }
 
 .rm-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .rm-line1 { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-.rm-title { min-width: 0; font-size: var(--fs-md); font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rm-title { min-width: 0; font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rm-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; font-size: var(--fs-caption); color: var(--text-secondary); }
 .rm-meta > * + *::before { content: "·"; margin: 0 var(--sp-2); color: var(--border-strong); }
 .rm-matter { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-caption); color: var(--text-label); }
@@ -58,11 +58,11 @@
 .rm-meta .btn-link + .btn-link::before, .rm-meta span > .btn-link::before { content: none; }
 
 /* 倒计时胶囊：紧跟标题；3 天内红、7 天内橙、其余中性灰；已过的只写字 */
-.rm-pill { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 var(--sp-2); border-radius: var(--r-full); font-size: var(--fs-meta); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rm-pill { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 var(--sp-2); border-radius: var(--r-full); font-size: var(--fs-meta); font-weight: var(--fw-medium); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .rm-pill-red { background: var(--status-danger-bg); color: var(--status-danger-text); }
 .rm-pill-orange { background: var(--status-warning-bg); color: var(--status-warning-text); }
 .rm-pill-neutral { background: var(--bg-muted); color: var(--text-label); }
-.rm-pill-past { background: transparent; padding: 0; color: var(--text-secondary); font-weight: 400; }
+.rm-pill-past { background: transparent; padding: 0; color: var(--text-secondary); font-weight: var(--fw-regular); }
 
 /* 新到的：标题前一个圆点（读屏另有文字） */
 .rm-new-dot { flex: none; width: 7px; height: 7px; border-radius: var(--r-full); background: var(--accent); }
@@ -80,14 +80,14 @@
 }
 
 /* 小月历 */
-.rm-cal-h { margin: 0 0 var(--sp-2); font-size: var(--fs-caption); font-weight: 500; color: var(--text-strong); }
+.rm-cal-h { margin: 0 0 var(--sp-2); font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--text-strong); }
 .rm-cal-grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.rm-cal-grid th { padding: 0 0 4px; font-size: var(--fs-meta); font-weight: 400; color: var(--text-secondary); text-align: center; }
+.rm-cal-grid th { padding: 0 0 4px; font-size: var(--fs-meta); font-weight: var(--fw-regular); color: var(--text-secondary); text-align: center; }
 .rm-cal-grid td { padding: 1px 0; text-align: center; }
 .rm-cal-day { position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--r-full); background: transparent; font: inherit; font-size: var(--fs-caption); color: var(--text-strong); font-variant-numeric: tabular-nums; }
 .rm-cal-day.is-past { color: var(--text-secondary); }
-.rm-cal-day.is-today { box-shadow: inset 0 0 0 1.5px var(--text-primary); color: var(--text-primary); font-weight: 600; }
-button.rm-cal-day { cursor: pointer; font-weight: 500; color: var(--text-primary); }
+.rm-cal-day.is-today { box-shadow: inset 0 0 0 2px var(--text-primary); color: var(--text-primary); font-weight: var(--fw-strong); }
+button.rm-cal-day { cursor: pointer; font-weight: var(--fw-medium); color: var(--text-primary); }
 button.rm-cal-day:hover { background: var(--bg-hover); }
 button.rm-cal-day:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 .rm-cal-day.is-focus { background: var(--accent-bg); }
@@ -107,7 +107,7 @@ button.rm-cal-day:focus-visible { outline: 2px solid var(--focus-ring); outline-
 .rm-empty { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); padding: var(--sp-6) 0; text-align: center; }
 .rm-empty-icon { width: 44px; height: 44px; border-radius: var(--r-md); display: grid; place-items: center; background: var(--bg-muted); color: var(--text-label); }
 .rm-empty-icon svg { width: 22px; height: 22px; }
-.rm-empty-title { font-weight: 600; }
+.rm-empty-title { font-weight: var(--fw-strong); }
 .rm-empty-text { margin: 0; font-size: var(--fs-body); color: var(--text-secondary); }
 .rm-empty-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
 
@@ -116,7 +116,7 @@ button.rm-cal-day:focus-visible { outline: 2px solid var(--focus-ring); outline-
 .rm-fold > summary { cursor: pointer; margin: var(--sp-2) 0; font-size: var(--fs-caption); color: var(--text-secondary); }
 .rm-fold > summary:hover { color: var(--text-primary); }
 .rm-fold .rm-list { margin-top: var(--sp-2); }
-.rm-fold .rm-title, .rm-fold .rm-leaf-d { font-weight: 500; color: var(--text-strong); }
+.rm-fold .rm-title, .rm-fold .rm-leaf-d { font-weight: var(--fw-medium); color: var(--text-strong); }
 
 /* 窄窗口：页首按钮换行 */
 @media (max-width: 900px) {

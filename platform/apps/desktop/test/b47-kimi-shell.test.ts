@@ -145,8 +145,9 @@ test("快捷键与新建事项请求：⌘K 新建任务并聚焦输入框，Cha
 
 test("输入框：运行模式在“+”右边；任务模型只读显示（不是按钮、不是下拉）；问答模型选择走内核 chat.models / chatSendWithModel", () => {
   const c = src("components/Composer.tsx");
-  const bar = c.slice(c.indexOf('className="composer-bar"'), c.indexOf('className="composer-context"'));
-  assert.ok(bar.indexOf("tool-plus") < bar.indexOf("<ModeSelector") && bar.indexOf("<ModeSelector") < bar.indexOf('className="spacer"'), "运行模式在左侧");
+  // 第 72 批：底栏改由共用外壳 ComposerFrame 画（左槽 left、右槽 right），“+”与运行模式在左槽
+  const bar = c.slice(c.indexOf("<ComposerFrame"), c.indexOf('className="composer-context"'));
+  assert.ok(bar.indexOf("tool-plus") < bar.indexOf("<ModeSelector") && bar.indexOf("<ModeSelector") < bar.indexOf("right={"), "运行模式在左侧");
   assert.match(bar, /<span className="model-label" title="[^"]+">K3<\/span>/);
   assert.doesNotMatch(bar, /<button[^>]*model-label/);
   const chat = src("pages/Chat.tsx");

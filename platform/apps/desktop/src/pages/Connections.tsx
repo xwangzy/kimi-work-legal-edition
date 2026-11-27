@@ -7,6 +7,10 @@
  * 第 68 批：团队用量与上限（本所额度、按成员、律所上限、个人额度）只在云端控制台管理，客户端“管理”不再有“用量与上限”。
  * 旧地址（#/connections/device、/sources、/data、/policy）由 App.tsx 的 settingsTabOf 落到新分区。
  * “管理”是否显示只是界面安排，授权一律由内核按角色逐个方法核验。
+ * 第 72 批（V46，D-305 第 5 条，A3 D1）：按工作空间类型显示功能（useWorkspace：内核状态 workspace_kind，替换原来的 inFirm / isAdmin 推断）——
+ * 个人空间没有“团队”“管理”，设置 · 账号里有“升级为团队”“加入团队”，技术支持收进“备份与安全”页底；团队空间多一个“团队”页签
+ * （所有成员：团队名称、我的角色、名额与用量、团队共享、离所交接、退出团队；管理员另有成员、邀请、电脑待确认、新电脑策略），
+ * “管理”只留团队策略、操作记录、技术支持、代号准确度（管理员与合伙人）。
  */
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
@@ -26,6 +30,10 @@ import { AccountSection } from "../components/AccountPanel.tsx";
 import { SupportUpload } from "../components/SupportUpload.tsx";
 import { TeamShare } from "../components/TeamShare.tsx";
 import { MembersAdmin } from "../components/MembersAdmin.tsx";
+import { TeamAdmin } from "../components/TeamAdmin.tsx";
+import { LeaveTeam, TeamHeader, WorkspaceSection } from "../components/TeamSpace.tsx";
+import { useWorkspace, type WorkspaceState } from "../components/WorkspaceSwitch.tsx";
+import { shareIssuerNote } from "../lib/workspace.ts";
 import { BackupTrack } from "../components/RecoveryBackup.tsx";
 import { AuthorizationOverview } from "../components/AuthorizationOverview.tsx";
 import { Offboarding } from "../components/Offboarding.tsx";
@@ -40,13 +48,14 @@ import { BusyLabel, KimiPulse } from "../components/Loading.tsx";
 import { connectionReport } from "../lib/connection-check.ts";
 import { supportChecks, supportSummary } from "../lib/support-status.ts";
 
-const ADMIN_ROLES = new Set(["firm_admin", "partner"]);
-
-/** 律师版六页的名称（V16 IA-1；第 47 批加“套餐与用量”）；错误提示、恢复包横幅里的“设置 → …”写的是这些名字。 */
-export const SETTINGS_TAB_LABELS: Record<Exclude<SettingsTab, "admin">, string> = {
+/**
+ * 律师版六页的名称（V16 IA-1；第 47 批加“套餐与用量”）；错误提示、恢复包横幅里的“设置 → …”写的是这些名字。
+ * 第 72 批：“账号与团队”改“账号”（团队的事在团队空间自己的“团队”页签里）。
+ */
+export const SETTINGS_TAB_LABELS: Record<Exclude<SettingsTab, "admin" | "team">, string> = {
   general: "通用",
   writing: "文书与写作",
-  account: "账号与团队",
+  account: "账号",
   usage: "套餐与用量",
   backup: "备份与安全",
   visibility: "数据去向",
@@ -79,11 +88,12 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
   };
   useEffect(load, []);
   const gate = status?.egress_gate ?? null;
-  const isAdmin = ADMIN_ROLES.has(String(status?.member_role ?? ""));
-  const tabs: [SettingsTab, string][] = [
-    ...(Object.entries(SETTINGS_TAB_LABELS) as [SettingsTab, string][]),
-    ...(isAdmin ? ([["admin", "管理"]] as [SettingsTab, string][]) : []),
-  ];
+  // 第 72 批（A3 D1）：按工作空间类型与角色显示，不再按证书角色推断（个人账号的证书角色也是管理员）
+  const ws = useWorkspace();
+  const f = ws.features;
+  const isAdmin = f.adminTab;
+  const tabs: [SettingsTab, string][] = (Object.entries(SETTINGS_TAB_LABELS) as [SettingsTab, string][]).flatMap((t) => (t[0] === "account" && f.teamTab ? [t, ["team", "团队"] as [SettingsTab, string]] : [t]));
+  if (isAdmin) tabs.push(["admin", "管理"]);
   return (
     <main className="main">
       {/* 第 55 批：表单类页签（通用、文书与写作、账号、备份）把正文收窄，见 styles-settings.css */}
@@ -99,10 +109,18 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
         {err && <div className="banner banner-red">{err}</div>}
         {tab === "general" && <GeneralTab version={displayVersion(status?.app_version, status?.version)} />}
         {tab === "writing" && <WritingTab />}
-        {tab === "account" && <AccountTab mySafety={mySafety} admin={isAdmin} />}
+        {tab === "account" && <AccountTab ws={ws} />}
+        {tab === "team" &&
+          (!ws.ready ? null : f.teamTab ? (
+            <TeamTab ws={ws} mySafety={mySafety} />
+          ) : (
+            <div className="banner banner-gray">“团队”只在团队空间里有。个人工作室可以在“设置 · 账号”里升级为团队，或用邀请码加入团队。</div>
+          ))}
         {/* 套餐与用量（第 66 批 V40 P0-5；第 68 批）：只给当前登录者本人的用量；团队用量与上限在云端控制台，管理员在页底看到一句提示 */}
         {tab === "usage" && <PersonalUsage admin={isAdmin} />}
-        {tab === "backup" && <BackupTab caps={caps} gate={gate} />}
+        {tab === "backup" && (
+          <BackupTab caps={caps} gate={gate} support={f.supportInBackup ? <DiagnosticsTab caps={caps} gate={gate} devices={devices} unresolved={unresolved} onReconciled={load} im={im} recovery={recovery} /> : null} supportOpen={unresolved.length > 0} />
+        )}
         {tab === "visibility" && (
           <>
             <VisibilityTab gate={gate} im={im} recovery={recovery} firm={status?.firm_name ?? null} syncOn={!!status?.sync_configured} />
@@ -111,10 +129,10 @@ export function ConnectionsPage({ tab }: { tab: SettingsTab }) {
           </>
         )}
         {tab === "admin" &&
-          (status === null ? null : isAdmin ? (
-            <AdminTab caps={caps} gate={gate} devices={devices} unresolved={unresolved} onReconciled={load} im={im} recovery={recovery} />
+          (!ws.ready ? null : isAdmin ? (
+            <AdminTab caps={caps} gate={gate} devices={devices} unresolved={unresolved} onReconciled={load} im={im} recovery={recovery} legacyMembers={ws.kind === null} />
           ) : (
-            <div className="banner banner-gray">“管理”只对律所管理员与合伙人开放。</div>
+            <div className="banner banner-gray">{ws.kind === "personal" ? "个人工作室没有“管理”：技术支持在“设置 · 备份与安全”页底。" : "“管理”只对团队管理员与合伙人开放。"}</div>
           ))}
       </div>
     </main>
@@ -689,10 +707,10 @@ function SourcesTab({ gate, lawdb, im, onLawdbChanged }: { gate: any; lawdb: any
 }
 
 /**
- * 账号与团队（V16 IA-1、IA-8；原“本机与安全”里的一块）：本所、Kimi 账号、团队共享、离所同事、离所交接（用量在“套餐与用量”）。
+ * 账号（V16 IA-1、IA-8；第 72 批起团队的事移到“团队”页签）：工作空间（升级为团队、加入团队）、账号与电脑（用量在“套餐与用量”）。
  * “使用许可”正常时不显示，到期或尚未取得时才出一行；本机核对码收进底部“更多”。
  */
-function AccountTab({ mySafety, admin }: { mySafety: string | null; admin: boolean }) {
+function AccountTab({ ws }: { ws: WorkspaceState }) {
   const [cp, setCp] = useState<ControlPlaneStatus | null>(null);
   const [firm, setFirm] = useState<any | null>(null);
   useEffect(() => {
@@ -702,25 +720,29 @@ function AccountTab({ mySafety, admin }: { mySafety: string | null; admin: boole
       .then(setCp)
       .catch(() => setCp(null));
   }, []);
-  const inFirm = !!firm?.firm?.name || cp?.mode === "control_plane";
   const licenseProblem = cp && cp.mode === "control_plane" && (cp.exit_mode || cp.license?.state !== "valid" || cp.policy?.source !== "control_plane");
+  // 第 72 批：云端支持工作空间时“所属”由上面的“工作空间”一节说清（本所识别码移到“团队”页签）；旧云端照旧显示
+  const legacyFirm = !ws.list?.supported && firm;
   return (
     <div className="device">
+      <WorkspaceSection ws={ws} />
       {(firm || cp?.mode === "control_plane") && (
       <section className="panel device-section" aria-labelledby="sec-team">
         <h2 className="section-h h-section" id="sec-team">账号</h2>
-        {firm && (
+        {legacyFirm && (
           <SettingRow label="所属">
             {/* 第 55 批：名称与姓名放进同一个 span——右栏是纵向排列，原来“ · 姓名”这段文字单独落成一行，开头是一个孤零零的“·” */}
             <span>
               <b>{firm.firm?.name}</b>
               {firm.member?.name ? ` · ${firm.member.name}` : ""}
             </span>
-            <details className="quiet-details">
-              {/* 第 26 批（评审 U2-06）：“核对码”原来指三样东西——本所的这串改叫“本所识别码” */}
-              <summary>本所识别码</summary>
-              <span className="mono">{firm.firm_check_code}</span>：与管理员“设置 · 管理 · 成员”页底部的数字一致，说明你加入的是本所。
-            </details>
+            {ws.kind !== "personal" && (
+              <details className="quiet-details">
+                {/* 第 26 批（评审 U2-06）：“核对码”原来指三样东西——本所的这串改叫“本所识别码” */}
+                <summary>本所识别码</summary>
+                <span className="mono">{firm.firm_check_code}</span>：与管理员“设置 · 团队”页里的数字一致，说明你加入的是本所。
+              </details>
+            )}
           </SettingRow>
         )}
         {licenseProblem && (
@@ -738,24 +760,44 @@ function AccountTab({ mySafety, admin }: { mySafety: string | null; admin: boole
         {cp && cp.mode === "control_plane" && <AccountSection firm={firm?.firm?.name ?? null} />}
       </section>
       )}
-      <section className="panel device-section" aria-labelledby="sec-share">
-        <h2 className="section-h h-section" id="sec-share">团队与离所</h2>
-        {/* 单机使用（没加入律所）时不显示离所交接、本机核对码这类只在律所里才有的事（第 26 批，评审 U2-08） */}
-        {inFirm ? (
-          <>
-            <TeamShare admin={admin} />
-            <DepartedMembers />
-            <Offboarding />
-            <details className="quiet-details account-more">
-              <summary>更多：本机核对码（管理员来电核对时用）</summary>
-              <div>管理员核对你这台电脑时（例如换电脑后重新登记），会请你在电话里读这串数字。</div>
-              <SafetyCode code={mySafety} />
-              <div className="muted">请在电话里或当面逐组读给对方；对方屏幕上的一致才确认。不要截图转发。</div>
-            </details>
-          </>
-        ) : (
-          <p className="muted">未加入律所。要和同事共享事项，请向律所管理员要邀请码。</p>
+    </div>
+  );
+}
+
+/**
+ * 团队（第 72 批，D-305 第 5 条）：只在团队空间显示。页首（团队名称、我的角色、名额与用量、本所识别码）→ 成员与邀请（管理员可改、合伙人只读）→
+ * 协作与离开（团队共享、离所同事、离所交接、退出团队、本机核对码）。单机使用（个人空间、开发形态）时整页不出现（第 26 批 U2-08 的意图不变）。
+ */
+function TeamTab({ ws, mySafety }: { ws: WorkspaceState; mySafety: string | null }) {
+  const [firm, setFirm] = useState<any | null>(null);
+  useEffect(() => {
+    api.kernelStatus().then((st: any) => setFirm(st?.activation ?? null)).catch(() => setFirm(null));
+  }, []);
+  const f = ws.features;
+  const note = shareIssuerNote(ws.issuer, ws.kind, f.teamAdmin);
+  return (
+    <div className="device team-page">
+      <TeamHeader ws={ws}>
+        {firm?.firm_check_code && (
+          <details className="quiet-details team-check">
+            <summary>本所识别码</summary>
+            <span className="mono">{firm.firm_check_code}</span>：同事加入后，他的这一页应显示同一串数字，说明加入的是同一个团队。
+          </details>
         )}
+      </TeamHeader>
+      {f.teamRead && <TeamAdmin canEdit={f.teamAdmin} myAid={ws.list?.current?.aid ?? null} />}
+      <section className="panel device-section" aria-labelledby="sec-share">
+        <h2 className="section-h h-section" id="sec-share">协作与离开</h2>
+        <TeamShare admin={f.teamRead} note={note} />
+        <DepartedMembers />
+        <Offboarding />
+        <LeaveTeam ws={ws} />
+        <details className="quiet-details account-more">
+          <summary>更多：本机核对码（管理员来电核对时用）</summary>
+          <div>管理员核对你这台电脑时（例如换电脑后重新登记），会请你在电话里读这串数字。</div>
+          <SafetyCode code={mySafety} />
+          <div className="muted">请在电话里或当面逐组读给对方；对方屏幕上的一致才确认。不要截图转发。</div>
+        </details>
       </section>
     </div>
   );
@@ -765,7 +807,7 @@ function AccountTab({ mySafety, admin }: { mySafety: string | null; admin: boole
  * 备份与安全（V16 IA-1；原“本机与安全”）：先给两句结论（案卷安全、备份），再是“备份与恢复 / 遇到问题”两块；
  * 只给 IT 看的内容（电脑环境自检、诊断包里有什么）一律折叠。律师层不出现研发用语。
  */
-function BackupTab({ caps, gate }: { caps: Capabilities | null; gate: any }) {
+function BackupTab({ caps, gate, support = null, supportOpen = false }: { caps: Capabilities | null; gate: any; support?: ReactNode; supportOpen?: boolean }) {
   const [envMsg, setEnvMsg] = useState("");
   const [env, setEnv] = useState<Record<string, any> | null>(null);
   const [cp, setCp] = useState<ControlPlaneStatus | null>(null);
@@ -820,6 +862,13 @@ function BackupTab({ caps, gate }: { caps: Capabilities | null; gate: any }) {
               </button>
             </div>
             {envMsg && <div className="muted">{envMsg}</div>}
+          </details>
+        )}
+        {/* 第 72 批：个人空间没有“管理”，原来“管理 · 技术支持”的运行状态与诊断收在这里（有联网记录要核对时自动展开） */}
+        {support && (
+          <details className="quiet-details help-support" open={supportOpen || undefined}>
+            <summary>更多技术信息（运行状态、联网记录核对，给 IT 与客服看）</summary>
+            {support}
           </details>
         )}
       </section>
@@ -929,18 +978,20 @@ function StatusTile({ tone, title, line, action }: { tone: "ok" | "warn" | "info
 }
 
 /** 管理（ST-1、ST-4）：成员、律所策略、中软侧操作记录、诊断（工程细节）、召回评测（律所内）。 */
-function AdminTab(props: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any }) {
+function AdminTab({ legacyMembers = false, ...props }: { caps: Capabilities | null; gate: any; devices: any[]; unresolved: any[]; onReconciled: () => void; im: any[]; recovery: any; legacyMembers?: boolean }) {
   // 子标签收敛（Z3 评审 #7.3、I2 遗留）：诊断与替换准确度测试是给律所 IT 与中软运维用的，收进“技术支持”
   // V16 IA-4：“技术支持”直接展开诊断首层；替换准确度测试升为独立二级标签“代号准确度”（进所评测是售前动作）
   // 第 68 批：客户端不再展示团队用量——本所额度、按成员、律所上限与个人额度统一在云端控制台（本所 · 概览 / 用量 / 成员）管理
-  const [sub, setSub] = useState<"members" | "policy" | "cp_audit" | "support" | "recall">("members");
+  // 第 72 批：“成员”移到“团队”页签（成员、邀请、电脑待确认、新电脑策略）；这里留团队策略、操作记录、技术支持、代号准确度。
+  // 取不到工作空间类型（开发形态、没有账号）时保留原来的成员页（legacyMembers）
+  const [sub, setSub] = useState<"members" | "policy" | "cp_audit" | "support" | "recall">(legacyMembers ? "members" : "policy");
   return (
     <div>
       <div className="tabs" role="tablist" aria-label="管理">
         {(
           [
-            ["members", "成员"],
-            ["policy", "律所策略"],
+            ...(legacyMembers ? ([["members", "成员"]] as const) : []),
+            ["policy", "团队策略"],
             ["cp_audit", "操作记录"],
             ["support", "技术支持"],
             ["recall", "代号准确度"],
@@ -1495,7 +1546,7 @@ function PolicyTab() {
       {(st.key_changes ?? []).length > 0 && (
         <>
           <div className="section-title h-sub">有同事换了电脑，请核对后确认</div>
-          <p>请对方读出他“设置 → 账号与团队”里的本机核对码，与他读的一致再确认；确认前他的新电脑收不到事项内容。</p>
+          <p>请对方读出他“设置 → 团队”里的本机核对码，与他读的一致再确认；确认前他的新电脑收不到事项内容。</p>
           <table className="data">
             <thead><tr><th>成员</th><th>设备</th><th>对方读出的本机核对码</th></tr></thead>
             <tbody>

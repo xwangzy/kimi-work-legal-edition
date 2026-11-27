@@ -145,7 +145,8 @@ test("入口还在：方法库页挂本所范本；开始面板任何时候都�
   assert.doesNotMatch(ss, /card\.minMaterials > 0 \|\| documents\.length > 0\) \? \(/, "上传入口不再只在已有材料或强制材料时才显示");
   const brand = src("components/Brand.tsx");
   assert.match(brand, /export function EditionTag/);
-  assert.match(brand, /fontWeight="800"/, "字标是图形（样式表里不出现 700 以上的字重）");
+  // 第 72 批（D-300 第 3 条）：字标改用随包字体“KWL Brand”（Inter 800，只有这一个字形，不写字重）；仍是图形，样式表里不出现 700 以上的字重
+  assert.match(brand, /className="brand-wordmark-text"/, "字标是图形、用随包字体");
 });
 
 test("签发页进度：草稿 → 待复核 → 已签发；退回单列；已签发是终点；未知状态全部未到", () => {

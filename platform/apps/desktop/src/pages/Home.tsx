@@ -138,6 +138,9 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   }, [startScenario, mattersLoaded, matters]);
 
   const sampleTried = useRef(false);
+  /** 第 72 批（D-301）：从“放进哪个事项 › 更多设置”打开的完整新建弹窗——建好后接着发起；带着已填的三项。 */
+  const placeThenSubmit = useRef(false);
+  const [newMatterInitial, setNewMatterInitial] = useState<{ title: string; stance: string; confidentiality: string } | null>(null);
   const loadMatters = useCallback(() => {
     api
       .listMatters()
@@ -228,16 +231,21 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
   }, [matterId, loadMatter]);
   // 材料弹层只列当前有效的那一版（同一位置被新版本取代的旧版不列，与开始面板同一口径）
   const visibleDocs = useMemo(() => visibleMaterials(docs as MaterialLike[], { hideOldVersions: true }), [docs]);
-  const submit = async () => {
-    const matter = matters.find((m) => m.matter_id === matterId);
-    if (!matter) return setNewMatter(true);
+  /**
+   * 发起（打开执行单）。第 72 批（D-301）：placed = 发送时就地选定 / 新建的事项（此刻 state 里的 matterId 还没换过来），
+   * 其材料现取，不用上一个事项的材料列表。没有事项时不再走到这里（Composer 先问归属），原来的 setNewMatter 死分支删掉。
+   */
+  const submit = async (placed?: Matter) => {
+    const matter = placed ?? matters.find((m) => m.matter_id === matterId);
+    if (!matter) return;
     setBusy(true);
     setMsg("");
     try {
+      const list = placed && placed.matter_id !== docsFor ? ((await api.getMatter(placed.matter_id)).documents as typeof docs).filter((d: any) => !d.quarantined_at) : docs;
       // 没勾材料 = 全部材料（第 48 批：不含被同一位置新版本取代的旧版本）
-      const old = new Set(docs.map((d) => (d as { supersedes?: string | null }).supersedes).filter((x): x is string => !!x));
-      const v = value.documentIds.length === 0 && value.scenario !== "a1.agent_task" ? { ...value, documentIds: docs.filter((d) => !old.has(d.document_version_id)).map((d) => d.document_version_id) } : value;
-      setSheet(await prepareStart(matter, v, { docNames: docs.filter((d) => v.documentIds.includes(d.document_version_id)).map((d) => d.filename), ...(taskModels?.selected ? { model: taskModels.selected } : {}) }));
+      const old = new Set(list.map((d) => (d as { supersedes?: string | null }).supersedes).filter((x): x is string => !!x));
+      const v = value.documentIds.length === 0 && value.scenario !== "a1.agent_task" ? { ...value, documentIds: list.filter((d) => !old.has(d.document_version_id)).map((d) => d.document_version_id) } : value;
+      setSheet(await prepareStart(matter, v, { docNames: list.filter((d) => v.documentIds.includes(d.document_version_id)).map((d) => d.filename), ...(taskModels?.selected ? { model: taskModels.selected } : {}) }));
     } catch (e) {
       setMsg((e as Error).message);
     } finally {
@@ -338,14 +346,16 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
         <div className="home-center">
           {/* Kimi Work 首页同款：居中粗体字标 + 右上黑色小标（Kimi 为“KIMI”+“WORK”，我方为“Kimi Work”+“法律版”，与侧栏字标、安装包与快捷方式名称一致，第 49 批）+ 输入框 + 托盘 + 能力胶囊 */}
           <h1 className="home-wordmark" aria-label="Kimi Work 法律版">
-            {/* 字宽按 textLength 定死（只调字距），各系统字体下宽度一致，右上小标不会离开字标 */}
-            <svg className="home-wordmark-svg" viewBox="0 0 236 52" role="presentation" aria-hidden="true">
-              <text x="0" y="44" fill="currentColor" fontSize="50" fontWeight="800" textLength="234" lengthAdjust="spacing" fontFamily="inherit">
+            {/* 随包字体“KWL Brand”（Inter 800，第 72 批）：两端同一字形、同一字宽（48px、字距 -0.02em 实测约 237.7），右上小标不会离开字标 */}
+            <svg className="home-wordmark-svg" viewBox="0 0 239 52" role="presentation" aria-hidden="true">
+              <text className="brand-wordmark-text" x="0" y="44" fill="currentColor" fontSize="48">
                 Kimi Work
               </text>
             </svg>
             <span className="home-wordmark-tag">法律版</span>
           </h1>
+          {/* 上手清单（第 46 批；第 72 批 D-302 移到输入框正上方、首访缺省展开）：新律师第一次进首页时出现，按真实数据自动打勾 */}
+          {mattersLoaded && <GuideChecklist onNewMatter={() => setNewMatter(true)} />}
           <Composer
             matters={matters}
             matterId={matterId}
@@ -354,7 +364,19 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
               setMatterId(id);
               rememberMatter(id);
             }}
-            onNewMatter={() => setNewMatter(true)}
+            onNewMatter={(o) => {
+              // 从“放进哪个事项”的“更多设置”进来：建好后接着发起这条任务（D-301）
+              placeThenSubmit.current = !!o?.thenSubmit;
+              setNewMatterInitial(o?.initial ?? null);
+              setNewMatter(true);
+            }}
+            onPlace={(m, created) => {
+              if (created) setMatters((ms) => [m, ...ms.filter((x) => x.matter_id !== m.matter_id)]);
+              matterChosen.current = true;
+              setMatterId(m.matter_id);
+              rememberMatter(m.matter_id);
+              void submit(m);
+            }}
             documents={visibleDocs}
             policy={policy}
             value={value}
@@ -425,8 +447,6 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
               )}
             </div>
           </section>
-          {/* 上手清单（第 46 批；第 47 批收成一行）：新律师第一次进首页时出现，四步按真实数据自动打勾，可展开、可收起 */}
-          {mattersLoaded && <GuideChecklist onNewMatter={() => setNewMatter(true)} />}
         </div>
 
         {/* 近期期限（v9.4 U1 #3）：“等你处理”在输入框上方提示条，“继续工作”在侧栏“任务”分组；没有期限时不显示 */}
@@ -478,14 +498,24 @@ export function Home({ presetMatterId, startScenario }: { presetMatterId?: strin
       {/* 新建事项放在开始面板之后渲染：从面板里“新建事项”时盖在面板上面，建好后面板直接选中它 */}
       {newMatter && (
         <NewMatterDialog
-          onClose={() => setNewMatter(false)}
+          {...(newMatterInitial ? { initial: newMatterInitial } : {})}
+          onClose={() => {
+            setNewMatter(false);
+            placeThenSubmit.current = false;
+            setNewMatterInitial(null);
+          }}
           onCreated={(m) => {
             setNewMatter(false);
+            setNewMatterInitial(null);
             setMatters((ms) => [m, ...ms]);
             matterChosen.current = true;
             setMatterId(m.matter_id);
             rememberMatter(m.matter_id);
             setStarting((st) => (st ? { ...st, matterId: m.matter_id } : st));
+            if (placeThenSubmit.current) {
+              placeThenSubmit.current = false;
+              void submit(m);
+            }
           }}
         />
       )}

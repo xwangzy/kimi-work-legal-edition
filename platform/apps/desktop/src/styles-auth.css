@@ -28,7 +28,7 @@
 .auth-foot-note { display: block; color: var(--text-secondary); }
 
 /* ── 标题与说明（一级标题、登录方式页签同一级） ── */
-.auth-card .auth-title, .auth-card .activate-title, .auth-card .auth-method-single { margin: 0 0 20px; font-size: var(--fs-lg); font-weight: 600; line-height: 24px; color: var(--text-primary); }
+.auth-card .auth-title, .auth-card .activate-title, .auth-card .auth-method-single { margin: 0 0 20px; font-size: var(--fs-lg); font-weight: var(--fw-strong); line-height: 24px; color: var(--text-primary); }
 .auth-card .auth-lead, .auth-card .activate-lead { margin: -12px 0 18px; font-size: var(--fs-body); line-height: 1.65; color: var(--text-secondary); text-wrap: pretty; }
 /* 第三轮（独立评分区域 7-3）：重新登录类页面多一张身份卡、常有一句原因说明——这一类统一按 556 的最小高度（被让出、退出、换账号同高） */
 .auth-page[data-auth-page="relogin"] .auth-card { min-height: 556px; }
@@ -40,14 +40,14 @@
  *   ① 角落导航（标题行右侧“返回 / 换个账号 / 修改”、正文底部“使用开通码 / 从备份恢复”、“律所名称 / 邀请码”展开）：灰色、无下划线，悬停变黑并出下划线；
  *   ② 句内操作（“还没有账号？注册”“已有账号？登录”“忘记密码？”“不验证手机号，用邮箱注册”“改为移除”）：黑色、常带下划线。
  */
-.auth-title-row .btn-link, .auth-alt .btn-link { padding: 0; font-size: var(--fs-caption); font-weight: 500; color: var(--text-secondary); white-space: nowrap; text-decoration: none; text-underline-offset: 3px; }
+.auth-title-row .btn-link, .auth-alt .btn-link { padding: 0; font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--text-secondary); white-space: nowrap; text-decoration: none; text-underline-offset: 3px; }
 .auth-title-row .btn-link:hover, .auth-title-row .btn-link:focus-visible, .auth-alt .btn-link:hover, .auth-alt .btn-link:focus-visible { color: var(--text-primary); text-decoration: underline; text-decoration-color: currentColor; }
-.auth-links .btn-link, .auth-devlimit .btn-link.auth-alt-link { padding: 0; font-size: var(--fs-caption); font-weight: 500; color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--border-hover); text-underline-offset: 3px; }
+.auth-links .btn-link, .auth-devlimit .btn-link.auth-alt-link { padding: 0; font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--border-hover); text-underline-offset: 3px; }
 .auth-links .btn-link:hover, .auth-devlimit .btn-link.auth-alt-link:hover { text-decoration-color: currentColor; }
 .auth-title-side { display: inline-flex; align-items: baseline; gap: 10px; }
 /* 第三轮：本机还有别的账号（身份卡下方一行，不在卡底） */
 .auth-others { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: -8px 0 16px; padding: 0 2px; font-size: var(--fs-caption); color: var(--text-secondary); }
-.auth-others .btn-link { padding: 0; font-size: var(--fs-caption); font-weight: 500; color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--border-hover); text-underline-offset: 3px; }
+.auth-others .btn-link { padding: 0; font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--border-hover); text-underline-offset: 3px; }
 .auth-step-count { flex: none; font-size: var(--fs-caption); color: var(--text-label); white-space: nowrap; }
 .auth-card .activate-foot { font-size: var(--fs-meta); }
 
@@ -55,7 +55,7 @@
 /* 第 71 批（V45，独立评分区域 7-4）：每页一个标题；登录方式页签一律 14 号、放在标题之下（首次登录与重新登录同一档） */
 .auth-card .auth-method { gap: 20px; min-height: 22px; margin: -4px 0 16px; border-bottom: 0; }
 .auth-card .auth-method button { padding: 0 0 6px; font-size: var(--fs-body); line-height: 18px; color: var(--text-secondary); border-bottom-width: 2px; }
-.auth-card .auth-method button.on { font-weight: 600; color: var(--text-primary); }
+.auth-card .auth-method button.on { font-weight: var(--fw-strong); color: var(--text-primary); }
 /* 重新登录页：标题之下的页签降一档（标题已经是“你已退出登录”） */
 .auth-card .login-box.subtle .auth-method, .auth-card .auth-method.subtle { margin: 0 0 14px; }
 
@@ -112,14 +112,14 @@
 .auth-card .sms-row:hover { border-color: var(--border-default); }
 .auth-card .sms-row:focus-within { background: var(--bg-surface); border-color: var(--focus-ring); box-shadow: 0 0 0 3px var(--focus-glow); }
 .auth-card .sms-row .auth-input, .auth-card .sms-row .auth-input:focus, .auth-card .sms-row .auth-input:hover { height: 44px; border: 0; background: transparent; box-shadow: none; }
-.auth-card .sms-row .sms-send { position: relative; flex: none; height: 44px; padding: 0 16px; border: 0; border-radius: 0 var(--r-md) var(--r-md) 0; background: transparent; color: var(--text-primary); font-size: var(--fs-base); font-weight: 500; white-space: nowrap; }
+.auth-card .sms-row .sms-send { position: relative; flex: none; height: 44px; padding: 0 16px; border: 0; border-radius: 0 var(--r-md) var(--r-md) 0; background: transparent; color: var(--text-primary); font-size: var(--fs-base); font-weight: var(--fw-medium); white-space: nowrap; }
 .auth-card .sms-row .sms-send::before { content: ""; position: absolute; left: 0; top: 13px; bottom: 13px; border-left: 1px solid var(--border-default); }
 .auth-card .sms-row .sms-send:hover:not(:disabled) { background: var(--bg-hover-soft); }
 .auth-card .sms-row .sms-send:disabled { color: var(--text-secondary); cursor: default; }
 .auth-card .sms-hint { padding: 0 4px; font-size: var(--fs-meta); color: var(--text-secondary); }
 
 /* ── 按钮 ── */
-.auth-card .activate-submit, .auth-card .auth-btn { width: 100%; height: 46px; margin-top: 4px; padding: 0 16px; border-radius: var(--r-md); font-size: var(--fs-md); font-weight: 500; }
+.auth-card .activate-submit, .auth-card .auth-btn { width: 100%; height: 46px; margin-top: 4px; padding: 0 16px; border-radius: var(--r-md); font-size: var(--fs-md); font-weight: var(--fw-medium); }
 /* 不可点：实心中灰白字（不用半透明：部分合成层上出现竖向接缝），既不像输入框，也不像可点的黑按钮 */
 .auth-card .activate-submit:disabled, .auth-card .auth-btn:disabled { background: var(--btn-primary-disabled); border-color: transparent; color: var(--btn-primary-disabled-text); opacity: 1; cursor: default; }
 .auth-card .activate-actions { gap: 10px; margin-top: 16px; }
@@ -134,12 +134,12 @@
 .auth-card .activate-notice { margin: 0 0 14px; font-size: var(--fs-caption); }
 .auth-card .auth-unreg { gap: 8px; }
 .auth-card .auth-fine { margin: 0; padding: 0 4px; font-size: var(--fs-meta); line-height: 1.6; color: var(--text-secondary); }
-.auth-links .auth-more { font-weight: 400; color: var(--text-secondary); }
+.auth-links .auth-more { font-weight: var(--fw-regular); color: var(--text-secondary); }
 .auth-links .auth-more:hover { color: var(--text-primary); text-decoration: none; }
 
 /* ── 表单下方的链接行；其他方式沉到正文底部 ── */
 .auth-links { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 0 0; font-size: var(--fs-caption); color: var(--text-secondary); }
-.auth-links .btn-link { padding: 0; font-size: var(--fs-caption); color: var(--text-primary); font-weight: 500; }
+.auth-links .btn-link { padding: 0; font-size: var(--fs-caption); color: var(--text-primary); font-weight: var(--fw-medium); }
 .auth-links .btn-link:hover { text-decoration: underline; }
 .auth-links-end { margin-left: auto; }
 .auth-links-note { margin-left: auto; font-size: var(--fs-meta); color: var(--text-label); }
@@ -150,7 +150,7 @@
 
 /* ── 进度（正在打开、正在切换） ── */
 .auth-progress, .auth-switching { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px 0; text-align: center; }
-.auth-progress .auth-title, .auth-switching .auth-switching-title { margin: 6px 0 0; font-size: var(--fs-lg); font-weight: 600; color: var(--text-primary); }
+.auth-progress .auth-title, .auth-switching .auth-switching-title { margin: 6px 0 0; font-size: var(--fs-lg); font-weight: var(--fw-strong); color: var(--text-primary); }
 .auth-progress .auth-lead, .auth-switching .muted { margin: 0; font-size: var(--fs-body); color: var(--text-secondary); }
 
 /* ── 取登录方式期间的骨架与“取不到” ── */
@@ -166,7 +166,7 @@
 @keyframes auth-dot { 0%, 100% { transform: scale(0.7); } 50% { transform: scale(1.15); } }
 @media (prefers-reduced-motion: reduce) { .auth-skel-bar, .auth-dot { animation: none; } }
 .auth-unavailable { padding: 18px 18px 16px; border-radius: var(--r-md); background: var(--status-warning-bg-soft); border: 1px solid var(--status-warning-border); }
-.auth-unavailable-title { font-size: var(--fs-md); font-weight: 600; color: var(--text-primary); margin: 0 0 6px; }
+.auth-unavailable-title { font-size: var(--fs-md); font-weight: var(--fw-strong); color: var(--text-primary); margin: 0 0 6px; }
 .auth-unavailable-text { margin: 0 0 14px; font-size: var(--fs-body); line-height: 1.65; color: var(--text-strong); }
 .auth-unavailable-actions { display: flex; align-items: center; gap: 12px; }
 .auth-unavailable-actions .auth-btn { width: auto; min-width: 96px; height: 40px; margin: 0; }
@@ -177,9 +177,9 @@
 
 /* ── 重新登录：上次登录的账号（头像 + 姓名 + 邮箱） ── */
 .auth-reloginwho { display: flex; align-items: center; gap: 12px; margin: 0 0 18px; padding: 12px 14px; border-radius: var(--r-md); background: var(--bg-subtle); border: 1px solid var(--border-subtle); }
-.auth-reloginwho .user-avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); font-weight: 600; font-size: var(--fs-body); }
+.auth-reloginwho .user-avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-bg); color: var(--accent-text); font-weight: var(--fw-strong); font-size: var(--fs-body); }
 .auth-reloginwho-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-body); }
-.auth-reloginwho-text b { font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auth-reloginwho-text b { font-weight: var(--fw-strong); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .auth-reloginwho-text small { font-size: var(--fs-meta); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── 电脑数已满：选一台移除（单选卡片列表） ── */
@@ -188,8 +188,8 @@
 .auth-devlimit { display: flex; flex-direction: column; gap: 12px; }
 .auth-devlimit .auth-title-row { margin-bottom: 8px; }
 .auth-devlimit .auth-lead { margin: 0 0 6px; }
-.auth-devlimit .auth-lead b { font-weight: 500; color: var(--text-primary); }
-.auth-device-tag { padding: 1px 6px; border-radius: var(--r-xs); background: var(--bg-muted); color: var(--text-secondary); font-size: var(--fs-meta); font-weight: 500; }
+.auth-devlimit .auth-lead b { font-weight: var(--fw-medium); color: var(--text-primary); }
+.auth-device-tag { padding: 1px 6px; border-radius: var(--r-xs); background: var(--bg-muted); color: var(--text-secondary); font-size: var(--fs-meta); font-weight: var(--fw-medium); }
 .auth-devices { display: flex; flex-direction: column; gap: 8px; }
 .auth-device-row { display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: var(--r-md); background: var(--bg-surface); color: var(--text-primary); text-align: left; font: inherit; transition: border-color var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard); }
 button.auth-device-row { cursor: pointer; }
@@ -199,10 +199,10 @@ button.auth-device-row:focus-visible { outline: 2px solid var(--focus-ring); out
 .auth-device-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: var(--r-sm); background: var(--bg-muted); color: var(--text-label); }
 .auth-device-icon svg { width: 18px; height: 18px; }
 .auth-device-text { display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; min-width: 0; }
-.auth-device-text b { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-body); font-weight: 600; color: var(--text-primary); }
+.auth-device-text b { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-body); font-weight: var(--fw-strong); color: var(--text-primary); }
 .auth-device-text > span { font-size: var(--fs-caption); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.auth-device-live { padding: 1px 6px; border-radius: var(--r-xs); background: var(--status-success-bg); color: var(--status-success-text); font-size: var(--fs-meta); font-weight: 500; }
-.auth-device-radio { flex: none; width: 18px; height: 18px; box-sizing: border-box; border: 1.5px solid var(--border-hover); border-radius: 50%; }
+.auth-device-live { padding: 1px 6px; border-radius: var(--r-xs); background: var(--status-success-bg); color: var(--status-success-text); font-size: var(--fs-meta); font-weight: var(--fw-medium); }
+.auth-device-radio { flex: none; width: 18px; height: 18px; box-sizing: border-box; border: 2px solid var(--border-hover); border-radius: 50%; }
 .auth-device-row.on .auth-device-radio { border: 5px solid var(--text-primary); }
 /* 第 71 批（V45，D-298）：不能选的行（已退出登录的电脑不占名额、这台电脑本身）——降低对比、不响应悬停 */
 .auth-device-row.off { background: var(--bg-subtle); }
@@ -237,3 +237,23 @@ button.auth-device-row.off { cursor: default; }
 :root[data-theme="dark"] .auth-card .auth-input, :root[data-theme="dark"] .auth-card .activate-code, :root[data-theme="dark"] .auth-card .auth-input-group, :root[data-theme="dark"] .auth-card .sms-row { background: var(--bg-elevated); }
 :root[data-theme="dark"] .auth-card .auth-input-group .auth-input, :root[data-theme="dark"] .auth-card .sms-row .auth-input { background: transparent; }
 /* 第 70 批（V44）：禁用主按钮与全库同一写法（--btn-primary-disabled，深色下自动是白底按钮压暗），不再单独压成与输入框同色 */
+
+/* 第 72 批（D-303）：同时登录已满——标题一句结论、身份一行小字、设备卡整卡可点（选中描边 + 勾）、元信息不截断、主按钮短文案不折行 */
+.auth-devlimit .auth-title-row { margin-bottom: 0; }
+.auth-devlimit .auth-title { margin-bottom: 4px; }
+.auth-card .auth-who { margin: -4px 0 0; font-size: var(--fs-caption); color: var(--text-label); }
+.auth-devlimit .auth-lead { margin: 0 0 4px; }
+.auth-device-text > span { overflow: visible; white-space: normal; text-overflow: clip; }
+.auth-device-dot { flex: none; width: 6px; height: 6px; border-radius: var(--r-full); background: var(--status-success-text); }
+.auth-device-check { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: var(--r-full); border: 1px solid var(--border-default); color: transparent; }
+.auth-device-check svg { width: 12px; height: 12px; }
+.auth-device-check.on { border-color: var(--btn-primary); background: var(--btn-primary); color: var(--btn-primary-text); }
+.auth-device-row.on, button.auth-device-row.on:hover:not(:disabled), .auth-device-row.is-target { border-color: var(--text-primary); box-shadow: none; }
+.auth-device-row.is-target.is-danger { box-shadow: none; }
+.auth-card .auth-consequence { padding: 0; text-align: center; }
+.auth-card .activate-submit, .auth-card .auth-btn { min-height: 46px; height: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 卡片最小高度只给表单类步骤；进度类（正在打开、正在切换）与选电脑按内容自适应，不再留半屏空白（A2 §4.1 第 8 条） */
+.auth-card:has(.auth-progress), .auth-card:has(.auth-switching), .auth-card:has([data-auth-step="device-limit"]) { min-height: 0; }
+.auth-page[data-auth-page="relogin"] .auth-card:has([data-auth-step="device-limit"]) { min-height: 0; }
+/* 第 72 批（A1 H6）：正在打开——阶段 + 已用时间（数字等宽，不抖） */
+.auth-elapsed { margin-left: var(--sp-2); color: var(--text-label); font-variant-numeric: tabular-nums; }

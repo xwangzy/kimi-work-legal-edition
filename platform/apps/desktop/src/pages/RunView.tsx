@@ -3,6 +3,7 @@
  * 事件先落本机事项账本，本页按游标续读；离开本页不会取消任务。确认卡独立于聊天文本（模型文本里的“已批准”不触发权限）。
  */
 import { downloadPlan } from "../lib/download.ts";
+import { isSendEnter } from "../lib/send-key.ts";
 import { ConfirmButton } from "../components/ConfirmButton.tsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MaterialPicker } from "../components/MaterialPicker.tsx";
@@ -1209,8 +1210,10 @@ export function RunView({ runId, matterId }: { runId: string; matterId: string }
                   setFollowConfirm(null);
                 }}
                 onKeyDown={(e) => {
-                  // 快捷键与按钮同一口径（复核 C-B13）：依据不齐等被禁用时不能用 Ctrl/⌘+Enter 绕过
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !busy) {
+                  // 快捷键与按钮同一口径（复核 C-B13）：依据不齐等被禁用时不能用回车绕过
+                  // 第 72 批（拍板第 23 项）：与首页、问答统一“回车发送、Shift + 回车换行”，输入法组字时回车不发送；追问先出确认卡，误发可撤
+                  if (isSendEnter(e) && !busy) {
+                    e.preventDefault();
                     if (!followConfirm) void prepareFollowUp();
                     else if (!followConfirm.blocked) void followUp();
                   }

@@ -1,9 +1,13 @@
-/** 线性图标（内联 SVG，不加载外部资源）。 */
+/**
+ * 线性图标（内联 SVG，不加载外部资源）。
+ * 第 72 批（D-300 第 4 条）：线宽由样式给（svg.ico 的 --icon-stroke，按设备像素比对齐到整数物理像素，lib/icon-stroke.ts），
+ * 线条用 non-scaling-stroke，不随图标尺寸缩放；这里的 strokeWidth 只是样式表加载前的兜底。
+ */
 import type { ReactNode } from "react";
 
 function Svg({ children, size = 16 }: { children: ReactNode; size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg className="ico" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {children}
     </svg>
   );
@@ -59,4 +63,8 @@ export const Icon = {
   task: () => <Svg><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M8.5 12l2.5 2.5 4.5-5" /></Svg>,
   download: () => <Svg><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5" /><path d="M5 19.5h14" /></Svg>,
   calendar: () => <Svg><rect x="4" y="5.5" width="16" height="14.5" rx="2" /><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" /></Svg>,
+  // 第 72 批（impl-U2）：团队（两个人）、工作空间切换（上下箭头）、复制
+  users: () => <Svg><circle cx="9" cy="8.5" r="3.2" /><path d="M3.5 19.5a5.5 5.5 0 0 1 11 0" /><path d="M15.5 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.6a5.5 5.5 0 0 1 3 4.9" /></Svg>,
+  updown: () => <Svg><path d="M8 9.5l4-4 4 4M8 14.5l4 4 4-4" /></Svg>,
+  copy: () => <Svg><rect x="8.5" y="8.5" width="11" height="11" rx="2" /><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5" /></Svg>,
 };

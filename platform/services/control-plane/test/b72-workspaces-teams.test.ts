@@ -426,7 +426,8 @@ test("契约 §3.4 / §6.4 / X7：移出团队——会话失效、席位释放�
   const rm = await post(`/v1/firm/members/${bTeam.aid}/remove`, {}, A.session);
   assert.equal(rm.status, 200, JSON.stringify(rm.json));
   assert.deepEqual([rm.json.seat_released, rm.json.member.status, rm.json.member.disabled_by], [1, "disabled", "team"]);
-  assert.equal((await get("/v1/auth/me", bTeam.session)).status, 401, "旧会话失效");
+  const me1 = await get("/v1/auth/me", bTeam.session);
+  assert.deepEqual([me1.status, me1.json.error.code], [401, "session_team_removed"], "旧会话失效，且如实说是被移出（U-1）");
   const st = await bTeam.dev!.call("POST", "/v1/seat-token", {}, bTeam.session);
   assert.notEqual(st.status, 200, "旧设备取不到席位令牌");
   assert.equal((await post("/v1/auth/workspaces/switch", { aid: bTeam.aid }, B.session)).status, 404, "切换到已移出的团队 404");
@@ -442,7 +443,9 @@ test("契约 §3.4 / §6.4 / X7：移出团队——会话失效、席位释放�
   const lv = await post("/v1/teams/leave", { client: { platform: "web" } }, sw.json.session_token);
   assert.equal(lv.status, 200, JSON.stringify(lv.json));
   assert.deepEqual([lv.json.account.aid, lv.json.workspaces.find((w: any) => w.aid === dTeam).status], [D.aid, "disabled"]);
-  assert.equal((await get("/v1/auth/me", sw.json.session_token)).status, 401);
+  // 第 72 批（U-1）：退出团队后旧会话如实说“已退出这个团队”，不说成“登录已过期”
+  const me2 = await get("/v1/auth/me", sw.json.session_token);
+  assert.deepEqual([me2.status, me2.json.error.code], [401, "session_team_left"]);
   const au = await ops("op_7202", "GET", `/v1/ops/tenants/${A.tid}/audit`);
   const acts = au.json.records.map((x: any) => x.action);
   for (const a of ["team.invite_create", "team.invite_accept", "team.member_remove", "team.leave", "seat.assign"]) assert.ok(acts.includes(a), a);

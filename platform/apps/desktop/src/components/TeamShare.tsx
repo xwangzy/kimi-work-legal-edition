@@ -9,7 +9,11 @@ import { canResyncMembers, relayErrorText, syncAlertAction, syncAlertSummary, sy
 import { fmtTime } from "../lib/labels.ts";
 import { ConfirmButton } from "./ConfirmButton.tsx";
 
-export function TeamShare({ admin = false }: { admin?: boolean }) {
+/**
+ * 第 72 批（D-304）：note = 这台电脑由账号直接登记、还不能接收团队共享事项时的一句非阻塞提示（lib/workspace.ts shareIssuerNote）；
+ * 有提示时即使本所没开同事之间同步也显示这一行。
+ */
+export function TeamShare({ admin = false, note = null }: { admin?: boolean; note?: string | null }) {
   const [st, setSt] = useState<RelayStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -33,7 +37,18 @@ export function TeamShare({ admin = false }: { admin?: boolean }) {
         .catch(() => setOwners((o) => ({ ...o, [id]: false })));
     }
   }, [rootIds]);
-  if (!st || (st.blocked === "not_configured" && alerts.length === 0)) return null;
+  const noteLine = note ? (
+    <div className="share-note" role="note">
+      {note}
+    </div>
+  ) : null;
+  if (!st || (st.blocked === "not_configured" && alerts.length === 0))
+    return noteLine ? (
+      <div className="device-row">
+        <div className="device-k">团队共享</div>
+        <div>{noteLine}</div>
+      </div>
+    ) : null;
   const syncNow = async () => {
     setBusy(true);
     setMsg("");
@@ -74,6 +89,7 @@ export function TeamShare({ admin = false }: { admin?: boolean }) {
     <div className="device-row">
       <div className="device-k">团队共享</div>
       <div>
+        {noteLine}
         <span>{teamShareLine(st)}</span>
         {alerts.map((a) => (
           <div key={`${a.matter_id}-${a.kind}-${a.epoch}`} className="sync-alert">

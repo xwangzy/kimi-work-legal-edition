@@ -8,7 +8,7 @@
  * 律师层不出现“证书、密钥、签名、令牌”等词；登录只把邮箱和密码（第 63 批起也可以是手机号和短信验证码）发给中软核对，不上传任何案件材料。
  */
 import { useEffect, useRef, useState } from "react";
-import { account, api, onboarding, recovery } from "../api.ts";
+import { account, api, kernelRestarter, onboarding, recovery } from "../api.ts";
 import { AuthCard, AuthPage, AuthPrivacy, MetaGate } from "../components/AuthShell.tsx";
 import { PasswordField } from "../components/PasswordField.tsx";
 import { LoginMethodTabs, SmsCodeFields, useLoginMethod, useRegistrationMetaState } from "../components/SmsCodeFields.tsx";
@@ -19,6 +19,19 @@ import { DeviceLimitList } from "../components/DeviceLimitList.tsx";
 import { ResetPasswordForm } from "../components/AccountPanel.tsx";
 import { waitForProfileSwitch } from "../lib/account-switch.ts";
 import { switchingText } from "../lib/account.ts";
+
+/** 第 72 批（D-302 第 1 条）：注册、登录、自动登记、批准、开通码开通成功后一律落到 Work 首页（上手清单是首屏主角）；“开通完成，先做好备份”页降为“设置 · 备份与安全”的深链，不再作为落点。 */
+export const LANDING = "#/";
+
+/**
+ * 这台电脑在列表里是哪一台（第 72 批，修 A2 §4.1 第 6 条：开通页原来不传，可能把正在操作的这台列为“要退出的那台”）：
+ * 内核给 this_device（编号）就用它；否则看列表里有没有标 this_device:true 的那一台。都没有为 null。
+ */
+function thisDeviceOf(r: { this_device?: unknown; devices?: unknown }): string | null {
+  if (typeof r.this_device === "string" && r.this_device) return r.this_device;
+  const hit = Array.isArray(r.devices) ? (r.devices as { device_id?: unknown; this_device?: unknown }[]).find((d) => d && d.this_device === true && typeof d.device_id === "string") : undefined;
+  return hit ? (hit.device_id as string) : null;
+}
 
 /** 律师在恢复页点过“返回”的那个目录（每个查看者本机记一下；读写失败按没点过）。 */
 const DISMISS_KEY = "kwl.setAside.dismissed";
@@ -65,14 +78,16 @@ function groupCode(raw: string): string {
  * 激活完成后内核按新身份重启：等它就绪再刷新页面。复核 B13-K02：入组在本机没有生效（内核回到待激活并报 last_failure）
  * 或 2 分钟还没打开，都告诉律师怎么办（onStuck），不再一直显示“正在打开…”。
  */
-async function waitForActivated(onStuck: (text: string) => void, landing = "#/"): Promise<void> {
+async function waitForActivated(onStuck: (text: string) => void, landing = "#/", retried = false): Promise<void> {
   // 按经过的时间判断（复核 R2B-25：内核不在时每次查询可能要等很久，按轮数会拖到几十分钟）
   const until = Date.now() + 120_000;
+  activatePhase("saving");
   while (Date.now() < until) {
     await new Promise((r) => setTimeout(r, 1000));
     try {
       const st = await api.kernelStatus();
       if (st && !st.onboarding) {
+        activatePhase("opening");
         window.location.hash = landing;
         window.location.reload();
         return;
@@ -81,11 +96,91 @@ async function waitForActivated(onStuck: (text: string) => void, landing = "#/")
         onStuck(failureText(st.onboarding.last_failure.code));
         return;
       }
+      // 内核在、还在按新身份准备：本机数据（解封、迁移）→ 连接云端
+      activatePhase(st?.onboarding?.restarting ? "preparing" : "connecting");
     } catch {
       // 重启期间内核暂不可用：继续等
+      activatePhase("restarting");
     }
   }
-  onStuck("还没有打开成功。请关闭并重新打开应用；若仍如此，请联系所内 IT。");
+  // 第 72 批（A1 H6）：“请关闭并重新打开应用”之前先在应用内重拉一次内核、再等一轮；仍不行才请律师处理（界面给“重新打开”按钮）
+  const restart = kernelRestarter();
+  if (restart && !retried) {
+    activatePhase("retrying");
+    const r = await restart().catch(() => null);
+    if (r?.ok || r?.reason === "too_soon") return waitForActivated(onStuck, landing, true);
+  }
+  onStuck(STUCK_TEXT);
+}
+
+/** 两次都没打开时的说明（界面另给“重新打开”按钮，见 StuckRetry）。 */
+export const STUCK_TEXT = "还没有打开成功。可以点“重新打开”再试一次；若仍如此，请联系所内 IT。";
+
+/**
+ * 正在打开的阶段（第 72 批，A1 H6）：替换写死的“第一次打开需要十几秒”，显示这一步在做什么与已用时间。
+ * waitForActivated 写、ActivatingProgress 读（同一页面里只有一个在等）。
+ */
+export type ActivatePhase = "saving" | "restarting" | "preparing" | "connecting" | "retrying" | "opening";
+export const ACTIVATE_PHASE_TEXT: Record<ActivatePhase, string> = {
+  saving: "正在保存登录信息",
+  restarting: "正在重新启动本机服务",
+  preparing: "正在准备本机数据",
+  connecting: "正在连接云端",
+  retrying: "时间有点长，正在重新启动本机服务再试一次",
+  opening: "正在打开工作台",
+};
+const phaseListeners = new Set<(p: ActivatePhase) => void>();
+function activatePhase(p: ActivatePhase): void {
+  for (const f of phaseListeners) f(p);
+}
+
+function ActivatingProgress({ title }: { title: string }) {
+  const [phase, setPhase] = useState<ActivatePhase>("saving");
+  const [since] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    phaseListeners.add(setPhase);
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      phaseListeners.delete(setPhase);
+      clearInterval(t);
+    };
+  }, []);
+  const sec = Math.max(0, Math.floor((now - since) / 1000));
+  return (
+    <div className="auth-progress" role="status" aria-live="polite">
+      <span className="auth-dot" aria-hidden="true" />
+      <h1 className="auth-title">{title}</h1>
+      <p className="auth-lead">
+        {ACTIVATE_PHASE_TEXT[phase]}…<span className="auth-elapsed">已用 {sec} 秒</span>
+      </p>
+    </div>
+  );
+}
+
+/** “重新打开”（第 72 批）：自动重试一次仍没打开时给律师的按钮——在应用内重拉内核，不必关掉应用。 */
+function StuckRetry({ onRetry }: { onRetry: () => void }) {
+  const restart = kernelRestarter();
+  const [busy, setBusy] = useState(false);
+  if (!restart) return null;
+  return (
+    <button
+      type="button"
+      className="btn-primary activate-submit"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        void restart()
+          .catch(() => null)
+          .finally(() => {
+            setBusy(false);
+            onRetry();
+          });
+      }}
+    >
+      {busy ? "正在重新打开…" : "重新打开"}
+    </button>
+  );
 }
 
 export function ActivatePage({ initial, onRefresh, notice = "" }: { initial: Status; onRefresh: () => void; notice?: string }) {
@@ -132,7 +227,7 @@ function Frame({ children, foot, wide = false }: { children: React.ReactNode; fo
 // 律师真正需要确认的只有“案卷不会上传”，发给云端核对的就是表单里看得到的那几项。收成一句常驻页脚（AuthPrivacy），所有登录类卡片同一句。
 
 type View = "login" | "register" | "forgot" | "code" | "restore";
-type Blocked = { message: string; devices: AccountDevice[]; canUnbind?: boolean; canSignout?: boolean; limit?: number | null; limitKind?: "signed_in" | "registered" | null; who?: string | null };
+type Blocked = { message: string; devices: AccountDevice[]; canUnbind?: boolean; canSignout?: boolean; limit?: number | null; limitKind?: "signed_in" | "registered" | null; who?: string | null; thisDevice?: string | null };
 /** 第 66 批：个人账号新电脑自动登记被风控暂停（要短信验证码确认是本人；没绑手机号或短信不可用时只说明原因）。 */
 type SmsHold = { message: string; sms_available: boolean; phone_masked: string | null };
 
@@ -143,13 +238,13 @@ function authOutcome(onPending: (s: Status) => void, setDone: (t: string) => voi
       // 第 66 批：个人账号的新电脑已由云端直接登记（auto）——不是“开通”，这台电脑的事项与文件与别的电脑各自独立
       setDone(r.auto ? "这台电脑已登记为你的电脑，正在打开…" : `已为「${r.firm?.name ?? "本所"}」开通，正在打开…`);
       // 开通向导：激活后先到“开通的最后一步”（恢复包、试一下、备份位置），再进首页
-      void waitForActivated(stuck, "#/welcome");
+      void waitForActivated(stuck, LANDING);
     } else if (r?.next === "wait") {
       onPending({ mode: "member_pending", firm: r.firm, member: r.member ?? { name: r.account?.name ?? null, role: r.account?.role ?? "" }, check_code: r.check_code, requested_at: new Date().toISOString(), ...(r.via_account ? { via_account: true } : {}) });
     } else if (r?.next === "sms_confirm" && setHold) {
       setHold({ message: String(r.message ?? "为安全起见已暂停自动登记这台电脑：请用账号绑定的手机号接收验证码确认是本人"), sms_available: r.sms_available === true, phone_masked: typeof r.phone_masked === "string" ? r.phone_masked : null });
     } else if (r?.next === "blocked") {
-      setBlocked({ message: String(r.message ?? "这台电脑暂时不能用这个账号继续，请联系客服"), devices: Array.isArray(r.devices) ? r.devices : [], canUnbind: r.can_unbind === true, canSignout: r.can_signout === true, limit: typeof r.device_limit === "number" ? r.device_limit : null, limitKind: r.limit_kind === "registered" || r.limit_kind === "signed_in" ? r.limit_kind : null, who: accountWho({ name: typeof r.account?.name === "string" ? r.account.name : null, phone: typeof r.account?.phone === "string" ? r.account.phone : null, email: typeof r.account?.email === "string" ? r.account.email : null }) });
+      setBlocked({ message: String(r.message ?? "这台电脑暂时不能用这个账号继续，请联系客服"), devices: Array.isArray(r.devices) ? r.devices : [], canUnbind: r.can_unbind === true, canSignout: r.can_signout === true, limit: typeof r.device_limit === "number" ? r.device_limit : null, limitKind: r.limit_kind === "registered" || r.limit_kind === "signed_in" ? r.limit_kind : null, thisDevice: thisDeviceOf(r), who: accountWho({ name: typeof r.account?.name === "string" ? r.account.name : null, phone: typeof r.account?.phone === "string" ? r.account.phone : null, email: typeof r.account?.email === "string" ? r.account.email : null }) });
     } else if (r?.next === "switch") {
       // 第 68 批（V42，D-294）：这台电脑上已有这个账号的工作空间——直接打开它（不重复登记）
       setDone(switchingText(r));
@@ -202,7 +297,7 @@ function Entry({ onPending, legacy, failed, setAside, handoff = null, otherProfi
         try {
           const st = await api.kernelStatus();
           if (st && !st.onboarding) {
-            window.location.hash = "#/welcome";
+            window.location.hash = LANDING;
             window.location.reload();
             return;
           }
@@ -251,14 +346,27 @@ function Entry({ onPending, legacy, failed, setAside, handoff = null, otherProfi
   if (done) {
     return (
       <Frame>
-        <div className="auth-progress" role="status" aria-live="polite">
-          <span className="auth-dot" aria-hidden="true" />
-          <h1 className="auth-title">{done}</h1>
-          <p className="auth-lead">第一次打开需要十几秒。</p>
-        </div>
+        <ActivatingProgress title={done} />
       </Frame>
     );
   }
+  // 第 72 批（A1 H6）：自动重拉一次仍没打开——说明 + “重新打开”（应用内重拉内核后再等一轮），不再只叫律师关掉应用
+  if (err === STUCK_TEXT && kernelRestarter())
+    return (
+      <Frame>
+        <div className="auth-progress" role="alert">
+          <h1 className="auth-title">还没有打开成功</h1>
+          <p className="auth-lead">可以再试一次；若仍如此，请联系所内 IT。</p>
+        </div>
+        <StuckRetry
+          onRetry={() => {
+            setErr("");
+            setDone("正在重新打开…");
+            void waitForActivated(stuck, LANDING, true);
+          }}
+        />
+      </Frame>
+    );
   if (blocked)
     return (
       <BlockedView
@@ -362,7 +470,7 @@ function Entry({ onPending, legacy, failed, setAside, handoff = null, otherProfi
       )}
       {view === "code" && <EnterCode onPending={onPending} onFounder={(t) => {
             setDone(t);
-            void waitForActivated(stuck, "#/welcome");
+            void waitForActivated(stuck, LANDING);
           }} failed={err} onBack={() => go("login")} />}
       {/* 第 69 批第二轮：“使用开通码 / 从备份恢复”只在登录与凭码页出现（注册、找回时用不上，也让各卡同高） */}
       {(view === "login" || view === "code") && alt}
@@ -747,7 +855,7 @@ function BlockedView({ b, onBack, onUnbind, onSignout }: { b: Blocked; onBack: (
   if (b.devices.length > 0)
     return (
       <Frame>
-        <DeviceLimitList devices={b.devices} canUnbind={b.canUnbind === true} canSignout={b.canSignout === true} limit={b.limit ?? null} limitKind={b.limitKind ?? null} who={b.who ?? null} onUnbind={onUnbind} onSignout={onSignout} onBack={onBack} />
+        <DeviceLimitList devices={b.devices} canUnbind={b.canUnbind === true} canSignout={b.canSignout === true} limit={b.limit ?? null} limitKind={b.limitKind ?? null} thisDevice={b.thisDevice ?? null} who={b.who ?? null} onUnbind={onUnbind} onSignout={onSignout} onBack={onBack} />
       </Frame>
     );
   return (
@@ -784,7 +892,7 @@ function EnterCode({ onPending, onFounder, failed, onBack }: { onPending: (s: St
   return (
     <>
       <h1 className="activate-title">输入开通码或邀请码</h1>
-      <p className="activate-lead">不注册账号、直接用码激活这台电脑（之后可以在“设置 → 账号与团队”里登录账号）。</p>
+      <p className="activate-lead">不注册账号、直接用码激活这台电脑（之后可以在“设置 → 账号”里登录账号）。</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -954,7 +1062,7 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
           setNote("");
         } else {
           setNote("管理员已批准，正在打开…");
-          void waitForActivated(opened, "#/welcome");
+          void waitForActivated(opened, LANDING);
         }
       } else if (r.last_check === "rejected") {
         setRejected(true);
@@ -983,7 +1091,7 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
     return (
       <Frame>
         <h1 className="activate-title">已批准，请再核对一次</h1>
-        <p className="activate-lead">请在你原来那台电脑上打开“设置 → 账号与团队 → 本所识别码”，与下面这串数字逐位比对。一致，说明这台电脑加入的确实是本所。</p>
+        <p className="activate-lead">请在你原来那台电脑上打开“设置 → 团队 → 本所识别码”，与下面这串数字逐位比对。一致，说明这台电脑加入的确实是本所。</p>
         <div className="activate-checkcode" aria-label="本所识别码">
           {firmCode}
         </div>
@@ -996,14 +1104,14 @@ function WaitApproval({ status, onReset, onRefresh }: { status: Status; onReset:
           <button
             className="btn-primary"
             onClick={() => {
-              setNote("正在打开…（第一次打开需要十几秒）");
-              void waitForActivated(opened, "#/welcome");
+              setNote("正在打开…");
+              void waitForActivated(opened, LANDING);
             }}
           >
             一致，打开
           </button>
         </div>
-        <p className="muted activate-foot">对不上：请不要在这台电脑上继续使用，马上联系律所管理员；你也可以在原来那台电脑的“设置 → 账号与团队 → 我的电脑”里解绑这台电脑。</p>
+        <p className="muted activate-foot">对不上：请不要在这台电脑上继续使用，马上联系律所管理员；你也可以在原来那台电脑的“设置 → 账号 → 登录过的电脑”里移除这台电脑。</p>
       </Frame>
     );
   }

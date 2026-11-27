@@ -501,6 +501,8 @@ export function loginRequiredText(reason: string | null | undefined): string {
                 ? "客服协助让这台电脑退出了登录"
                 : reason === "session_device_limit"
                   ? "这个账号同时登录的电脑已达上限"
+                  : reason === "session_team_removed" || reason === "session_team_left"
+                    ? "你已不在这个团队"
                   : "登录已失效";
   return `${why}，请重新登录（本机资料照常可用，AI 暂停）`;
 }
@@ -526,6 +528,8 @@ export function reloginView(reason: string | null | undefined): { title: string;
   // 新口径（D-298）：标题与电脑数已满选择卡同一句；说明只讲下一步与“资料都在”
   if (reason === "session_device_limit") return { title: "同时登录的电脑已达上限", lead: "重新登录后选一台让它退出登录，就能在这台电脑上继续。事项和成果都还在这台电脑上。" };
   // 第 69 批真实验收：被移除的电脑上同一账号不能再登录（云端吊销是终局的）——不写“重新登录即可”，给出还能做的事
+  // 第 72 批（impl-U2）：被移出团队 / 自己退出团队后这个团队空间的会话失效——云端回专门原因码后（03 契约变更记录 U-1）如实说，不说“过期”
+  if (reason === "session_team_removed" || reason === "session_team_left") return { title: "你已不在这个团队", lead: reason === "session_team_left" ? "你已退出这个团队。重新登录即可进入你的其他工作空间；这台电脑上团队空间里的事项与成果都还在。" : "团队管理员把你移出了这个团队。重新登录即可进入你的其他工作空间；这台电脑上团队空间里的事项与成果都还在。" };
   if (reason === "device_revoked") return { title: "这台电脑已从账号移除", lead: "这个账号不能再在这台电脑上使用，本机资料仍加密保存在这里。如果不是你本人移除的，请尽快在另一台电脑上修改密码。" };
   return { title: "登录已过期", lead: "为了账号安全，请重新登录。本机的事项与成果都还在。" };
 }
@@ -555,4 +559,13 @@ export function waitApprovalLead(o: { firm: string; who: string; viaAccount: boo
 export function resetNextText(r: { channel?: string; message?: string } | null | undefined): string {
   if (r?.message) return r.message;
   return r?.channel === "email" ? "如果这个邮箱已注册，验证码已发到邮箱（15 分钟内有效）。请把验证码填在下面。" : "请向律所管理员或客服要一个重置码，填在下面。";
+}
+
+/** 设备卡第二行（第 72 批）：“8 分钟前用过 · 0.10.0”；起过名字的电脑前面加类型。不写登记时间（对“选哪台退出”没有帮助）。 */
+export function deviceMetaShort(d: AccountDevice, now = Date.now()): string {
+  const seen = agoLabel(d.last_seen_at ?? d.last_seen_on, now);
+  const version = d.client_version && d.client_version !== "legacy" ? d.client_version : null;
+  const line = deviceChoiceLine(d, now);
+  const kind = line.meta.startsWith("Mac") || line.meta.startsWith("Windows") ? line.meta.split(" · ")[0] : "";
+  return [kind, seen ? (/\d$/.test(seen) ? `${seen} 用过` : `${seen}用过`) : "", version].filter(Boolean).join(" · ");
 }

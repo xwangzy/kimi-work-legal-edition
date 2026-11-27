@@ -8,7 +8,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { createIdentityRestart } = require("../electron/identity-restart.cjs");
 
-function harness(o: { failStart?: boolean; exitDuringStop?: boolean } = {}) {
+function harness(o: { failStart?: boolean; exitDuringStop?: boolean; onStart?: () => void } = {}) {
   const log: string[] = [];
   let exiting = false;
   const r = createIdentityRestart({
@@ -19,6 +19,8 @@ function harness(o: { failStart?: boolean; exitDuringStop?: boolean } = {}) {
     },
     start: async () => {
       log.push("start");
+      o.onStart?.();
+      await new Promise((res) => setTimeout(res, 5));
       if (o.failStart) throw new Error("随包运行时缺少 node.exe");
     },
     exiting: () => exiting,
@@ -53,11 +55,45 @@ test("拉起抛错：记错误并广播 stopped，Promise 不拒绝", async () =
   assert.deepEqual(h.log, ["status:restarting", "stop", "start", "error", "status:stopped"]);
 });
 
-test("并发请求合并为一次", async () => {
+// 第 72 批（A1 H4）：原期望“并发请求合并为一次”（第二个请求直接拿正在跑的那次的结果）。在拉起之前到的请求由本次满足，这一条不变；
+// 新增：拉起开始之后才到的请求（新激活记录、换账号交接是之后才写的）不再被吞掉，本次结束后补跑一次
+test("拉起之前到达的并发请求合并为一次", async () => {
   const h = harness();
   const [a, b] = await Promise.all([h.r.restart(), h.r.restart()]);
   assert.equal(a, "restarted");
   assert.equal(b, "restarted");
+  assert.equal(h.log.filter((x) => x === "start").length, 1);
+});
+
+test("拉起开始之后才到的请求不丢：本次结束后补跑一次（多次合并为一次）", async () => {
+  let later: Promise<string>[] = [];
+  const h = harness({
+    onStart: () => {
+      if (later.length === 0) later = [h.r.restart("正在切换账号…"), h.r.restart()];
+    },
+  });
+  assert.equal(await h.r.restart(), "restarted");
+  assert.deepEqual(await Promise.all(later), ["restarted", "restarted"]);
+  assert.equal(h.log.filter((x) => x === "start").length, 2, "补跑一次");
+  assert.deepEqual(h.log, ["status:restarting", "stop", "start", "status:running", "status:restarting", "stop", "start", "status:running"]);
+  assert.equal(h.r.busy(), false);
+  assert.equal(h.r.stats().done, 2);
+});
+
+test("补跑时应用已在退出：补跑跳过", async () => {
+  let later: Promise<string> | null = null;
+  let exitNow = () => {};
+  const h = harness({
+    onStart: () => {
+      if (!later) {
+        later = h.r.restart();
+        exitNow();
+      }
+    },
+  });
+  exitNow = h.setExiting;
+  assert.equal(await h.r.restart(), "skipped");
+  assert.equal(await later, "skipped");
   assert.equal(h.log.filter((x) => x === "start").length, 1);
 });
 

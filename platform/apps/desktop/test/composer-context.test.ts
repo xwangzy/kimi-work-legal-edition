@@ -20,8 +20,9 @@ test("#12 输入框：事项放在输入框下方托盘（2026-11 对齐 Kimi“
   assert.match(src, /事项：\{props\.matterId \? "本事项"/);
   assert.match(src, /我方：/);
   // 托盘在输入框（文本框与底栏）之后：发起前仍一眼看得到在哪个事项下工作
-  assert.ok(src.indexOf('className="composer-context"') > src.indexOf('className="composer-bar"'), "事项托盘在输入框下方");
-  const bar = src.slice(src.indexOf('className="composer-bar"'), src.indexOf('className="composer-context"'));
+  assert.ok(src.indexOf('className="composer-context"') > src.indexOf("<ComposerFrame"), "事项托盘在输入框下方");
+  // 第 72 批：底栏由共用外壳 ComposerFrame 画，左槽 / 右槽在 <ComposerFrame ...> 的属性里
+  const bar = src.slice(src.indexOf("<ComposerFrame"), src.indexOf('className="composer-context"'));
   assert.doesNotMatch(bar, /Icon\.folder/, "底栏只留导入、模式和发送");
   assert.match(bar, /tool-plus/, "左下“+”导入材料");
   const tray = src.slice(src.indexOf('className="composer-context"'), src.indexOf("{menu === \"method\" && ("));

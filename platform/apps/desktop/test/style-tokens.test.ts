@@ -302,3 +302,24 @@ test("外观偏好：跟随系统按系统明暗，显式选择优先；持久�
     g.document = saved.document;
   }
 });
+
+/** 第 72 批（D-300 第 3、4 条）：字重只用 --fw-* 令牌（@font-face 描述符除外）；不写半像素（.5px，125% / 150% 缩放下发糊）。 */
+export function fontWeightProblem(d: Pick<Decl, "selector" | "prop" | "value">): boolean {
+  if (d.prop !== "font-weight" || /@font-face$/.test(d.selector.trim())) return false;
+  return !/^(var\(--fw-(regular|medium|strong)\)|inherit)$/.test(d.value);
+}
+export function halfPixelProblem(d: Pick<Decl, "prop" | "value">): boolean {
+  return /(^|[^\d])\d*\.5px\b/.test(d.value);
+}
+test("字重只用三档令牌、不写字面字重（@font-face 除外）；不写半像素（附反向样本）", () => {
+  assert.deepEqual(DECLS.filter(fontWeightProblem).map((d) => d.line), [], "字面字重");
+  assert.deepEqual(DECLS.filter(halfPixelProblem).map((d) => d.line), [], "半像素");
+  for (const bad of [{ selector: ".x", prop: "font-weight", value: "500" }, { selector: ".x", prop: "font-weight", value: "bold" }, { selector: ".x", prop: "font-weight", value: "var(--fw-heavy)" }]) assert.ok(fontWeightProblem(bad), bad.value);
+  assert.ok(!fontWeightProblem({ selector: "@font-face", prop: "font-weight", value: "800" }));
+  assert.ok(!fontWeightProblem({ selector: ".x", prop: "font-weight", value: "var(--fw-medium)" }));
+  for (const bad of ["110.5px", "1.5px solid var(--border-default)", "0 0 0 .5px"]) assert.ok(halfPixelProblem({ prop: "left", value: bad }), bad);
+  assert.ok(!halfPixelProblem({ prop: "left", value: "15px" }));
+  // 界面源码（TSX）里也不写字面字重
+  const tsx = walk(join(root, "src"), /\.tsx$/).map((f) => [rel(f), readFileSync(f, "utf8")] as const);
+  assert.deepEqual(tsx.filter(([, s]) => /fontWeight[=:]\s*["{]?\d/.test(s)).map(([f]) => f), [], "TSX 字面字重");
+});

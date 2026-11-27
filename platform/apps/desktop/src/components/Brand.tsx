@@ -23,7 +23,8 @@ export function KimiMark({ className = "" }: { className?: string }) {
 
 /**
  * 版本标签（第 55 批）：黑底小标“法律版”，与首页中央字标右上角的小标同一个图形（Kimi 自己的写法是“KIMI”+ 小标“WORK”）。
- * 画成图形而不是文字：10.5px 的字不在 7 级正文字号里，且宽度按 textLength 定死，各系统字体下小标大小一致。
+ * 画成图形而不是文字：10.5px 的字不在 7 级正文字号里。中文字都是全角方块，宽度不随字体变，第 72 批起不再用 textLength 挤压字距；
+ * 字重走令牌（.brand-tag-text）：Windows 落到随包 Noto Sans SC 600，macOS 落到苹方中粗，两端同重。
  */
 export function EditionTag({ text = "法律版", className = "" }: { text?: string; className?: string }) {
   const chars = [...text].length;
@@ -31,7 +32,7 @@ export function EditionTag({ text = "法律版", className = "" }: { text?: stri
   return (
     <svg className={`brand-tag ${className}`.trim()} viewBox={`0 0 ${w} 17`} width={w} height={17} aria-hidden="true" focusable="false">
       <rect className="brand-tag-bg" width={w} height={17} rx={4.5} />
-      <text className="brand-tag-text" x={w / 2} y={12.4} textAnchor="middle" fontSize="10.5" fontWeight="600" textLength={w - 10} lengthAdjust="spacing" fontFamily="inherit">
+      <text className="brand-tag-text" x={w / 2} y={12.4} textAnchor="middle" fontSize="10.5">
         {text}
       </text>
     </svg>
@@ -42,8 +43,9 @@ export function EditionTag({ text = "法律版", className = "" }: { text?: stri
  * 标识 + 名称 + 版本小标（第 55 批重做）：一行组合“[K] Kimi Work〔法律版〕”，与首页中央字标是同一套写法的小号版本。
  * 历史：第 48 批是“Kimi Work │ 法律版”（细竖线 + 灰字，版本名像一段说明文字）；第 51 批改成两行签名（第二行灰色小字“法律行业发行版”），
  * 但首页中央是“粗体字标 + 黑色小标”，侧栏却是“细字 + 灰字”，同一个产品两种写法。现在统一：
- *  - “Kimi Work”是粗体字标（图形：内联 SVG 文字，字重 800，宽度按 textLength 定死），与首页中央字标同一种画法——
- *    样式表里不出现 700 以上的字重（视觉统一门禁），字标作为图形不走正文字重；
+ *  - “Kimi Work”是粗体字标（图形：内联 SVG 文字），与首页中央字标同一种画法。第 72 批（D-300 第 3 条）起用随包字体“KWL Brand”
+ *    （Inter 800 拉丁子集，assets/fonts），两端逐像素一致；不再用 textLength 把系统字体挤成定宽（Windows 落到 Segoe UI Black 后字距被挤没）。
+ *    viewBox 宽度按这款字体实测的字宽定（15.6px、字距 -0.02em 时约 77.2）；
  *  - 版本名是黑底小标（EditionTag），垂直居中略上提 1px，读作“Kimi Work 的法律版”；
  *  - 标识（官方 Logomark）26px，与字标的大写字高、小标高度成一组（26 / 17 ≈ 1.5）。
  * size="lg" 用在启动页与登录页（标识 36px、字标 20px），比例相同。收起的侧栏只留标识（compact）。
@@ -54,8 +56,8 @@ export function BrandLockup({ edition = "法律版", compact = false, size = "sm
       <KimiMark className="brand-logo" />
       {!compact && (
         <span className="brand-words" aria-hidden="true">
-          <svg className="brand-word" viewBox="0 0 75 20" role="presentation">
-            <text x="0" y="15.4" fill="currentColor" fontSize="15.6" fontWeight="800" textLength="74" lengthAdjust="spacing" fontFamily="inherit">
+          <svg className="brand-word" viewBox="0 0 78 20" role="presentation">
+            <text className="brand-wordmark-text" x="0" y="15.4" fill="currentColor" fontSize="15.6">
               Kimi Work
             </text>
           </svg>

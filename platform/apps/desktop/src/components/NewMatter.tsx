@@ -16,22 +16,43 @@ import { Select } from "./Select.tsx";
 import { eventDateProblem, STAGE_LABELS, stagesFor } from "../lib/matter-stage.ts";
 
 // 我方立场（v9.4：补上劳动争议、借贷担保、委托服务、建设工程与二审的立场——S1 评审 §2.4；按业务类型分组提示）
-const STANCE_GROUPS: [string, string[]][] = [
+export const STANCE_GROUPS: [string, string[]][] = [
   ["诉讼仲裁", ["原告", "被告", "上诉人", "被上诉人", "申请人", "被申请人", "第三人"]],
   ["劳动争议", ["用人单位", "劳动者"]],
   ["交易与合同", ["买方", "卖方", "受让方", "转让方", "出租人", "承租人", "出借人", "借款人", "保证人", "委托方", "服务方", "发包人", "承包人", "投资方", "目标公司", "创始股东"]],
   ["顾问", ["常年顾问", "其他"]],
 ];
-const STANCE_OPTIONS = STANCE_GROUPS.flatMap(([hint, list]) => list.map((s) => ({ value: s, label: s, hint })));
+export const STANCE_OPTIONS = STANCE_GROUPS.flatMap(([hint, list]) => list.map((s) => ({ value: s, label: s, hint })));
 // 怎么处理（第 51 批）：一般 / 敏感 / 客户要求不上云（L3b，只在本机）——放在表单主体里，一处设定，不再拆到“客户授权”与“更多设置”两处
-const LEVELS = [
+export const LEVELS = [
   { v: "normal", label: "一般", hint: "委托事项中的合同、函件、案卷、意见书。第一次用 AI 时记录客户授权依据" },
   { v: "high", label: "敏感", hint: "敏感个人信息、刑事卷宗等：公司名称也替换为代号，每条联网检索都要你确认；用 AI 前另需敏感信息的单独同意" },
   { v: "strict", label: "客户要求不上云", hint: "只在这台电脑上处理：不用云端 AI，也不联网查询" },
 ];
 
-export function NewMatterDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (m: Matter) => void }) {
-  const [f, setF] = useState({ title: "", client_name: "", counterparty: "", stance: "原告", jurisdiction: "中国大陆", confidentiality: "normal", model_endpoint: "standard", analysis_as_of: "", stage: "", event_date: "", region: "" });
+/**
+ * 精简新建（第 72 批，D-301）：首页发送时就地新建事项，只问名称、我方立场、处理方式三项；其余与完整弹窗的缺省相同
+ * （中国大陆、标准 AI 端点、四项依据待确认——第一次用 AI 时在“开始前确认”逐案记录，D-216）。
+ */
+export async function quickCreateMatter(f: { title: string; stance: string; confidentiality: string }): Promise<Matter> {
+  const basis: MatterBasis = basisForChoice("pending", f.confidentiality === "high");
+  const r = await api.createMatter({
+    title: f.title.trim(),
+    client_name: null,
+    counterparty: null,
+    stance: f.stance,
+    jurisdiction: "中国大陆",
+    confidentiality: f.confidentiality,
+    model_endpoint: "standard",
+    basis: { ...basis, subprocessor: basis.subprocessor === "not_applicable" ? "pending" : basis.subprocessor },
+    key_dates: {},
+  });
+  notifyDataChanged();
+  return r.matter;
+}
+
+export function NewMatterDialog({ onClose, onCreated, initial }: { onClose: () => void; onCreated: (m: Matter) => void; /** 第 72 批：从首页“放进哪个事项”的“更多设置”进来时带上已填的三项。 */ initial?: { title?: string; stance?: string; confidentiality?: string } }) {
+  const [f, setF] = useState({ title: initial?.title ?? "", client_name: "", counterparty: "", stance: initial?.stance || "原告", jurisdiction: "中国大陆", confidentiality: initial?.confidentiality ?? "normal", model_endpoint: "standard", analysis_as_of: "", stage: "", event_date: "", region: "" });
   const [more, setMore] = useState(false);
   // 事项类型（v9.4 第 22 批，C1 #20）：选了就预置阶段、待办与常用方法；要起算日的（如收到起诉状之日）推出届满日
   const [templates, setTemplates] = useState<MatterTemplate[]>([]);

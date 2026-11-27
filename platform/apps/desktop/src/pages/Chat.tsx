@@ -10,7 +10,9 @@ import { useEffect, useRef, useState } from "react";
 import { api, onKernelEvent, type ChatMessage, type ChatModelChoice } from "../api.ts";
 import { nav } from "../App.tsx";
 import { Icon } from "../components/Icons.tsx";
-import { ModelPicker } from "../components/ModelPicker.tsx";
+import { ModelPicker, useModelCatalog } from "../components/ModelPicker.tsx";
+import { ComposerFrame, SendButton, sendOnEnter } from "../components/ComposerFrame.tsx";
+import { modelChoices } from "../lib/model-choices.ts";
 import { Markdown } from "../components/Markdown.tsx";
 import { QA_CITATION_KIND, qaCitationLine, type QaCitationsView } from "../lib/qa-citations.ts";
 import { fmtTime, fmtWhen } from "../lib/labels.ts";
@@ -21,8 +23,11 @@ import { ensureAiNotice } from "../lib/ai-notice.ts";
 import { KimiPulse, LoadError } from "../components/Loading.tsx";
 import { scopedKey } from "../lib/profile-scope.ts";
 
-/** 问答输入框下的常驻提示（D-225）：问答用于一般法律问题；具体案件在事项里发起（事项里才有该案的客户授权与令牌化规则）。 */
-export const CHAT_SCOPE_NOTE = "这里用于一般法律问题；涉及具体案件的材料与当事人，请在事项里发起。";
+/**
+ * 问答输入框下的常驻提示（D-225）：问答用于一般法律问题；具体案件在事项里发起（事项里才有该案的客户授权与令牌化规则）。
+ * 第 72 批（D-303）：移到输入框外、框下居中一行，压成一句；细节在“了解更多”浮层里。
+ */
+export const CHAT_SCOPE_NOTE = "一般法律问题在这里问；涉及具体案件的材料与当事人，请在事项里发起";
 
 export function ChatPage({ conversationId }: { conversationId?: string | undefined }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -84,34 +89,45 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, [waiting]);
-  // 问答模型（第 47 批，Kimi 输入框右下的模型选择）：选项来自内核（只列云端已配置的别名），记在本机偏好
-  const [models, setModels] = useState<ChatModelChoice[]>([]);
-  const [route, setRoute] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(scopedKey(MODEL_KEY));
-    } catch {
-      return null;
-    }
-  });
+  // 问答模型（第 47 批，Kimi 输入框右下的模型选择）。第 72 批（D-299）：选项改读云端模型目录 models.list("qa")（与首页任务同一来源、
+  // 不可用的置灰写原因），所选走 models.select("qa")——与内核 model_prefs 统一；本机旧的 kwl.chat.model 只作一次性迁移。
+  // 旧内核没有目录时退回 chat.models（只为取“深度思考”缺省与兜底选项）。
+  const [qaCatalog, setQaCatalog] = useModelCatalog("qa");
+  const [legacyModels, setLegacyModels] = useState<ChatModelChoice[]>([]);
   useEffect(() => {
     void api
       .chatModels()
       .then((r) => {
-        setModels(r.choices);
+        setLegacyModels(r.choices);
         // 律师没自己选过：开关跟内核缺省走
         if (!deepChosen.current && typeof r.default_deep === "boolean") setDeep(r.default_deep);
-        // 记住的模型已不在可选之列（运营改了路由）：回到缺省
-        setRoute((cur) => (cur && r.choices.some((c) => c.alias === cur) ? cur : r.default));
       })
-      .catch(() => setModels([]));
+      .catch(() => setLegacyModels([]));
   }, []);
-  const chooseModel = (alias: string) => {
-    setRoute(alias);
+  const migrated = useRef(false);
+  useEffect(() => {
+    if (!qaCatalog || migrated.current) return;
+    migrated.current = true;
+    let saved: string | null = null;
     try {
-      localStorage.setItem(scopedKey(MODEL_KEY), alias);
+      saved = localStorage.getItem(scopedKey(MODEL_KEY));
+      localStorage.removeItem(scopedKey(MODEL_KEY));
     } catch {
-      // 记不住只影响下次打开
+      saved = null;
     }
+    if (saved && saved !== qaCatalog.selected && qaCatalog.models.some((m) => m.id === saved && m.available))
+      void api.modelsSelect("qa", saved).then(() => setQaCatalog((v) => (v ? { ...v, selected: saved! } : v))).catch(() => {});
+  }, [qaCatalog, setQaCatalog]);
+  const models: { alias: string; label: string; thinking?: ChatModelChoice["thinking"] }[] = qaCatalog ? qaCatalog.models.map((m) => ({ alias: m.id, label: m.label, thinking: m.thinking })) : legacyModels;
+  const route: string | null = qaCatalog ? qaCatalog.selected : (legacyModels.find((c) => c.default)?.alias ?? null);
+  const [modelErr, setModelErr] = useState("");
+  const chooseModel = (alias: string) => {
+    setModelErr("");
+    if (!qaCatalog) return;
+    void api
+      .modelsSelect("qa", alias)
+      .then(() => setQaCatalog((v) => (v ? { ...v, selected: alias } : v)))
+      .catch((e) => setModelErr((e as Error).message));
   };
   const convRef = useRef(conversationId);
   convRef.current = conversationId;
@@ -244,7 +260,7 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
   }, [busy]);
 
   // 当前所选（或缺省）模型：深度思考开关的说明与显示取决于它（第 49 批）
-  const selectedModel = models.find((c) => c.alias === route) ?? models.find((c) => c.default) ?? null;
+  const selectedModel = models.find((c) => c.alias === route) ?? null;
   return (
     <div className={`chat${messages.length === 0 && !pending && !opening && loadErr === null ? " chat-blank" : ""}`}>
       <main className="chat-main">
@@ -360,67 +376,75 @@ export function ChatPage({ conversationId }: { conversationId?: string | undefin
           {err && <div className="banner banner-red">{err}</div>}
           <div ref={endRef} />
         </div>
-        <div className="composer chat-composer">
-          <textarea
-            placeholder="输入法律问题，例如：股东未经其他股东同意对外转让股权，合同是否有效？"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-          />
-          <div className="composer-bar">
-            <span className="spacer" />
-            {/* 深度思考：开关实际控制什么随所选模型（K3 调推理强度、K2.6 开关思考）；模型不可控时不显示开关，免得点了不起作用 */}
-            {selectedModel?.thinking !== "none" && (
-              <button
-                type="button"
-                className={`deep-toggle${deep ? " on" : ""}`}
-                aria-pressed={deep}
-                onClick={toggleDeep}
-                title={deepToggleTitle(deep, selectedModel?.thinking, selectedModel?.label)}
-              >
-                <span className="deep-dot" aria-hidden="true" />
-                深度思考
-              </button>
-            )}
-            {/* 第 66 批：与首页同一个模型选择器；选项来自云端模型目录（内核 chat.models 只列问答入口可用的） */}
-            <ModelPicker
-              title="问答模型"
-              choices={models.map((c) => ({ id: c.alias, label: c.label, description: c.note.replace(/^缺省[，,、]\s*/, ""), available: true, isDefault: c.default }))}
-              value={route}
-              onChange={chooseModel}
-              foot="按实际用量计入你的额度；具体型号由云端统一配置。"
+        <div className="chat-composer-wrap">
+          <ComposerFrame
+            className="chat-composer"
+            // 左槽：深度思考（与任务输入框的运行模式同一种胶囊）；模型不可控时不显示开关，免得点了不起作用
+            left={
+              selectedModel?.thinking !== "none" ? (
+                <button type="button" className={`deep-toggle${deep ? " on" : ""}`} aria-pressed={deep} onClick={toggleDeep} title={deepToggleTitle(deep, selectedModel?.thinking, selectedModel?.label)}>
+                  <Icon.sparkle />
+                  深度思考
+                </button>
+              ) : null
+            }
+            // 右槽：模型（与首页同一个选择器、同一份云端目录）+ 发送 / 停止
+            right={
+              <ModelPicker
+                title="问答模型"
+                choices={qaCatalog ? modelChoices(qaCatalog) : legacyModels.map((c) => ({ id: c.alias, label: c.label, description: c.note.replace(/^缺省[，,、]\s*/, ""), available: true, isDefault: c.default }))}
+                value={route}
+                onChange={chooseModel}
+                foot="按实际用量计入你的额度；具体型号由云端统一配置。"
+              />
+            }
+            send={<SendButton busy={busy} onStop={stop} disabled={!text.trim()} onSend={() => void send()} />}
+          >
+            <textarea
+              placeholder="输入法律问题，例如：股东未经其他股东同意对外转让股权，合同是否有效？"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={sendOnEnter(() => void send())}
             />
-            {/* 问答页回车发送，与任务输入框（Ctrl / ⌘ + 回车）不同：写明（余项续复核 RC-B-15） */}
-            <span className="send-hint muted" aria-hidden="true">回车发送 · Shift + 回车换行</span>
-            {/* 第 71 批第三轮：生成中发送键换成“停止”（同一位置），Esc 也能停 */}
-            {busy ? (
-              <button className="send-stop" onClick={stop} aria-label="停止生成" title="停止生成（Esc）">
-                <span className="send-stop-sq" aria-hidden="true" />
-                停止
-              </button>
-            ) : (
-              <button className="send" disabled={!text.trim()} onClick={() => void send()} aria-label="发送" title="发送（回车）"><Icon.send /></button>
-            )}
-          </div>
-          {/* D-225：问答不绑定事项、不查客户授权——常驻说明适用范围，案件材料与当事人请在事项里发起 */}
-          {/* 第 71 批（区域 2）：原先顶部还有一条提示条，与这条说的是同一件事，只留这一条；“了解更多”随它 */}
-          <div className="chat-scope-note">
-            {CHAT_SCOPE_NOTE}
-            <details className="chat-more">
-              <summary>了解更多</summary>
-              发送前，问题里能识别的姓名、证件号、账号、联系方式会换成代号（识别依靠规则与名单，可能有遗漏），并与你的事项当事人名单比对：涉及“客户要求不上云”事项的当事人会被拦下。问答不读取事项材料。问题经 Kimi Work 的安全通道发给 Kimi 模型；问答记录只保存在这台电脑上。
-              {/* 内容安全说明（D-142，10-23 拍板接受“先显示后撤回”） */}
-              回答边生成边显示；如果被内容安全规则拦下，已经显示的部分会撤回，改为“未能取得回答”，这次回答不保存。
-            </details>
-          </div>
+          </ComposerFrame>
+          {modelErr && <p className="composer-foot" role="alert">{modelErr}</p>}
+          {/* D-225：问答不绑定事项、不查客户授权——常驻说明适用范围（框外一行），细节在“了解更多”浮层 */}
+          <ChatScopeNote />
         </div>
       </main>
     </div>
+  );
+}
+
+/** 适用范围一行 + “了解更多”浮层（第 72 批，D-303）：浮层点外面或 Esc 关闭。 */
+function ChatScopeNote() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  return (
+    <p className="composer-foot chat-scope-note" ref={ref}>
+      <span>{CHAT_SCOPE_NOTE}</span>
+      <button type="button" className="btn-link" aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen((o) => !o)}>
+        了解更多
+      </button>
+      {open && (
+        <span className="popover scope-pop" role="dialog" aria-label="问答怎么处理你的问题">
+          <span className="scope-p">发送前，问题里能识别的姓名、证件号、账号、联系方式会换成代号（识别依靠规则与名单，可能有遗漏），并与你的事项当事人名单比对：涉及“客户要求不上云”事项的当事人会被拦下。问答不读取事项材料。问题经 Kimi Work 的安全通道发给 Kimi 模型；问答记录只保存在这台电脑上。</span>
+          {/* 内容安全说明（D-142，10-23 拍板接受“先显示后撤回”） */}
+          <span className="scope-p">回答边生成边显示；如果被内容安全规则拦下，已经显示的部分会撤回，改为“未能取得回答”，这次回答不保存。</span>
+        </span>
+      )}
+    </p>
   );
 }
 

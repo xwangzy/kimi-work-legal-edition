@@ -3,6 +3,7 @@
  * 路由用 hash（渲染进程不导航到任何外部地址）。
  */
 import { useEffect, useRef, useState } from "react";
+import { isModKey } from "./lib/platform.ts";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { account, api, members, onKernelEvent, recovery, updates, type UpdateStatus } from "./api.ts";
@@ -79,14 +80,14 @@ function readSnooze(): string | null {
 }
 
 /** 设置页的标签（V16 IA-1；第 47 批加“套餐与用量”，对应 Kimi 设置里的“订阅 · 我的额度”）：律师版六页 + 管理员“管理”。 */
-export type SettingsTab = "general" | "writing" | "account" | "usage" | "backup" | "visibility" | "admin";
+export type SettingsTab = "general" | "writing" | "account" | "team" | "usage" | "backup" | "visibility" | "admin";
 
 /**
  * 设置子路径 → 标签（纯函数）。旧地址继续可用（V16）：device（原“本机与安全”）→ 备份与安全，
  * sources / data（原“资料来源”，已并入数据去向页底）→ 数据去向，policy → 管理；认不出的回到通用。
  */
 export function settingsTabOf(a: string | undefined): SettingsTab {
-  if (a === "general" || a === "writing" || a === "account" || a === "usage" || a === "backup" || a === "visibility" || a === "admin") return a;
+  if (a === "general" || a === "writing" || a === "account" || a === "team" || a === "usage" || a === "backup" || a === "visibility" || a === "admin") return a;
   if (a === "device") return "backup";
   if (a === "sources" || a === "data") return "visibility";
   if (a === "policy") return "admin";
@@ -226,9 +227,13 @@ export function App() {
   };
   useEffect(() => {
     if (!boot || boot.onboarding) return;
-    void recovery
-      .backupStatus()
-      .then((s: any) => setReminder(recoveryReminder(s)))
+    // 第 72 批（D-302 第 3 条）：缺恢复包、缺备份位置这两种提醒等第一个事项有了材料才出现（之前没有可丢的数据，不打扰新律师）；
+    // 备份失败、备份盘不对、多日未备份照旧随时提醒
+    void Promise.all([recovery.backupStatus(), api.guideProgress().catch(() => null)])
+      .then(([s, g]: [any, { materials: number } | null]) => {
+        const r = recoveryReminder(s);
+        setReminder(r && (r.kind === "package" || r.kind === "folder") && g && g.materials === 0 ? null : r);
+      })
       .catch(() => setReminder(null));
   }, [boot, route.page]);
   // 被停用的电脑（D-144，10-23 拍板：只提示、不自动清除）：每次启动提示一次，律师自己决定是否清除写作偏好与问答记录
@@ -317,7 +322,7 @@ export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // macOS 只认 ⌘（文本框里系统自带的 Ctrl + K 是删除到行尾）；其余系统认 Ctrl（余项续复核 RC-B-08）
-      const mod = /Mac/i.test(navigator.platform) ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+      const mod = isModKey(e);
       if (!mod || e.shiftKey || e.altKey || onboardingRef.current) return;
       const key = e.key.toLowerCase();
       if (key === "k") {

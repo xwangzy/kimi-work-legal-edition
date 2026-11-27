@@ -70,10 +70,12 @@ test("被让出的三种原因与同时登录已满：标题同一句“这台�
 test("电脑选择卡：只有一台可选不显示单选、按钮写名字；移除用琥珀色提示；这台电脑排最前、不置灰；旧云端按移除口径", () => {
   const s = src("components/DeviceLimitList.tsx");
   assert.match(s, /const single = choices\.length === 1/);
-  assert.match(s, /\{actionable && !single && <span className="auth-device-radio"/);
+  // 第 72 批（D-303）：整卡可点，选中态是描边 + 勾（不再是单选圈与大黑框）；登录中不再每行挂标签，只一个小绿点
+  assert.match(s, /\{actionable && can && \(\s*<span className=\{`auth-device-check/);
+  assert.match(s, /className="auth-device-dot" title="登录中"/);
   assert.match(s, /className="auth-warn" role="note"/);
   assert.match(s, /你正在这台电脑上登录/);
-  assert.match(s, /removeOnly \? "电脑数已达上限"/);
+  assert.match(s, /removeOnly \? `已有 \$\{n\} 台电脑`/);
   const css = src("styles-auth.css");
   assert.match(css, /\.auth-card \.auth-warn \{[^}]*var\(--status-warning-bg-soft\)[^}]*var\(--status-warning-text\)/);
   assert.match(css, /\.auth-device-row\.is-this \{[^}]*border-style: dashed/);
