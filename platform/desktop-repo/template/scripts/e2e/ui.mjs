@@ -458,9 +458,19 @@ async function loginSms() {
   // 开通页上“登录”既是外层分段（登录｜注册）也是提交按钮：只点表单里的提交按钮（第 63 批 Windows 运行 45427882175 点到了分段）
   const clickAt = Date.now();
   await page.locator('form button[type="submit"]:visible').filter({ hasText: /^\s*登录\s*$/ }).first().click();
+  let limitHandled = false;
   const r = await until(
     async () => {
       const t = await text();
+      // 第 72 批（D-298 / D-303）：同一账号的电脑已达同时登录上限 → 选择页：截图，按缺省预选（最久没用的）点“退出所选电脑并继续”（可逆：那台电脑只是退出登录）
+      if (!limitHandled && (await page.locator('[data-auth-step="device-limit"]').count())) {
+        limitHandled = true;
+        await shot("登录-同时登录已达上限");
+        state.device_limit_page = { at_ms: Date.now() - clickAt, text: mask(((await optText(page.locator('[data-auth-step="device-limit"]'))) ?? "").slice(0, 400)) };
+        saveState();
+        await page.locator("button").filter({ hasText: /^\s*退出所选电脑并继续\s*$/ }).first().click();
+        return null;
+      }
       if (/等待管理员批准|等待批准这台电脑/.test(t)) return "pending";
       if (/这台电脑暂时不能继续/.test(t)) return `blocked:${(await optText(page.locator(".activate-error"))) ?? ""}`;
       // 先数再取（没有错误行时 textContent 会等满默认超时 20 秒）
